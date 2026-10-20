@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
     fun closePlayer() {
         saveProgress()
         ctrl.close()
-        setImmersive(false)
+        setSystemBarsHidden(false)
     }
 
     fun saveProgress() {
@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
 
     fun cycleRotation() = setRotation((rotationMode + 1) % 3)
 
-    fun setImmersive(on: Boolean) {
+    fun setSystemBarsHidden(on: Boolean) {
         val c = WindowCompat.getInsetsController(window, window.decorView)
         if (on) {
             c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

@@ -528,7 +528,7 @@ fun PlayerScreen(act: MainActivity) {
     var poke by remember { mutableIntStateOf(0) }
     val interact: () -> Unit = { poke++; controlsVisible = true }
 
-    LaunchedEffect(full) { act.setImmersive(full) }
+    LaunchedEffect(full) { act.setSystemBarsHidden(full) }
     LaunchedEffect(controlsVisible, poke, ctrl.playing, ctrl.scrubbing, full) {
         if (full && controlsVisible && ctrl.playing && !ctrl.scrubbing) {
             delay(3000)
