@@ -228,12 +228,12 @@ class PlayerController(context: Context, private val scope: CoroutineScope) {
         seekTo(position + dir * step)
     }
 
-    fun setSpeed(s: Float) {
+    fun changeSpeed(s: Float) {
         speed = s.coerceIn(0.1f, 4f)
         if (holdDir == 0) player.setPlaybackParameters(PlaybackParameters(speed))
     }
 
-    fun setVolume(v: Float) {
+    fun changeVolume(v: Float) {
         volume = v.coerceIn(0f, 1f)
         if (volume > 0f) muted = false
         applyVolume()

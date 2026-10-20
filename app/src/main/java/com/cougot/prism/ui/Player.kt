@@ -668,13 +668,13 @@ private fun OverlayControls(act: MainActivity, interact: () -> Unit, onFullscree
                 IconBtn(if (ctrl.muted) Ic.Mute else Ic.Volume, if (ctrl.muted) "Unmute" else "Mute", { interact(); ctrl.toggleMute() },
                     tint = if (ctrl.muted) P.Coral else P.Text)
                 GradSlider(
-                    ctrl.volume, { ctrl.setVolume(it) }, "Volume ${(ctrl.volume * 100).toInt()} percent",
+                    ctrl.volume, { ctrl.changeVolume(it) }, "Volume ${(ctrl.volume * 100).toInt()} percent",
                     Modifier.weight(0.6f), dimmed = ctrl.muted, onInteract = interact,
                 )
                 Box(Modifier.width(1.dp).height(24.dp).background(P.Text.copy(alpha = 0.2f)))
                 Icon(Ic.Speed, null, tint = P.Text, modifier = Modifier.size(20.dp))
                 GradSlider(
-                    speedToPos(ctrl.speed), { ctrl.setSpeed(posToSpeed(it)) }, "Speed ${"%.2f".format(ctrl.speed)}x",
+                    speedToPos(ctrl.speed), { ctrl.changeSpeed(posToSpeed(it)) }, "Speed ${"%.2f".format(ctrl.speed)}x",
                     Modifier.weight(1f), speedStyle = true, onInteract = interact,
                 )
                 SpeedLabel(ctrl, interact)
@@ -693,7 +693,7 @@ private fun OverlayControls(act: MainActivity, interact: () -> Unit, onFullscree
 private fun SpeedLabel(ctrl: PlayerController, interact: () -> Unit) {
     Box(
         Modifier.height(44.dp).widthIn(min = 52.dp).clip(RoundedCornerShape(8.dp))
-            .clickable(role = Role.Button, onClickLabel = "Reset speed") { interact(); ctrl.setSpeed(1f) },
+            .clickable(role = Role.Button, onClickLabel = "Reset speed") { interact(); ctrl.changeSpeed(1f) },
         contentAlignment = Alignment.Center,
     ) {
         Text("%.2f×".format(ctrl.speed), color = P.Yellow, fontFamily = Mono, fontSize = 14.sp)
@@ -762,7 +762,7 @@ private fun ColumnScope.DockedControls(act: MainActivity, onFullscreen: () -> Un
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Speed", color = P.Muted, fontFamily = Grotesk, fontSize = 13.sp, modifier = Modifier.width(64.dp))
                 GradSlider(
-                    speedToPos(ctrl.speed), { ctrl.setSpeed(posToSpeed(it)) }, "Speed ${"%.2f".format(ctrl.speed)}x",
+                    speedToPos(ctrl.speed), { ctrl.changeSpeed(posToSpeed(it)) }, "Speed ${"%.2f".format(ctrl.speed)}x",
                     Modifier.weight(1f), speedStyle = true,
                 )
                 SpeedLabel(ctrl) {}
@@ -770,7 +770,7 @@ private fun ColumnScope.DockedControls(act: MainActivity, onFullscreen: () -> Un
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Volume", color = P.Muted, fontFamily = Grotesk, fontSize = 13.sp, modifier = Modifier.width(64.dp))
                 GradSlider(
-                    ctrl.volume, { ctrl.setVolume(it) }, "Volume ${(ctrl.volume * 100).toInt()} percent",
+                    ctrl.volume, { ctrl.changeVolume(it) }, "Volume ${(ctrl.volume * 100).toInt()} percent",
                     Modifier.weight(1f), dimmed = ctrl.muted,
                 )
                 IconBtn(
