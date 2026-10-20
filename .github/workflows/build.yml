@@ -1,0 +1,49 @@
+name: Build APK
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack Prism.zip
+        if: hashFiles('Prism.zip') != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898475+github-actions[bot]@users.noreply.github.com"
+          unzip -q Prism.zip -d "$RUNNER_TEMP/unpack"
+          rm -rf "$RUNNER_TEMP/unpack/Prism/.github"
+          git rm -rq -- . ':!.github'
+          cp -a "$RUNNER_TEMP/unpack/Prism/." .
+          git add -A
+          git commit -m "Unpack Prism.zip into its folders"
+          git push
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Build
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk "prism-${{ github.run_number }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prism-apk
+          path: prism-*.apk
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "build-${{ github.run_number }}" "prism-${{ github.run_number }}.apk"
+          --title "Prism build ${{ github.run_number }}"
+          --notes "Open this page on your phone, download the APK below and tap it to install."
+          --latest
