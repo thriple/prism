@@ -1,0 +1,12 @@
+[package]
+name = "prism-ui"
+description = "Prism's theme layer and soft widgets (Motion Kit, dark Soft glass)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+# The bundled IBM Plex fonts are under the SIL Open Font Licence (assets/fonts/OFL.txt).
+
+[dependencies]
+egui.workspace = true

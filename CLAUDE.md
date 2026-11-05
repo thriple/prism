@@ -26,7 +26,7 @@ Read these first, in this order:
 - **One action registry** drives menus, the dock, context menus, hotkeys and command search (section 1.6). A test must fail if any action has no menu path.
 - **Hidden must be free** (section 1.14): hidden objects cost memory and nothing else, in every system.
 - **Depth precision** (section 4): reversed-Z, near and far fitted to the visible scene, no fixed line bias.
-- **Licences.** Use only dependencies under MIT, Apache-2.0, BSD, zlib or MPL by default. Do not add GPL or LGPL code, and never copy code from Blender or SketchUp. Before adding a dependency, add a row to `docs/DEPENDENCIES.md` with its licence and whether it builds for WASM.
+- **Licences.** Use only dependencies under MIT, Apache-2.0, BSD, zlib or MPL by default. Bundled fonts may also be SIL OFL (DECISIONS #12). Do not add GPL or LGPL code, and never copy code from Blender or SketchUp. Before adding a dependency, add a row to `docs/DEPENDENCIES.md` with its licence and whether it builds for WASM.
 - **Platforms.** Windows and macOS native builds are the main target. The web build must compile at every commit. No WASM threads yet (see Risks in section 7).
 - **Tests come with every change:** unit tests, the golden cases in `docs/acceptance/`, and property tests for geometry. CI must pass `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, and the web build.
 - **Look of the UI:** the **Motion Kit**, Soft glass set, dark theme, for every screen of the program. The kit is in `docs/ui-kit/` (open `soft.html` and `demo.html` to see it) and `docs/UI-STYLE.md` says how to use it. It is React, so re-implement the look in Rust: do not ship the React code. Build one theme layer and use it everywhere. The viewport is drawn by our own renderer, not by egui.
@@ -43,6 +43,7 @@ crates/
   prism-doc     document, groups, components, undo, serialization
   prism-render  wgpu renderer
   prism-tools   tool state machines
+  prism-ui      theme layer (Motion Kit Soft glass) and soft widgets
   prism-app     winit + egui shell, actions, menus, keys
 docs/
   briefs/       one brief per work chunk

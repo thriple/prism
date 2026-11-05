@@ -5,8 +5,8 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-/// The viewport background, `#262830` from the prototype's "Soft" style.
-pub const CLEAR_SRGB: [u8; 3] = [0x26, 0x28, 0x30];
+/// The window background behind the app's frame, from the theme layer.
+const CLEAR: egui::Color32 = prism_ui::theme::color::SURFACE;
 
 pub struct Gpu {
     surface: wgpu::Surface<'static>,
@@ -184,7 +184,7 @@ fn pick_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
 /// The clear colour for this surface format. An sRGB surface expects linear
 /// values; a plain one takes the sRGB values as they are.
 fn clear_color(format: wgpu::TextureFormat) -> wgpu::Color {
-    let [r, g, b] = CLEAR_SRGB.map(|c| {
+    let [r, g, b] = [CLEAR.r(), CLEAR.g(), CLEAR.b()].map(|c| {
         let c = f64::from(c) / 255.0;
         if format.is_srgb() {
             srgb_to_linear(c)
@@ -210,15 +210,19 @@ mod tests {
     #[test]
     fn plain_surface_gets_srgb_values_unchanged() {
         let c = clear_color(wgpu::TextureFormat::Bgra8Unorm);
-        assert!((c.r - 38.0 / 255.0).abs() < 1e-12);
-        assert!((c.b - 48.0 / 255.0).abs() < 1e-12);
+        assert!((c.r - f64::from(CLEAR.r()) / 255.0).abs() < 1e-12);
+        assert!((c.b - f64::from(CLEAR.b()) / 255.0).abs() < 1e-12);
     }
 
     #[test]
     fn srgb_surface_gets_linear_values() {
         let c = clear_color(wgpu::TextureFormat::Bgra8UnormSrgb);
-        // #26 is about 0.019 in linear light.
-        assert!((c.r - 0.019_382).abs() < 1e-5, "r was {}", c.r);
+        // Linear light is darker than the sRGB value for dark greys.
+        let srgb = f64::from(CLEAR.r()) / 255.0;
+        assert!((c.r - srgb_to_linear(srgb)).abs() < 1e-12);
+        assert!(c.r < srgb * 0.2, "r was {}", c.r);
+        // The known value for #26: about 0.019.
+        assert!((srgb_to_linear(38.0 / 255.0) - 0.019_382).abs() < 1e-5);
     }
 
     #[test]

@@ -1,14 +1,34 @@
 name: Release
 
+# Every push rebuilds the "latest" release (fixed download links, no versions).
+# A v* tag, if anyone ever makes one, gets its own release as well.
 on:
   push:
+    branches: ["**"]
     tags: ["v*"]
+    # Changes to documents only do not need a new build.
+    paths-ignore: ["**.md", "docs/**", "LICENSE-*"]
 
 permissions:
   contents: write
 
+# One build at a time. A build in progress always finishes; if several pushes
+# arrive meanwhile, only the newest of them is built next.
+concurrency:
+  group: release-${{ github.ref_type }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
+  # "latest" for ordinary pushes, the tag name for v* tags.
+  RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+  # Every build is also kept as its own numbered release, so an older one can
+  # be downloaded again if a new one goes wrong.
+  BUILD_TAG: prism-build-${{ github.run_number }}
+  # Shown in the app's debug panel.
+  PRISM_BUILD: build ${{ github.run_number }}
+  # How many numbered builds to keep.
+  KEEP_BUILDS: 30
 
 jobs:
   windows:
@@ -17,58 +37,97 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p prism-app
       - name: Zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force out/Prism | Out-Null
           Copy-Item target/release/prism-app.exe out/Prism/Prism.exe
-          Compress-Archive -Path out/Prism -DestinationPath "Prism-${{ github.ref_name }}-windows-x64.zip"
+          Compress-Archive -Path out/Prism -DestinationPath "Prism-windows.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: Prism-*.zip
+          path: Prism-windows.zip
 
   macos:
-    name: macOS app (universal, unsigned)
+    name: macOS app (universal, ad-hoc signed)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p prism-app --target aarch64-apple-darwin
       - run: cargo build --release -p prism-app --target x86_64-apple-darwin
       - name: Make Prism.app and zip it
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          APP=out/Prism.app
-          mkdir -p "$APP/Contents/MacOS"
-          lipo -create -output "$APP/Contents/MacOS/Prism" \
+          packaging/macos/make-app.sh "0.0.${{ github.run_number }}" Prism-macos.zip \
             target/aarch64-apple-darwin/release/prism-app \
             target/x86_64-apple-darwin/release/prism-app
-          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
-          # ditto keeps the bundle structure and permissions intact.
-          ditto -c -k --keepParent "$APP" "Prism-${GITHUB_REF_NAME}-macos-universal.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: Prism-*.zip
+          path: Prism-macos.zip
 
   publish:
     name: Publish the release
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: assets
           merge-multiple: true
-      - name: Create the release and attach the zips
+      - name: Write the release notes
+        run: |
+          {
+            echo "Build ${{ github.run_number }}, from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7} ($(date -u '+%Y-%m-%d %H:%M UTC'))."
+            echo
+            echo "Older builds: https://github.com/${GITHUB_REPOSITORY}/releases (named \"Prism build N\")."
+            echo
+            cat packaging/release-notes.md
+          } > notes.md
+      - name: Keep this build as its own numbered release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" assets/*.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Prism $GITHUB_REF_NAME" \
-            --notes "Unsigned builds. On macOS, right-click Prism.app and choose Open the first time. On Windows, SmartScreen may warn; choose More info, then Run anyway."
+          # A re-run of the same workflow run reuses the number, so replace it.
+          gh release delete "$BUILD_TAG" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          # GitHub now and then refuses a release with a 403; try again before failing.
+          for try in 1 2 3 4; do
+            gh release create "$BUILD_TAG" assets/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Prism build ${{ github.run_number }}" \
+              --notes-file notes.md \
+              --prerelease && break
+            [ "$try" = 4 ] && exit 1
+            sleep $((try * 10))
+          done
+      - name: Replace the latest release with these zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "$RELEASE" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          for try in 1 2 3 4; do
+            gh release create "$RELEASE" assets/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Prism ($RELEASE)" \
+              --notes-file notes.md \
+              --latest && break
+            [ "$try" = 4 ] && exit 1
+            sleep $((try * 10))
+          done
+      - name: Remove numbered builds beyond the newest ${{ env.KEEP_BUILDS }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 500 --json tagName --jq '.[].tagName' \
+            | grep '^prism-build-[0-9]*$' | sort -t- -k3 -n -r | tail -n +$((KEEP_BUILDS + 1)) \
+            | while read -r tag; do
+                gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY"
+              done
