@@ -237,20 +237,41 @@ fn nothing_shows_through_a_thin_plate_far_away() {
                 }
                 if dark > 0 || back_pixels(&img) > 0 {
                     img.save(&name);
+                    // Diagnostics: at leaking pixels, what was stored and the
+                    // exact depths of the plate's front and the detail's front.
                     let ids = g.ids(300, 300);
-                    for y in (100..200).step_by(4) {
-                        let row: Vec<String> = (140..160)
-                            .step_by(4)
-                            .map(|x| {
+                    let view = prism_render::View::new(&cam, 300.0, 300.0);
+                    let mut boxes = vec![
+                        (DVec3::new(-30.0, -30.0, 0.0), DVec3::new(30.0, 30.0, 0.0)),
+                        (DVec3::new(-60.0, 0.0, 0.0), DVec3::new(60.0, 0.0, 0.0)),
+                        (DVec3::new(0.0, -60.0, 0.0), DVec3::new(0.0, 60.0, 0.0)),
+                        (DVec3::ZERO, DVec3::new(0.0, 0.0, 60.0)),
+                    ];
+                    boxes.extend(m.bbox());
+                    let (near, _) = prism_render::gpu::fit_depth(&view, &boxes);
+                    let depth_on = |x: u32, y: u32, plane_y: f64| {
+                        let (o, d) = view.ray(prism_math::DVec2::new(
+                            f64::from(x) + 0.5,
+                            f64::from(y) + 0.5,
+                        ));
+                        near / ((plane_y - o.y) / d.y * d.dot(view.f))
+                    };
+                    let mut shown = 0;
+                    for y in 120..180u32 {
+                        for x in 120..180u32 {
+                            if img.at(x, y)[0] < 120 && shown < 12 {
+                                shown += 1;
                                 let v = ids[(y * 300 + x) as usize];
-                                format!("{}:{:.7}", v[0], f32::from_bits(v[1]))
-                            })
-                            .collect();
-                        let dk: Vec<bool> = (140..160)
-                            .step_by(4)
-                            .map(|x| img.at(x, y)[0] < 120)
-                            .collect();
-                        eprintln!("y{y}: {row:?} {dk:?}");
+                                eprintln!(
+                                    "LEAK ({x},{y}) rgb {:?} face {} stored {:.9} plate {:.9} detail {:.9}",
+                                    &img.at(x, y)[..3],
+                                    v[0],
+                                    f32::from_bits(v[1]),
+                                    depth_on(x, y, y0),
+                                    depth_on(x, y, d0)
+                                );
+                            }
+                        }
                     }
                 }
                 assert_eq!(dark, 0, "{name}: something behind shows through");
