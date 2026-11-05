@@ -6,5 +6,8 @@ mod app;
 pub mod frame_stats;
 mod gpu;
 pub mod input_log;
+mod overlay;
+mod platform;
+pub mod settings;
 
 pub use app::run;

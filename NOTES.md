@@ -30,11 +30,43 @@ Things noticed while building that are outside the current chunk, defaults that 
 - Versions: winit 0.30 (0.31 is still beta), wgpu 30, egui 0.37. egui-wgpu 0.37 needs exactly these.
 - The WebGL2 fallback came for free through egui-wgpu's default `webgl` feature, so it is on.
 - The surface uses a plain (non-sRGB) 8-bit format when offered, because egui expects it. The Viewport chunk may want an sRGB or HDR target for shading; the clear colour already handles both.
-- The window redraws continuously so the frame counter moves. Later chunks should redraw only when something changes (it matters for laptops and for "hidden must be free").
-- The overlay uses egui's built-in fonts. IBM Plex Sans and Mono (CLAUDE.md) should be bundled when real UI arrives (Actions & Keys). They are OFL-1.1, which is not on the default licence list: a fonts-only exception needs the owner's OK.
-- Motion-Kit's dark theme UI is not in the repo or the plan. The owner offered it; it may matter for Actions & Keys.
+- The window redrew continuously so the frame counter moved. Replaced in Soft Theme: it now redraws only when something changes.
+- The overlay used egui's built-in fonts. Replaced in Soft Theme by bundled IBM Plex (the owner approved OFL fonts, DECISIONS #12). The Motion Kit is now in `docs/ui-kit/`.
 
 **Leftovers and ideas**
-- The release wasm is about 7.5 MB. Look at size (wasm-opt level, egui features) before the iPad test.
+- The release wasm was about 7.5 MB in Skeleton; see Soft Theme below for the current size.
 - Native Linux needs `libxkbcommon-x11` at run time. Linux is not a target, but worth knowing.
 - Consider `cargo-deny` in CI to check licences automatically, so the table in `docs/DEPENDENCIES.md` cannot drift.
+
+## Soft Theme
+
+**What was built**
+- A new crate, `prism-ui`: the one theme layer. `theme.rs` holds every colour, size, radius, depth and font; `spring.rs` the kit's springs (solved exactly, no clock inside); `emboss.rs` the four-shadow raised and pressed surfaces, with inner shadows as a mesh because egui has none; `aurora.rs` the still aurora and film grain; `glass.rs` the cutouts; and soft button, toggle, slider, dropdown, panel and groove widgets.
+- The debug panel is restyled, and a "Theme demo" panel shows the four controls next to the settings: reduce motion (Follow system, On, Off), animate aurora (off by default), continuous redraw (off by default; turn it on to read fps).
+- A test (`crates/prism-ui/tests/style_literals.rs`) fails if a colour, shadow, corner radius or line width literal appears outside `theme.rs`. CI runs it with `cargo test`.
+- Screenshots at the same size, dropdown open: `docs/screenshots/soft-theme-kit.png` (the kit's `soft.html`, dark) and `docs/screenshots/soft-theme-prism.png` (Prism, native, software renderer).
+
+**Measured here (Linux, software renderer, so a real GPU is faster)**
+- **Idle:** with nothing happening the app draws no frames and used 0 CPU ticks over 5 seconds (measured from `/proc`, 100 ticks = one core for one second). The web build drew 9 frames in its first 6 seconds and then stopped.
+- **Web size:** the release wasm is 7.8 MB, 2.7 MB gzipped (GitHub Pages serves it compressed). The fonts add about 950 KB; egui's own fonts (about 1 MB) are no longer included.
+- **Motion:** checked frame by frame: the button lifts on hover, sinks on press with the label shrinking, and is still coming back 50 ms after release. The slider shows its value bubble and lit dimple while dragged. The dropdown pops in with its pill and tick.
+
+**Decisions and defaults used**
+- Text sizes follow `UI-STYLE.md` (13 px controls, 15 px titles), not `soft.html`, which uses 15 px for controls. The kit's giant header is left out (DECISIONS #13).
+- Button depth uses the kit's own numbers (offset 6, depths 1 / 1.3 / -0.7) where `UI-STYLE.md` says offset 5 and hover 7; the kit wins where they disagree, as `UI-STYLE.md` says.
+- egui's blur is a straight ramp, not a Gaussian, so CSS blur is converted with a factor of 1.5 (`theme::depth::BLUR_RAMP`), judged by eye against the kit.
+- The toggle knob's stretch comes from its speed, not a fixed keyframe list, so it stretches only while it travels.
+- The aurora follows the window, as in the kit, so how colourful a cutout looks depends on where its panel sits. The demo panel starts on the right, over the teal and pink.
+- The fonts are IBM's original TTF files, not subsets: Plex has a Reserved Font Name, and a subset would be a modified font that may not be called Plex.
+- Reduce motion follows the system on Windows (client-area animation setting), macOS (Accessibility > Reduce motion) and the web (`prefers-reduced-motion`). It is re-read when the window gains focus. Linux reports nothing, so it counts as off.
+- egui-winit asks for a repaint after every redraw event, which caused an endless loop; those events are no longer passed to it.
+
+**Still to check by a person**
+- Windows and macOS: the look, and the idle CPU in Task Manager or Activity Monitor (should be about 0% when nothing moves).
+- Windows and macOS: turning on the system's reduce-motion setting makes the demo controls jump with no animation.
+
+**Leftovers and ideas**
+- The kit's `BLUR_IN` (content arriving from a blur) is not done: egui cannot blur. Opacity, scale and rise are done.
+- Popups close straight away when you pick an item, with no closing animation for the list contents (the list itself fades and shrinks).
+- Panels float for now. Docking (`PanelLayout`, `DockPanel`) comes with the panels that need it.
+- Area positions: a panel asked to start at x = 760 in a 1280-wide window opened at x = 680. egui seems to keep new areas fully on screen using an estimated size. Harmless, but worth knowing when panels get default places.

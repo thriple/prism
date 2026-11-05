@@ -5,8 +5,8 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-/// The viewport background, `#262830` from the prototype's "Soft" style.
-pub const CLEAR_SRGB: [u8; 3] = [0x26, 0x28, 0x30];
+/// The viewport background, from the theme layer.
+const CLEAR: egui::Color32 = prism_ui::theme::color::VIEWPORT;
 
 pub struct Gpu {
     surface: wgpu::Surface<'static>,
@@ -184,7 +184,7 @@ fn pick_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
 /// The clear colour for this surface format. An sRGB surface expects linear
 /// values; a plain one takes the sRGB values as they are.
 fn clear_color(format: wgpu::TextureFormat) -> wgpu::Color {
-    let [r, g, b] = CLEAR_SRGB.map(|c| {
+    let [r, g, b] = [CLEAR.r(), CLEAR.g(), CLEAR.b()].map(|c| {
         let c = f64::from(c) / 255.0;
         if format.is_srgb() {
             srgb_to_linear(c)

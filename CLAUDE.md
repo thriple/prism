@@ -42,6 +42,7 @@ crates/
   prism-doc     document, groups, components, undo, serialization
   prism-render  wgpu renderer
   prism-tools   tool state machines
+  prism-ui      theme layer (Motion Kit Soft glass) and soft widgets
   prism-app     winit + egui shell, actions, menus, keys
 docs/
   briefs/       one brief per work chunk

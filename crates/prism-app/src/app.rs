@@ -4,16 +4,18 @@ use std::sync::Arc;
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
 
 use crate::frame_stats::FrameStats;
 use crate::gpu::Gpu;
 use crate::input_log::{InputEvent, InputLog, Modifiers, WheelUnit};
+use crate::overlay::{self, DebugInfo, Demo};
+use crate::settings::Settings;
 
 /// How many input events the overlay keeps.
-const LOG_CAPACITY: usize = 24;
+const LOG_CAPACITY: usize = 14;
 
 /// Start the app. Natively this blocks until the window closes. On the web it
 /// returns once the event loop is handed to the browser.
@@ -47,12 +49,19 @@ struct App {
     start: web_time::Instant,
     cursor: Option<(f64, f64)>,
     modifiers: Modifiers,
+    settings: Settings,
+    demo: Demo,
+    aurora: prism_ui::Aurora,
+    /// What the system says about reducing motion, read at start and on focus.
+    system_reduce_motion: Option<bool>,
+    /// When egui next wants a frame, if it asked for one later.
+    next_redraw: Option<web_time::Instant>,
 }
 
 impl App {
     fn new(event_loop: &EventLoop<Gpu>) -> Self {
         let egui_ctx = egui::Context::default();
-        egui_ctx.set_visuals(egui::Visuals::dark());
+        prism_ui::theme::install(&egui_ctx);
         Self {
             proxy: event_loop.create_proxy(),
             window: None,
@@ -64,6 +73,17 @@ impl App {
             start: web_time::Instant::now(),
             cursor: None,
             modifiers: Modifiers::default(),
+            settings: Settings::default(),
+            demo: Demo::default(),
+            aurora: prism_ui::Aurora::new(),
+            system_reduce_motion: crate::platform::system_reduces_motion(),
+            next_redraw: None,
+        }
+    }
+
+    fn request_redraw(&self) {
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 
@@ -129,18 +149,26 @@ impl App {
         self.stats.frame(self.start.elapsed().as_secs_f64());
 
         let raw_input = egui_state.take_egui_input(window);
-        let info = OverlayInfo {
+        let size = window.inner_size();
+        let motion = self.settings.motion(self.system_reduce_motion);
+        let info = DebugInfo {
             stats: &self.stats,
             log: &self.log,
             cursor: self.cursor,
             modifiers: self.modifiers,
-            size: window.inner_size(),
+            size: [size.width, size.height],
             scale: window.scale_factor(),
             adapter: gpu.adapter_summary(),
+            reduce_motion: motion.reduce_motion,
+            aurora_redraws: self.aurora.redraws(),
         };
-        let output = self
-            .egui_ctx
-            .run_ui(raw_input, |ui| draw_overlay(ui, &info));
+        let (settings, demo, aurora) = (&mut self.settings, &mut self.demo, &mut self.aurora);
+        let output = self.egui_ctx.run_ui(raw_input, |ui| {
+            let ctx = ui.ctx();
+            prism_ui::set_motion(ctx, motion);
+            aurora.prepare(ctx);
+            overlay::draw(ctx, &info, settings, demo);
+        });
         egui_state.handle_platform_output(window, output.platform_output);
         let jobs = self
             .egui_ctx
@@ -148,8 +176,20 @@ impl App {
 
         gpu.render(&jobs, output.textures_delta, output.pixels_per_point);
 
-        // Keep drawing so the frame counter moves. Later chunks redraw on demand.
-        window.request_redraw();
+        // Draw again only when something will change: egui says when.
+        let delay = output
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map_or(std::time::Duration::MAX, |v| v.repaint_delay);
+        self.next_redraw = None;
+        if log::log_enabled!(log::Level::Trace) {
+            log::trace!("repaint in {delay:?}: {:?}", self.egui_ctx.repaint_causes());
+        }
+        if self.settings.continuous_redraw || delay.is_zero() {
+            window.request_redraw();
+        } else if let Some(at) = web_time::Instant::now().checked_add(delay) {
+            self.next_redraw = Some(at);
+        }
     }
 }
 
@@ -236,12 +276,24 @@ impl ApplicationHandler<Gpu> for App {
         if matches!(event, WindowEvent::CursorLeft { .. }) {
             self.cursor = None;
         }
+        let mut redraw = false;
         if let Some(input) = self.input_event(&event) {
             self.log.push(input);
+            redraw = true;
         }
-
-        if let (Some(window), Some(state)) = (&self.window, &mut self.egui_state) {
-            let _ = state.on_window_event(window, &event);
+        // egui asks for a repaint after every redraw event, which would loop.
+        if !matches!(event, WindowEvent::RedrawRequested)
+            && let (Some(window), Some(state)) = (&self.window, &mut self.egui_state)
+        {
+            redraw |= state.on_window_event(window, &event).repaint;
+        }
+        if let WindowEvent::Focused(true) = event {
+            // The system setting may have changed while we were away.
+            self.system_reduce_motion = crate::platform::system_reduces_motion();
+            redraw = true;
+        }
+        if redraw {
+            self.request_redraw();
         }
 
         match event {
@@ -251,59 +303,23 @@ impl ApplicationHandler<Gpu> for App {
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize(size);
                 }
-                if let Some(window) = &self.window {
-                    window.request_redraw();
-                }
+                self.request_redraw();
             }
             WindowEvent::RedrawRequested => self.redraw(),
             _ => {}
         }
     }
-}
 
-struct OverlayInfo<'a> {
-    stats: &'a FrameStats,
-    log: &'a InputLog,
-    cursor: Option<(f64, f64)>,
-    modifiers: Modifiers,
-    size: winit::dpi::PhysicalSize<u32>,
-    scale: f64,
-    adapter: String,
-}
-
-/// Which build this is, set by the release workflow (for example "build 12").
-/// Local builds say "local".
-const BUILD: &str = match option_env!("PRISM_BUILD") {
-    Some(b) => b,
-    None => "local",
-};
-
-fn draw_overlay(ui: &mut egui::Ui, info: &OverlayInfo<'_>) {
-    egui::Window::new("Prism debug")
-        .default_pos([12.0, 12.0])
-        .default_width(420.0)
-        .resizable(false)
-        .show(ui.ctx(), |ui| {
-            let fps = info
-                .stats
-                .fps()
-                .map_or_else(|| "…".to_string(), |f| format!("{f:.0}"));
-            ui.monospace(format!("build {BUILD}"));
-            ui.monospace(format!("frame {}   fps {fps}", info.stats.frames()));
-            ui.monospace(format!(
-                "size {}x{} px   scale {:.2}",
-                info.size.width, info.size.height, info.scale
-            ));
-            ui.monospace(format!("gpu {}", info.adapter));
-            let cursor = info.cursor.map_or_else(
-                || "outside".to_string(),
-                |(x, y)| format!("({x:.0}, {y:.0})"),
-            );
-            ui.monospace(format!("cursor {cursor}   mods {}", info.modifiers));
-            ui.separator();
-            ui.label(format!("Input events ({} total)", info.log.total()));
-            for line in info.log.lines() {
-                ui.monospace(line);
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Sleep until the next frame egui asked for, or until an event arrives.
+        match self.next_redraw {
+            Some(at) if web_time::Instant::now() >= at => {
+                self.next_redraw = None;
+                self.request_redraw();
+                event_loop.set_control_flow(ControlFlow::Wait);
             }
-        });
+            Some(at) => event_loop.set_control_flow(ControlFlow::WaitUntil(at)),
+            None => event_loop.set_control_flow(ControlFlow::Wait),
+        }
+    }
 }

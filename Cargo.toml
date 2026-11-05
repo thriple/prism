@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/prism-app"]
+members = ["crates/prism-app", "crates/prism-ui"]
 
 [workspace.package]
 version = "0.0.1"
@@ -12,10 +12,11 @@ rust-version = "1.88"
 [workspace.dependencies]
 winit = "0.30.13"
 wgpu = "30.0.1"
-egui = { version = "0.37.0", features = ["default_fonts"] }
+egui = { version = "0.37.0", default-features = false }
 egui-wgpu = "0.37.0"
 egui-winit = { version = "0.37.0", default-features = false }
 log = "0.4.35"
+prism-ui = { path = "crates/prism-ui" }
 
 [profile.release]
 # Smaller web build; native speed is unaffected in practice.
