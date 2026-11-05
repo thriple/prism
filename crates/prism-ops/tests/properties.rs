@@ -55,14 +55,20 @@ fn build(ops: &[Op], k: f64) -> Model {
     m
 }
 
-/// Face areas, sorted, divided by `k²` and rounded so scales compare.
-fn areas(m: &Model, k: f64) -> Vec<i64> {
-    let mut v: Vec<i64> = m
-        .faces()
-        .map(|(id, _)| (m.face_area(id) / (k * k) * 1e6).round() as i64)
-        .collect();
-    v.sort();
+/// Face areas, sorted, divided by `k²` so scales compare.
+fn areas(m: &Model, k: f64) -> Vec<f64> {
+    let mut v: Vec<f64> = m.faces().map(|(id, _)| m.face_area(id) / (k * k)).collect();
+    v.sort_by(f64::total_cmp);
     v
+}
+
+/// The same areas, within rounding (not rounded to a grid, which flips a
+/// value lying exactly on a half step, such as 0.2265625).
+fn same_areas(a: &[f64], b: &[f64]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(x, y)| (x - y).abs() <= 1e-9 * x.abs().max(1.0))
 }
 
 /// The area covered by a set of axis-aligned rectangles on the integer grid.
@@ -132,7 +138,8 @@ proptest! {
     fn order_does_not_matter(rects in prop::collection::vec(rect(), 1..5)) {
         let mut back = rects.clone();
         back.reverse();
-        prop_assert_eq!(areas(&build(&rects, 1.0), 1.0), areas(&build(&back, 1.0), 1.0));
+        let (a, b) = (areas(&build(&rects, 1.0), 1.0), areas(&build(&back, 1.0), 1.0));
+        prop_assert!(same_areas(&a, &b), "{:?} vs {:?}", a, b);
     }
 
     /// Rule 8: scaling every coordinate gives the same topology.
@@ -142,7 +149,8 @@ proptest! {
         for k in [1e-4, 1e3] {
             let m = build(&ops, k);
             prop_assert_eq!((m.vertex_count(), m.edge_count(), m.face_count()), (base.vertex_count(), base.edge_count(), base.face_count()));
-            prop_assert_eq!(areas(&m, k), areas(&base, 1.0));
+            let (a, b) = (areas(&m, k), areas(&base, 1.0));
+            prop_assert!(same_areas(&a, &b), "at {}: {:?} vs {:?}", k, a, b);
         }
     }
 
@@ -163,5 +171,22 @@ proptest! {
         prop_assert_eq!(m.face_count(), faces, "no face was split");
         let p = check::planar(&m, &m.tol());
         prop_assert!(p.is_empty(), "{:?}", p);
+    }
+}
+
+/// Found by CI on macOS: an area of exactly 0.2265625 used to round
+/// differently at different scales.
+#[test]
+fn scale_does_not_matter_regression_half_step_area() {
+    let ops = [
+        Op::Line(6, 0, 8, 9),
+        Op::Rect(3, 3, 7, 5),
+        Op::Line(1, 9, 7, 4),
+    ];
+    let base = build(&ops, 1.0);
+    for k in [1e-4, 1e3] {
+        let m = build(&ops, k);
+        assert_eq!(m.face_count(), base.face_count());
+        assert!(same_areas(&areas(&m, k), &areas(&base, 1.0)), "at {k}");
     }
 }
