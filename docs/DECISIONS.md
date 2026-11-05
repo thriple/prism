@@ -19,3 +19,4 @@ Until the owner decides, use the default. Note in `NOTES.md` whenever a default 
 | 13 | Large display type from the Motion Kit | Decided | Not used. Ignore the giant header type in `soft.html`, here and in any app screen. |
 | 14 | Push/Pull of a ring face (a face with a hole, around another face) | Decided | The pulled face becomes the top; the bottom is not closed. Only Alt (new loop) keeps the original face in place. Golden case `pushpull_ring_face` is now verified. |
 | 15 | What the Eraser does to the faces beside an edge | Decided | Erasing an edge deletes every face that uses it (both faces that share it), not a merge into one face. |
+| 16 | Orbit, Pan and Zoom (O, H, Z) picked while another tool is active | Decided | They stay active after the mouse is released; Esc returns to the previous tool. They are not temporary. |

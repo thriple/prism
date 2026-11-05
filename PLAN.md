@@ -256,8 +256,7 @@ Behaviour that makes it feel right:
 - **Orbit pivots on what you start dragging over**, so the thing you're looking at stays put. The pivot is the object under the cursor first, then the ground plane under the cursor, and only if neither is hit the model centre (the prototype uses the distance to the target). Gravity keeps the horizon level; Ctrl while orbiting releases gravity and allows roll.
 - **Pan keeps the grabbed point under the cursor**, at that point's depth, so the model moves exactly with the mouse.
 - **Camera moves never interrupt a tool.** Middle-mouse navigation works in the middle of any operation, for example orbiting halfway through drawing a line or a push/pull. The tool, its ghost and its inference carry on.
-  - O, H and Z pressed in the middle of an operation are temporary: release the mouse or press Esc to return to the tool you were using.
-  - They are also normal tools that stay active when picked on their own.
+  - O, H and Z are normal tools: they stay active after the mouse is released, and Esc returns to the tool you were using (owner's decision, DECISIONS #16). Middle-mouse navigation needs no tool change at all.
 - **Smooth but fast.** A short ease on scroll zoom and Zoom Extents, never long enough to feel laggy, and it can be switched off.
 - **Trackpads**, which SketchUp handles poorly: two-finger scroll pans, pinch zooms at the cursor, and orbit happens only with the Orbit tool (O) or middle-drag, never from scroll. All of this can be changed.
 - **Keymap presets**: SketchUp (the default), plus Blender and Fusion so users from other tools can keep their habits. Every binding can be remapped (section 1.6).

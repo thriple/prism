@@ -7,7 +7,8 @@
 //! (optionally) hidden edges, highlighted edges and vertex dots. Every pass
 //! has one colour target, as WebGL2 needs.
 //!
-//! Depth is reversed-Z in a 32-bit float buffer, with near and far fitted
+//! Depth is reversed-Z in a 32-bit float buffer, with the far plane at
+//! infinity and the near plane fitted
 //! to what is visible every frame.
 //!
 //! There is no line bias. The second pass records, at each pixel, which
@@ -160,16 +161,19 @@ pub fn fit_depth(view: &View, boxes: &[(DVec3, DVec3)]) -> (f64, f64) {
 }
 
 /// The view and reversed-Z projection, for positions relative to the eye:
-/// depth is 1 at `near` and 0 at `far`.
-pub fn view_proj(view: &View, near: f64, far: f64) -> glam::DMat4 {
+/// depth is 1 at `near` and falls to 0 at infinity.
+pub fn view_proj(view: &View, near: f64) -> glam::DMat4 {
     use glam::{DMat4, DVec4};
     let f = 1.0 / (FOV_Y_DEG.to_radians() * 0.5).tan();
-    let r = near / (far - near);
+    // Far is at infinity: depth = near / distance. A finite far plane
+    // makes depth the difference of two nearly equal numbers when the far
+    // plane sits just behind the model, which lost the thin-plate test on
+    // real GPUs at 1 km.
     let proj = DMat4::from_cols(
         DVec4::new(f / view.aspect(), 0.0, 0.0, 0.0),
         DVec4::new(0.0, f, 0.0, 0.0),
-        DVec4::new(0.0, 0.0, r, -1.0),
-        DVec4::new(0.0, 0.0, r * far, 0.0),
+        DVec4::new(0.0, 0.0, 0.0, -1.0),
+        DVec4::new(0.0, 0.0, near, 0.0),
     );
     // Camera space: x right, y up, looking down -z.
     let look = DMat4::from_cols(
@@ -890,8 +894,8 @@ impl Renderer {
         );
         let mut boxes = Self::ground_boxes(f.style).to_vec();
         boxes.extend(f.bounds);
-        let (near, far) = fit_depth(&view, &boxes);
-        let vp = view_proj(&view, near, far).as_mat4();
+        let (near, _far) = fit_depth(&view, &boxes);
+        let vp = view_proj(&view, near).as_mat4();
         let (eye_hi, eye_lo) = split(view.eye);
         let s = f.style;
         let c = |c: Rgba| c.to_f32();
