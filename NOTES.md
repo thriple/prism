@@ -120,3 +120,31 @@ The browser prototype was updated while the Soft Theme chunk was being built. Us
 
 ### Drawing order bug found in the prototype (2026-11-05)
 A pocket cut into a box (a face with a hole, pushed down) showed the near inner wall, drawn in the back-face blue, painted over the rim at some camera angles. Cause: the prototype's 2D canvas draws faces back to front by centroid distance, which is wrong for faces with holes. The real renderer uses a depth buffer, so it does not have this problem, but keep the case as a **screenshot test** in the Viewport chunk: a box with a pocket (hole ratios 0.3 to 0.9, depths 1.2 to 1.9) seen from every 6 degrees of azimuth and several elevations must never show a back face of a closed solid from outside. Prototype fix for reference: `faceOrder(` (Newell's plane tests) and `closedCull(` (back faces of watertight solids are skipped when the eye is outside).
+
+## Core Model
+
+**What was built**
+- Five new crates, none of which depend on a window, GPU, clock or randomness (a test checks the manifests and sources):
+  - `prism-math`: f64 vectors (glam), the one relative tolerance `Tol` (1e-6 of the model's extent, clamped between 1e-12 and 1e-2, plus one angle tolerance), exact orientation predicates (`robust`), point in polygon, planes, Newell normals, 2D frames on a plane.
+  - `prism-geom`: `Curve::Line` and `Surface::Plane`, as enums ready for arcs and NURBS.
+  - `prism-topo`: vertices, edges and faces with holes, in ordered maps, with ids that are never reused (counters only go up, also across undo). A face owns its plane. Saved as deterministic JSON.
+  - `prism-ops`: sticky geometry, overlap split, holes, Push/Pull, move, rotate, scale, weld, erase, duplicate, connected, and `check` (the rules from `core-model-acceptance.md`).
+  - `prism-doc`: the document; every edit is a `Command` in a history with exact undo and redo (snapshots of the model before and after), plus replay of the log.
+- **Faces come from tracing the plane's graph**, not from a search: every edge in the plane, half-edges sorted by angle with exact predicates, traced into regions with their islands as holes. A region becomes a face if an existing face covered it, or if its outer loop uses an edge just added. Faces whose region did not change keep their ids. There is no limit on loop size (a test makes a 40-sided face; the prototype gave up at 14).
+- **Planes to rebuild after a segment:** the planes of faces the segment lies in, and the plane it makes with each edge at its vertices.
+- **Transforms** refit each touched face's plane. A face that is no longer planar is folded along a diagonal into planar pieces (a test lifts one corner of a rectangle: two faces, not triangles). A rotated or scaled box keeps all six faces whole. Vertices that end up together are welded.
+
+**Tests:** all 18 verified golden cases pass at scales 1e-4, 1 and 1e3, with every rule checked on each result. Property tests (256 random cases each, and 3000 when run by hand) check: the rules hold, coverage and area, adding again changes nothing, order does not matter, scale does not matter, deterministic output, faces stay planar after rotate and scale, and undo then redo of any sequence is exact. 113 tests in the workspace.
+
+**Decisions and defaults used**
+- **`pushpull_ring_face` (status "review")** is skipped by the runner, as the brief says. Prism gives exactly the prototype's answer (16 vertices, 24 edges, 10 faces): when a face with a hole is pulled and the hole borders another face, no floor is made under the outer boundary, because the face is not standalone. **This needs your decision:** should pulling a ring that sits around another face also close the bottom of the ring?
+- **Erase follows the prototype and the brief:** erasing an edge removes the faces that use it, and erasing a hole's edge closes the hole. PLAN 1.4 says SketchUp's Eraser merges the faces on either side instead. That belongs to the Eraser tool (Edit Tools chunk); flagged here so it is decided then.
+- **A drawn ring encloses a face:** rectangles that together enclose an empty region make it a face, as any closed coplanar loop does (found by the property tests).
+- **Push/Pull does not run sticky geometry afterwards**, as in the prototype, so a wall can overlap a coplanar face next to it. Worth adding with the Push/Pull tool.
+- **A face with holes that becomes non-planar** is put back onto its best-fit plane (its vertices move slightly), because folding along one diagonal does not work with holes.
+- Undo uses whole-model snapshots: simple and exact. A persistent data structure would make them cheaper for big models.
+
+**Leftovers and ideas**
+- Lookups scan all vertices and edges (`edge_between`, `insert_point`), so drawing is O(n) per point. Fine for now; a spatial index and an edge map are needed before large models (DECISIONS #8).
+- Loops that touch themselves at one vertex (two squares meeting at a corner) are traced as one pinched loop. Not covered by the golden cases.
+- `dup` and `connected` follow the prototype. A face selected without its edges still gets its edges copied, as there.

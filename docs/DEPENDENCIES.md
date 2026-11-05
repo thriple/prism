@@ -12,8 +12,11 @@ Add a row before adding a dependency. Allowed by default: MIT, Apache-2.0, BSD, 
 | egui-winit | 0.37 | prism-app | MIT OR Apache-2.0 | Yes | Feeds winit events to egui |
 | log | 0.4 | prism-app | MIT OR Apache-2.0 | Yes | Logging facade |
 | web-time | 1.1 | prism-app | MIT OR Apache-2.0 | Yes | `Instant` that works in the browser |
-| serde | 1.0 | prism-app | MIT OR Apache-2.0 | Yes | Keymap file format |
-| serde_json | 1.0 | prism-app | MIT OR Apache-2.0 | Yes | Keymap stored and shared as JSON |
+| serde | 1.0 | prism-app, core crates | MIT OR Apache-2.0 | Yes | Keymap and model file formats |
+| serde_json | 1.0 | prism-app, prism-topo, prism-doc | MIT OR Apache-2.0 | Yes | Keymap and model saved as JSON; golden cases read in tests |
+| glam | 0.34 | prism-math (and the crates above it) | MIT OR Apache-2.0 | Yes | f64 vectors and rotations |
+| robust | 1.2 | prism-math | MIT OR Apache-2.0 | Yes | Exact orientation predicates (Shewchuk) |
+| proptest | 1.12 | prism-ops, prism-doc (tests only, native only) | MIT OR Apache-2.0 | No (not needed: tests run natively) | Property tests |
 | env_logger | 0.11 | prism-app (native only) | MIT OR Apache-2.0 | n/a | Log output on the console |
 | pollster | 1.0 | prism-app (native only) | Apache-2.0 OR MIT | n/a | Waits for GPU setup natively |
 | console_log | 1.0 | prism-app (web only) | MIT OR Apache-2.0 | Yes | Log output in the browser console |
@@ -41,6 +44,9 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 | libloading | ISC | Permissive, equivalent to MIT |
 | self_cell | Apache-2.0 OR GPL-2.0-only | We use it under Apache-2.0 |
 | unicode-ident, unicode-properties | (MIT OR Apache-2.0) AND Unicode-3.0 | Unicode data licence, permissive |
+| arrayref | BSD-2-Clause | Permissive |
+| rustix, linux-raw-sys, wasip2, wit-bindgen | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | Test tools only (through proptest); we use them under MIT or Apache-2.0 |
+| walkdir, same-file | Unlicense/MIT | We use them under MIT |
 
 ## Tools (not linked into Prism)
 

@@ -15,4 +15,7 @@ serde.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+
+# Property tests run natively only (proptest's randomness does not build for wasm).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest.workspace = true
