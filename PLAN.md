@@ -60,7 +60,8 @@ Consequences for the design:
 - Colours and stipple are part of the style settings.
 
 **Groups (SketchUp semantics):**
-- Select geometry and choose Make Group. The group isolates its geometry: nothing inside sticks to, splits or merges with geometry outside.
+- Select geometry and choose Make Group.
+- Copies of a group are independent at once: editing one never changes another. Only components have linked instances (DECISIONS #22). The group isolates its geometry: nothing inside sticks to, splits or merges with geometry outside.
 - Double-click opens the group for editing. Everything else fades and can't be edited, and a dashed box shows the editing context.
 - Esc (when no tool operation is in progress) or clicking outside closes it, one level at a time. Groups can be nested, and the outliner shows the hierarchy.
 
@@ -68,7 +69,9 @@ Consequences for the design:
 - A named definition with any number of instances. Editing one instance updates all of them live, and the others highlight while you edit.
 - Each instance has its own transform and can be mirrored.
 - "Make unique" splits off a copy, and a definition has its own axes and insertion point.
-- "Glue to" lets a component snap to and slide on faces. "Cut opening" lets it cut through the face it is glued to, as windows and doors do.
+- "Glue to" lets a component snap to and slide on faces. "Cut opening" lets it cut through the face it is glued to, as windows and doors do. These come after the first Groups & Components chunk (DECISIONS #23). In SketchUp it is hard to tell when gluing will happen, so Prism adds:
+  - a small visual sign when the component can glue to the face under it;
+  - a global on/off toggle for gluing in the right-click menu.
 - A components library browser comes later.
 
 These build on the transactions and stable IDs in section 4. Groups and components live in M3, with selection highlighting in M1/M2.
@@ -462,17 +465,20 @@ Window > Preferences > Keyboard. Every binding comes from the action registry (s
 
 **Saving safely.**
 - **Atomic saves:** write to a temporary file, then rename. The previous version is kept as `name.prism.bak`.
-- **Autosave and recovery:** the command log (section 4) is journaled to a recovery file every few seconds or edits. After a crash, Prism offers to restore it.
+- **Autosave and recovery:** the command log (section 4) is journaled to a recovery file every few seconds or edits. After a crash, Prism offers to restore it. On the web the journal goes in IndexedDB, which every browser supports. The browser's private file system (OPFS) only recently gained a main-thread writer in Safari, and we use no WASM threads.
+- **Exact numbers in text:** wherever f64 values go through JSON, serde_json's `float_roundtrip` feature is on. Without it, about 11% of ordinary coordinates come back one bit off (tested 2026-11-06, `docs/research/files-and-formats.md`).
 - **Synced folders:** atomic writes avoid half-written files. If a sync service makes a conflict copy, Prism opens either one normally.
-- **Web build:** Chrome on desktop can open and save in place through the File System Access API. Chrome on iPad cannot, because iOS gives it Apple's browser engine. There, Save downloads a copy and Open uses the Files picker, and a copy is also kept in the browser's private storage as a safety net.
-- **Native builds:** `.prism` is registered as a file type, so double-clicking opens it. Recent files appear in the File menu.
+- **Web build:** Chrome and Edge on desktop can open and save in place through the File System Access API. Firefox and Safari have no save picker, so Save downloads a copy there. Chrome on iPad cannot save in place either, because iOS gives it Apple's browser engine. There, Save downloads a copy and Open uses the Files picker, and a copy is also kept in the browser's private storage as a safety net.
+- **Native builds:** recent files appear in the File menu. A file named on the command line opens, which is how Windows passes a double-clicked file. Registering `.prism` as a file type comes in steps (DECISIONS #24):
+  - **Files & Formats:** the Mac app's `Info.plist` declares the `.prism` type.
+  - **Packaging step:** macOS sends a double-clicked file as an Apple event that winit does not pass on, so Prism adds a small handler of its own. The same step adds Windows file-type registration, which needs an installer.
 
 **Import and export formats.** The formats below extend the presets in section 1.3.
 
 | Group | Formats | Import | Export | Milestone |
 |---|---|---|---|---|
 | Native | `.prism` | yes | yes | Files & Formats |
-| Mesh | STL (binary and ASCII), OBJ with MTL, 3MF, glTF / GLB, PLY | yes | yes | Files & Formats |
+| Mesh | STL (binary and ASCII), OBJ with MTL, 3MF, glTF / GLB, PLY (crates and licences checked in `docs/research/files-and-formats.md`; 3MF is written with our own code, DECISIONS #25) | yes | yes | Files & Formats |
 | Mesh, later | USD / USDZ, FBX | USD later | yes | later |
 | Exact CAD | STEP (AP214, AP242), IGES | yes | yes | Solids & CAD |
 | Rhino | 3DM (openNURBS) | yes | yes | Solids & CAD |
@@ -493,7 +499,7 @@ Window > Preferences > Keyboard. Every binding comes from the action registry (s
 - **Far-from-origin models** are moved near the origin and keep their original offset, so nothing jitters (section 4).
 - **A Model Health report** (section 1.10) appears after every import.
 - **Large imports** run in the background, with progress and a cancel button.
-- **Drag and drop** onto the window imports.
+- **Drag and drop** onto the window imports. winit delivers dropped files natively but not on the web, so the web build listens for drops on the canvas itself.
 
 **Export rules.**
 - **Scope:** the whole model, the selection, visible only, by tag, or one component.

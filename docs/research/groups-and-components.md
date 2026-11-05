@@ -38,6 +38,11 @@ Written 2026-11-06 (Guam), before the brief. PLAN 1.2 and 1.9 are the spec. This
 6. **Smart Guides.** NOTES says they wait for groups. They come with this chunk or straight after it (PLAN 5.1).
 7. **Files.** Do Files & Formats first, as the plan says. Then design the `.prism` layout so each definition is its own geometry chunk from the start, and groups add no format change.
 
-## Questions for the owner (to put in DECISIONS when the brief is written)
-- Do copies of a group stay linked until edited (SketchUp's hidden-component behaviour), or are they independent at once? Suggest: independent at once, which is simpler and what users expect of groups.
-- Should Glue to and Cut opening be in the first Groups & Components brief or a part 2? Suggest: part 2.
+## Decided (2026-11-06)
+- Copies of a group are independent at once; only components are linked (DECISIONS #22).
+- Glue to and Cut opening come later. When they are built, they get a small visual sign when gluing is possible and a global toggle in the right-click menu (DECISIONS #23).
+
+## Cost: undo states are never drawn or snapped
+- Only the current model is drawn and snapped to.
+- Undo steps are kept snapshots, and they cost memory only. Sharing unchanged definitions between snapshots (point 2) keeps that small.
+- Snapping cost grows with the geometry near the cursor in the visible instances: many copies of a big component all on screen. A spatial index over instances handles that. Hidden instances are skipped (PLAN 1.14).

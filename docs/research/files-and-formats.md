@@ -19,7 +19,7 @@ PLAN 6.0 "Suggested order" puts Files & Formats after Edit Tools, then Groups & 
    - Known fixes: add that method to the app delegate at run time (as kui-native does), or register an Apple event handler early (as Zed does, because of timing).
    - The app's `Info.plist` must also declare the `.prism` document type (`CFBundleDocumentTypes`), or macOS never sends the event.
    - On Windows, a double-clicked file arrives as a command-line argument. Registering the file type needs an installer or registry entries, and we ship a zip today.
-   - Suggest: in this chunk, open a file given on the command line on both platforms and set up the Mac plist. Leave the Apple event handler and Windows registration to a packaging step. (Needs the owner's OK: it narrows PLAN 1.13's "registered as a file type".)
+   - In PLAN 1.13 now, as DECISIONS #24 (open, with this as the default): this chunk opens a file given on the command line on both platforms and sets up the Mac plist. The Apple event handler and Windows registration wait for a packaging step.
 4. **Saving in place on the web.**
    - `showSaveFilePicker` and `FileSystemFileHandle.createWritable()` work in Chrome and Edge on the desktop. web-sys has bindings for the handle; the picker itself may need a call through `js_sys::Reflect`.
    - Firefox and Safari have no save picker, so Save downloads a copy there (as PLAN 1.13 already says for iPad).
@@ -28,7 +28,7 @@ PLAN 6.0 "Suggested order" puts Files & Formats after Edit Tools, then Groups & 
    - The browser's private file system (OPFS) can be written from the main thread with promises. Safari added the main-thread writer only recently (Safari 26, per a WebKit bug comment, not confirmed).
    - IndexedDB works everywhere. Suggest IndexedDB for the recovery journal on the web, through `web-sys` or a small crate such as `idb` (MIT/Apache).
    - We have no WASM threads, so the worker-only sync file API is out.
-6. **3MF:** the `threemf` crate is 0BSD. That is more permissive than BSD, but it is not on our licence list (CLAUDE.md). A 3MF file is a zip with one XML model file, so writing it with `zip` and `quick-xml` (MIT) is small. Suggest writing our own 3MF instead of adding 0BSD; or the owner adds 0BSD to the list.
+6. **3MF:** the `threemf` crate is 0BSD. That is more permissive than BSD, but it is not on our licence list (CLAUDE.md). A 3MF file is a zip with one XML model file, so writing it with `zip` and `quick-xml` (MIT) is small. DECISIONS #25 (open): write our own 3MF, unless the owner adds 0BSD to the list.
 
 ## Crates checked (crates.io, 2026-11-06)
 
