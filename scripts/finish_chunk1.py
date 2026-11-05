@@ -85,6 +85,7 @@ def main():
     ap.add_argument("--yes", action="store_true", help="do not ask before changes")
     ap.add_argument("--dry-run", action="store_true", help="show what would happen, change nothing")
     ap.add_argument("--run", action="store_true", help="start the app at the end (needs Rust)")
+    ap.add_argument("--open", action="store_true", help="open the web page and the releases page in your browser at the end")
     ap.add_argument("--tag", help="also create and push this tag, e.g. v0.0.1")
     ap.add_argument("--holder", help="name for the licence copyright line (default: your git user.name)")
     args = ap.parse_args()
@@ -203,13 +204,20 @@ def main():
             print("   still running...")
         print("   Web page (once deployed): https://thriple.github.io/prism/")
 
+    if args.open and not args.dry_run:
+        import webbrowser
+        webbrowser.open("https://thriple.github.io/prism/")
+        webbrowser.open(f"https://github.com/{REPO}/releases")
+
     if args.run:
         step("Starting the app (close the window to finish)")
         subprocess.run(["cargo", "run", "--release"])
 
     print("\nDone. Still for you to do by hand:")
-    print("  - Open the app on Windows/Mac (or use --run) and check the frame counter moves.")
-    print("  - Open https://thriple.github.io/prism/ on the iPad and note the result in NOTES.md.")
+    print("  - Web page: https://thriple.github.io/prism/ should show a dark window with a frame counter")
+    print("    that moves, and mouse and key events listed. (Pages can take a few minutes to appear.)")
+    print("  - Windows app: after a few minutes the Releases page has a Windows zip. Unzip it and run the .exe.")
+    print("  - iPad: open the web page address in Chrome there and tell Claude Code whether it runs.")
     print("  - Decide the IBM Plex fonts question (OFL licence) and tell Claude Code.")
 
 
