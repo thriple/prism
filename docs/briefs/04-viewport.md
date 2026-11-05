@@ -35,7 +35,7 @@ The feel test (`docs/prototype/Main.dc.html`, guide in `docs/prototype/README.md
   - Guides and dashes come from the same renderer, so the next chunk can draw inference guides with it.
 - **Faces.**
   - The display mesh is made for drawing only (PLAN 1.1). Each planar face, holes included, is triangulated in its own plane using the exact predicates.
-  - Write the triangulator ourselves or use a crate under an allowed licence. `earcutr` is ISC, which is not on the list, so ask before using it.
+  - Write the triangulator ourselves (owner's choice; no `earcutr`): ear clipping in the face's 2D frame, with holes joined to the outer loop by bridge edges, and every ear and bridge test done with the exact predicates. Faces with many vertices must stay fast (spot-check a 1,000-vertex face with holes). Put it in `prism-render`, since it is for display only and the model never stores triangles.
   - The mesh is rebuilt only for faces that changed, using the document's change count.
   - Front and back colours with the prototype's headlight-style shading. Reversed faces show their back colour, which Model Health relies on later.
 - **Ground and axes:** sky, ground, grid, axes and ground shadow as above. Ground Shadow (`view.shadow`, already an event) toggles the shadow.
