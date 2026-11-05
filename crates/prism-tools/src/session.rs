@@ -820,6 +820,27 @@ impl Session {
         self.dirty = true;
     }
 
+    /// Open a document (File > New and Open): the selection, tool steps and
+    /// undo history start fresh. With a camera, the view goes there; else
+    /// it fits the model.
+    pub fn open_document(&mut self, doc: Document, camera: Option<Camera>) {
+        self.load(doc);
+        if let Some(c) = camera {
+            self.motion = None;
+            self.camera = c;
+            self.dirty = true;
+        }
+    }
+
+    /// How lengths are shown (File > Document Settings).
+    pub fn set_units(&mut self, units: prism_math::DisplayUnits) {
+        if self.number.units != units {
+            self.number.units = units;
+            self.overlay_dirty = true;
+            self.dirty = true;
+        }
+    }
+
     fn load(&mut self, doc: Document) {
         self.doc = doc;
         self.selection = Selection::default();

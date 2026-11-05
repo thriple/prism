@@ -43,6 +43,10 @@ add('help.scene.plate', 'Thin Plate');
 add('help.scene.large', 'Large Scene (Timing)');
 // Record a session to send when something feels wrong (brief 05).
 add('help.record', 'Record Session');
+// Recent files (brief 08): ten slots, labelled at run time with the files'
+// names, in an Open Recent submenu with the prototype's "No recent files".
+const RECENT = 10;
+for (let i = 1; i <= RECENT; i++) add(`file.recent${i}`, `Recent File ${i}`);
 // 3. Every action needs a menu path. Two tools were only in the dock.
 const walkEdit = (items, fn) => items.forEach((it, i) => { if (Array.isArray(it)) { fn(it, items, i); walkEdit(it[1], fn); } });
 data.MENUBAR.forEach(([, items]) => walkEdit(items, sub => {
@@ -52,6 +56,8 @@ data.MENUBAR.forEach(([, items]) => walkEdit(items, sub => {
 const menu = name => data.MENUBAR.find(m => m[0] === name)[1];
 const file = menu('File');
 file.splice(file.indexOf('file.recent'), 0, 'file.docsettings', '-');
+file.splice(file.indexOf('file.recent'), 1, ['Open Recent',
+  ['file.recent', ...Array.from({ length: RECENT }, (_, i) => `file.recent${i + 1}`)]]);
 const help = menu('Help');
 help.splice(help.indexOf('help.smartdemo'), 1);
 help.splice(help.indexOf('-'), 0, '-', 'help.debug', 'help.themedemo',

@@ -68,12 +68,24 @@ struct App {
     last_tool: &'static str,
     /// The model version the GPU has.
     uploaded: Option<u64>,
+    /// The document's file: save, open, recovery (brief 08).
+    files: crate::files::Files,
+    /// A file named on the command line, opened on the first frame.
+    start_file: Option<String>,
 }
 
 impl App {
     fn new(event_loop: &EventLoop<Gpu>) -> Self {
         let egui_ctx = egui::Context::default();
         prism_ui::theme::install(&egui_ctx);
+        let viewport = Viewport::new();
+        let files = crate::files::Files::new(&viewport.session);
+        // `prism model.prism` (how Windows passes a double-clicked file).
+        // macOS adds a -psn_ argument when Finder starts an app.
+        #[cfg(not(target_arch = "wasm32"))]
+        let start_file = std::env::args().skip(1).find(|a| !a.starts_with("-psn"));
+        #[cfg(target_arch = "wasm32")]
+        let start_file = None;
         Self {
             proxy: event_loop.create_proxy(),
             window: None,
@@ -92,9 +104,11 @@ impl App {
             next_redraw: None,
             chrome: Chrome::new(crate::platform::keys()),
             modifiers_state: winit::keyboard::ModifiersState::empty(),
-            viewport: Viewport::new(),
+            viewport,
             last_tool: "tool.select",
             uploaded: None,
+            files,
+            start_file,
         }
     }
 
@@ -180,14 +194,16 @@ impl App {
             reduce_motion: motion.reduce_motion,
             aurora_redraws: self.aurora.redraws(),
         };
-        let (settings, demo, aurora, chrome, viewport, last_tool) = (
+        let (settings, demo, aurora, chrome, viewport, last_tool, files) = (
             &mut self.settings,
             &mut self.demo,
             &mut self.aurora,
             &mut self.chrome,
             &mut self.viewport,
             &mut self.last_tool,
+            &mut self.files,
         );
+        let start_file = self.start_file.take();
         chrome.viewport_texture = gpu.viewport_texture();
         viewport.session.reduce_motion = motion.reduce_motion;
         let mut viewport_px = [1u32, 1u32];
@@ -196,10 +212,15 @@ impl App {
             prism_ui::set_motion(ctx, motion);
             aurora.prepare(ctx);
             // What can run depends on the document and the selection.
+            if let Some(p) = &start_file {
+                files.open_at_start(p, &mut viewport.session, chrome);
+            }
+            chrome.recent = files.recent_names();
             chrome.rules = crate::actions::Context {
                 can_undo: viewport.can_undo(),
                 can_redo: viewport.can_redo(),
                 has_selection: !viewport.counts().is_empty(),
+                recent: chrome.recent.len(),
             };
             let status = viewport.status();
             chrome.set_hint(status.hint);
@@ -231,13 +252,18 @@ impl App {
                 *last_tool = chrome.active_tool;
             }
             for e in std::mem::take(&mut chrome.events) {
-                viewport.action(e.id, chrome);
+                if e.id.starts_with("file.") {
+                    files.action(e.id, &mut viewport.session, chrome);
+                } else {
+                    viewport.action(e.id, chrome);
+                }
             }
             if let Some(resp) = &layout.response {
                 viewport.input(ctx, resp, layout.viewport, chrome);
             }
             *last_tool = chrome.active_tool;
             let now = ctx.input(|i| i.time);
+            files.frame(ctx, now, &mut viewport.session, chrome);
             if let Some(after) = viewport.time(now) {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(after.min(1.0)));
             }
@@ -253,6 +279,9 @@ impl App {
             overlay::draw(ctx, layout.viewport, shown, &info, settings, demo, viewport);
         });
         egui_state.handle_platform_output(window, output.platform_output);
+        if let Some(t) = self.files.new_title(&self.viewport.session) {
+            window.set_title(&t);
+        }
         let jobs = self
             .egui_ctx
             .tessellate(output.shapes, output.pixels_per_point);
@@ -407,7 +436,7 @@ impl ApplicationHandler<Gpu> for App {
             let code_name = format!("{code:?}");
             let typing_elsewhere = self.egui_ctx.egui_wants_keyboard_input();
             let pressed = key.state == ElementState::Pressed;
-            let chrome_ui = self.chrome.ui_open_pub();
+            let chrome_ui = self.chrome.ui_open_pub() || self.files.modal();
             if pressed
                 && !typing_elsewhere
                 && !chrome_ui
@@ -455,7 +484,11 @@ impl ApplicationHandler<Gpu> for App {
         }
 
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.files
+                    .close_requested(&mut self.viewport.session, &mut self.chrome);
+                self.request_redraw();
+            }
             WindowEvent::Resized(size) => {
                 log::debug!("resized to {}x{} px", size.width, size.height);
                 if let Some(gpu) = &mut self.gpu {
@@ -469,6 +502,10 @@ impl ApplicationHandler<Gpu> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.files.take_quit() {
+            event_loop.exit();
+            return;
+        }
         // Sleep until the next frame egui asked for, or until an event arrives.
         match self.next_redraw {
             Some(at) if web_time::Instant::now() >= at => {

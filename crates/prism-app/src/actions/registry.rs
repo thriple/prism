@@ -26,6 +26,10 @@ pub enum When {
     CanUndo,
     CanRedo,
     HasSelection,
+    /// A recent-file slot: enabled while that many files are remembered.
+    Recent(usize),
+    /// A label only ("No recent files").
+    Never,
 }
 
 /// Whether a menu item shows a check mark, and why.
@@ -82,6 +86,8 @@ pub struct Context {
     pub can_undo: bool,
     pub can_redo: bool,
     pub has_selection: bool,
+    /// How many recent files are remembered.
+    pub recent: usize,
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
@@ -117,7 +123,12 @@ const TOGGLES: [&str; 5] = [
 fn run_of(id: &str, proto_run: &str) -> Run {
     if COMMANDS.contains(&id) {
         Run::Command
-    } else if id.starts_with("help.scene.") || id == "help.record" || id == "view.guides" {
+    } else if id.starts_with("help.scene.")
+        || id == "help.record"
+        || id == "view.guides"
+        || id.starts_with("file.") && id != "file.import"
+    {
+        // The file actions (brief 08) are handled by the app.
         // Test scenes for the viewport (brief 04), handled by the app.
         Run::Event
     } else if prism_tools::session::TOOLS.contains(&id) {
@@ -184,7 +195,11 @@ impl Registry {
                     menu_path: paths.get(r.id).cloned().unwrap_or_default(),
                     default_key: r.key,
                     run,
-                    when: when_of(r.when),
+                    when: match r.id.strip_prefix("file.recent") {
+                        Some("") => When::Never,
+                        Some(n) => n.parse().map_or(When::Always, When::Recent),
+                        None => when_of(r.when),
+                    },
                     check: if run == Run::Tool {
                         Check::ActiveTool
                     } else if TOGGLES.contains(&r.id) {
@@ -217,6 +232,8 @@ impl Registry {
                     When::CanUndo => ctx.can_undo,
                     When::CanRedo => ctx.can_redo,
                     When::HasSelection => ctx.has_selection,
+                    When::Recent(n) => n <= ctx.recent,
+                    When::Never => false,
                 }
         })
     }
@@ -231,6 +248,8 @@ impl Registry {
             When::CanUndo if !ctx.can_undo => Some("Nothing to undo"),
             When::CanRedo if !ctx.can_redo => Some("Nothing to redo"),
             When::HasSelection if !ctx.has_selection => Some("Select something first"),
+            When::Recent(n) if n > ctx.recent => Some("No file here yet"),
+            When::Never => Some("Files you open or save are listed here"),
             _ => None,
         }
     }

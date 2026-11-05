@@ -190,6 +190,10 @@ pub struct Document {
     model: Model,
     done: Vec<Step>,
     undone: Vec<Step>,
+    /// Counts changes (runs, undos and redos), so the app can tell whether
+    /// the document changed since it was saved.
+    #[serde(default)]
+    revision: u64,
 }
 
 impl Document {
@@ -223,7 +227,13 @@ impl Document {
             after: self.model.clone(),
         });
         self.undone.clear();
+        self.revision += 1;
         true
+    }
+
+    /// Goes up with every change, undo and redo.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     pub fn can_undo(&self) -> bool {
@@ -251,6 +261,7 @@ impl Document {
         self.model = step.before.clone();
         self.model.keep_counters_at_least(counters);
         self.undone.push(step);
+        self.revision += 1;
         true
     }
 
@@ -262,6 +273,7 @@ impl Document {
         self.model = step.after.clone();
         self.model.keep_counters_at_least(counters);
         self.done.push(step);
+        self.revision += 1;
         true
     }
 

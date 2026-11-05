@@ -5,10 +5,13 @@
 pub mod actions;
 mod app;
 pub mod chrome;
+mod doc_files;
+mod files;
 pub mod frame_stats;
 mod gpu;
 pub mod input_log;
 mod overlay;
+mod recovery;
 pub mod platform;
 pub mod settings;
 mod storage;

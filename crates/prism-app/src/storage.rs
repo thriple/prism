@@ -38,13 +38,19 @@ pub fn take_imported() -> Option<String> {
     imp::take_imported()
 }
 
+/// The per-user config folder (native).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn config_dir() -> Option<std::path::PathBuf> {
+    imp::config_dir()
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use std::path::PathBuf;
 
     /// The per-user config folder: %APPDATA%\Prism, ~/Library/Application
     /// Support/Prism, or $XDG_CONFIG_HOME/prism.
-    fn config_dir() -> Option<PathBuf> {
+    pub fn config_dir() -> Option<PathBuf> {
         let env = |k: &str| {
             std::env::var_os(k)
                 .filter(|v| !v.is_empty())

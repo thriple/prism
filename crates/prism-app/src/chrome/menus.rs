@@ -291,13 +291,13 @@ fn level(
                     match e {
                         Entry::Separator => menu::separator(ui, inner_w),
                         Entry::Action(id) => {
-                            let Some(a) = chrome.reg.get(id) else {
+                            let Some(label) = chrome.label(id) else {
                                 continue;
                             };
                             let enabled = chrome.enabled(id);
                             let key = chrome.key_label(id);
                             let resp = MenuRow {
-                                label: a.name,
+                                label: &label,
                                 end: if key.is_empty() {
                                     RowEnd::None
                                 } else {

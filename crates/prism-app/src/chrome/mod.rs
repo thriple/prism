@@ -90,6 +90,8 @@ pub struct Chrome {
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
+    /// The recent files' names, for File > Open Recent.
+    pub recent: Vec<String>,
     pub rules: actions::Context,
     /// Save keymap changes to disk (off in tests).
     persist: bool,
@@ -147,6 +149,7 @@ impl Chrome {
             hotkeys: None,
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
+            recent: Vec::new(),
             rules: actions::Context::default(),
             persist: false,
             viewport_texture: None,
@@ -187,6 +190,21 @@ impl Chrome {
     /// Whether a menu, the search or a window has the keys.
     pub fn ui_open_pub(&self) -> bool {
         self.ui_open()
+    }
+
+    /// What a menu row says: the action's name, or a recent file's name.
+    /// None for a row that is hidden (an empty recent slot, or "No recent
+    /// files" once there are some).
+    pub fn label(&self, id: &str) -> Option<String> {
+        let name = self.reg.get(id)?.name;
+        match id.strip_prefix("file.recent") {
+            Some("") => self.recent.is_empty().then(|| name.to_owned()),
+            Some(n) => {
+                let i = n.parse::<usize>().ok()?.checked_sub(1)?;
+                self.recent.get(i).cloned()
+            }
+            None => Some(name.to_owned()),
+        }
     }
 
     pub fn is_on(&self, id: &str) -> bool {

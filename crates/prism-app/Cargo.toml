@@ -23,6 +23,7 @@ prism-doc.workspace = true
 prism-render.workspace = true
 prism-view.workspace = true
 prism-tools.workspace = true
+prism-file.workspace = true
 web-time = "1.1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json.workspace = true
@@ -30,12 +31,14 @@ serde_json.workspace = true
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.11"
 pollster = "1.0.1"
+# Open and save dialogs. On Linux (CI) the xdg-portal backend is pure Rust.
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0"
 wasm-bindgen-futures = "0.4.80"
-web-sys = { version = "0.3.107", features = ["Window", "MediaQueryList", "Navigator", "Storage", "Document", "Element", "HtmlElement", "HtmlAnchorElement", "HtmlInputElement", "FileList", "File", "FileReader", "Blob", "BlobPropertyBag", "Url"] }
+web-sys = { version = "0.3.107", features = ["Window", "MediaQueryList", "Navigator", "Storage", "Document", "Element", "HtmlElement", "HtmlAnchorElement", "HtmlInputElement", "FileList", "File", "FileReader", "Blob", "BlobPropertyBag", "Url", "BeforeUnloadEvent", "Event", "EventTarget", "IdbFactory", "IdbOpenDbRequest", "IdbRequest", "IdbDatabase", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore"] }
 js-sys = "0.3.107"
 wasm-bindgen = "0.2.130"
 
