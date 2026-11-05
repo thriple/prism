@@ -41,14 +41,24 @@ pub fn spring(ctx: &Context, id: Id, target: f32, spring: Spring) -> f32 {
     spring_with_speed(ctx, id, target, spring).0
 }
 
+/// Like [`spring`], but the first time `id` is seen it starts at `start`
+/// (a menu opening from nothing).
+pub fn spring_from(ctx: &Context, id: Id, start: f32, target: f32, spring: Spring) -> f32 {
+    step(ctx, id, f64::from(start), target, spring).0
+}
+
 /// Like [`spring`], and also returns the current speed (units per second).
 pub fn spring_with_speed(ctx: &Context, id: Id, target: f32, spring: Spring) -> (f32, f32) {
+    step(ctx, id, f64::from(target), target, spring)
+}
+
+fn step(ctx: &Context, id: Id, start: f64, target: f32, spring: Spring) -> (f32, f32) {
     let now = ctx.input(|i| i.time);
     let reduce = motion(ctx).reduce_motion;
     let target = f64::from(target);
     let state = ctx.data_mut(|d| {
         let s = d.get_temp_mut_or_insert_with(id, || State {
-            spring: SpringValue::at(target),
+            spring: SpringValue::at(start),
             last_time: now,
         });
         let dt = (now - s.last_time).clamp(0.0, theme::motion::MAX_STEP);

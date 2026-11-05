@@ -12,6 +12,7 @@ pub mod aurora;
 pub mod emboss;
 pub mod fonts;
 pub mod glass;
+pub mod icon;
 pub mod spring;
 pub mod theme;
 pub mod widgets;

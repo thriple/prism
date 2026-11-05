@@ -54,6 +54,14 @@ pub mod color {
     pub const FROST_LIST: f32 = 0.42;
     /// How dim a greyed-out control is.
     pub const DISABLED_OPACITY: f32 = 0.4;
+    /// Greyed dock buttons and menu rows (prototype: .36).
+    pub const GREYED_OPACITY: f32 = 0.36;
+    /// Menu separators (white at 7%).
+    pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(18, 18, 18, 18);
+    /// Behind dialogs: the rest of the app is dimmed (black at 35%).
+    pub const SCRIM: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 89);
+    /// Menu bar titles brighten on hover.
+    pub const INK_BRIGHT: Color32 = Color32::WHITE;
 }
 
 /// Corner radii in points.
@@ -68,6 +76,11 @@ pub mod radius {
     pub const TOOLTIP: f32 = 10.0;
     /// Use for pills and circles: larger than any control is tall.
     pub const ROUND: f32 = 1000.0;
+    /// Tool dock buttons, menu rows, the top bar and dialogs (prototype CSS).
+    pub const DOCK_BUTTON: f32 = 14.0;
+    pub const MENU_ROW: f32 = 9.0;
+    pub const KEYCAP: f32 = 6.0;
+    pub const BAR: f32 = 4.0;
 }
 
 /// Text sizes in points, and the font families.
@@ -82,6 +95,14 @@ pub mod text {
     pub const MONO: f32 = 12.0;
     /// Hotkey hints on dock buttons.
     pub const HINT: f32 = 9.0;
+    /// Small uppercase group labels (dock groups, menu headings).
+    pub const LABEL: f32 = 9.5;
+    /// Keys shown at the right of menu rows.
+    pub const MENU_KEY: f32 = 11.0;
+    /// Dialog titles (Planned Features, Keyboard Shortcuts).
+    pub const DIALOG_TITLE: f32 = 16.0;
+    /// Extra spacing between letters of uppercase labels.
+    pub const LABEL_SPACING: f32 = 1.0;
 
     pub const SANS: &str = "plex-sans";
     pub const SANS_MEDIUM: &str = "plex-sans-medium";
@@ -123,6 +144,65 @@ pub mod size {
     pub const ROW_GAP: f32 = 10.0;
     /// One grain texel per point.
     pub const GRAIN_TILE: f32 = 64.0;
+
+    // The app's frame, from the prototype's CSS.
+    /// Space around and between the top bar, dock, viewport and status bar.
+    pub const GAP: f32 = 16.0;
+    pub const TOP_BAR_HEIGHT: f32 = 52.0;
+    pub const TOP_BAR_PAD: f32 = 14.0;
+    pub const STATUS_HEIGHT: f32 = 36.0;
+    pub const MENU_BAR_BUTTON_HEIGHT: f32 = 34.0;
+    pub const MENU_BAR_BUTTON_PAD: f32 = 12.0;
+    pub const MENU_BAR_GAP: f32 = 2.0;
+    /// Tool dock: two columns of square buttons.
+    pub const DOCK_BUTTON: f32 = 44.0;
+    pub const DOCK_GAP: f32 = 8.0;
+    pub const DOCK_PAD_X: f32 = 10.0;
+    pub const DOCK_PAD_Y: f32 = 14.0;
+    pub const DOCK_COLUMNS: usize = 2;
+    pub const DOCK_GROUP_GAP: f32 = 8.0;
+    pub const DOCK_ICON: f32 = 22.0;
+    pub const DOCK_DOT: f32 = 6.0;
+    pub const DOCK_DOT_INSET: f32 = 7.0;
+    pub const DOCK_HINT_INSET: [f32; 2] = [6.0, 3.0];
+    /// The dock's scroll bar is thinner than its side padding, so it never
+    /// pushes the buttons sideways or adds a horizontal scroll bar.
+    pub const DOCK_SCROLL_BAR: f32 = 4.0;
+    /// Icons: drawn in a 24 by 24 box, stroked.
+    pub const ICON_BOX: f32 = 24.0;
+    pub const ICON_STROKE: f32 = 1.7;
+    /// Menus.
+    pub const MENU_PAD: f32 = 6.0;
+    pub const MENU_MIN_WIDTH: f32 = 212.0;
+    pub const MENU_ROW_HEIGHT: f32 = 30.0;
+    pub const MENU_ROW_PAD: [f32; 2] = [4.0, 10.0];
+    pub const MENU_CHECK: f32 = 14.0;
+    pub const MENU_CHECK_DOT: f32 = 2.5;
+    pub const MENU_KEY_GAP: f32 = 18.0;
+    pub const MENU_SUB_GAP: f32 = 4.0;
+    pub const MENU_GAP: f32 = 6.0;
+    pub const MENU_SEPARATOR: [f32; 2] = [5.0, 8.0];
+    pub const MENU_HEAD_HEIGHT: f32 = 26.0;
+    pub const MENU_ARROW: f32 = 3.0;
+    pub const SCREEN_MARGIN: f32 = 8.0;
+    /// Tooltips beside dock buttons.
+    pub const TIP_GAP: f32 = 10.0;
+    pub const TIP_PAD: [f32; 2] = [10.0, 6.0];
+    /// Keycaps.
+    pub const KEYCAP_PAD: [f32; 2] = [6.0, 2.0];
+    /// Dialogs.
+    pub const DIALOG_PAD: [f32; 2] = [22.0, 20.0];
+    pub const DIALOG_WIDTH: f32 = 520.0;
+    pub const DIALOG_WIDE: f32 = 760.0;
+    pub const DIALOG_MAX_HEIGHT: f32 = 0.8;
+    pub const PROGRESS_HEIGHT: f32 = 8.0;
+    pub const CLOSE_BUTTON: f32 = 30.0;
+    /// Text fields.
+    pub const FIELD_HEIGHT: f32 = 36.0;
+    pub const FIELD_PAD: f32 = 12.0;
+    /// Small buttons (table cells, dialog actions).
+    pub const SMALL_BUTTON_HEIGHT: f32 = 30.0;
+    pub const SMALL_BUTTON_PAD: f32 = 12.0;
 }
 
 /// Emboss depths: the shadow offset in points at depth 1 (`a` in `UI-STYLE.md`).
@@ -151,6 +231,18 @@ pub mod depth {
     /// CSS blur is twice the offset; egui's blur ramp is this many times the CSS blur.
     pub const BLUR_RAMP: f32 = 1.5;
 
+    /// Tool dock buttons (prototype `.raised`: a = 5, hover 7, pressed b = 4).
+    pub const DOCK: f32 = 5.0;
+    pub const DOCK_HOVER: f32 = 1.4;
+    pub const DOCK_PRESSED: f32 = -0.8;
+    /// Greyed dock buttons stay slightly raised (a = 2).
+    pub const DOCK_DISABLED: f32 = 0.4;
+    /// Hover and open menu titles and menu rows: a small inset.
+    pub const MENU_INSET: f32 = 2.0;
+    /// Text fields and progress bars are wells.
+    pub const FIELD_WELL: f32 = 2.0;
+    pub const BAR_WELL: f32 = 1.0;
+
     /// Floating cards (windows, menus): the drop shadow, at depth 1.
     pub const FLOAT_OFFSET: f32 = 10.0;
     pub const FLOAT_BLUR: f32 = 24.0;
@@ -174,6 +266,8 @@ pub mod motion {
     pub const POP_RISE: f32 = 8.0;
     /// Popups start at this scale.
     pub const POP_SCALE: f32 = 0.92;
+    /// Dock icons shrink a little while pressed or active.
+    pub const ICON_PRESS: f32 = 0.94;
     /// Longest time step a spring takes in one frame (seconds).
     pub const MAX_STEP: f64 = 0.1;
 }

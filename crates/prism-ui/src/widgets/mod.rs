@@ -1,13 +1,23 @@
 //! Soft controls, re-implemented from the kit's `components/soft`.
 
 mod button;
+mod dialog;
+mod field;
 mod groove;
+mod kbd;
+pub mod menu;
 mod panel;
 mod select;
 mod slider;
 mod toggle;
+mod tool_button;
+pub mod tooltip;
 
 pub use button::SoftButton;
+pub use dialog::{DialogResponse, SoftDialog};
+pub use field::field;
+pub use kbd::keycap;
+pub use tool_button::ToolButton;
 pub use groove::groove;
 pub use panel::SoftPanel;
 pub use select::SoftSelect;

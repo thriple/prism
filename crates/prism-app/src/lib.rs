@@ -2,6 +2,7 @@
 //!
 //! The same code runs natively (Windows, macOS) and on the web.
 
+pub mod actions;
 mod app;
 pub mod frame_stats;
 mod gpu;
