@@ -105,7 +105,7 @@ SketchUp's toolbar is grouped as Principal, Drawing, Edit, Construction, Camera,
 | Offset (F) | Same, and also works on curved faces and curve chains |
 | Follow Me | Exact sweep along exact paths |
 | Tape Measure (T), Protractor | Same; guides take part in inference |
-| Eraser (E) | Same; erasing an edge merges the faces on either side |
+| Eraser (E) | Erasing an edge removes the faces that use it, on both sides (owner's decision, DECISIONS #15); erasing a hole's edge closes the hole |
 | Paint Bucket (B) | Same, with physically based materials |
 | Make Group / Make Component (G) | Same semantics (section 1.2) |
 | Dimensions, Text, Axes, Section Plane | Same |

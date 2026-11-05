@@ -884,7 +884,7 @@
      ]
     }
    },
-   "status": "review: when a face with a hole is pulled and the hole borders another face, no floor is made under the outer boundary. Decide the intended behaviour before relying on this case."
+   "status": "verified"
   },
   {
    "id": "pushpull_standalone_rect",
