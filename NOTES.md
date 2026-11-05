@@ -75,6 +75,8 @@ Things noticed while building that are outside the current chunk, defaults that 
 
 ## For the next Claude Code session (written 2026-11-05)
 
+**Research for the next chunks (2026-11-06):** read `docs/research/files-and-formats.md` (the next chunk) and `docs/research/groups-and-components.md` (the one after). The first has one fix to make before saving is built: turn on serde_json's `float_roundtrip`, or about 11% of coordinates come back from JSON one bit off.
+
 The browser prototype was updated while the Soft Theme chunk was being built. Use the latest `docs/prototype/Main.dc.html`, and read `docs/prototype/README.md` for where things are.
 
 1. **Buttons and menus:** the prototype's action table, menu bar, tool dock, icons, right-click menu and Planned Features list are the design for the Actions & Keys chunk. See "Pick up the prototype's buttons and menus" in `docs/briefs/03-actions-and-keys.md`.
