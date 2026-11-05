@@ -66,6 +66,8 @@ Things noticed while building that are outside the current chunk, defaults that 
 - Windows and macOS: turning on the system's reduce-motion setting makes the demo controls jump with no animation.
 
 **Leftovers and ideas**
+- Release build 4 failed once: GitHub answered 403 when creating its release, and build 5 with the same workflow worked. The release steps now retry up to four times.
+- An old release from the Android project is still on the Releases page, tag `build-4`, also titled "Prism build 4". It is not one of these builds. Delete it if it confuses (left alone here: deleting needs the owner's OK).
 - The kit's `BLUR_IN` (content arriving from a blur) is not done: egui cannot blur. Opacity, scale and rise are done.
 - Popups close straight away when you pick an item, with no closing animation for the list contents (the list itself fades and shrinks).
 - Panels float for now. Docking (`PanelLayout`, `DockPanel`) comes with the panels that need it.

@@ -96,23 +96,32 @@ jobs:
         run: |
           # A re-run of the same workflow run reuses the number, so replace it.
           gh release delete "$BUILD_TAG" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          gh release create "$BUILD_TAG" assets/*.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Prism build ${{ github.run_number }}" \
-            --notes-file notes.md \
-            --prerelease
+          # GitHub now and then refuses a release with a 403; try again before failing.
+          for try in 1 2 3 4; do
+            gh release create "$BUILD_TAG" assets/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Prism build ${{ github.run_number }}" \
+              --notes-file notes.md \
+              --prerelease && break
+            [ "$try" = 4 ] && exit 1
+            sleep $((try * 10))
+          done
       - name: Replace the latest release with these zips
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete "$RELEASE" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          gh release create "$RELEASE" assets/*.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Prism ($RELEASE)" \
-            --notes-file notes.md \
-            --latest
+          for try in 1 2 3 4; do
+            gh release create "$RELEASE" assets/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Prism ($RELEASE)" \
+              --notes-file notes.md \
+              --latest && break
+            [ "$try" = 4 ] && exit 1
+            sleep $((try * 10))
+          done
       - name: Remove numbered builds beyond the newest ${{ env.KEEP_BUILDS }}
         env:
           GH_TOKEN: ${{ github.token }}
