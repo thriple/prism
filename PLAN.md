@@ -259,7 +259,7 @@ Behaviour that makes it feel right:
   - O, H and Z pressed in the middle of an operation are temporary: release the mouse or press Esc to return to the tool you were using.
   - They are also normal tools that stay active when picked on their own.
 - **Smooth but fast.** A short ease on scroll zoom and Zoom Extents, never long enough to feel laggy, and it can be switched off.
-- **Trackpads**, which SketchUp handles poorly: two-finger scroll orbits, pinch zooms at the cursor, Shift + two-finger scroll pans. All of this can be changed.
+- **Trackpads**, which SketchUp handles poorly: two-finger scroll pans, pinch zooms at the cursor, and orbit happens only with the Orbit tool (O) or middle-drag, never from scroll. All of this can be changed.
 - **Keymap presets**: SketchUp (the default), plus Blender and Fusion so users from other tools can keep their habits. Every binding can be remapped (section 1.6).
 
 ### 1.6 Commands (not tools)
@@ -277,7 +277,7 @@ Proposed menu bar, close to SketchUp's layout:
 
 | Menu | Contents |
 |---|---|
-| File | New, Open, Save, Save As, Import, Export (section 1.3 presets), recent files |
+| File | New, Open, Save, Save As, Import, Export (section 1.3 presets), recent files, **Document Settings** (units, and the separator used in the measurement box) |
 | Edit | Undo/Redo, Cut/Copy/Paste, Paste in Place, Delete, Select All / Deselect All, Hide Selected / Unhide Selected / Unhide All / Isolate, Lock/Unlock, Make Group / Make Component, Explode, Make Unique, Flip Along X/Y/Z, Intersect Faces, Reverse/Orient Faces, Soften/Smooth, Weld |
 | View | Toolbars and panels, show faces / lines / points, axes, ground and grid, guides, hidden geometry, X-ray, line and outline thickness, edge and face styles, lighting (default or sun), shadows, saved styles, section display (section 1.14) |
 | Camera | Orbit, Pan, Zoom, Zoom Extents, Zoom Selection, standard views, perspective/parallel, field of view, Walk, Look Around |
@@ -286,7 +286,8 @@ Proposed menu bar, close to SketchUp's layout:
 | Solid | Union, Subtract, Intersect, Trim, Split, Outer Shell, Convert (curve chain ↔ NURBS curve, faces ↔ smooth patch), validate and heal |
 | Render | Materials, lights, environment, render view, render settings, engine, output and passes, render queue (from M7, section 1.16) |
 | Window | Outliner, Inspector (section 1.17), View Settings, Model Health, Entity Info, Materials, Components, Tags, Preferences (including keymap and inference tuning) |
-| Help | Shortcuts reference, the tool hint panel, about |
+| Scripting | Greyed out for now. A placeholder for a future scripting and automation layer (section 8, decision 6) |
+| Help | Shortcuts reference, the tool hint panel, **Pen and tablet input** (a toggle, greyed out until pen support exists), about |
 
 The right-click context menu shows the subset of this registry that applies to what is under the cursor or selected, for example Flip Along, Make Group, Reverse Faces and Intersect.
 
@@ -993,22 +994,22 @@ The milestones below are broken into chunks that can be built and tried one at a
 - **Scope.** The tiers are strictly sequential. Tier 1's feel is the product, and nothing later starts until M3 feels right. Since then the plan has grown (view settings, Inspector, fit and mechanisms, model health, scenes), so a **first usable build** needs a fixed cut: Skeleton, Core Model, Viewport, Actions & Keys, Inference & Drawing, Edit Tools and Files & Formats. Everything else waits until that build feels right.
 - **The web build's limits.** Multi-threaded WASM needs cross-origin isolation headers, which GitHub Pages cannot set, so the web build needs a service-worker workaround or another host. A 32-bit WASM build is also limited to a few GB of memory, which caps model size in the browser.
 - **Precision at mm to km scales, and thin things seen from far away.** Rendering relative to the eye fixes jitter in the *positions* of vertices, but it does not fix the cause of back faces and edges showing through thin walls at a distance, which is the depth buffer running out of resolution (see section 4, depth precision). It needs its own plan, and a screenshot test.
-- **Performance budget is undefined.** Picking, occlusion and hidden-line drawing need a target size (for example, how many edges and triangles stay interactive on an integrated GPU) and a design for it (a spatial index, GPU picking by ID buffer, level of detail). Without a number, Model Health, the Fit Helper and the Inspector previews have nothing to be measured against.
+- **Performance budget: set, to be measured.** See section 8, decision 8. Picking, occlusion and hidden-line drawing need a target size (for example, how many edges and triangles stay interactive on an integrated GPU) and a design for it (a spatial index, GPU picking by ID buffer, level of detail). Without a number, Model Health, the Fit Helper and the Inspector previews have nothing to be measured against.
 - **Planar faces under transforms.** After a rotation, a face with more than three vertices is no longer exactly flat. Each planar face must own its plane and its vertices must be placed on it, or faces break into triangles (the prototype's workaround).
 - **Dependencies and licences are not audited.** A table of every library, its licence and whether it works in WASM is needed before the licence decision (section 8). Candidates still to check: a 2D polygon offset library for kerf and corner relief (Clipper2 is a likely fit), and a distance and contact query library for clearance and motion checks (Parry, from the Rapier family).
-- **No scripting or automation.** SketchUp's strength is its extension ecosystem. The plan has no scripting API, macros or batch mode, which also limits testing and the Blender bridge.
-- **Input conflicts to settle.** The measurement box uses a comma between values (`300,200`), which is also the decimal separator in many locales. The plan says two-finger trackpad scroll orbits (1.5a), which contradicts the decision that the wheel only zooms. Shift+letter hotkeys (Shift+Z, Shift+S) collide with Shift being held as a lock while a tool is active.
+- **Scripting is stubbed.** There is a greyed-out Scripting menu and a clean action registry and command log, but no API yet (section 8, decision 6). SketchUp's strength is its extension ecosystem. The plan has no scripting API, macros or batch mode, which also limits testing and the Blender bridge.
+- **Input conflicts.** The measurement-box separator and trackpad defaults are decided (section 8, decisions 4 and 5). Still to settle: Shift+letter hotkeys (Shift+Z, Shift+S) collide with Shift being held as a lock while a tool is active.
 
-## 8. Decisions needed from you
+## 8. Decisions
 
 1. **Platform:** decided. Rust/wgpu, with native Windows and macOS builds and a web build (section 3.1).
-2. **Name:** keep "Prism" (it suits a renderer), or rename.
-3. **Licence:** open source (MIT/Apache) or closed. This affects whether OCCT (LGPL) is an acceptable fallback. It also decides how Blender can be used: Cycles (Apache) can be built in under any licence, and Blender can be run as a separate program, but copying Blender's own GPL code means Prism must be released under the GPL as soon as anyone else gets a copy. "Not for sale" does not change that.
-4. **Input devices:** mouse and keyboard only for now, or should pen and tablet shape the early design? Also decide trackpad defaults (scroll and pinch), since the wheel only zooms.
-5. **Measurement box separators:** a separator that does not clash with decimal commas (a semicolon, Tab, or a locale-aware choice).
-6. **Scripting and automation:** none, or an embedded scripting language and a batch mode.
-7. **First usable build:** confirm the cut listed under Risks, so the rest can wait.
-8. **Performance targets:** the model size that must stay interactive, on which hardware.
+2. **Name:** decided. Keep "Prism".
+3. **Licence:** decided. Open source, MIT or Apache-2.0 (the exact pair is picked when the first release is cut). This allows Cycles (Apache) to be built in, and Blender to be run as a separate program. Blender's own GPL code is still never copied in. OCCT (LGPL) stays a fallback only if its terms are acceptable for an open-source project.
+4. **Input devices:** decided. Mouse and keyboard only for now, and pen and tablet do not shape the early design. Help menu has a **Pen and tablet input** toggle, greyed out until support exists. Trackpad defaults: two-finger scroll pans, pinch zooms at the cursor, and orbit only through the Orbit tool or middle-drag on a laptop. The wheel on a mouse only zooms.
+5. **Measurement box separators:** decided. The separator follows the user's locale (a comma between values where the decimal mark is `.`, a semicolon where the decimal mark is `,`), and `;` is always accepted. Units and the separator can be changed in File > Document Settings.
+6. **Scripting and automation:** decided for now. A greyed-out top-level **Scripting** menu is a stub. The language and API are not chosen. Keep the action registry and command log clean enough to add one later.
+7. **First usable build:** decided. Skeleton, Core Model, Viewport, Actions & Keys, Inference & Drawing, Edit Tools and Files & Formats. Everything else waits until that build feels right.
+8. **Performance targets:** decided as a provisional target, to be measured. The owner's machine is the reference: Intel Core i7-5820K at 3.3 GHz (6 cores, 2014), 32 GB RAM, a GPU with 8 GB of video memory. SketchUp struggles there with files over about 50 MB. Prism's goal is to stay interactive (orbit at 30 fps or better, picking and inference under 16 ms) on a model that is **about twice the size of the file SketchUp struggles with**, with hidden objects costing nothing (section 1.14). The first chunk that renders real geometry measures how many triangles and edges that is, records the numbers in `NOTES.md`, and replaces this sentence with them.
 
 ---
 

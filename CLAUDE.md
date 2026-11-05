@@ -12,7 +12,7 @@ Read these first, in this order:
 
 1. **One chunk at a time.** Build only the chunk you were asked for, as described in its brief. If you notice something outside the brief, add a line to `NOTES.md` and carry on. Do not start the next chunk.
 2. **Say what you did in plain English.** Keep commit messages, docs and comments short and clear.
-3. **Ask before anything destructive:** deleting existing files (the repo still has an Android video player that the plan removes), force pushes, rewriting history.
+3. **Ask before anything destructive:** deleting existing files, force pushes, rewriting history.
 4. **When a decision is open,** use the default in `docs/DECISIONS.md`, note that you did, and keep going. Do not invent a new decision silently.
 5. **Finish a chunk properly:** tests pass, CI is green, the "Where we are" column in `PLAN.md` section 6.0 is updated, and `NOTES.md` lists anything left over.
 

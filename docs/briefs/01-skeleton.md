@@ -19,7 +19,7 @@
 Everything else: geometry, tools, menus, a renderer beyond clearing the screen, WASM threads, a PWA manifest, signing and notarising.
 
 ## Steps
-1. Ask the owner to confirm before touching the Android video player (see DECISIONS.md #11). Do not delete it. If the workspace needs to live beside it, put it in a new folder.
+1. The old Android video player is already removed (it is in git history). Create the workspace at the repo root.
 2. Create the workspace and get the native window working on the machine you have.
 3. Get the web build working locally.
 4. Write the CI workflows. Test them by pushing a branch.

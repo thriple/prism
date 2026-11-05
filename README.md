@@ -22,7 +22,7 @@ Copy everything into the root of the `thriple/prism` repository, commit it, and 
 
 Start with chunk 1 and only move on when its acceptance list is done.
 
-**Chunk 1.** "Read CLAUDE.md, PLAN.md and docs/DECISIONS.md. Then build the chunk in docs/briefs/01-skeleton.md. Ask me before deleting the Android video player."
+**Chunk 1.** "Read CLAUDE.md, PLAN.md and docs/DECISIONS.md. Then build the chunk in docs/briefs/01-skeleton.md."
 
 **Chunk 2.** "Read CLAUDE.md, then build docs/briefs/02-core-model.md. The golden cases in docs/acceptance/golden-cases.json must all pass."
 
