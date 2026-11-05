@@ -15,3 +15,5 @@ Until the owner decides, use the default. Note in `NOTES.md` whenever a default 
 | 9 | NURBS kernel | Open | Not needed yet. Design the edge and face types so exact curves and surfaces can be added (PLAN.md 1.1), but implement lines and planes only. |
 | 10 | iPad | Open | Hosted web build only. Check that it runs at all and record the result in `NOTES.md`. |
 | 11 | Existing Android video player in the repo | Decided | Deleted in the first commit of the plan. It is in git history. |
+| 12 | Fonts under the SIL Open Font Licence | Decided | Allowed for bundled fonts (not code). Use IBM Plex Sans and IBM Plex Mono. |
+| 13 | Large display type from the Motion Kit | Decided | Not used. Ignore the giant header type in `soft.html`, here and in any app screen. |

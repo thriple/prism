@@ -6,14 +6,17 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
+    # Changes to documents only do not need a new build.
+    paths-ignore: ["**.md", "docs/**", "LICENSE-*"]
 
 permissions:
   contents: write
 
-# A newer push replaces a build that is still running.
+# One build at a time. A build in progress always finishes; if several pushes
+# arrive meanwhile, only the newest of them is built next.
 concurrency:
   group: release-${{ github.ref_type }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always

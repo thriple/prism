@@ -44,6 +44,7 @@ In the kit, controls are one opaque raised material, and some parts (slider rail
 - **IBM Plex Sans**, 400 / 500 / 600, for labels, menus and text. Menus and buttons are 13 px, tooltips 12 px.
 - **IBM Plex Mono**, 400 / 500, for numbers, values, hotkey hints (9 px on dock buttons) and the measurement box.
 - Both are open licensed (SIL OFL). Bundle them in the app; do not load from the internet.
+- **No display type.** The kit's `soft.html` has a huge header in giant type. Ignore it: it does not belong in Prism. The largest text in the app is a panel or dialog title, a little above the 13 px body size.
 
 ## The emboss recipe
 Every control has four shadows so it can animate smoothly between raised and pressed:
