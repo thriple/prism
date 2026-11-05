@@ -26,7 +26,7 @@ The viewport (the 3D drawing area) is drawn by our own renderer. This style appl
 Use a kit component whenever one fits, as the kit's own README says, and do not invent a second style for the same job.
 
 ## Glass cutouts
-In the kit, controls are one opaque raised material, and some parts (slider rails, toggle tracks, dropdown lists) are recessed windows onto a slowly morphing aurora, tinted and grained. In Prism, use cutouts for: slider rails, toggle tracks, dropdown lists, and large panel backgrounds if it looks good. Do not put the aurora behind the 3D viewport. The aurora must freeze when "reduce motion" is on, and must cost almost nothing (the kit draws it at 1/8 resolution). If it slows the viewport on a weak GPU, turn it off before anything else is cut.
+In the kit, controls are one opaque raised material, and some parts (slider rails, toggle tracks, dropdown lists) are recessed windows onto a slowly morphing aurora, tinted and grained. In Prism, use cutouts for: slider rails, toggle tracks, dropdown lists, and large panel backgrounds if it looks good. Do not put the aurora behind the 3D viewport. **The aurora is still by default.** The kit animates it, but Prism draws it once as a static image and only redraws when something changes (a window moves or resizes, the theme changes, or a control inside a cutout changes). No per-frame redraw, so an idle window uses no power for it. Animating the aurora is an optional setting, off by default, and it also stays off with "reduce motion" or on battery. Draw it at 1/8 resolution as the kit does. If the cutouts ever slow the viewport on a weak GPU, drop them before cutting anything else.
 
 ## Colour tokens
 | Token | Value | Use |
@@ -65,7 +65,7 @@ Every control has four shadows so it can animate smoothly between raised and pre
 - Soft buttons: a depth value goes 1 (raised) at rest, 1.3 on hover, -0.7 when pressed, 0 is flat. Press uses a firm spring (700 / 40), release a bouncy one (380 / 13) that overshoots past rest. The label sinks a beat behind the surface. Always four shadows, so it animates through flat.
 - The prototype's CSS equivalents (`cubic-bezier(.34, 1.56, .64, 1)`, 0.12 s press, 0.38 s release) are fine as a fallback in places where a spring is not available.
 - The active tool shows a small accent dot at the top-right of its dock button that scales in.
-- Motion is short and never delays an action. A "reduce motion" setting (default: follow the operating system) makes springs instant and freezes the aurora.
+- Motion is short and never delays an action. A "reduce motion" setting (default: follow the operating system) makes springs instant. (The aurora is already still by default.)
 
 ## States
 - **Greyed out:** an action with no implementation, or not available now, is shown dimmed, cannot be run, and never disappears. Hover shows no emboss.
