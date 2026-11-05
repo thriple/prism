@@ -274,7 +274,7 @@ fn path(d: &str) -> Result<Vec<Line>, String> {
         match cmd.to_ascii_uppercase() {
             'M' => {
                 finish(&mut pts, &mut lines, false);
-                for (i, xy) in args.chunks_exact(2).enumerate() {
+                for (i, xy) in args.as_chunks::<2>().0.iter().enumerate() {
                     pos = at(pos, xy[0], xy[1]);
                     if i == 0 {
                         start = pos;
@@ -284,7 +284,7 @@ fn path(d: &str) -> Result<Vec<Line>, String> {
                 last_ctrl = None;
             }
             'L' => {
-                for xy in args.chunks_exact(2) {
+                for xy in args.as_chunks::<2>().0 {
                     pos = at(pos, xy[0], xy[1]);
                     pts.push(pos);
                 }
@@ -334,7 +334,7 @@ fn path(d: &str) -> Result<Vec<Line>, String> {
                 }
             }
             'Q' => {
-                for a in args.chunks_exact(4) {
+                for a in args.as_chunks::<4>().0 {
                     let (c, end) = (at(pos, a[0], a[1]), at(pos, a[2], a[3]));
                     if pts.is_empty() {
                         pts.push(pos);
@@ -352,7 +352,7 @@ fn path(d: &str) -> Result<Vec<Line>, String> {
                 last_ctrl = None;
             }
             'A' => {
-                for a in args.chunks_exact(7) {
+                for a in args.as_chunks::<7>().0 {
                     let end = at(pos, a[5], a[6]);
                     if pts.is_empty() {
                         pts.push(pos);
