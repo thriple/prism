@@ -13,7 +13,7 @@ Things noticed while building that are outside the current chunk, defaults that 
 **Still to check by a person**
 - **GitHub Pages:** Source must be "GitHub Actions" (settings > Pages). The script tries to set it. Confirm the web page loads at https://thriple.github.io/prism/.
 - **iPad (DECISIONS #10):** not tested yet. Open the Pages URL on the iPad and record here: runs or not, iPadOS version, browser.
-- **macOS:** the `v0.0.1` Mac download was blocked as soon as it was opened. Cause: the `.app` bundle had no signature at all (only the program inside had the linker's automatic one), and Apple Silicon Macs refuse such a download, usually with "damaged and can't be opened" and no way past it. Fixed by `packaging/macos/make-app.sh`, which signs the bundle ad hoc and checks the signature. CI now builds a signed test app on every push (artifact `prism-macos-test` on the run's page), so it can be tried before the next tag. It still needs one approval the first time: open it, click Done, then **System Settings > Privacy & Security > Open Anyway** (right-click > Open no longer skips the check on macOS 15 and later). Record the result here, with the macOS version and chip. `v0.0.1` itself was not rebuilt: tag `v0.0.2` to get a fixed release.
+- **macOS:** the `v0.0.1` Mac download was blocked as soon as it was opened. Cause: the `.app` bundle had no signature at all (only the program inside had the linker's automatic one), and Apple Silicon Macs refuse such a download, usually with "damaged and can't be opened" and no way past it. Fixed by `packaging/macos/make-app.sh`, which signs the bundle ad hoc and checks the signature. Every push now rebuilds the **latest** release, so the fixed app is always at the same download link. It still needs one approval the first time: open it, click Done, then **System Settings > Privacy & Security > Open Anyway** (right-click > Open no longer skips the check on macOS 15 and later). Record the result here, with the macOS version and chip.
 - **Proper signing (later, PLAN 3.1 item 5):** a paid Apple Developer ID and notarising remove the warning entirely. Not needed while Prism is only for the owner.
 
 **Seen in the Windows screenshot (for Actions & Keys)**
@@ -26,6 +26,7 @@ Things noticed while building that are outside the current chunk, defaults that 
 - High DPI on the web: with a real 2x device scale the canvas is 2400x1500 for a 1200x750 page. Playwright's emulated scale factor does not report device pixels, so use `--force-device-scale-factor` when testing that.
 
 **Decisions and defaults used**
+- Releases: the owner wants fast iteration, not versions. Every push replaces one release called `latest` (Windows and Mac zips with fixed names). Version tags still work if ever wanted.
 - Versions: winit 0.30 (0.31 is still beta), wgpu 30, egui 0.37. egui-wgpu 0.37 needs exactly these.
 - The WebGL2 fallback came for free through egui-wgpu's default `webgl` feature, so it is on.
 - The surface uses a plain (non-sRGB) 8-bit format when offered, because egui expects it. The Viewport chunk may want an sRGB or HDR target for shading; the clear colour already handles both.

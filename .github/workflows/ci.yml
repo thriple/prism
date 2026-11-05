@@ -40,16 +40,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --workspace
       - run: cargo test --workspace
-      - name: Make a signed Prism.app (macOS)
-        if: runner.os == 'macOS'
-        run: packaging/macos/make-app.sh 0.0.0 Prism-macos-test.zip target/release/prism-app
-      - name: Keep the macOS test app
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: prism-macos-test
-          path: Prism-macos-test.zip
-          retention-days: 7
 
   web:
     name: Web build

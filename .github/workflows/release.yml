@@ -1,14 +1,24 @@
 name: Release
 
+# Every push rebuilds the "latest" release (fixed download links, no versions).
+# A v* tag, if anyone ever makes one, gets its own release as well.
 on:
   push:
+    branches: ["**"]
     tags: ["v*"]
 
 permissions:
   contents: write
 
+# A newer push replaces a build that is still running.
+concurrency:
+  group: release-${{ github.ref_type }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  # "latest" for ordinary pushes, the tag name for v* tags.
+  RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
 
 jobs:
   windows:
@@ -17,17 +27,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p prism-app
       - name: Zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force out/Prism | Out-Null
           Copy-Item target/release/prism-app.exe out/Prism/Prism.exe
-          Compress-Archive -Path out/Prism -DestinationPath "Prism-${{ github.ref_name }}-windows-x64.zip"
+          Compress-Archive -Path out/Prism -DestinationPath "Prism-windows.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: Prism-*.zip
+          path: Prism-windows.zip
 
   macos:
     name: macOS app (universal, ad-hoc signed)
@@ -37,17 +48,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p prism-app --target aarch64-apple-darwin
       - run: cargo build --release -p prism-app --target x86_64-apple-darwin
       - name: Make Prism.app and zip it
         run: |
-          packaging/macos/make-app.sh "${GITHUB_REF_NAME#v}" "Prism-${GITHUB_REF_NAME}-macos-universal.zip" \
+          packaging/macos/make-app.sh "0.0.${{ github.run_number }}" Prism-macos.zip \
             target/aarch64-apple-darwin/release/prism-app \
             target/x86_64-apple-darwin/release/prism-app
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: Prism-*.zip
+          path: Prism-macos.zip
 
   publish:
     name: Publish the release
@@ -59,17 +71,20 @@ jobs:
         with:
           path: assets
           merge-multiple: true
-      - name: Create the release and attach the zips
+      - name: Replace the release with these zips
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The release may already exist if it was made on the GitHub website,
-          # which also creates the tag. Then just attach the zips to it.
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" assets/*.zip --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$GITHUB_REF_NAME" assets/*.zip \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Prism $GITHUB_REF_NAME" \
-              --notes-file packaging/release-notes.md
-          fi
+          {
+            echo "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7} ($(date -u '+%Y-%m-%d %H:%M UTC'))."
+            echo
+            cat packaging/release-notes.md
+          } > notes.md
+          # Drop the old release and its tag, then make a fresh one at this commit.
+          gh release delete "$RELEASE" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create "$RELEASE" assets/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Prism ($RELEASE)" \
+            --notes-file notes.md \
+            --latest
