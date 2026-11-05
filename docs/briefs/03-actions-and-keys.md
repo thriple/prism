@@ -29,3 +29,14 @@ Tool behaviour, the Mac system menu bar (later), mode switching, scenes, renderi
 - [ ] Recording a conflicting key in the hotkeys window shows the other action and the three choices.
 - [ ] Greyed actions cannot be run, and say why on hover ("Not in this prototype yet" for now).
 - [ ] It matches `docs/UI-STYLE.md` and the kit's `soft.html` and `demo.html`, side by side, including spring motion and the reduce-motion setting.
+
+## Pick up the prototype's buttons and menus (updated 2026-11-05)
+
+The prototype (`docs/prototype/Main.dc.html`, latest version) already has the finished design of everything this chunk builds. Do not redesign it. Copy it into the Rust app:
+- **Action table:** `const ACT` lists every action with its id, name, hotkey, handler and "enabled when" rule (about 200 actions, the ones with no handler are greyed). Keep the ids and names.
+- **Menus:** `const MENUBAR` has the ten top-level menus and what is in each, with submenus and separators.
+- **Tool dock:** `const DOCK` has the groups and the order of the tool buttons, and `const IC` has the icon drawings. Reuse the icons (convert them to something egui can draw) so the dock looks the same.
+- **Right-click menu:** `onContext(` shows which items appear for a face, an edge, or empty space.
+- **Planned Features list:** `openFeatures(` and `const BEHAVIOURS`, with built items crossed out.
+- **New since the first handoff:** the actions **View > Smart Guides** (Ctrl+U) and **Help > Smart Guides Demo Scene**. The demo scene is a prototype-only helper; do not port it. Box select and Smart Guides have no menu entries beyond that.
+- **Pending from the plan:** a top-level **Scripting** menu, greyed out, and **File > Document Settings** and **Help > Pen and tablet input** (see `docs/DECISIONS.md`). These are not in the prototype yet, so add them to the registry.
