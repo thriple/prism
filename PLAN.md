@@ -20,7 +20,7 @@ These requirements come from the brief and from studying how SketchUp, MoI 3D an
 2. **Show it before the click.** Whatever a click would hit or snap to is highlighted as you hover, with a glyph, a colour and a short label ("Endpoint", "Midpoint", "On Edge", "On Red Axis", "Parallel to Edge", "Tangent"). Nothing should surprise you.
 3. **Inference from recent context.** Points, edges and curves you hovered recently become anchors. From each anchor the app projects guides: axis-parallel guides (red, green, blue, plus local axes), parallel or perpendicular guides to a recent edge, and tangent guides from a recent curve. Where two guides cross you get a strong snap point. This is the part the brief calls "monumental", so it gets the most design effort and the most tests.
 4. **Stability, no flicker.** A snap holds (hysteresis) until the cursor clearly leaves it. The release radius is larger than the capture radius.
-5. **Locking.** Shift locks the current inference. The arrow keys lock to the axes: up is blue, right is red, left is green, and down is parallel or perpendicular to the anchor. A lock stays visible until released.
+5. **Locking.** Shift locks the current inference. The arrow keys lock to the axes: up is blue, right is red, left is green, and down releases the lock (owner's decision, DECISIONS #17). A lock stays visible until released.
 6. **Type while drawing.** After a click, typing goes straight into a measurement box (SketchUp calls it the VCB) without focusing a field first. Examples: `2.5m`, `300,200`, `x5` or `/5` after a copy to make an array, and angles in the rotate tool. Units and simple expressions are supported.
 7. **Lines look good.** Edges have a constant pixel width, are anti-aliased, and never z-fight with faces. Profile and silhouette lines are thicker. Selected and hovered states are clearly distinct, and guides are dashed. Line quality is a first-class rendering feature, not a debug overlay.
 8. **Few, simple tools.** Each tool does one obvious thing, shows its next step in a status hint, and recovers gracefully: Esc cancels an operation in progress, and the tool stays active.
@@ -196,7 +196,7 @@ SketchUp's toolbar is grouped as Principal, Drawing, Edit, Construction, Camera,
 ---|---|
 | Push/Pull | The extrusion follows the cursor, and stacked faces show before you commit |
 | Move or copy | The geometry moves live, and reshaped faces deform live |
-| Rotate | Protractor on the inferred plane, a ghost of the result, and the angle readout |
+| Rotate | A full-circle protractor on the inferred plane, a ghost of the result, and the angle readout. It snaps with the same inference as the other tools. **Up arrow locks the protractor to the plane of the face under it**; you can then move the locked protractor elsewhere and click and drag to start the rotation there, as in SketchUp (DECISIONS #18) |
 | Offset | The offset outline |
 | Follow Me | The swept profile |
 | Fillet | The rounded edge at the current radius |
@@ -335,7 +335,7 @@ Rules of thumb:
 | Freehand | — | The stroke as you draw | Lock plane | — | — | — |
 | Push/Pull | Distance; **double-click repeats it** | Yes | Lock to the hovered height, so you can roam to match it | — | **Tap to toggle "new loop": the face boundary stays as a face and a new loop is extruded from it** | — |
 | Move | Vector; Enter repeats it on a new selection; array count | Yes | Lock inference | Copy | Allow auto-fold | Axis lock |
-| Rotate | Angle; Enter repeats it about the new selection's centre | Yes | **Snap the angle to 45° steps** while held | Copy | — | Lock the rotation axis (this is also the plane lock) |
+| Rotate | Angle; Enter repeats it about the new selection's centre | Yes | **Snap the angle to 45° steps** while held | Copy | — | Up locks the protractor to the hovered face's plane (DECISIONS #18); Right and Left lock the axis to red or green; Down releases |
 | Scale | Factor | Yes | Toggle uniform scaling | About centre | — | — |
 | Offset | Distance; **double-click repeats it** | Yes | — | — | — | — |
 | Follow Me | — | Yes | — | — | Follow a face's perimeter | — |

@@ -114,6 +114,9 @@ As in the Viewport chunk, the feel test (`docs/prototype/Main.dc.html`) shows **
 - [ ] Inference timing on the Large Scene is in NOTES.
 - [ ] PLAN 6.0 "Where we are" is updated, and NOTES lists what is left.
 
-## Questions for the owner (defaults used until answered)
-1. **Down arrow.** The prototype uses Down to release a lock. PLAN 1 item 5 says Down should lock parallel or perpendicular to the woken edge. *Default: the prototype (Down releases).*
-2. **Perpendicular guides.** The plan lists them; the prototype has only "Parallel to Edge". *Default: parallel only, as in the prototype.*
+## Decided by the owner
+- **Down arrow** releases the lock (DECISIONS #17).
+- **Up arrow in Rotate** locks the protractor to a face's plane (DECISIONS #18). Rotate is built in Edit Tools, but the engine here must let a tool lock its plane and keep snapping while the lock is moved, so build the lock as a plane as well as an axis.
+
+## Open (default used)
+- **Perpendicular guides.** The plan lists them; the prototype has only "Parallel to Edge". *Default: parallel only, as in the prototype.*
