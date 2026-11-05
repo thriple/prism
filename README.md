@@ -12,6 +12,7 @@ What is in this folder, and how to use it with Claude Code.
 | `docs/briefs/03-actions-and-keys.md` | Chunk 3: action registry, menus, dock, hotkeys |
 | `docs/briefs/04-viewport.md` | Chunk 4: the wgpu viewport, camera, lines, faces, picking and highlighting |
 | `docs/briefs/05-inference-and-drawing.md` | Chunk 5: the inference engine, Line, Rectangle, the measurement box, Select |
+| `docs/briefs/06-edit-tools.md` | Chunk 6: Push/Pull, Move and copy, Rotate, Scale, Eraser |
 | `docs/acceptance/golden-cases.json` | 19 test cases from the prototype, for Core Model |
 | `docs/acceptance/core-model-acceptance.md` | The same cases in words, plus the rules every model must satisfy |
 | `docs/prototype/` | The prototype's code and a guide to reading it |
@@ -38,11 +39,13 @@ Start with chunk 1 and only move on when its acceptance list is done.
 
 **Chunk 5.** "Read CLAUDE.md, then build docs/briefs/05-inference-and-drawing.md."
 
+**Chunk 6.** "Read CLAUDE.md, then build docs/briefs/06-edit-tools.md."
+
 Soft Theme, Chunk 2 and Chunk 3 can run in separate sessions (Chunk 3 should come after Soft Theme, since it builds the menus in that look). Chunks 2 and 3 do not depend on each other, so they can run in separate sessions once chunk 1 is merged. Both need chunk 1.
 
 ## What is deliberately not here yet
 
-The brief for Edit Tools. They depend on how Core Model turns out, so they are better written after it. The same goes for the NURBS test, the dependency and licence table, and the performance targets (see DECISIONS.md).
+The brief for Edit Tools part 2 (Offset, Tape Measure). They depend on how Core Model turns out, so they are better written after it. The same goes for the NURBS test, the dependency and licence table, and the performance targets (see DECISIONS.md).
 
 ## Building and running
 
