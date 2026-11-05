@@ -6,7 +6,7 @@
 
 ## Requirements
 - **Registry.** Each action has an id, a name, a menu path, a default hotkey, a mode (all, or one), an "enabled when" rule, and an optional handler. An action with no handler is shown greyed out, never hidden. Start from the prototype's `ACT`, `MENUBAR`, `DOCK` and `IC` tables (see `docs/prototype/README.md`), which hold about 200 actions and their icons.
-- **Menu bar, dock and context menu** are generated from the registry, in the dark "Soft" style of the prototype, using egui. The dock has groups and two columns. The context menu shows only what applies to the selection.
+- **Menu bar, dock and context menu** are generated from the registry, in the Motion Kit's dark Soft glass style (`docs/UI-STYLE.md`), using egui. Follow the kit's `ContextMenu`, `CommandPalette`, `TooltipToolbar`, `Tooltip` and `Kbd` for the matching parts. The dock has groups and two columns. The context menu shows only what applies to the selection.
 - **Command search** (Shift+S) finds any action by name.
 - **Keymap engine.**
   - Bindings use physical key positions, so L, R and P stay put on other layouts, plus modifiers.
@@ -28,4 +28,4 @@ Tool behaviour, the Mac system menu bar (later), mode switching, scenes, renderi
 - [ ] Physical-key tests: the same binding fires on QWERTY and AZERTY layouts.
 - [ ] Recording a conflicting key in the hotkeys window shows the other action and the three choices.
 - [ ] Greyed actions cannot be run, and say why on hover ("Not in this prototype yet" for now).
-- [ ] It matches `docs/UI-STYLE.md` and looks like the prototype's menus and dock, side by side.
+- [ ] It matches `docs/UI-STYLE.md` and the kit's `soft.html` and `demo.html`, side by side, including spring motion and the reduce-motion setting.

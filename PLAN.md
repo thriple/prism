@@ -385,9 +385,9 @@ A mesh-only, browser-based prototype (a Design artifact, "Prism Feel Test") exis
 2. **Scale** currently scales about the selection's bounding-box centre; the plan says Ctrl = about centre. Decide which is the default.
 3. The Draw tools that matter next for feel testing are Circle and Arc (exact), then Offset and Tape Measure.
 
-### 1.8a UI style (the dark "Soft" look)
+### 1.8a UI style (Motion Kit, dark Soft glass)
 
-The feel-test prototype's look is the look of the whole program, not only of the test page: dark, soft and embossed, with IBM Plex Sans and Mono. The tokens, the raised and pressed shadow recipe, sizes, motion and states are written down in `docs/UI-STYLE.md`, copied from the prototype's CSS. Every panel in later chunks (Inspector, View Settings, Model Health, hotkeys window, dialogs) is built from the same theme layer, so a new screen looks like it belongs without being designed from scratch. The viewport is drawn by our own renderer and is not part of this style.
+The whole program uses the **Motion Kit** (`docs/ui-kit/`) in its **Soft glass** set, dark theme. The feel-test prototype already used its colours and its raised and pressed buttons, but only as a CSS approximation. The full program follows the kit itself: the same colour tokens, emboss shadows, spring motion, keycap hints, tooltips, context menu, command palette, toasts, docked panels, and the frosted "glass cutouts" onto a slow aurora for slider rails, toggle tracks and dropdowns. The kit is written in React, so it is a specification and not code to reuse: Prism re-implements the look in Rust. `docs/UI-STYLE.md` lists the tokens, the motion numbers, and which kit component each Prism part copies. Every later panel (Inspector, View Settings, Model Health, hotkeys window, dialogs) is built from the same theme layer. The viewport stays outside this style and is drawn by our own renderer.
 
 ### 1.9 Overlaps, duplicates and precision
 

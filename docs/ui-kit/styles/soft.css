@@ -1,0 +1,50 @@
+/* Soft glass: neumorphic surfaces with frosted cutouts onto a moving aurora.
+   Retheme through these variables. Light is the default; set data-soft-theme="dark" on <html> for dark.
+   Surface/shadow colours are registered so a theme switch crossfades instead of snapping. */
+@property --soft-surface { syntax: '<color>'; inherits: true; initial-value: #e8eaee; }
+@property --soft-ink     { syntax: '<color>'; inherits: true; initial-value: #2f3a4b; }
+@property --soft-muted   { syntax: '<color>'; inherits: true; initial-value: #7d8799; }
+@property --soft-dark    { syntax: '<color>'; inherits: true; initial-value: rgba(13, 39, 80, 0.18); }
+@property --soft-light   { syntax: '<color>'; inherits: true; initial-value: #ffffff; }
+@property --soft-frost   { syntax: '<color>'; inherits: true; initial-value: #eef0f6; }
+
+:root {
+  --soft-surface: #e8eaee;               /* the one material everything is made of (ref: #E8EAEC) */
+  --soft-ink: #2f3a4b;
+  --soft-muted: #7d8799;
+  --soft-dark: rgba(13, 39, 80, 0.18);   /* lower-right shadow (ref: #0D2750 @ 16%) */
+  --soft-light: #ffffff;                 /* upper-left highlight */
+  --soft-frost: #eef0f6;                 /* the milky layer over the aurora */
+  --soft-accent: #6a67ce;                /* small indicators on opaque parts */
+  /* Aurora: a base and five blobs (read by components/soft/aurora.ts). */
+  --soft-aurora-base: #c9cbf2;
+  --soft-aurora-1: #6a67ce;
+  --soft-aurora-2: #ff6d92;
+  --soft-aurora-3: #02ceff;
+  --soft-aurora-4: #ffb38a;
+  --soft-aurora-5: #3be8b0;
+  transition: --soft-surface .5s, --soft-ink .5s, --soft-muted .5s, --soft-dark .5s, --soft-light .5s, --soft-frost .5s;
+}
+
+:root[data-soft-theme='dark'] {
+  --soft-surface: #2a2c33;
+  --soft-ink: #e6e8ee;
+  --soft-muted: #8b909c;
+  --soft-dark: rgba(0, 0, 0, 0.55);
+  --soft-light: rgba(255, 255, 255, 0.065);
+  --soft-frost: #262830;
+  --soft-accent: #02ceff;
+  --soft-aurora-base: #0d1030;
+  --soft-aurora-1: #3f3cc0;
+  --soft-aurora-2: #e0457a;
+  --soft-aurora-3: #0aa3d6;
+  --soft-aurora-4: #a177ff;
+  --soft-aurora-5: #2fd4a0;
+}
+
+/* Film grain over glass (as the Cineteca poster). */
+.soft-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: .5;
+}

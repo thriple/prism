@@ -13,7 +13,8 @@ What is in this folder, and how to use it with Claude Code.
 | `docs/acceptance/golden-cases.json` | 19 test cases from the prototype, for Core Model |
 | `docs/acceptance/core-model-acceptance.md` | The same cases in words, plus the rules every model must satisfy |
 | `docs/prototype/` | The prototype's code and a guide to reading it |
-| `docs/UI-STYLE.md` | The dark "Soft" look every screen must use (colours, fonts, shadows, motion) |
+| `docs/UI-STYLE.md` | The look every screen must use: Motion Kit, dark Soft glass (tokens, motion, which component to copy) |
+| `docs/ui-kit/` | The Motion Kit itself (React, for reference). Open `soft.html` and `demo.html` in a browser |
 
 ## Putting it in the repo
 

@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+@import '../../styles/kit.css';
+@source '../../components';
+
+html, body, #root { min-height: 100%; margin: 0; }
+/* Background image pinned to the window and scaled to cover it (a fixed layer, so it also stays put on mobile Safari). */
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1;
+  background: url('./assets/background.jpg') center / cover no-repeat;
+}
+body {
+  background: #041220;
+  color: #f6f1ee;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}

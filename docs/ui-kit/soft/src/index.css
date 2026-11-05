@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+@import '../../styles/soft.css';
+@source '../../components/soft';
+
+html, body, #root { min-height: 100%; margin: 0; }
+body {
+  background: var(--soft-surface);
+  color: var(--soft-ink);
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+}
+/* Headline extruded from the surface itself, as the NEU references' big type. */
+.soft-extrude {
+  color: color-mix(in srgb, var(--soft-surface) 90%, var(--soft-ink));
+  text-shadow: 2px 2px 2px var(--soft-dark), 5px 5px 12px var(--soft-dark), -4px -4px 8px var(--soft-light);
+}

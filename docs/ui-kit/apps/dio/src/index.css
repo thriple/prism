@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import '../../../styles/kit.css';
+@source '../../../components';
+
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body { background: #07090d; color: #f2f0ee; font-family: 'Segoe UI', system-ui, sans-serif; }
