@@ -30,7 +30,7 @@ jobs:
           path: Prism-*.zip
 
   macos:
-    name: macOS app (universal, unsigned)
+    name: macOS app (universal, ad-hoc signed)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,15 +41,9 @@ jobs:
       - run: cargo build --release -p prism-app --target x86_64-apple-darwin
       - name: Make Prism.app and zip it
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          APP=out/Prism.app
-          mkdir -p "$APP/Contents/MacOS"
-          lipo -create -output "$APP/Contents/MacOS/Prism" \
+          packaging/macos/make-app.sh "${GITHUB_REF_NAME#v}" "Prism-${GITHUB_REF_NAME}-macos-universal.zip" \
             target/aarch64-apple-darwin/release/prism-app \
             target/x86_64-apple-darwin/release/prism-app
-          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
-          # ditto keeps the bundle structure and permissions intact.
-          ditto -c -k --keepParent "$APP" "Prism-${GITHUB_REF_NAME}-macos-universal.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -60,6 +54,7 @@ jobs:
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -71,4 +66,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" assets/*.zip \
             --repo "$GITHUB_REPOSITORY" \
             --title "Prism $GITHUB_REF_NAME" \
-            --notes "Unsigned builds. On macOS, right-click Prism.app and choose Open the first time. On Windows, SmartScreen may warn; choose More info, then Run anyway."
+            --notes-file packaging/release-notes.md

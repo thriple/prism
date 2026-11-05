@@ -13,8 +13,8 @@ Things noticed while building that are outside the current chunk, defaults that 
 **Still to check by a person**
 - **GitHub Pages:** Source must be "GitHub Actions" (settings > Pages). The script tries to set it. Confirm the web page loads at https://thriple.github.io/prism/.
 - **iPad (DECISIONS #10):** not tested yet. Open the Pages URL on the iPad and record here: runs or not, iPadOS version, browser.
-- **macOS:** CI builds it, nobody has opened it yet.
-- **macOS release file:** the Windows download is checked. Open the macOS file from the Releases page on a Mac. It is unsigned, so macOS will warn: right-click the app, choose Open, and confirm. Record the result here.
+- **macOS:** the `v0.0.1` Mac download was blocked as soon as it was opened. Cause: the `.app` bundle had no signature at all (only the program inside had the linker's automatic one), and Apple Silicon Macs refuse such a download, usually with "damaged and can't be opened" and no way past it. Fixed by `packaging/macos/make-app.sh`, which signs the bundle ad hoc and checks the signature. CI now builds a signed test app on every push (artifact `prism-macos-test` on the run's page), so it can be tried before the next tag. It still needs one approval the first time: open it, click Done, then **System Settings > Privacy & Security > Open Anyway** (right-click > Open no longer skips the check on macOS 15 and later). Record the result here, with the macOS version and chip. `v0.0.1` itself was not rebuilt: tag `v0.0.2` to get a fixed release.
+- **Proper signing (later, PLAN 3.1 item 5):** a paid Apple Developer ID and notarising remove the warning entirely. Not needed while Prism is only for the owner.
 
 **Seen in the Windows screenshot (for Actions & Keys)**
 - The Windows key shows up as `SuperLeft` and as the modifier `Logo`. Windows reserves many Win+key combinations (Win+Shift+S was in use for screenshots), so the keymap engine must never rely on the Win key.
