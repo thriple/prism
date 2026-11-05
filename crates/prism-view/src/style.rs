@@ -121,6 +121,10 @@ pub struct Feedback {
     pub box_crossing: Rgba,
     pub box_fill_alpha: f32,
     pub box_dash: [f32; 2],
+    /// Edges the Eraser will remove.
+    pub erase: Rgba,
+    /// The Rotate tool's protractor.
+    pub protractor: Rgba,
 }
 
 impl Default for Feedback {
@@ -153,6 +157,8 @@ impl Default for Feedback {
             box_crossing: Rgba::rgb(0x2e, 0xa0, 0x5a),
             box_fill_alpha: 0.13,
             box_dash: [6.0, 4.0],
+            erase: Rgba::rgb(0xff, 0x3b, 0x4d),
+            protractor: Rgba::rgb(0x1c, 0x1e, 0x22),
         }
     }
 }

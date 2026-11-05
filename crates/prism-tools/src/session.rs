@@ -22,7 +22,11 @@ use prism_view::style::{Rgba, Style, alpha};
 use serde::{Deserialize, Serialize};
 
 use crate::select::box_select;
+
+mod edit;
 use crate::units::NumberFormat;
+pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
+use edit::{EditOp, is_edit};
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -34,7 +38,9 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 6] = [SELECT, LINE, RECT, ORBIT, PAN, ZOOM];
+pub const TOOLS: [&str; 11] = [
+    SELECT, LINE, RECT, ORBIT, PAN, ZOOM, PUSH, MOVE, ROTATE, SCALE, ERASE,
+];
 
 fn is_nav(t: &str) -> bool {
     matches!(t, ORBIT | PAN | ZOOM)
@@ -105,6 +111,10 @@ pub enum Input {
     },
     ShiftDown,
     ShiftUp,
+    /// Ctrl (Option on a Mac) pressed: copy in Move and Rotate.
+    CtrlTap,
+    /// Alt pressed: new loop in Push/Pull.
+    AltTap,
     /// Characters for the measurement box.
     Text {
         text: String,
@@ -186,10 +196,22 @@ struct BoxOp {
 }
 
 /// The last operation, which typing can still change (Appendix A ★).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum LastOp {
-    Line { from: DVec3, dir: DVec3, len: f64 },
-    Rect { op: RectOp },
+    Line {
+        from: DVec3,
+        dir: DVec3,
+        len: f64,
+    },
+    Rect {
+        op: RectOp,
+    },
+    Push {
+        face: prism_topo::FaceId,
+        d: f64,
+        new_loop: bool,
+    },
+    Edit(EditOp),
 }
 
 #[derive(Clone, Debug)]
@@ -241,12 +263,30 @@ pub struct Session {
     timings: Timings,
     /// Time measurements are taken by the app; the session never reads a clock.
     pub measure: Option<fn() -> f64>,
+    /// An edit tool's step in progress, and the model it previews.
+    edit: Option<EditOp>,
+    preview: Option<Scene>,
+    /// Rotate's protractor plane, once locked (DECISIONS #18).
+    rot_lock: Option<DVec3>,
+    shift_held: bool,
+    /// Copy (Ctrl) and new loop (Alt) toggles.
+    ctrl_copy: bool,
+    alt_loop: bool,
+    /// Push/Pull's last distance, for double-click.
+    last_push: Option<(f64, bool)>,
 }
 
 impl Session {
     pub fn new(doc: Document) -> Self {
         let scene = Scene::build(doc.model());
         Self {
+            edit: None,
+            preview: None,
+            rot_lock: None,
+            shift_held: false,
+            ctrl_copy: false,
+            alt_loop: false,
+            last_push: None,
             doc,
             version: 1,
             scene,
@@ -303,6 +343,20 @@ impl Session {
     pub fn scene(&self) -> &Scene {
         &self.scene
     }
+    /// What to draw: the preview of a step in progress, or the model.
+    pub fn display_scene(&self) -> &Scene {
+        self.preview.as_ref().unwrap_or(&self.scene)
+    }
+
+    fn set_preview(&mut self, m: Option<Model>) {
+        let had = self.preview.is_some();
+        self.preview = m.map(|m| Scene::build(&m));
+        if had || self.preview.is_some() {
+            self.version += 1;
+            self.highlight_dirty = true;
+            self.dirty = true;
+        }
+    }
     /// Changes whenever the model does.
     pub fn version(&self) -> u64 {
         self.version
@@ -333,7 +387,10 @@ impl Session {
     }
     /// Whether a tool step is in progress (a line or rectangle started).
     pub fn in_operation(&self) -> bool {
-        self.line_start.is_some() || self.rect.is_some() || self.boxing.is_some()
+        self.line_start.is_some()
+            || self.rect.is_some()
+            || self.boxing.is_some()
+            || self.edit.is_some()
     }
     pub fn take_dirty(&mut self) -> bool {
         std::mem::take(&mut self.dirty)
@@ -372,13 +429,17 @@ impl Session {
     }
 
     fn typing_tool(&self) -> bool {
-        self.tool == LINE || self.tool == RECT
+        self.tool == LINE
+            || self.tool == RECT
+            || matches!(self.tool.as_str(), PUSH | MOVE | ROTATE | SCALE)
     }
 
     /// The measurement box: its label, value, and whether it shows typing.
     pub fn measurement(&self) -> (String, String, bool) {
         let nf = &self.number;
-        let (label, value) = if let (Some(start), Some(i)) = (self.line_start, &self.inference) {
+        let (label, value) = if let Some((l, v)) = self.edit_measurement() {
+            (l, v)
+        } else if let (Some(start), Some(i)) = (self.line_start, &self.inference) {
             ("Length", nf.show(start.distance(i.point)))
         } else if let Some(r) = &self.rect {
             ("Size", nf.show_pair(r.du.abs(), r.dv.abs()))
@@ -409,6 +470,9 @@ impl Session {
 
     /// The status bar's hint for the tool's next step (feel test `hintText(`).
     pub fn hint(&self) -> &'static str {
+        if let Some(h) = self.edit_hint() {
+            return h;
+        }
         match self.tool.as_str() {
             LINE if self.line_start.is_some() => {
                 "Click the next point · Shift locks the inference · arrows lock an axis · type a length + Enter · Esc stops"
@@ -533,6 +597,7 @@ impl Session {
             }
             Input::Key { key } => self.key(*key, &mut resp),
             Input::ShiftDown => {
+                self.shift_held = true;
                 if let Some(i) = &self.inference
                     && let Some(a) = i.axis
                     && self.lock == Lock::None
@@ -542,7 +607,10 @@ impl Session {
                     self.shift_locked = true;
                 }
             }
+            Input::CtrlTap => self.toggle_copy(),
+            Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {
+                self.shift_held = false;
                 if self.shift_locked {
                     self.shift_locked = false;
                     self.set_lock(Lock::None);
@@ -572,6 +640,8 @@ impl Session {
         }
         self.cancel();
         self.tool = id.to_owned();
+        self.rot_lock = None;
+        self.ctrl_copy = false;
         self.mem.clear();
         self.lock = Lock::None;
         self.last_op = None;
@@ -594,6 +664,7 @@ impl Session {
 
     /// Cancel the step in progress; the tool stays.
     fn cancel(&mut self) {
+        self.cancel_edit();
         self.line_start = None;
         self.rect = None;
         self.boxing = None;
@@ -632,6 +703,16 @@ impl Session {
                 self.overlay_dirty = true;
             }
             Key::Enter => self.enter(),
+            Key::Up | Key::Right | Key::Left | Key::Down
+                if self.tool == ROTATE && self.edit.is_none() =>
+            {
+                let axis = match key {
+                    Key::Right => Some(0),
+                    Key::Left => Some(1),
+                    _ => None,
+                };
+                self.rotate_arrow(axis, key == Key::Up);
+            }
             Key::Up | Key::Right | Key::Left => {
                 let a = match key {
                     Key::Up => 2,
@@ -786,7 +867,7 @@ impl Session {
     // ---------- the mouse ----------
 
     fn wants_inference(&self) -> bool {
-        self.tool == LINE || self.tool == RECT
+        self.tool == LINE || self.tool == RECT || self.edit_wants_inference()
     }
 
     fn context(&self) -> Context {
@@ -799,6 +880,43 @@ impl Session {
                 start: self.rect.map(|r| r.start),
                 no_lock: true,
                 ..Default::default()
+            },
+            MOVE => match &self.edit {
+                Some(EditOp::Move {
+                    from, verts, copy, ..
+                }) => Context {
+                    start: Some(*from),
+                    // A copy leaves the original in place, so it can be snapped to.
+                    exclude: if *copy {
+                        Default::default()
+                    } else {
+                        verts.clone()
+                    },
+                    no_lock: false,
+                },
+                _ => Context::default(),
+            },
+            ROTATE => match &self.edit {
+                Some(EditOp::Rotate { centre, .. }) => Context {
+                    start: Some(*centre),
+                    no_lock: true,
+                    ..Default::default()
+                },
+                _ => Context {
+                    no_lock: true,
+                    ..Default::default()
+                },
+            },
+            SCALE => match &self.edit {
+                Some(EditOp::Scale { centre, verts, .. }) => Context {
+                    start: Some(*centre),
+                    exclude: verts.clone(),
+                    no_lock: true,
+                },
+                _ => Context {
+                    no_lock: true,
+                    ..Default::default()
+                },
             },
             _ => Context::default(),
         }
@@ -854,6 +972,11 @@ impl Session {
                 self.overlay_dirty = true;
                 self.dirty = true;
             }
+            if is_edit(&self.tool) {
+                self.edit_hover(s, &view);
+            }
+        } else if is_edit(&self.tool) {
+            self.edit_hover(s, &view);
         } else if self.tool == SELECT && self.boxing.is_none() {
             let t0 = self.measure.map(|f| f());
             let h = pick::pick(&self.scene, &view, s, self.settings.aperture);
@@ -923,6 +1046,12 @@ impl Session {
                 SELECT => self.select_press(s, shift, ctrl),
                 LINE => self.line_press(s),
                 RECT => self.rect_press(s),
+                t if is_edit(t) => {
+                    let n = self.clicks.press(self.time, s);
+                    self.update_hover(s);
+                    self.edit_press(s, n);
+                    self.refresh();
+                }
                 _ => {}
             },
             Button::Right => {
@@ -984,6 +1113,12 @@ impl Session {
                 }
                 self.overlay_dirty = true;
                 self.dirty = true;
+            }
+            Button::Left if is_edit(&self.tool) && self.drag.is_none() => {
+                if let Some(c) = self.cursor {
+                    self.edit_release(c);
+                }
+                self.refresh();
             }
             _ => self.drag = None,
         }
@@ -1146,6 +1281,13 @@ impl Session {
     fn enter(&mut self) {
         let text = std::mem::take(&mut self.typed);
         self.overlay_dirty = true;
+        if self.edit.is_some() {
+            self.edit_enter(&text);
+            return;
+        }
+        if !text.is_empty() && self.edit_retype(&text) {
+            return;
+        }
         let nf = self.number;
         if let (Some(start), LINE) = (self.line_start, self.tool.as_str()) {
             let Some(v) = nf.length(&text) else { return };
@@ -1181,7 +1323,7 @@ impl Session {
             return;
         }
         // Change the last operation.
-        match (self.last_op, self.typing_tool()) {
+        match (self.last_op.clone(), self.typing_tool()) {
             (Some(LastOp::Line { from, dir, .. }), true) => {
                 let Some(v) = nf.length(&text) else { return };
                 if self.doc.undo() {
@@ -1243,6 +1385,9 @@ impl Session {
                     ""
                 }
             ));
+        }
+        if is_edit(&self.tool) {
+            self.edit_overlay(&mut o);
         }
         if !self.wants_inference() {
             return o;

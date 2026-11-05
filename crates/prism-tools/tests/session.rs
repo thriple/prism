@@ -465,3 +465,370 @@ fn shift_double_and_triple_click_add_and_remove_without_touching_the_rest() {
     }
     assert_eq!(d.s.selection().faces.len(), d.s.model().face_count());
 }
+
+// ---------- Edit Tools (brief 06) ----------
+
+use prism_tools::session::{ERASE, MOVE, PUSH, ROTATE, SCALE};
+
+fn rect_on_ground(d: &mut Driver, x0: f64, y0: f64, x1: f64, y1: f64) {
+    d.tool(RECT);
+    d.click(DVec3::new(x0, y0, 0.0));
+    d.click(DVec3::new(x1, y1, 0.0));
+}
+
+fn valid(d: &Driver) {
+    let p = prism_ops::check::problems(d.s.model());
+    assert!(p.is_empty(), "{p:?}");
+}
+
+#[test]
+fn push_pull_a_rectangle_into_a_box_by_typing() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("1.5");
+    assert_eq!(d.faces(), 6);
+    let (lo, hi) = d.s.model().bbox().expect("box");
+    assert!(
+        (hi.z - lo.z - 1.5).abs() < 1e-9,
+        "1.5 m tall: {lo:?} {hi:?}"
+    );
+    valid(&d);
+    // Retype right after: the box becomes 2 m tall, still one step.
+    d.typed("2");
+    let (lo, hi) = d.s.model().bbox().expect("box");
+    assert!((hi.z - lo.z - 2.0).abs() < 1e-9);
+    d.send(Input::Action {
+        id: "edit.undo".into(),
+    });
+    assert_eq!(d.faces(), 1, "one undo removes the pull");
+}
+
+#[test]
+fn double_click_repeats_the_last_pull() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    rect_on_ground(&mut d, 3.0, 0.0, 4.0, 1.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.typed("0.75");
+    // Double-click the other square.
+    let s = d.screen(DVec3::new(3.5, 0.5, 0.0));
+    for _ in 0..2 {
+        d.send(Input::Move { x: s.x, y: s.y });
+        d.send(Input::Press {
+            button: Button::Left,
+            x: s.x,
+            y: s.y,
+            shift: false,
+            ctrl: false,
+        });
+        d.send(Input::Release {
+            button: Button::Left,
+        });
+    }
+    assert_eq!(d.faces(), 12);
+    let (_, hi) = d.s.model().bbox().expect("boxes");
+    assert!((hi.z - 0.75).abs() < 1e-9);
+    valid(&d);
+}
+
+#[test]
+fn alt_pulls_a_new_loop() {
+    // Pulling a box's top stretches it (6 faces); with Alt the top stays
+    // and a new loop is pulled from it (four more walls).
+    let mut d = Driver::new(prism_tools::scenes::cube());
+    d.tool(PUSH);
+    d.click(DVec3::new(0.2, 0.1, 3.0));
+    d.typed("1");
+    assert_eq!(d.faces(), 6, "stretched");
+    d.send(Input::Action {
+        id: "edit.undo".into(),
+    });
+    d.click(DVec3::new(0.2, 0.1, 3.0));
+    d.send(Input::AltTap);
+    d.typed("1");
+    assert!(d.faces() > 6, "a new loop: {}", d.faces());
+    valid(&d);
+}
+
+#[test]
+fn pulling_matches_an_endpoints_height() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.typed("1.25");
+    rect_on_ground(&mut d, 3.0, 0.0, 4.0, 1.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(3.5, 0.5, 0.0));
+    // Hover the first box's top corner: the pull matches its height.
+    d.hover(DVec3::new(1.0, 0.0, 1.25));
+    d.click(DVec3::new(1.0, 0.0, 1.25));
+    let tops: Vec<f64> =
+        d.s.model()
+            .vertices()
+            .map(|(_, p)| p.z)
+            .filter(|z| *z > 0.1)
+            .collect();
+    assert!(tops.iter().all(|z| (z - 1.25).abs() < 1e-9), "{tops:?}");
+}
+
+#[test]
+fn move_by_a_typed_distance_and_copy_into_arrays() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0)); // grab the selected square by its corner
+    d.hover(DVec3::new(2.0, 0.3, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.typed("3");
+    assert!(
+        prism_ops::vertex_at(d.s.model(), DVec3::new(3.0, 0.0, 0.0)).is_some(),
+        "moved 3 m along red"
+    );
+    // Copy: Ctrl during the move, then x3 makes three copies.
+    d.tool(SELECT);
+    d.click(DVec3::new(3.5, 0.5, 0.0));
+    d.tool(MOVE);
+    d.click(DVec3::new(3.0, 0.0, 0.0));
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(4.0, 0.2, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.typed("2");
+    assert_eq!(d.faces(), 2, "a copy");
+    d.typed("x3");
+    assert_eq!(d.faces(), 4, "an array of three copies");
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(9.0, 0.0, 0.0)).is_some());
+    d.typed("/4");
+    assert_eq!(d.faces(), 5, "four copies between");
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(3.5, 0.0, 0.0)).is_some());
+    d.send(Input::Action {
+        id: "edit.undo".into(),
+    });
+    assert_eq!(d.faces(), 1, "the array was one step");
+    valid(&d);
+}
+
+#[test]
+fn rotate_by_typed_degrees_and_with_the_15_degree_snap() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.5, 0.0));
+    d.tool(ROTATE);
+    d.click(DVec3::new(0.0, 0.0, 0.0)); // the centre
+    d.click(DVec3::new(2.0, 0.0, 0.0)); // the start arm, along red
+    d.hover(DVec3::new(0.0, 2.0, 0.0));
+    d.typed("90");
+    assert!(
+        prism_ops::vertex_at(d.s.model(), DVec3::new(0.0, 2.0, 0.0)).is_some(),
+        "turned onto green"
+    );
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(-1.0, 2.0, 0.0)).is_some());
+    valid(&d);
+    // Retype: 45 degrees instead.
+    d.typed("45");
+    let s2 = 2f64.sqrt();
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(s2, s2, 0.0)).is_some());
+}
+
+#[test]
+fn drag_from_the_centre_sets_the_start_arm() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.5, 0.0));
+    d.tool(ROTATE);
+    let c = d.screen(DVec3::ZERO);
+    let a = d.screen(DVec3::new(2.0, 0.0, 0.0));
+    d.send(Input::Move { x: c.x, y: c.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: c.x,
+        y: c.y,
+        shift: false,
+        ctrl: false,
+    });
+    d.send(Input::Move { x: a.x, y: a.y });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.hover(DVec3::new(0.0, 2.0, 0.0));
+    d.typed("90");
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(0.0, 2.0, 0.0)).is_some());
+}
+
+#[test]
+fn up_locks_the_protractor_to_a_face_then_it_can_move() {
+    let mut d = Driver::new(prism_tools::scenes::cube());
+    d.tool(ROTATE);
+    // Over the front face (normal -y): Up locks the protractor to it.
+    d.hover(DVec3::new(0.2, -1.0, 2.0));
+    d.send(Input::Key { key: Key::Up });
+    // Away from the face, on the ground: still locked to the front's plane.
+    d.hover(DVec3::new(3.0, -3.0, 0.0));
+    let o = d.s.overlay();
+    assert!(o.labels.iter().any(|l| l.text == "Plane locked"));
+    // Rotate the cube about a y axis through (0,0,1) by a typed 90°.
+    d.click(DVec3::new(0.0, -1.0, 1.0));
+    d.click(DVec3::new(1.0, -1.0, 1.0));
+    d.typed("90");
+    let (lo, hi) = d.s.model().bbox().expect("cube");
+    // A 2 m cube turned about y stays 2 m in every direction.
+    assert!(
+        ((hi - lo) - DVec3::splat(2.0)).abs().max_element() < 1e-6,
+        "{lo:?} {hi:?}"
+    );
+    valid(&d);
+    // Down releases the lock.
+    d.send(Input::Key { key: Key::Down });
+    assert!(
+        !d.s.overlay()
+            .labels
+            .iter()
+            .any(|l| l.text == "Plane locked")
+    );
+}
+
+#[test]
+fn rotate_copy_is_one_step() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 1.0, 0.0, 2.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(1.5, 0.5, 0.0));
+    d.tool(ROTATE);
+    d.click(DVec3::ZERO);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(0.0, 2.0, 0.0));
+    d.typed("90");
+    assert_eq!(d.faces(), 2);
+    d.send(Input::Action {
+        id: "edit.undo".into(),
+    });
+    assert_eq!(d.faces(), 1);
+}
+
+#[test]
+fn scale_by_a_typed_factor() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.tool(SCALE);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.typed("1.5");
+    assert!(
+        prism_ops::vertex_at(d.s.model(), DVec3::new(2.5, 2.5, 0.0)).is_some(),
+        "scaled about the centre"
+    );
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(-0.5, -0.5, 0.0)).is_some());
+}
+
+#[test]
+fn the_eraser_drags_over_edges_and_takes_both_faces() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 2.0);
+    d.tool(LINE);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    assert_eq!(d.faces(), 2);
+    d.tool(ERASE);
+    let a = d.screen(DVec3::new(1.8, 1.0, 0.0));
+    let b = d.screen(DVec3::new(2.2, 1.0, 0.0));
+    let mid = d.screen(DVec3::new(2.0, 1.0, 0.0));
+    d.send(Input::Move { x: a.x, y: a.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: a.x,
+        y: a.y,
+        shift: false,
+        ctrl: false,
+    });
+    d.send(Input::Move { x: mid.x, y: mid.y });
+    d.send(Input::Move { x: b.x, y: b.y });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(
+        d.faces(),
+        0,
+        "both faces beside the erased edge go (DECISIONS #15)"
+    );
+    assert_eq!(d.s.model().edge_count(), 6);
+    valid(&d);
+}
+
+#[test]
+fn esc_cancels_an_edit_and_leaves_the_model() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    let before = d.s.model().geometry_json();
+    d.tool(PUSH);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.hover(DVec3::new(0.5, 0.5, 1.0));
+    d.send(Input::Key { key: Key::Escape });
+    assert_eq!(d.s.model().geometry_json(), before);
+    assert!(!d.s.in_operation());
+    assert_eq!(d.s.tool(), PUSH, "the tool stays");
+}
+
+/// A small building, start to finish: a box, a roof ridge moved up, and a
+/// window pushed into the wall, then copied. Saved as an acceptance session
+/// with PRISM_WRITE_SESSIONS=1.
+#[test]
+fn model_a_small_building() {
+    let mut d = Driver::empty();
+    d.s.start_recording();
+    rect_on_ground(&mut d, 0.0, 0.0, 6.0, 4.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    d.typed("3");
+    assert_eq!(d.faces(), 6);
+    // A ridge line across the top, through the midpoints of the short sides.
+    d.tool(LINE);
+    d.click(DVec3::new(0.0, 2.0, 3.0));
+    d.click(DVec3::new(6.0, 2.0, 3.0));
+    d.send(Input::Key { key: Key::Escape });
+    assert_eq!(d.faces(), 7, "the top is split in two");
+    // Select the ridge and move it up 1.5 m.
+    d.tool(SELECT);
+    d.click(DVec3::new(3.0, 2.0, 3.0));
+    assert_eq!(d.s.selection().edges.len(), 1);
+    d.tool(MOVE);
+    d.click(DVec3::new(3.0, 2.0, 3.0));
+    d.send(Input::Key { key: Key::Up });
+    d.hover(DVec3::new(3.0, 2.0, 4.0));
+    d.typed("1.5");
+    assert!(
+        prism_ops::vertex_at(d.s.model(), DVec3::new(0.0, 2.0, 4.5)).is_some(),
+        "the ridge is up"
+    );
+    // A window on the front wall (y = 0), pushed in 0.2 m.
+    d.tool(RECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    d.click(DVec3::new(2.0, 0.0, 2.0));
+    d.tool(PUSH);
+    d.click(DVec3::new(1.5, 0.0, 1.5));
+    d.typed("-0.2");
+    let inner =
+        d.s.model()
+            .vertices()
+            .filter(|(_, p)| (p.y - 0.2).abs() < 1e-9)
+            .count();
+    assert_eq!(inner, 4, "the window is 0.2 m into the wall");
+    valid(&d);
+    let json = d.s.stop_recording().expect("recording");
+    let r: Recording = serde_json::from_str(&json).expect("valid");
+    assert_eq!(Session::replay(&r).model().geometry_json(), r.result);
+    if std::env::var_os("PRISM_WRITE_SESSIONS").is_some() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/acceptance/sessions");
+        std::fs::write(dir.join("small-building.json"), &json).expect("write");
+    }
+}

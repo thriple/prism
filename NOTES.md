@@ -237,3 +237,48 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
 - Inference is a brute-force scan (see the timing above).
 - While a line is chaining, there is no way to retype the previous segment (SketchUp has one).
 - Measurement box arithmetic and `[x,y,z]` / `<dx,dy,dz>` coordinates are not built (out of scope).
+
+## Edit Tools (part 1)
+
+**What was built** (brief 06), all in the pure session in `prism-tools` (`session/edit.rs`):
+- **Push/Pull (P):** the face under the cursor is tinted. Click it, then pull and click, or type a distance and press Enter. A typed minus pushes the other way.
+  - The pull snaps to an endpoint's height ("Match Endpoint", with a magenta guide), to the ground, and to zero within 6 px.
+  - **Alt** toggles new loop.
+  - **Double-click** repeats the last distance.
+  - Typing right after a pull changes it.
+- **Move (M):** click a point, move, click, with inference (the moving points are left out of snapping) and with locks.
+  - With nothing selected, it moves the item under the cursor; at a corner, that is the point alone, as in SketchUp.
+  - **Ctrl** (Option on a Mac) toggles copy. After a copy, `x5` makes an array of five and `/5` puts five evenly between.
+  - Typing right after a move changes it.
+- **Rotate (Q):** the full-circle protractor shows on the plane of the face under the cursor, the ground, or the view's main plane. Click the centre, then either click a start direction or drag from the centre and release. Move, then click.
+  - **Up** locks the protractor to the face under it (DECISIONS #18), and it can then be moved anywhere; "Plane locked" shows by it. **Right** and **Left** lock red and green, and **Down** releases.
+  - Angles snap softly to 15°, or to 45° steps while **Shift** is held.
+  - **Ctrl** copies. Type degrees and press Enter. Typing right after a rotation changes it.
+  - With nothing selected, it rotates everything connected to the item under the cursor.
+- **Scale (S):** uniform, about the selection's box centre, from where you click. The factor is clamped between 0.05 and 20 and snaps to 1 within 2%. Type a factor and press Enter.
+- **Eraser (E):** click, or press and drag over edges. They show red, and are erased with the faces they bound on release (DECISIONS #15).
+- **Previews:** each step previews on a copy of the model, drawn instead of the document until it is finished; Esc cancels it and the tool stays.
+- **Commands:** each step is one command. A new `Copy` command (duplicate and move, or duplicate and rotate, any number of times) makes copies and arrays one undo step.
+- **Active tools:** these five are now active in the dock and menus (DECISIONS #20).
+
+**Tests:** 13 new scenario tests:
+- Push/Pull: typed distance and retype, double-click repeat, Alt new loop on the cube's top, matching an endpoint's height.
+- Move: an exact typed move, a copy, an `x3` array, a `/4` division and one undo for the whole array.
+- Rotate: typed 90° and retype, the drag-set start arm, Up's plane lock on the cube and moving the protractor away from the face, a rotated copy.
+- Scale: a typed factor.
+- Eraser: a drag that takes both faces beside an edge.
+- Esc: cancelling a step leaves the model as it was.
+
+`prism-doc`'s undo test covers the new `Copy` command, and a recorded session, `docs/acceptance/sessions/small-building.json` (a box, a ridge moved up 1.5 m for a roof, and a window pushed 0.2 m into a wall), replays in CI. Screenshot: `docs/screenshots/edit-tools-prism.png`.
+
+**Decisions and defaults used**
+- Ctrl and Alt are taps that toggle, as in the feel test. Ctrl toggles copy only while moving or rotating, so shortcuts such as Ctrl+Z do not flip it.
+- With nothing selected, Rotate and Scale take what is connected to the item under the cursor, and Move takes the item itself (the feel test does the same).
+- The Rotate arm follows the cursor on the protractor's plane (not inference snaps), as in the feel test.
+- The small-building session does not copy the window yet: copying a face that is a hole in a wall leaves the copy unattached to the wall, which needs sticky geometry after Move (a leftover below).
+
+**Leftovers and ideas**
+- After Move and Push/Pull, the moved geometry does not merge with what it now touches (the feel test does not either). Merging coplanar faces after an edit (PLAN 1.9, "when the check runs") is the next step for this.
+- The Eraser samples where the mouse is; a fast drag can step over an edge. Testing the path between samples would fix it.
+- Previews rebuild the whole scene each mouse move: fine for small models, slow on the Large Scene (about 40 ms per move).
+- Shift (hide) and Ctrl (soften) in the Eraser wait for hiding and soft edges.

@@ -270,7 +270,7 @@ impl App {
             hover: s.hover(),
             selection: s.selection().clone(),
         };
-        let (scene, style) = (s.scene(), &s.style);
+        let (scene, style) = (s.display_scene(), &s.style);
         let draw = crate::gpu::ViewportDraw {
             size: viewport_px,
             upload: upload.then_some(scene),

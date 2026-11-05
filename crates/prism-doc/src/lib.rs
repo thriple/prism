@@ -58,6 +58,26 @@ pub enum Command {
     Duplicate {
         selection: Selection,
     },
+    /// Copies of a selection, each moved or rotated one step further than
+    /// the last (`count` 1 is a plain copy; more is an array), in one step.
+    Copy {
+        selection: Selection,
+        step: Motion,
+        count: u32,
+    },
+}
+
+/// How a copy is placed.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Motion {
+    Translate {
+        by: DVec3,
+    },
+    Rotate {
+        centre: DVec3,
+        axis: DVec3,
+        angle: f64,
+    },
 }
 
 impl Command {
@@ -74,6 +94,8 @@ impl Command {
             Command::Rotate { .. } => "Rotate",
             Command::Scale { .. } => "Scale",
             Command::Duplicate { .. } => "Copy",
+            Command::Copy { count, .. } if *count > 1 => "Array",
+            Command::Copy { .. } => "Copy",
         }
     }
 
@@ -113,6 +135,25 @@ impl Command {
             } => transform::scale(m, vertices, *centre, *factor),
             Command::Duplicate { selection } => {
                 prism_ops::duplicate(m, selection);
+            }
+            Command::Copy {
+                selection,
+                step,
+                count,
+            } => {
+                for k in 1..=*count {
+                    let copy = prism_ops::duplicate(m, selection);
+                    let vs = copy.all_vertices(m);
+                    let k = f64::from(k);
+                    match *step {
+                        Motion::Translate { by } => transform::translate(m, &vs, by * k),
+                        Motion::Rotate {
+                            centre,
+                            axis,
+                            angle,
+                        } => transform::rotate(m, &vs, centre, axis, angle * k),
+                    }
+                }
             }
         }
     }
