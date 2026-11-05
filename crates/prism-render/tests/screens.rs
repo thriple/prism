@@ -207,8 +207,14 @@ fn nothing_shows_through_a_thin_plate_far_away() {
             -s
         };
         prism_ops::push_pull(&mut m, f, up, false);
-        // The detail: a box 1 mm behind the plate, with its own edges.
-        let (d0, d1) = (y0 + t + 0.001, y0 + t + 0.001 + s * 0.2);
+        // The detail: a box behind the plate, with its own edges: 1 mm
+        // behind, or 1e-5 of the distance if that is more (1 cm at 1 km).
+        // 32-bit depth resolves about 1e-7 of the distance, but real GPUs
+        // round line depths by several steps more (seen on Windows and macOS
+        // CI: a 1.5 mm gap at 1 km is only 13 steps), so 1e-5 is the margin
+        // that holds everywhere.
+        let gap = (dist * 1e-5).max(0.001);
+        let (d0, d1) = (y0 + t + gap, y0 + t + gap + s * 0.2);
         prism_ops::add_rect(&mut m, -s * 0.2, d0, s * 0.2, d1, s * 0.3);
         let f =
             prism_ops::face_at(&m, DVec3::new(0.0, (d0 + d1) / 2.0, s * 0.3)).expect("detail base");
@@ -405,87 +411,4 @@ fn prism_render_large(n: i32) -> Model {
         }
     }
     m
-}
-
-/// Diagnostic for CI: how big a gap behind a far thin plate each GPU
-/// resolves. Prints only; never fails.
-#[test]
-fn plate_gap_threshold_report() {
-    let Some(mut g) = gpu() else { return };
-    let style = tell_tale();
-    let dist = 1000.0;
-    let s = dist * 0.3;
-    let t = 0.0005;
-    for gap in [0.001, 0.003, 0.01, 0.03, 0.1] {
-        let mut m = Model::new();
-        let y0 = -s * 0.05;
-        prism_ops::add_rect(&mut m, -s / 2.0, y0, s / 2.0, y0 + t, 0.0);
-        let f = prism_ops::face_at(&m, DVec3::new(0.0, y0 + t / 2.0, 0.0)).expect("plate");
-        let up = if m.face(f).expect("f").plane().normal.z > 0.0 {
-            s
-        } else {
-            -s
-        };
-        prism_ops::push_pull(&mut m, f, up, false);
-        let (d0, d1) = (y0 + t + gap, y0 + t + gap + s * 0.2);
-        prism_ops::add_rect(&mut m, -s * 0.2, d0, s * 0.2, d1, s * 0.3);
-        let f = prism_ops::face_at(&m, DVec3::new(0.0, (d0 + d1) / 2.0, s * 0.3)).expect("detail");
-        let up = if m.face(f).expect("f").plane().normal.z > 0.0 {
-            s * 0.4
-        } else {
-            -s * 0.4
-        };
-        prism_ops::push_pull(&mut m, f, up, false);
-        for el in [0.0, 20.0] {
-            let cam = looking_at(DVec3::new(0.0, 0.0, s / 2.0), dist, -90.0, el);
-            let img = g.shot(&m, cam, 300, 300, 1.0, &style, &Highlight::default());
-            let ids = g.ids(300, 300);
-            let mut dark = Vec::new();
-            for y in 110..190 {
-                for x in 110..190 {
-                    if img.at(x, y)[0] < 120 {
-                        dark.push((x, y));
-                    }
-                }
-            }
-            // The exact depths along the ray through each sampled pixel,
-            // for the plate's front and the detail's front (depth = near / distance).
-            let view = prism_render::View::new(&cam, 300.0, 300.0);
-            let mut boxes = vec![(DVec3::new(-30.0, -30.0, 0.0), DVec3::new(30.0, 30.0, 0.0))];
-            boxes.extend(m.bbox());
-            let (near, _) = prism_render::gpu::fit_depth(&view, &boxes);
-            let at = |x: u32, y: u32, plane_y: f64| {
-                let (o, d) = view.ray(prism_math::DVec2::new(
-                    f64::from(x) + 0.5,
-                    f64::from(y) + 0.5,
-                ));
-                let t = (plane_y - o.y) / d.y;
-                near / (t * d.dot(view.f))
-            };
-            // Always sample the middle too, so every GPU reports something.
-            let mut pts: Vec<(u32, u32)> = dark
-                .iter()
-                .step_by((dark.len() / 4).max(1))
-                .copied()
-                .collect();
-            pts.push((150, 150));
-            let sample: Vec<String> = pts
-                .iter()
-                .map(|&(x, y)| {
-                    let v = ids[(y * 300 + x) as usize];
-                    format!(
-                        "({x},{y}) face {} stored {:.9} plate {:.9} detail {:.9}",
-                        v[0],
-                        f32::from_bits(v[1]),
-                        at(x, y, y0),
-                        at(x, y, d0)
-                    )
-                })
-                .collect();
-            eprintln!(
-                "GAP REPORT gap {gap} m, elevation {el}: {} dark pixels {sample:?}",
-                dark.len()
-            );
-        }
-    }
 }
