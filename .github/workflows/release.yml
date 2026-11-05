@@ -63,7 +63,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" assets/*.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Prism $GITHUB_REF_NAME" \
-            --notes-file packaging/release-notes.md
+          # The release may already exist if it was made on the GitHub website,
+          # which also creates the tag. Then just attach the zips to it.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" assets/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" assets/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Prism $GITHUB_REF_NAME" \
+              --notes-file packaging/release-notes.md
+          fi
