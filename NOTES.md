@@ -189,3 +189,44 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
 - The Large Scene's few seconds of loading are in building the model: `Model::add_edge` looks for an existing edge by scanning all edges, so adding 30,000 edges is slow. An edge map in `prism-topo` fixes it, with the spatial index.
 - Dashes on a line that is cut at the screen's edge or the near plane restart from the cut, so they can shift while orbiting.
 - Parallel Projection, Standard Views, Zoom Window, Field of View, Walk and Look Around stay greyed.
+
+## Inference & Drawing
+
+**What was built**
+- **Three new pure crates** (in the purity test with the core crates):
+  - `prism-view`: the viewport's pure parts, moved out of `prism-render` so the engine and tools can use them without the GPU (camera, scene, picking, triangulation, clicks, style), plus the description of tool feedback (`overlay.rs`).
+  - `prism-infer`: the inference engine as one pure function, `infer(scene, view, cursor, context, lock, memory, settings)`. It follows the feel test: Endpoint 6/14 px, Guide Cross 5.5/12, Midpoint 5/12, Intersection 4.6/12, Guide 3.3/8, On Edge 3/9, then On Face and On Ground; score = priority − distance/radius; the held snap stays to 1.6× its radius and gives way only to a score 0.5 better. Woken points (220 ms hover, at most 5) cast axis guides; woken edges cast "Parallel to Edge" from the start point; guides cross each other and edges. Locks: Shift on an axis guide, Up/Right/Left for blue/red/green, Down releases (DECISIONS #17); while locked, points project onto the axis. Pixel radii and the model's relative tolerance replace the prototype's absolute numbers, and the time is passed in.
+  - `prism-tools`: the Line, Rectangle and Select tools, the measurement box's units, the test scenes, and a **session** that runs the document, camera, tools, inference memory, selection and typing from a stream of input events. The app only turns egui's mouse and keys into those events.
+- **Line (L):** click, click; lines chain and stop when one closes a face; Esc stops; a typed length goes along the rubber band or the locked axis.
+- **Rectangle (R):** on the locked axis's plane, the face under the cursor, the ground, or the view's main plane; sides along the world axes where possible; typed `w,h` or one number for a square; Enter after the first click reuses the last size.
+- **Retyping the last operation:** after a rectangle, or after a line has stopped (Esc or a closed face), typing a new value and Enter changes it (undo plus the new command).
+- **Measurement box** in the status bar (a Soft well, Plex Mono 14, accent colour while typing), with a lock chip in the axis colour beside it, and the tool's hint on the left. Units: mm, cm, m, in or `"`, ft or `'`, and `2'6"`. Separator `,` (or `;`), with `;` only when the decimal mark is `,`.
+- **Select (Space):** Shift toggles, Ctrl (Cmd) adds; window (left to right) and crossing (right to left) boxes, with Shift and Ctrl; a press on geometry that drags is still a box.
+- **Feedback** in the feel test's look: glyph shapes and colours, the snap target's glow and ring, dashed guides, woken diamonds, the rubber band with its length, the tinted rectangle preview with its size, and label pills.
+- **Help > Record Session** records the mouse and keys with the starting model and camera; picking it again saves `Prism session.json` (natively in Downloads, on the web as a download). Every file in `docs/acceptance/sessions/` is replayed by a test, which checks the model it ends with. One session is there now.
+- The debug panel has the Feel Panel sliders: pick aperture, snap release, hover wake. Planned Features now counts the tools and commands that work.
+- `prism-doc` got a `Loop` command: a rectangle on any plane in one undo step.
+
+**Tests:** 12 for the engine (each kind at three scales, hidden points, hysteresis to 1.6×, start-point guides, woken guides and their cross, at most 5 woken, guide-edge intersections, locks, excluded vertices, and a property test that a sub-pixel jitter never flickers between snaps), 4 for units, 11 scenario tests driving the session (a square from four lines makes a face and the line stops; a typed length on a locked axis is exact; rectangles by clicks and typed size, undone in one step; retyping the last rectangle and line; a line across a face splits it; waking a corner and drawing to where the guides cross; Shift lock; box select window and crossing with Shift and Ctrl; Shift and Ctrl clicks; record and replay; saved sessions), and a screenshot of every glyph.
+
+**Measured here** (release build, Linux)
+- Inference on the Large Scene (15,000 faces, 30,000 edges) with a start point: **14.6 ms per mouse move**, inside the 16 ms target but close. Most of it is scanning every vertex and edge and the occlusion checks; a spatial index (DECISIONS #8) is the fix when models get bigger. To measure: `cargo test --release -p prism-tools --test timing -- --ignored --nocapture`.
+- Web: works on WebGL2 in headless Chrome (`docs/screenshots/drawing-web.png`). The release wasm is 8.8 MB.
+
+**Decisions and defaults used**
+- Down releases the lock and only "Parallel to Edge" guides exist (DECISIONS #17, #19). Up in the Rotate tool will lock the protractor to a face's plane (DECISIONS #18), for Edit Tools.
+- Label text is drawn by egui over the viewport picture (in the viewport's own colours); the glyphs, guides and previews are drawn by the renderer. A text renderer in `prism-render` did not seem worth it for labels.
+- Box select picks edges and faces, as the feel test does; points are picked by clicking.
+- Retyping a line's length works once the line has stopped. While still chaining, typing applies to the next segment, as in the feel test.
+- The decimal mark is assumed to be `.` (Rust has no portable way to read it). Document Settings can set it later.
+- Typing goes to the measurement box before shortcuts once a step is in progress or there is a last operation, so `2.5m` is a length, not the Move tool.
+- The Smart Guides demo and Smart Guides themselves wait for groups.
+
+**Still to check by a person**
+- The feel: drawing a box from lines and rectangles, waking points, guides, Shift and arrow locks, typed values, box select. Natively and on the web.
+- If something feels off, Help > Record Session, reproduce it, pick it again, and send the file.
+
+**Leftovers and ideas**
+- Inference is a brute-force scan (see the timing above).
+- While a line is chaining, there is no way to retype the previous segment (SketchUp has one).
+- Measurement box arithmetic and `[x,y,z]` / `<dx,dy,dz>` coordinates are not built (out of scope).

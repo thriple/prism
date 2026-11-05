@@ -57,7 +57,7 @@ As in the Viewport chunk, the feel test (`docs/prototype/Main.dc.html`) shows **
 - **Select tool (Space)**, on top of the click, double-click and triple-click already built:
   - **Shift** toggles items in and out of the selection; **Ctrl** (Cmd on a Mac) adds.
   - **Box select:** dragging left to right selects what is wholly inside (window, solid outline). Dragging right to left selects what the box touches (crossing, dashed outline). A drag that starts on geometry is still a box. Drags under 6 px count as clicks. Shift and Ctrl work with the box too.
-  - Faces count as inside or touched by their outline; points need to be in the box for both kinds.
+  - Faces count as inside or touched by their outline. Boxes select edges and faces, as in the prototype; points are picked by clicking.
 
 ## Requirements beyond the prototype (from the plan)
 - **New crates.**
