@@ -856,6 +856,30 @@ Radii are in logical pixels and scaled by DPI. Hysteresis: the current snap hold
 
 ---
 
+### 5.1 Smart spacing guides (proposed, from the owner's Illustrator idea)
+
+Illustrator's Smart Guides line an object up with the edges and centres of the others, and show when a gap equals a gap that already exists. Prism has most of the machinery already (section 5), so this extends the inference engine to **whole objects**: groups, components and bodies.
+
+**What it adds** (while moving, copying or placing a group, component or body):
+- **Alignment:** the moving object's bounding-box faces, edges and centre line up with those of nearby objects, per axis. A guide line shows what matched.
+- **Equal spacing:** if A and B have a gap along an axis, and the moving object C would leave the same gap to B, C snaps there and both gaps are marked with arrows and a small measurement label (for example `d: 1.5 m`). Also works in a row: equal gaps along a line of objects.
+- **Equal size** (optional later): a resize that matches the width, depth or height of a neighbour.
+- It uses the ordinary snap pull (the capture radius in pixels, section 5) and the same locks. Typing a number still wins.
+
+**Cost.** The cost rule is the one Illustrator uses, plus the model's own rules:
+1. **Spatial index first.** Candidates come from the bounding-box index (section 4), only those within the snap radius of the moving object along an axis, never all objects against all objects.
+2. **Hidden is free** (section 1.14): hidden objects are not in the index.
+3. **Time budget, not an object count.** The owner suggested switching off when more than about 20 objects are in view. A fixed count is too blunt: 20 big nearby objects are cheap with an index, while a few thousand objects crowded into the cursor's reach are not. The engine instead gets a budget per frame (start with 2 ms, a setting) and degrades in steps: (a) stop looking for equal-spacing chains and keep plain alignment, (b) look only at objects the cursor is near, (c) turn Smart Guides off and show a short notice ("Smart Guides paused: too many nearby objects. Ctrl+U to turn on"). It comes back on by itself when the load drops, unless the user switched it off.
+4. **A candidate cap** (default 200 near the cursor) also bounds the worst case.
+5. **Gaps are computed on bounding boxes**, with exact geometry only when a snap is accepted.
+6. **GPU:** not planned. The index query is small enough on the CPU. Revisit only if a measurement says otherwise (section 7, performance).
+
+**Controls.** A View menu toggle "Smart Guides", **Ctrl/Cmd+U** (not used by SketchUp), and its settings in the Inspector and View Settings: which guide kinds are on, the time budget, the label units. It shows as greyed until built, like every other action.
+
+**Colours.** Illustrator uses magenta. SketchUp already uses magenta for parallel and perpendicular guides, so spacing guides get their own colour and arrows to avoid confusion. The colour is a setting.
+
+**Where it sits.** It is an extension of Inference & Drawing and of Groups & Components, because it needs objects. It should not start before Groups & Components exist. The feel-test prototype already tries it: with the Move tool, separate connected shapes count as objects, and Help > Smart Guides Demo Scene loads a row of boxes to drag one against. It has alignment (min, centre, max per axis, teal), equal spacing with arrows and a `d:` label (orange), an 8 px pull, a 2 ms budget that pauses spacing first, and Ctrl+U to switch it off. It does not yet have equal sizes or chains longer than two neighbours. A centre-alignment guide line only appears once the centres are actually lined up (within a quarter of the pull radius); until then only the moving selection's centre dot is shown. Guides only appear for axes the object is actually moving along (a flat shape sliding on the ground is always aligned in Z, so Z never shows), and a guide joins the two nearest points of the two bounding boxes at the aligned coordinate instead of running centre to centre.
+
 ## 6. Roadmap
 
 Each milestone ends with something you can try in the web build.

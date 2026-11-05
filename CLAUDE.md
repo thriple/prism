@@ -7,6 +7,7 @@ Read these first, in this order:
 2. `docs/DECISIONS.md` (open decisions, and the defaults to use until they are made)
 3. The brief for the chunk you were asked to build, in `docs/briefs/`
 4. `docs/prototype/README.md` (a browser prototype that shows the intended behaviour)
+5. `NOTES.md`, the section "For the next Claude Code session" (what changed in the prototype and plan since the last chunk)
 
 ## How to work
 
