@@ -866,7 +866,7 @@ The milestones below are broken into chunks that can be built and tried one at a
 
 | Chunk | What it contains | Milestone | Depends on | Size | Where we are | You can try it when |
 |---|---|---|---|---|---|---|
-| **Skeleton** | Cargo workspace, wgpu window native and web, CI to Pages (web) and Releases (Windows, macOS) | M0 | — | M | Not started | A blank viewport opens as a Windows app, a Mac app and a web page |
+| **Skeleton** | Cargo workspace, wgpu window native and web, CI to Pages (web) and Releases (Windows, macOS) | M0 | — | M | Built; waiting for a person to check it on Windows or macOS and the iPad (see NOTES.md) | A blank viewport opens as a Windows app, a Mac app and a web page |
 | **Core Model** | Math, tolerances, B-rep with holes and stable IDs, sticky geometry, overlap split and dedupe (1.9), commands and undo. The edge and face types are defined for exact curves and surfaces from the start (section 1.1) even though only lines and planes are implemented at first, and each planar face stores its own plane, with its vertices placed on it | M1–M2 | — | L | Prototyped | Unit tests only: the prototype's cases pass in Rust |
 | **Viewport** | Camera navigation (1.5a), line renderer, shaded faces, picking, prehighlight, selection display | M1 | Skeleton | L | Prototyped | Orbit, pan and zoom a model with correct highlighting |
 | **Actions & Keys** | Action registry, menu bar, dock, context menu, command search, keymap engine, hotkeys window (1.12), Mac system menu bar, Planned Features list | M1–M2 | Skeleton | M | Partly prototyped | Every action is reachable from a menu and rebindable |
@@ -893,7 +893,7 @@ The milestones below are broken into chunks that can be built and tried one at a
 | **Projection Mapping** | Projectors and calibration, mapping, edge blending, second-display output, compositing graph | Tier 5 | Modes & Scenes, Rendering | XL | Not started | A calibrated projector lights a modelled surface |
 | **iPad App** | Native iPadOS build, signing and TestFlight | — | Skeleton | M | Not started | The app installs on the iPad |
 
-**Where we are:** the browser prototype covers the feel of Inference & Drawing and most of Edit Tools, plus the design of the menus, dock and context menu in Actions & Keys, and it tests the rules for Core Model and Viewport. No Rust code exists yet, so the next real step is Skeleton, with Core Model and Actions & Keys alongside it.
+**Where we are:** the browser prototype covers the feel of Inference & Drawing and most of Edit Tools, plus the design of the menus, dock and context menu in Actions & Keys, and it tests the rules for Core Model and Viewport. Skeleton is built: a Cargo workspace with `prism-app`, a window natively and on the web, and CI for checks, Pages and Releases. Core Model and Actions & Keys are next.
 
 **Added after review:** Basic Materials, Annotation & Sections and Shapes & Placement were missing from the first list. Tools in section 1.4 such as Paint Bucket, Dimensions, Text, Section Plane, Primitives, Mirror, Hole and Unfold had no chunk.
 

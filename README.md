@@ -35,3 +35,12 @@ Chunks 2 and 3 do not depend on each other, so they can run in separate sessions
 ## What is deliberately not here yet
 
 Briefs for Viewport, Inference & Drawing and Edit Tools. They depend on how Core Model turns out, so they are better written after it. The same goes for the NURBS test, the dependency and licence table, and the performance targets (see DECISIONS.md).
+
+## Building and running
+
+```
+cargo run -p prism-app          # native window
+trunk serve                     # web build at http://127.0.0.1:8080 (install with: cargo install trunk --locked)
+```
+
+CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, Windows and macOS builds and the web build on every push. Pushes to `main` publish the web build to GitHub Pages. A `v*` tag creates a release with a Windows zip and a macOS `.app` zip.

@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Windows zip
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p prism-app
+      - name: Zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out/Prism | Out-Null
+          Copy-Item target/release/prism-app.exe out/Prism/Prism.exe
+          Compress-Archive -Path out/Prism -DestinationPath "Prism-${{ github.ref_name }}-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: Prism-*.zip
+
+  macos:
+    name: macOS app (universal, unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - run: cargo build --release -p prism-app --target aarch64-apple-darwin
+      - run: cargo build --release -p prism-app --target x86_64-apple-darwin
+      - name: Make Prism.app and zip it
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP=out/Prism.app
+          mkdir -p "$APP/Contents/MacOS"
+          lipo -create -output "$APP/Contents/MacOS/Prism" \
+            target/aarch64-apple-darwin/release/prism-app \
+            target/x86_64-apple-darwin/release/prism-app
+          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          # ditto keeps the bundle structure and permissions intact.
+          ditto -c -k --keepParent "$APP" "Prism-${GITHUB_REF_NAME}-macos-universal.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: Prism-*.zip
+
+  publish:
+    name: Publish the release
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Create the release and attach the zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Prism $GITHUB_REF_NAME" \
+            --notes "Unsigned builds. On macOS, right-click Prism.app and choose Open the first time. On Windows, SmartScreen may warn; choose More info, then Run anyway."
