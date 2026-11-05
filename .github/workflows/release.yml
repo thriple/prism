@@ -19,6 +19,13 @@ env:
   CARGO_TERM_COLOR: always
   # "latest" for ordinary pushes, the tag name for v* tags.
   RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+  # Every build is also kept as its own numbered release, so an older one can
+  # be downloaded again if a new one goes wrong.
+  BUILD_TAG: prism-build-${{ github.run_number }}
+  # Shown in the app's debug panel.
+  PRISM_BUILD: build ${{ github.run_number }}
+  # How many numbered builds to keep.
+  KEEP_BUILDS: 30
 
 jobs:
   windows:
@@ -71,16 +78,31 @@ jobs:
         with:
           path: assets
           merge-multiple: true
-      - name: Replace the release with these zips
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Write the release notes
         run: |
           {
-            echo "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7} ($(date -u '+%Y-%m-%d %H:%M UTC'))."
+            echo "Build ${{ github.run_number }}, from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7} ($(date -u '+%Y-%m-%d %H:%M UTC'))."
+            echo
+            echo "Older builds: https://github.com/${GITHUB_REPOSITORY}/releases (named \"Prism build N\")."
             echo
             cat packaging/release-notes.md
           } > notes.md
-          # Drop the old release and its tag, then make a fresh one at this commit.
+      - name: Keep this build as its own numbered release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A re-run of the same workflow run reuses the number, so replace it.
+          gh release delete "$BUILD_TAG" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create "$BUILD_TAG" assets/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Prism build ${{ github.run_number }}" \
+            --notes-file notes.md \
+            --prerelease
+      - name: Replace the latest release with these zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           gh release delete "$RELEASE" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
           gh release create "$RELEASE" assets/*.zip \
             --repo "$GITHUB_REPOSITORY" \
@@ -88,3 +110,12 @@ jobs:
             --title "Prism ($RELEASE)" \
             --notes-file notes.md \
             --latest
+      - name: Remove numbered builds beyond the newest ${{ env.KEEP_BUILDS }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 500 --json tagName --jq '.[].tagName' \
+            | grep '^prism-build-[0-9]*$' | sort -t- -k3 -n -r | tail -n +$((KEEP_BUILDS + 1)) \
+            | while read -r tag; do
+                gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY"
+              done

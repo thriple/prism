@@ -271,6 +271,13 @@ struct OverlayInfo<'a> {
     adapter: String,
 }
 
+/// Which build this is, set by the release workflow (for example "build 12").
+/// Local builds say "local".
+const BUILD: &str = match option_env!("PRISM_BUILD") {
+    Some(b) => b,
+    None => "local",
+};
+
 fn draw_overlay(ui: &mut egui::Ui, info: &OverlayInfo<'_>) {
     egui::Window::new("Prism debug")
         .default_pos([12.0, 12.0])
@@ -281,6 +288,7 @@ fn draw_overlay(ui: &mut egui::Ui, info: &OverlayInfo<'_>) {
                 .stats
                 .fps()
                 .map_or_else(|| "…".to_string(), |f| format!("{f:.0}"));
+            ui.monospace(format!("build {BUILD}"));
             ui.monospace(format!("frame {}   fps {fps}", info.stats.frames()));
             ui.monospace(format!(
                 "size {}x{} px   scale {:.2}",
