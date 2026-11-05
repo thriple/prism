@@ -16,13 +16,13 @@ pub mod tooltip;
 pub use button::SoftButton;
 pub use dialog::{DialogResponse, SoftDialog};
 pub use field::field;
-pub use kbd::keycap;
-pub use tool_button::ToolButton;
 pub use groove::groove;
+pub use kbd::keycap;
 pub use panel::SoftPanel;
 pub use select::SoftSelect;
 pub use slider::SoftSlider;
 pub use toggle::SoftToggle;
+pub use tool_button::ToolButton;
 
 use egui::{Painter, Rect, Shape};
 

@@ -34,13 +34,20 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
 
     // The viewport: a well the renderer will draw into. Right-click opens
     // the context menu (for empty space until there is a model).
-    Area::new(Id::new("viewport"))
+    Area::new(Id::unique("viewport"))
         .order(Order::Background)
         .fixed_pos(viewport.min)
         .show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(viewport.size(), Sense::click());
             let mut shapes = Vec::new();
-            emboss::soft(&mut shapes, rect, radius::CARD, -1.0, depth::WELL, color::VIEWPORT);
+            emboss::soft(
+                &mut shapes,
+                rect,
+                radius::CARD,
+                -1.0,
+                depth::WELL,
+                color::VIEWPORT,
+            );
             ui.painter().extend(shapes);
             if resp.secondary_clicked()
                 && let Some(p) = resp.interact_pointer_pos()
@@ -53,7 +60,7 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
         });
 
     // The status bar: a one-line hint.
-    Area::new(Id::new("status"))
+    Area::new(Id::unique("status"))
         .order(Order::Background)
         .fixed_pos(status.min)
         .interactable(false)
@@ -79,19 +86,26 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
 }
 
 /// Where each menu bar title is, for opening its menu below it.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub(super) struct BarTitle {
     pub rect: Rect,
 }
 
 fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
-    Area::new(Id::new("top-bar"))
+    Area::new(Id::unique("top-bar"))
         .order(Order::Background)
         .fixed_pos(rect.min)
         .show(ctx, |ui| {
             let (bar, _) = ui.allocate_exact_size(rect.size(), Sense::hover());
             let mut shapes = Vec::new();
-            emboss::soft(&mut shapes, bar, radius::CARD, 1.0, depth::CARD, color::SURFACE);
+            emboss::soft(
+                &mut shapes,
+                bar,
+                radius::CARD,
+                1.0,
+                depth::CARD,
+                color::SURFACE,
+            );
             ui.painter().extend(shapes);
 
             let mut x = bar.left() + size::TOP_BAR_PAD;
@@ -112,19 +126,26 @@ fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
             );
 
             let open_bar = match &chrome.menu {
-                Some(OpenMenu { kind: MenuKind::Bar(i), .. }) => Some(*i),
+                Some(OpenMenu {
+                    kind: MenuKind::Bar(i),
+                    ..
+                }) => Some(*i),
                 _ => None,
             };
             let mut titles = Vec::new();
             for (i, (name, _)) in chrome.reg.menubar().iter().enumerate() {
-                let galley = ui.painter().layout_no_wrap((*name).to_owned(), theme::body_medium(), color::INK);
+                let galley = ui.painter().layout_no_wrap(
+                    (*name).to_owned(),
+                    theme::body_medium(),
+                    color::INK,
+                );
                 let w = galley.size().x + 2.0 * size::MENU_BAR_BUTTON_PAD;
                 let r = Rect::from_center_size(
                     pos2(x + w * 0.5, bar.center().y),
                     vec2(w, size::MENU_BAR_BUTTON_HEIGHT),
                 );
                 x += w + size::MENU_BAR_GAP;
-                let resp = ui.interact(r, Id::new(("menu-bar", i)), Sense::click());
+                let resp = ui.interact(r, Id::unique(("menu-bar", i)), Sense::click());
                 let open = open_bar == Some(i);
                 let sink = prism_ui::anim::spring(
                     ctx,
@@ -137,8 +158,13 @@ fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
                     emboss::inset(&mut v, r, radius::MENU_BUTTON, depth::MENU_INSET * sink);
                     ui.painter().extend(v);
                 }
-                let ink = if resp.hovered() || open { color::INK_BRIGHT } else { color::INK };
-                ui.painter().galley(r.center() - galley.size() * 0.5, galley, ink);
+                let ink = if resp.hovered() || open {
+                    color::INK_BRIGHT
+                } else {
+                    color::INK
+                };
+                ui.painter()
+                    .galley(r.center() - galley.size() * 0.5, galley, ink);
                 if resp.clicked() {
                     if open {
                         chrome.menu = None;
@@ -151,6 +177,6 @@ fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
                 }
                 titles.push(BarTitle { rect: r });
             }
-            ctx.data_mut(|d| d.insert_temp(Id::new("menu-bar-titles"), titles));
+            ctx.data_mut(|d| d.insert_temp(Id::unique("menu-bar-titles"), titles));
         });
 }

@@ -3,11 +3,11 @@
 //! command search, the hotkeys window and the Planned Features window.
 
 mod dock;
+mod features;
 mod frame;
 mod hotkeys;
 mod menus;
 mod palette;
-mod features;
 
 use std::collections::{HashMap, HashSet};
 
@@ -15,6 +15,8 @@ use egui::{Context, Pos2, Rect};
 use prism_ui::icon::Icon;
 
 use crate::actions::esc::{EscAction, EscState, on_esc};
+#[cfg(test)]
+use crate::actions::keymap::Chord;
 use crate::actions::keymap::{KeyPress, Keymap, Platform, Preset};
 use crate::actions::registry::{Check, Entry, Run, Selection};
 use crate::actions::{self, Registry};
@@ -43,7 +45,11 @@ pub struct ActionEvent {
 #[derive(Clone, Debug)]
 pub(crate) enum MenuKind {
     Bar(usize),
-    Context { at: Pos2, heading: String, entries: Vec<Entry> },
+    Context {
+        at: Pos2,
+        heading: String,
+        entries: Vec<Entry>,
+    },
 }
 
 /// Which rows are highlighted and which submenus are open, per level.
@@ -84,14 +90,25 @@ pub struct Chrome {
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
     pub(crate) rules: actions::Context,
+    /// Save keymap changes to disk (off in tests).
+    persist: bool,
 }
 
 impl Chrome {
+    /// The chrome with the saved keymap, or the SketchUp keys if none is saved.
     pub fn new(platform: Platform) -> Self {
         let reg = Registry::new();
         let keymap = storage::load_keymap()
             .and_then(|text| Keymap::from_json(&text).ok())
             .unwrap_or_else(|| Keymap::from_preset(Preset::SketchUp, &reg));
+        let mut c = Self::with_keymap(platform, keymap);
+        c.persist = true;
+        c
+    }
+
+    /// The chrome with a given keymap, saving nothing.
+    pub fn with_keymap(platform: Platform, keymap: Keymap) -> Self {
+        let reg = Registry::new();
         let icons = reg
             .icons()
             .iter()
@@ -118,6 +135,7 @@ impl Chrome {
             status: "Greyed items are not built yet. Tools can be picked; they are built in later chunks.".to_owned(),
             events: Vec::new(),
             rules: actions::Context::default(),
+            persist: false,
         }
     }
 
@@ -175,7 +193,10 @@ impl Chrome {
             Run::NotBuilt => return,
             Run::Tool => {
                 self.active_tool = id;
-                self.status = format!("{}: picked. The tool itself is built in a later chunk.", a.name);
+                self.status = format!(
+                    "{}: picked. The tool itself is built in a later chunk.",
+                    a.name
+                );
             }
             Run::Event => {
                 if a.check == Check::Toggle && !self.toggles.remove(id) {
@@ -196,7 +217,7 @@ impl Chrome {
                         }
                     }
                 }
-                self.status = format!("{}.", a.name);
+                self.status = a.name.trim_end_matches('…').to_owned();
             }
         }
         self.menu = None;
@@ -204,7 +225,10 @@ impl Chrome {
     }
 
     fn ui_open(&self) -> bool {
-        self.menu.is_some() || self.palette.is_some() || self.features_open || self.hotkeys.is_some()
+        self.menu.is_some()
+            || self.palette.is_some()
+            || self.features_open
+            || self.hotkeys.is_some()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -266,7 +290,9 @@ impl Chrome {
     }
 
     pub(crate) fn save_keymap(&self) {
-        storage::save_keymap(&self.keymap.to_json());
+        if self.persist {
+            storage::save_keymap(&self.keymap.to_json());
+        }
     }
 
     /// Open a menu (replacing any open one).
@@ -296,5 +322,123 @@ impl Chrome {
         features::show(self, ctx);
         hotkeys::show(self, ctx);
         layout
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chrome() -> Chrome {
+        let reg = Registry::new();
+        Chrome::with_keymap(
+            Platform::Windows,
+            Keymap::from_preset(Preset::SketchUp, &reg),
+        )
+    }
+
+    fn press(code: &str) -> KeyPress {
+        KeyPress {
+            code: code.into(),
+            ctrl: false,
+            cmd: false,
+            shift: false,
+            alt: false,
+        }
+    }
+
+    #[test]
+    fn keys_pick_tools_and_send_events() {
+        let mut c = chrome();
+        assert!(c.key(&press("KeyL"), false));
+        assert_eq!(c.active_tool, "tool.line");
+        assert!(c.checked("tool.line") && !c.checked("tool.select"));
+        assert_eq!(
+            c.events.last(),
+            Some(&ActionEvent {
+                id: "tool.line",
+                source: Source::Key
+            })
+        );
+        // While typing in a field, letters are text, not shortcuts.
+        assert!(!c.key(&press("KeyR"), true));
+        assert_eq!(c.active_tool, "tool.line");
+    }
+
+    #[test]
+    fn greyed_actions_do_nothing() {
+        let mut c = chrome();
+        c.run("solid.union", Source::Menu);
+        c.run("edit.undo", Source::Menu); // nothing to undo
+        assert!(c.events.is_empty());
+        // Smart Guides' Ctrl+U is bound but greyed until Inference & Drawing.
+        let mut ctrl_u = press("KeyU");
+        ctrl_u.ctrl = true;
+        assert!(c.key(&ctrl_u, false));
+        assert!(c.events.is_empty());
+    }
+
+    #[test]
+    fn esc_closes_the_topmost_thing_first() {
+        let mut c = chrome();
+        let mut shift_s = press("KeyS");
+        shift_s.shift = true;
+        assert!(c.key(&shift_s, false));
+        assert!(c.palette.is_some(), "Shift+S opens command search");
+        c.run("help.features", Source::Menu);
+        c.open_context(Pos2::ZERO, Selection::default());
+        assert!(c.key(&press("Escape"), false));
+        assert!(c.menu.is_none() && c.palette.is_some());
+        assert!(c.key(&press("Escape"), false));
+        assert!(c.palette.is_none() && c.features_open);
+        assert!(c.key(&press("Escape"), false));
+        assert!(!c.features_open);
+        assert!(!c.key(&press("Escape"), false), "nothing left to close");
+    }
+
+    #[test]
+    fn while_a_menu_is_open_shortcuts_wait() {
+        let mut c = chrome();
+        c.open_menu(MenuKind::Bar(0));
+        assert!(!c.key(&press("KeyL"), false));
+        assert_eq!(c.active_tool, "tool.select");
+    }
+
+    #[test]
+    fn recording_a_conflicting_key_offers_the_choices() {
+        let mut c = chrome();
+        c.run("win.hotkeys", Source::Menu);
+        let h = c.hotkeys.as_mut().expect("open");
+        h.start_recording("tool.rect", 0);
+        assert!(
+            c.key(&press("KeyL"), false),
+            "the press goes to the recorder"
+        );
+        let h = c.hotkeys.as_ref().expect("open");
+        assert_eq!(h.pending_others(), Some(vec!["tool.line".to_owned()]));
+        // Nothing changed until a choice is made.
+        assert_eq!(
+            c.keymap.lookup(
+                &Chord::parse("L").expect("parses"),
+                crate::actions::registry::Mode::All
+            ),
+            Some("tool.line")
+        );
+        // Esc drops the choice and keeps the window open.
+        assert!(c.key(&press("Escape"), false));
+        assert!(
+            c.hotkeys
+                .as_ref()
+                .is_some_and(|h| h.pending_others().is_none())
+        );
+    }
+
+    #[test]
+    fn toggles_check_and_uncheck() {
+        let mut c = chrome();
+        c.run("help.debug", Source::Menu);
+        assert!(c.is_on("help.debug") && c.checked("help.debug"));
+        c.run("help.debug", Source::Menu);
+        assert!(!c.is_on("help.debug"));
     }
 }

@@ -33,9 +33,15 @@ pub struct MenuRow<'a> {
 
 impl MenuRow<'_> {
     pub fn show(self, ui: &mut Ui) -> Response {
-        let (rect, response) = ui.allocate_exact_size(vec2(self.width, size::MENU_ROW_HEIGHT), Sense::click());
+        let (rect, response) =
+            ui.allocate_exact_size(vec2(self.width, size::MENU_ROW_HEIGHT), Sense::click());
         let hot = self.enabled && (self.highlight || response.hovered());
-        let sink = anim::spring(ui.ctx(), response.id.with("sink"), if hot { 1.0 } else { 0.0 }, spring::SPRING_SNAPPY);
+        let sink = anim::spring(
+            ui.ctx(),
+            response.id.with("sink"),
+            if hot { 1.0 } else { 0.0 },
+            spring::SPRING_SNAPPY,
+        );
         if ui.is_rect_visible(rect) {
             let mut painter = ui.painter().clone();
             if !self.enabled {
@@ -43,16 +49,30 @@ impl MenuRow<'_> {
             }
             if sink > 0.01 {
                 let mut shapes = Vec::new();
-                emboss::inset(&mut shapes, rect, radius::MENU_ROW, depth::MENU_INSET * sink);
+                emboss::inset(
+                    &mut shapes,
+                    rect,
+                    radius::MENU_ROW,
+                    depth::MENU_INSET * sink,
+                );
                 painter.extend(shapes);
             }
             let [pad_l, pad_r] = size::MENU_ROW_PAD;
-            let check = pos2(rect.left() + pad_l + size::MENU_CHECK * 0.5, rect.center().y);
+            let check = pos2(
+                rect.left() + pad_l + size::MENU_CHECK * 0.5,
+                rect.center().y,
+            );
             if self.checked {
                 painter.circle_filled(check, size::MENU_CHECK_DOT, color::ACCENT);
             }
             let label_x = rect.left() + pad_l + size::MENU_CHECK + pad_l;
-            painter.text(pos2(label_x, rect.center().y), Align2::LEFT_CENTER, self.label, theme::body(), color::INK);
+            painter.text(
+                pos2(label_x, rect.center().y),
+                Align2::LEFT_CENTER,
+                self.label,
+                theme::body(),
+                color::INK,
+            );
             let right = pos2(rect.right() - pad_r, rect.center().y);
             match self.end {
                 RowEnd::Key(k) => {
@@ -61,7 +81,11 @@ impl MenuRow<'_> {
                 RowEnd::Submenu => {
                     let a = size::MENU_ARROW;
                     painter.add(egui::Shape::convex_polygon(
-                        vec![right + vec2(-a, -a), right + vec2(0.0, 0.0), right + vec2(-a, a)],
+                        vec![
+                            right + vec2(-a, -a),
+                            right + vec2(0.0, 0.0),
+                            right + vec2(-a, a),
+                        ],
                         color::MUTED,
                         egui::Stroke::NONE,
                     ));
@@ -76,8 +100,14 @@ impl MenuRow<'_> {
 /// The width a row needs for its label and key.
 pub fn row_width(ui: &Ui, label: &str, key: &str) -> f32 {
     let f = ui.fonts_mut(|f| {
-        let l = f.layout_no_wrap(label.to_owned(), theme::body(), color::INK).size().x;
-        let k = f.layout_no_wrap(key.to_owned(), key_font(), color::MUTED).size().x;
+        let l = f
+            .layout_no_wrap(label.to_owned(), theme::body(), color::INK)
+            .size()
+            .x;
+        let k = f
+            .layout_no_wrap(key.to_owned(), key_font(), color::MUTED)
+            .size()
+            .x;
         l + k
     });
     let [pad_l, pad_r] = size::MENU_ROW_PAD;
@@ -86,7 +116,10 @@ pub fn row_width(ui: &Ui, label: &str, key: &str) -> f32 {
 
 /// The font for keys at the right of menu rows.
 pub fn key_font() -> egui::FontId {
-    egui::FontId::new(text::MENU_KEY, egui::FontFamily::Name(text::MONO_MEDIUM.into()))
+    egui::FontId::new(
+        text::MENU_KEY,
+        egui::FontFamily::Name(text::MONO_MEDIUM.into()),
+    )
 }
 
 /// A thin line between groups of rows.
@@ -105,7 +138,10 @@ pub fn heading(ui: &mut Ui, label: &str, width: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, size::MENU_HEAD_HEIGHT), Sense::hover());
     let job = caps(label, color::MUTED);
     let galley = ui.fonts_mut(|f| f.layout_job(job));
-    let pos = Pos2::new(rect.left() + size::MENU_ROW_PAD[1], rect.center().y - galley.size().y * 0.5);
+    let pos = Pos2::new(
+        rect.left() + size::MENU_ROW_PAD[1],
+        rect.center().y - galley.size().y * 0.5,
+    );
     ui.painter().galley(pos, galley, color::MUTED);
 }
 
@@ -116,7 +152,10 @@ pub fn caps(label: &str, colour: egui::Color32) -> egui::text::LayoutJob {
         &label.to_uppercase(),
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::new(text::LABEL, egui::FontFamily::Name(text::SANS_SEMIBOLD.into())),
+            font_id: egui::FontId::new(
+                text::LABEL,
+                egui::FontFamily::Name(text::SANS_SEMIBOLD.into()),
+            ),
             color: colour,
             extra_letter_spacing: text::LABEL_SPACING,
             ..Default::default()

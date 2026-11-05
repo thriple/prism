@@ -236,7 +236,10 @@ impl Registry {
 
     /// The icon drawing for an action, if it has one.
     pub fn icon(&self, id: &str) -> Option<&'static str> {
-        table::ICONS.iter().find(|(i, _)| *i == id).map(|(_, svg)| *svg)
+        table::ICONS
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, svg)| *svg)
     }
 
     /// All icons, for checking that each one draws.
@@ -287,11 +290,15 @@ impl Selection {
 
     /// The menu's heading: "Empty space", "1 face", "2 faces, 3 edges".
     pub fn label(&self) -> String {
-        let parts: Vec<String> = [(self.faces, "face"), (self.edges, "edge"), (self.points, "point")]
-            .into_iter()
-            .filter(|(n, _)| *n > 0)
-            .map(|(n, w)| format!("{n} {w}{}", if n > 1 { "s" } else { "" }))
-            .collect();
+        let parts: Vec<String> = [
+            (self.faces, "face"),
+            (self.edges, "edge"),
+            (self.points, "point"),
+        ]
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, w)| format!("{n} {w}{}", if n > 1 { "s" } else { "" }))
+        .collect();
         if parts.is_empty() {
             "Empty space".to_owned()
         } else {
@@ -395,7 +402,11 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 /// Behaviours from the prototype's list that the Rust app has now.
 const BUILT_BEHAVIOURS: [&str; 1] = ["Command search (Shift+S)"];
 
-fn collect(items: &'static [Item], seen: &mut std::collections::HashSet<&'static str>, out: &mut Vec<&'static str>) {
+fn collect(
+    items: &'static [Item],
+    seen: &mut std::collections::HashSet<&'static str>,
+    out: &mut Vec<&'static str>,
+) {
     for item in items {
         match item {
             Item::Action(id) => {
@@ -447,7 +458,11 @@ mod tests {
         }
         for sel in [
             Selection::default(),
-            Selection { faces: 1, edges: 2, points: 0 },
+            Selection {
+                faces: 1,
+                edges: 2,
+                points: 0,
+            },
         ] {
             ids_in(&context_menu(sel), &mut ids);
         }
@@ -468,7 +483,12 @@ mod tests {
         assert_eq!(ids.len(), n, "duplicate ids");
         assert!(n > 180, "only {n} actions");
         assert!(reg.get("help.smartdemo").is_none(), "prototype-only helper");
-        for id in ["file.docsettings", "help.pen", "script.console", "view.smart"] {
+        for id in [
+            "file.docsettings",
+            "help.pen",
+            "script.console",
+            "view.smart",
+        ] {
             assert!(reg.get(id).is_some(), "{id} missing");
         }
         assert!(reg.menubar().iter().any(|(m, _)| *m == "Scripting"));
@@ -480,10 +500,16 @@ mod tests {
         let ctx = Context::default();
         assert!(!reg.enabled("solid.union", &ctx));
         assert_eq!(reg.why_disabled("solid.union", &ctx), Some("Not built yet"));
-        assert!(!reg.enabled("view.smart", &ctx), "Smart Guides wait for Inference & Drawing");
+        assert!(
+            !reg.enabled("view.smart", &ctx),
+            "Smart Guides wait for Inference & Drawing"
+        );
         assert!(!reg.enabled("edit.undo", &ctx));
         assert_eq!(reg.why_disabled("edit.undo", &ctx), Some("Nothing to undo"));
-        let ctx = Context { can_undo: true, ..ctx };
+        let ctx = Context {
+            can_undo: true,
+            ..ctx
+        };
         assert!(reg.enabled("edit.undo", &ctx));
         assert!(reg.enabled("tool.line", &ctx));
         assert!(reg.enabled("help.features", &ctx));
@@ -499,11 +525,25 @@ mod tests {
         };
         let empty = ids(Selection::default());
         assert!(empty.contains(&"edit.paste") && !empty.contains(&"edit.delete"));
-        let face = ids(Selection { faces: 1, ..Default::default() });
+        let face = ids(Selection {
+            faces: 1,
+            ..Default::default()
+        });
         assert!(face.contains(&"edit.revface") && !face.contains(&"edit.weld"));
-        let edge = ids(Selection { edges: 2, ..Default::default() });
+        let edge = ids(Selection {
+            edges: 2,
+            ..Default::default()
+        });
         assert!(edge.contains(&"edit.weld") && !edge.contains(&"edit.revface"));
-        assert_eq!(Selection { faces: 1, edges: 3, points: 0 }.label(), "1 face, 3 edges");
+        assert_eq!(
+            Selection {
+                faces: 1,
+                edges: 3,
+                points: 0
+            }
+            .label(),
+            "1 face, 3 edges"
+        );
         assert_eq!(Selection::default().label(), "Empty space");
     }
 
@@ -512,7 +552,11 @@ mod tests {
         let reg = Registry::new();
         let groups = planned_features(&reg);
         let total: usize = groups.iter().map(|(_, f)| f.len()).sum();
-        let built: usize = groups.iter().flat_map(|(_, f)| f).filter(|f| f.built).count();
+        let built: usize = groups
+            .iter()
+            .flat_map(|(_, f)| f)
+            .filter(|f| f.built)
+            .count();
         let menu_actions = reg.all().iter().filter(|a| a.id != "file.recent").count();
         assert_eq!(total, menu_actions + BEHAVIOURS.len());
         assert!(built >= COMMANDS.len());

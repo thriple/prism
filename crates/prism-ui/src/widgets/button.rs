@@ -13,6 +13,7 @@ pub struct SoftButton {
     enabled: bool,
     small: bool,
     selected: bool,
+    min_width: f32,
 }
 
 impl SoftButton {
@@ -22,6 +23,7 @@ impl SoftButton {
             enabled: true,
             small: false,
             selected: false,
+            min_width: 0.0,
         }
     }
 
@@ -34,6 +36,12 @@ impl SoftButton {
     /// Stays pressed in, as the chosen one of a set (tabs, a cell being recorded).
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    /// At least this wide (table cells line up).
+    pub fn min_width(mut self, width: f32) -> Self {
+        self.min_width = width;
         self
     }
 
@@ -69,7 +77,7 @@ impl Widget for SoftButton {
                 depth::BUTTON,
             )
         };
-        let want = vec2(galley.size().x + 2.0 * pad, height);
+        let want = vec2((galley.size().x + 2.0 * pad).max(self.min_width), height);
         let sense = if self.enabled {
             Sense::click()
         } else {

@@ -34,7 +34,9 @@ pub enum Platform {
     Mac,
     Linux,
     /// The web build, on a Mac or not.
-    Web { mac: bool },
+    Web {
+        mac: bool,
+    },
 }
 
 impl Platform {
@@ -136,7 +138,8 @@ impl Serialize for Chord {
 impl<'de> Deserialize<'de> for Chord {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let text = String::deserialize(d)?;
-        Chord::from_stored(&text).ok_or_else(|| serde::de::Error::custom(format!("bad key {text:?}")))
+        Chord::from_stored(&text)
+            .ok_or_else(|| serde::de::Error::custom(format!("bad key {text:?}")))
     }
 }
 
@@ -228,8 +231,10 @@ impl Preset {
 }
 
 /// Second keys in the SketchUp preset, from PLAN 1.6.
-const SKETCHUP_ALTERNATES: [(&str, &str); 2] =
-    [("edit.redo", "Ctrl+Shift+Z"), ("edit.desel", "Ctrl+Shift+A")];
+const SKETCHUP_ALTERNATES: [(&str, &str); 2] = [
+    ("edit.redo", "Ctrl+Shift+Z"),
+    ("edit.desel", "Ctrl+Shift+A"),
+];
 
 /// The two key slots of one action.
 pub type Slots = [Option<Chord>; 2];
@@ -254,6 +259,58 @@ pub fn preset_bindings(preset: Preset, reg: &Registry) -> BTreeMap<String, Slots
     map
 }
 
+/// A modifier key, for the tool modifier meanings (PLAN 1.5 and 1.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModKey {
+    Shift,
+    Ctrl,
+    Alt,
+}
+
+impl ModKey {
+    pub const ALL: [ModKey; 3] = [ModKey::Shift, ModKey::Ctrl, ModKey::Alt];
+
+    /// On a Mac, tools use Option where a PC uses Ctrl, and Cmd for Alt (PLAN 1.5).
+    pub fn label(self, platform: Platform) -> &'static str {
+        match (self, platform.is_mac()) {
+            (ModKey::Shift, _) => "Shift",
+            (ModKey::Ctrl, false) => "Ctrl",
+            (ModKey::Ctrl, true) => "Option",
+            (ModKey::Alt, false) => "Alt",
+            (ModKey::Alt, true) => "Cmd",
+        }
+    }
+}
+
+/// What each modifier means inside tools. The same key means the same kind
+/// of thing in every tool.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModifierRoles {
+    /// Lock or constrain (Shift).
+    pub lock: ModKey,
+    /// Make something new instead of changing the original (Ctrl).
+    pub make_new: ModKey,
+    /// Alternate mode (Alt).
+    pub alternate: ModKey,
+}
+
+impl Default for ModifierRoles {
+    fn default() -> Self {
+        Self {
+            lock: ModKey::Shift,
+            make_new: ModKey::Ctrl,
+            alternate: ModKey::Alt,
+        }
+    }
+}
+
+impl ModifierRoles {
+    /// Two meanings on one key break the "same key, same meaning" rule.
+    pub fn clash(&self) -> bool {
+        self.lock == self.make_new || self.lock == self.alternate || self.make_new == self.alternate
+    }
+}
+
 /// The current bindings: a preset plus the user's changes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Keymap {
@@ -262,6 +319,9 @@ pub struct Keymap {
     pub preset: Preset,
     /// Every action that has a key, by id.
     pub bindings: BTreeMap<String, Slots>,
+    /// What Shift, Ctrl and Alt mean inside tools.
+    #[serde(default)]
+    pub modifiers: ModifierRoles,
 }
 
 /// The current file format version.
@@ -273,6 +333,7 @@ impl Keymap {
             version: VERSION,
             preset,
             bindings: preset_bindings(preset, reg),
+            modifiers: ModifierRoles::default(),
         }
     }
 
@@ -351,7 +412,10 @@ impl Keymap {
                 by_chord.entry(c.clone()).or_default().push(id.clone());
             }
         }
-        by_chord.into_iter().filter(|(_, ids)| ids.len() > 1).collect()
+        by_chord
+            .into_iter()
+            .filter(|(_, ids)| ids.len() > 1)
+            .collect()
     }
 
     pub fn to_json(&self) -> String {
@@ -380,7 +444,10 @@ pub fn reserved(chord: &Chord, platform: Platform) -> Option<&'static str> {
             if m.primary && code == "Tab" {
                 return Some("The browser takes this key (switch tabs)");
             }
-            if code.starts_with('F') && code.len() > 1 && code[1..].chars().all(|c| c.is_ascii_digit()) {
+            if code.starts_with('F')
+                && code.len() > 1
+                && code[1..].chars().all(|c| c.is_ascii_digit())
+            {
                 return Some("Browsers use the F-keys; pick a letter key instead");
             }
             None
@@ -409,7 +476,11 @@ pub struct KeyPress {
 impl KeyPress {
     /// The chord this press makes on `platform` (Cmd is the primary key on a Mac).
     pub fn chord(&self, platform: Platform) -> Chord {
-        let primary = if platform.is_mac() { self.cmd } else { self.ctrl };
+        let primary = if platform.is_mac() {
+            self.cmd
+        } else {
+            self.ctrl
+        };
         Chord::new(
             self.code.clone(),
             Mods {
@@ -424,8 +495,18 @@ impl KeyPress {
     pub fn is_modifier(&self) -> bool {
         matches!(
             self.code.as_str(),
-            "ShiftLeft" | "ShiftRight" | "ControlLeft" | "ControlRight" | "AltLeft" | "AltRight"
-                | "SuperLeft" | "SuperRight" | "MetaLeft" | "MetaRight" | "CapsLock" | "Fn"
+            "ShiftLeft"
+                | "ShiftRight"
+                | "ControlLeft"
+                | "ControlRight"
+                | "AltLeft"
+                | "AltRight"
+                | "SuperLeft"
+                | "SuperRight"
+                | "MetaLeft"
+                | "MetaRight"
+                | "CapsLock"
+                | "Fn"
         )
     }
 }
@@ -465,7 +546,12 @@ mod tests {
         let reg = Registry::new();
         for a in reg.all() {
             if !a.default_key.is_empty() {
-                assert!(Chord::parse(a.default_key).is_some(), "{} {:?}", a.id, a.default_key);
+                assert!(
+                    Chord::parse(a.default_key).is_some(),
+                    "{} {:?}",
+                    a.id,
+                    a.default_key
+                );
             }
         }
     }
@@ -487,9 +573,15 @@ mod tests {
         // On AZERTY the key in QWERTY's Q position types "a", but its code is
         // still KeyQ, so it runs Rotate, not Arc.
         let azerty_q = press("KeyQ");
-        assert_eq!(k.lookup(&azerty_q.chord(Platform::Windows), Mode::All), Some("tool.rotate"));
+        assert_eq!(
+            k.lookup(&azerty_q.chord(Platform::Windows), Mode::All),
+            Some("tool.rotate")
+        );
         // And the key that types "q" on AZERTY (code KeyA) runs Arc.
-        assert_eq!(k.lookup(&press("KeyA").chord(Platform::Windows), Mode::All), Some("tool.arc"));
+        assert_eq!(
+            k.lookup(&press("KeyA").chord(Platform::Windows), Mode::All),
+            Some("tool.arc")
+        );
     }
 
     #[test]
@@ -498,11 +590,21 @@ mod tests {
         let k = Keymap::from_preset(Preset::SketchUp, &reg);
         let mut p = press("KeyZ");
         p.cmd = true;
-        assert_eq!(k.lookup(&p.chord(Platform::Mac), Mode::All), Some("edit.undo"));
-        assert_eq!(k.lookup(&p.chord(Platform::Windows), Mode::All), Some("cam.zoom"), "Cmd is not Ctrl on Windows");
+        assert_eq!(
+            k.lookup(&p.chord(Platform::Mac), Mode::All),
+            Some("edit.undo")
+        );
+        assert_eq!(
+            k.lookup(&p.chord(Platform::Windows), Mode::All),
+            Some("cam.zoom"),
+            "Cmd is not Ctrl on Windows"
+        );
         p.cmd = false;
         p.ctrl = true;
-        assert_eq!(k.lookup(&p.chord(Platform::Windows), Mode::All), Some("edit.undo"));
+        assert_eq!(
+            k.lookup(&p.chord(Platform::Windows), Mode::All),
+            Some("edit.undo")
+        );
     }
 
     #[test]
@@ -539,8 +641,16 @@ mod tests {
     #[test]
     fn other_presets_start_empty() {
         let reg = Registry::new();
-        assert!(Keymap::from_preset(Preset::Blender, &reg).bindings.is_empty());
-        assert!(Keymap::from_preset(Preset::Fusion, &reg).bindings.is_empty());
+        assert!(
+            Keymap::from_preset(Preset::Blender, &reg)
+                .bindings
+                .is_empty()
+        );
+        assert!(
+            Keymap::from_preset(Preset::Fusion, &reg)
+                .bindings
+                .is_empty()
+        );
     }
 
     #[test]
@@ -551,7 +661,32 @@ mod tests {
         let q = Chord::parse("Cmd+Q").expect("parses");
         assert!(reserved(&q, Platform::Mac).is_some());
         assert!(reserved(&Chord::parse("Alt+F4").expect("parses"), Platform::Windows).is_some());
-        assert!(reserved(&Chord::parse("F5").expect("parses"), Platform::Web { mac: false }).is_some());
+        assert!(
+            reserved(
+                &Chord::parse("F5").expect("parses"),
+                Platform::Web { mac: false }
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn modifier_meanings_and_their_clash_warning() {
+        let mut m = ModifierRoles::default();
+        assert!(!m.clash());
+        m.alternate = ModKey::Shift;
+        assert!(m.clash());
+        assert_eq!(ModKey::Ctrl.label(Platform::Mac), "Option");
+        assert_eq!(ModKey::Alt.label(Platform::Windows), "Alt");
+        // Old files without the field still load.
+        let reg = Registry::new();
+        let json = Keymap::from_preset(Preset::SketchUp, &reg).to_json();
+        let i = json.find("\"modifiers\"").expect("written");
+        let trimmed = format!("{}}}", json[..i].trim_end().trim_end_matches(','));
+        assert_eq!(
+            Keymap::from_json(&trimmed).expect("reads").modifiers,
+            ModifierRoles::default()
+        );
     }
 
     #[test]

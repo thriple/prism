@@ -49,17 +49,38 @@ impl Default for Demo {
 
 const SCENES: [&str; 4] = ["Reading", "Cinema", "Dinner", "Night"];
 const DEBUG_WIDTH: f32 = 400.0;
+/// Panel positions, from the viewport's corner.
 const DEBUG_POS: [f32; 2] = [24.0, 24.0];
-const DEMO_POS: [f32; 2] = [760.0, 120.0];
+const DEMO_FROM_RIGHT: f32 = 380.0;
 
-pub fn draw(ctx: &Context, info: &DebugInfo<'_>, settings: &mut Settings, demo: &mut Demo) {
-    SoftPanel::new("Prism debug")
-        .default_pos(DEBUG_POS)
-        .width(DEBUG_WIDTH)
-        .show(ctx, |ui| debug_panel(ui, info));
-    SoftPanel::new("Theme demo")
-        .default_pos(DEMO_POS)
-        .show(ctx, |ui| demo_panel(ui, settings, demo));
+/// Which panels are showing (Help > Debug Panel, Help > Theme Demo).
+pub struct Shown {
+    pub debug: bool,
+    pub demo: bool,
+}
+
+/// Draw the panels that are on, starting inside the viewport.
+pub fn draw(
+    ctx: &Context,
+    viewport: egui::Rect,
+    shown: Shown,
+    info: &DebugInfo<'_>,
+    settings: &mut Settings,
+    demo: &mut Demo,
+) {
+    let at = |p: [f32; 2]| viewport.min + egui::vec2(p[0], p[1]);
+    if shown.debug {
+        SoftPanel::new("Prism debug")
+            .default_pos(at(DEBUG_POS))
+            .width(DEBUG_WIDTH)
+            .show(ctx, |ui| debug_panel(ui, info));
+    }
+    if shown.demo {
+        let right = viewport.width() - DEMO_FROM_RIGHT;
+        SoftPanel::new("Theme demo")
+            .default_pos(at([right.max(DEBUG_POS[0]), DEBUG_POS[1]]))
+            .show(ctx, |ui| demo_panel(ui, settings, demo));
+    }
 }
 
 fn mono(ui: &mut egui::Ui, text: String) {

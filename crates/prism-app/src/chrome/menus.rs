@@ -25,26 +25,38 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
         return;
     };
     let titles: Vec<BarTitle> = ctx
-        .data(|d| d.get_temp(Id::new("menu-bar-titles")))
+        .data(|d| d.get_temp(Id::unique("menu-bar-titles")))
         .unwrap_or_default();
     let (entries, at, heading, source) = match &open.kind {
         MenuKind::Bar(i) => {
             let items = chrome.reg.menubar()[*i].1;
-            let at = titles
-                .get(*i)
-                .map_or(Pos2::ZERO, |t| t.rect.left_bottom() + vec2(0.0, size::MENU_GAP));
+            let at = titles.get(*i).map_or(Pos2::ZERO, |t| {
+                t.rect.left_bottom() + vec2(0.0, size::MENU_GAP)
+            });
             (Entry::from_items(items), at, None, Source::Menu)
         }
-        MenuKind::Context { at, heading, entries } => {
-            (entries.clone(), *at, Some(heading.clone()), Source::Context)
-        }
+        MenuKind::Context {
+            at,
+            heading,
+            entries,
+        } => (entries.clone(), *at, Some(heading.clone()), Source::Context),
     };
 
     let mut out = Outcome::default();
     if keyboard(chrome, ctx, &mut open, &entries, &mut out) {
         return;
     }
-    level(chrome, ctx, &mut open, 0, &entries, at, None, heading.as_deref(), &mut out);
+    level(
+        chrome,
+        ctx,
+        &mut open,
+        0,
+        &entries,
+        at,
+        None,
+        heading.as_deref(),
+        &mut out,
+    );
 
     if let Some(id) = out.run {
         chrome.menu = None;
@@ -52,7 +64,12 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
         return;
     }
     // A press anywhere outside the menus and the menu bar closes them.
-    let pressed = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
+    let pressed = ctx.input(|i| {
+        i.pointer
+            .any_pressed()
+            .then(|| i.pointer.interact_pos())
+            .flatten()
+    });
     if let Some(p) = pressed
         && !out.rects.iter().any(|r| r.contains(p))
         && !titles.iter().any(|t| t.rect.contains(p))
@@ -61,7 +78,11 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
         return;
     }
     // Keep our state unless the top bar replaced the menu this frame.
-    if chrome.menu.as_ref().is_some_and(|m| m.serial == open.serial) {
+    if chrome
+        .menu
+        .as_ref()
+        .is_some_and(|m| m.serial == open.serial)
+    {
         chrome.menu = Some(open);
     }
 }
@@ -87,7 +108,13 @@ fn selectable(chrome: &Chrome, e: &Entry) -> bool {
 }
 
 /// Arrow keys and Enter. Returns true if the menu was closed or replaced.
-fn keyboard(chrome: &mut Chrome, ctx: &Context, open: &mut OpenMenu, top: &[Entry], out: &mut Outcome) -> bool {
+fn keyboard(
+    chrome: &mut Chrome,
+    ctx: &Context,
+    open: &mut OpenMenu,
+    top: &[Entry],
+    out: &mut Outcome,
+) -> bool {
     let (down, up, right, left, enter) = ctx.input(|i| {
         (
             i.key_pressed(Key::ArrowDown),
@@ -102,21 +129,27 @@ fn keyboard(chrome: &mut Chrome, ctx: &Context, open: &mut OpenMenu, top: &[Entr
     }
     let depth = open.levels.len() - 1;
     let list = entries_at(top, open, depth);
-    let rows: Vec<usize> = (0..list.len()).filter(|&i| selectable(chrome, &list[i])).collect();
+    let rows: Vec<usize> = (0..list.len())
+        .filter(|&i| selectable(chrome, &list[i]))
+        .collect();
     let lv = &mut open.levels[depth];
     let pos = lv.highlight.and_then(|h| rows.iter().position(|&r| r == h));
     if down && !rows.is_empty() {
         lv.highlight = Some(rows[pos.map_or(0, |p| (p + 1) % rows.len())]);
     }
     if up && !rows.is_empty() {
-        lv.highlight = Some(rows[pos.map_or(rows.len() - 1, |p| (p + rows.len() - 1) % rows.len())]);
+        lv.highlight =
+            Some(rows[pos.map_or(rows.len() - 1, |p| (p + rows.len() - 1) % rows.len())]);
     }
     let current = lv.highlight.and_then(|h| list.get(h).cloned());
     if right || enter {
         match current {
             Some(Entry::Sub(..)) => {
                 lv.open_sub = lv.highlight;
-                open.levels.push(Level { highlight: None, open_sub: None });
+                open.levels.push(Level {
+                    highlight: None,
+                    open_sub: None,
+                });
                 let sub = entries_at(top, open, depth + 1);
                 let first = (0..sub.len()).find(|&i| selectable(chrome, &sub[i]));
                 if let Some(last) = open.levels.last_mut() {
@@ -126,7 +159,11 @@ fn keyboard(chrome: &mut Chrome, ctx: &Context, open: &mut OpenMenu, top: &[Entr
             }
             Some(Entry::Action(id)) if enter => {
                 out.run = Some(id);
-                let source = if matches!(open.kind, MenuKind::Bar(_)) { Source::Menu } else { Source::Context };
+                let source = if matches!(open.kind, MenuKind::Bar(_)) {
+                    Source::Menu
+                } else {
+                    Source::Context
+                };
                 chrome.menu = None;
                 chrome.run(id, source);
                 return true;
@@ -172,7 +209,11 @@ fn level(
     // Measure: as wide as the widest row, at least the minimum.
     let mut inner_w = size::MENU_MIN_WIDTH - 2.0 * pad;
     ctx.fonts_mut(|_| ());
-    let probe = egui::Ui::new(ctx.clone(), Id::new("menu-measure"), egui::UiBuilder::new());
+    let probe = egui::Ui::new(
+        ctx.clone(),
+        Id::unique("menu-measure"),
+        egui::UiBuilder::new(),
+    );
     for e in entries {
         let w = match e {
             Entry::Action(id) => {
@@ -201,18 +242,33 @@ fn level(
         Some(row) => {
             let right = pos2(row.right() + pad + size::MENU_SUB_GAP, row.top() - pad);
             if right.x + full.x > screen.right() - m {
-                pos2(row.left() - pad - size::MENU_SUB_GAP - full.x, row.top() - pad)
+                pos2(
+                    row.left() - pad - size::MENU_SUB_GAP - full.x,
+                    row.top() - pad,
+                )
             } else {
                 right
             }
         }
         None => at,
     };
-    pos.x = pos.x.clamp(screen.left() + m, (screen.right() - m - full.x).max(screen.left() + m));
-    pos.y = pos.y.clamp(screen.top() + m, (screen.bottom() - m - full.y).max(screen.top() + m));
+    pos.x = pos.x.clamp(
+        screen.left() + m,
+        (screen.right() - m - full.x).max(screen.left() + m),
+    );
+    pos.y = pos.y.clamp(
+        screen.top() + m,
+        (screen.bottom() - m - full.y).max(screen.top() + m),
+    );
 
-    let area_id = Id::new(("menu", depth));
-    let t = anim::spring_from(ctx, Id::new(("menu-pop", open.serial, depth)), 0.0, 1.0, spring::SPRING_SNAPPY);
+    let area_id = Id::unique(("menu", depth));
+    let t = anim::spring_from(
+        ctx,
+        Id::unique(("menu-pop", open.serial, depth)),
+        0.0,
+        1.0,
+        spring::SPRING_SNAPPY,
+    );
     let shown = t.clamp(0.0, 1.0);
     let mut child: Option<(Rect, Vec<Entry>)> = None;
 
@@ -235,12 +291,18 @@ fn level(
                     match e {
                         Entry::Separator => menu::separator(ui, inner_w),
                         Entry::Action(id) => {
-                            let Some(a) = chrome.reg.get(id) else { continue };
+                            let Some(a) = chrome.reg.get(id) else {
+                                continue;
+                            };
                             let enabled = chrome.enabled(id);
                             let key = chrome.key_label(id);
                             let resp = MenuRow {
                                 label: a.name,
-                                end: if key.is_empty() { RowEnd::None } else { RowEnd::Key(&key) },
+                                end: if key.is_empty() {
+                                    RowEnd::None
+                                } else {
+                                    RowEnd::Key(&key)
+                                },
                                 checked: enabled && chrome.checked(id),
                                 enabled,
                                 highlight: open.levels[depth].highlight == Some(i),
@@ -299,6 +361,16 @@ fn level(
     out.rects.push(area.inner);
 
     if let Some((row, sub)) = child {
-        level(chrome, ctx, open, depth + 1, &sub, row.right_top(), Some(row), None, out);
+        level(
+            chrome,
+            ctx,
+            open,
+            depth + 1,
+            &sub,
+            row.right_top(),
+            Some(row),
+            None,
+            out,
+        );
     }
 }

@@ -51,3 +51,27 @@ mod imp {
         None
     }
 }
+
+/// Which platform's key names to show (Ctrl or Cmd).
+pub fn keys() -> crate::actions::keymap::Platform {
+    use crate::actions::keymap::Platform;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mac = web_sys::window()
+            .and_then(|w| w.navigator().user_agent().ok())
+            .is_some_and(|ua| ua.contains("Mac"));
+        Platform::Web { mac }
+    }
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "macos"))]
+    {
+        Platform::Mac
+    }
+    #[cfg(all(not(target_arch = "wasm32"), windows))]
+    {
+        Platform::Windows
+    }
+    #[cfg(all(not(target_arch = "wasm32"), not(windows), not(target_os = "macos")))]
+    {
+        Platform::Linux
+    }
+}

@@ -6,7 +6,11 @@ use super::registry::Registry;
 /// Every query letter must appear in order. Matches at word starts and runs
 /// of consecutive letters score more, and shorter names win ties.
 pub fn score(query: &str, name: &str) -> Option<i32> {
-    let q: Vec<char> = query.to_lowercase().chars().filter(|c| !c.is_whitespace()).collect();
+    let q: Vec<char> = query
+        .to_lowercase()
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
     if q.is_empty() {
         return Some(0);
     }

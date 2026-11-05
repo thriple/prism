@@ -31,14 +31,13 @@ impl Icon {
         let mut icon = Icon::default();
         let mut rest = svg;
         while let Some(start) = rest.find('<') {
-            let end = rest[start..]
-                .find('>')
-                .ok_or("unclosed element")?
-                + start;
+            let end = rest[start..].find('>').ok_or("unclosed element")? + start;
             let element = &rest[start + 1..end];
             rest = &rest[end + 1..];
             let element = element.trim_end_matches('/').trim();
-            let (name, attrs) = element.split_once(char::is_whitespace).unwrap_or((element, ""));
+            let (name, attrs) = element
+                .split_once(char::is_whitespace)
+                .unwrap_or((element, ""));
             let attr = |key: &str| attribute(attrs, key);
             let num = |key: &str| attr(key).and_then(|v| v.trim().parse::<f32>().ok());
             let dash = attr("stroke-dasharray").and_then(|d| {
@@ -52,17 +51,28 @@ impl Icon {
             let mut lines: Vec<Line> = match name {
                 "path" => path(&attr("d").ok_or("path without d")?)?,
                 "circle" => {
-                    let (cx, cy, r) = (num("cx").unwrap_or(0.0), num("cy").unwrap_or(0.0), num("r").ok_or("circle without r")?);
+                    let (cx, cy, r) = (
+                        num("cx").unwrap_or(0.0),
+                        num("cy").unwrap_or(0.0),
+                        num("r").ok_or("circle without r")?,
+                    );
                     vec![ellipse(pos2(cx, cy), r, r)]
                 }
                 "ellipse" => {
                     let c = pos2(num("cx").unwrap_or(0.0), num("cy").unwrap_or(0.0));
-                    vec![ellipse(c, num("rx").ok_or("no rx")?, num("ry").ok_or("no ry")?)]
+                    vec![ellipse(
+                        c,
+                        num("rx").ok_or("no rx")?,
+                        num("ry").ok_or("no ry")?,
+                    )]
                 }
                 "rect" => {
                     let r = Rect::from_min_size(
                         pos2(num("x").unwrap_or(0.0), num("y").unwrap_or(0.0)),
-                        vec2(num("width").ok_or("no width")?, num("height").ok_or("no height")?),
+                        vec2(
+                            num("width").ok_or("no width")?,
+                            num("height").ok_or("no height")?,
+                        ),
                     );
                     vec![rounded_rect(r, num("rx").unwrap_or(0.0))]
                 }
@@ -90,7 +100,11 @@ impl Icon {
         let origin = rect.center() - Vec2::splat(size::ICON_BOX * 0.5 * scale);
         let stroke = Stroke::new(size::ICON_STROKE * scale, color);
         for line in &self.lines {
-            let mut pts: Vec<Pos2> = line.points.iter().map(|p| origin + p.to_vec2() * scale).collect();
+            let mut pts: Vec<Pos2> = line
+                .points
+                .iter()
+                .map(|p| origin + p.to_vec2() * scale)
+                .collect();
             if line.closed && pts.len() > 2 {
                 pts.push(pts[0]);
             }
@@ -159,7 +173,10 @@ fn rotation(t: &str) -> Result<impl Fn(Pos2) -> Pos2, String> {
         .ok_or_else(|| format!("unsupported transform {t:?}"))?;
     let v = numbers(inner);
     let angle = v.first().copied().unwrap_or(0.0).to_radians();
-    let c = pos2(v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0));
+    let c = pos2(
+        v.get(1).copied().unwrap_or(0.0),
+        v.get(2).copied().unwrap_or(0.0),
+    );
     let (s, co) = angle.sin_cos();
     Ok(move |p: Pos2| {
         let d = p - c;
@@ -185,7 +202,12 @@ fn rounded_rect(r: Rect, rx: f32) -> Line {
     let rx = rx.min(r.width() * 0.5).min(r.height() * 0.5);
     if rx <= 0.0 {
         return Line {
-            points: vec![r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()],
+            points: vec![
+                r.left_top(),
+                r.right_top(),
+                r.right_bottom(),
+                r.left_bottom(),
+            ],
             closed: true,
             dash: None,
         };
@@ -286,7 +308,11 @@ fn path(d: &str) -> Result<Vec<Line>, String> {
                 let n = if cmd.eq_ignore_ascii_case(&'C') { 6 } else { 4 };
                 for a in args.chunks_exact(n) {
                     let (c1, c2, end) = if n == 6 {
-                        (at(pos, a[0], a[1]), at(pos, a[2], a[3]), at(pos, a[4], a[5]))
+                        (
+                            at(pos, a[0], a[1]),
+                            at(pos, a[2], a[3]),
+                            at(pos, a[4], a[5]),
+                        )
                     } else {
                         let c1 = last_ctrl.map_or(pos, |c| pos + (pos - c));
                         (c1, at(pos, a[0], a[1]), at(pos, a[2], a[3]))
@@ -316,7 +342,9 @@ fn path(d: &str) -> Result<Vec<Line>, String> {
                     for i in 1..=CURVE_STEPS {
                         let t = i as f32 / CURVE_STEPS as f32;
                         let u = 1.0 - t;
-                        let p = pos.to_vec2() * u * u + c.to_vec2() * 2.0 * u * t + end.to_vec2() * t * t;
+                        let p = pos.to_vec2() * u * u
+                            + c.to_vec2() * 2.0 * u * t
+                            + end.to_vec2() * t * t;
                         pts.push(p.to_pos2());
                     }
                     pos = end;
@@ -431,13 +459,19 @@ mod tests {
     fn arcs_end_where_they_should() {
         let icon = Icon::parse(r#"<path d="M19 12a7 7 0 1 1-2.2-5.1"/>"#).expect("parses");
         let last = *icon.lines[0].points.last().expect("points");
-        assert!((last.x - 16.8).abs() < 1e-3 && (last.y - 6.9).abs() < 1e-3, "{last:?}");
+        assert!(
+            (last.x - 16.8).abs() < 1e-3 && (last.y - 6.9).abs() < 1e-3,
+            "{last:?}"
+        );
         // A large arc goes most of the way round, so it has many points.
         assert!(icon.lines[0].points.len() > 20);
         // Every point stays near the circle of radius 7.
         let pts = &icon.lines[0].points;
         let centre = pts.iter().fold(Vec2::ZERO, |a, p| a + p.to_vec2()) / pts.len() as f32;
-        assert!(pts.iter().all(|p| (p.distance(centre.to_pos2()) - 7.0).abs() < 1.5));
+        assert!(
+            pts.iter()
+                .all(|p| (p.distance(centre.to_pos2()) - 7.0).abs() < 1.5)
+        );
     }
 
     #[test]

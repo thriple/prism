@@ -8,6 +8,10 @@ use prism_ui::widgets::{ToolButton, menu, tooltip};
 use super::{Chrome, Source};
 use crate::actions::keymap::{Chord, Mods, key_label};
 
+// The scroll bar floats inside the side padding, so it never covers the
+// buttons or needs a horizontal scroll bar. Checked when compiling.
+const _: () = assert!(size::DOCK_SCROLL_BAR <= size::DOCK_PAD_X);
+
 /// The dock's outer width: two columns of buttons, the gap between them and
 /// the side padding. The scroll bar floats inside the padding, so the dock
 /// never needs a horizontal scroll bar (the prototype's dock did).
@@ -37,25 +41,38 @@ pub fn hint(chord: Option<&Chord>) -> String {
 pub(super) fn show(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
     let mut hovered: Option<(Rect, &'static str)> = None;
     let mut clicked: Option<&'static str> = None;
-    Area::new(Id::new("dock"))
+    Area::new(Id::unique("dock"))
         .order(Order::Background)
         .fixed_pos(rect.min)
         .show(ctx, |ui| {
             let (card, _) = ui.allocate_exact_size(rect.size(), Sense::hover());
             let mut shapes = Vec::new();
-            emboss::soft(&mut shapes, card, radius::CARD, 1.0, depth::CARD, color::SURFACE);
+            emboss::soft(
+                &mut shapes,
+                card,
+                radius::CARD,
+                1.0,
+                depth::CARD,
+                color::SURFACE,
+            );
             ui.painter().extend(shapes);
 
             // The scroll area reaches into the right padding, where its thin
             // floating bar sits; the buttons keep their own width.
             let inner = card.shrink2(vec2(size::DOCK_PAD_X, size::DOCK_PAD_Y));
-            let area = Rect::from_min_max(inner.min, egui::pos2(card.right() - size::DOCK_SCROLL_BAR * 0.5, inner.bottom()));
+            let area = Rect::from_min_max(
+                inner.min,
+                egui::pos2(card.right() - size::DOCK_SCROLL_BAR * 0.5, inner.bottom()),
+            );
             let mut content = ui.new_child(egui::UiBuilder::new().max_rect(area));
             let scroll = &mut content.style_mut().spacing.scroll;
             *scroll = egui::style::ScrollStyle::floating();
             scroll.bar_width = size::DOCK_SCROLL_BAR;
             scroll.bar_outer_margin = 0.0;
             scroll.bar_inner_margin = 0.0;
+            // Hidden until the pointer is over the dock.
+            scroll.dormant_handle_opacity = 0.0;
+            scroll.dormant_background_opacity = 0.0;
             ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(&mut content, |ui| {
@@ -92,7 +109,14 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
         chrome.run(id, Source::Dock);
     }
     let text = hovered.map(|(_, id)| chrome.tip(id)).unwrap_or_default();
-    tooltip::shared(ctx, Id::new("dock-tip"), hovered.map(|(r, _)| r), &text);
+    // Beside the dock, level with the button, so it never covers the other column.
+    let anchor = hovered.map(|(r, _)| {
+        Rect::from_min_max(
+            egui::pos2(rect.left(), r.top()),
+            egui::pos2(rect.right(), r.bottom()),
+        )
+    });
+    tooltip::shared(ctx, Id::unique("dock-tip"), anchor, &text);
 }
 
 #[cfg(test)]
@@ -103,7 +127,6 @@ mod tests {
     fn two_columns_fit_with_room_for_the_scroll_bar() {
         // 10 + 44 + 8 + 44 + 10, as the prototype's 116 px dock.
         assert_eq!(width(), 116.0);
-        assert!(size::DOCK_SCROLL_BAR <= size::DOCK_PAD_X, "the bar must float inside the padding");
     }
 
     #[test]

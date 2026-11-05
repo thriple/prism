@@ -4,11 +4,13 @@
 
 pub mod actions;
 mod app;
+pub mod chrome;
 pub mod frame_stats;
 mod gpu;
 pub mod input_log;
 mod overlay;
-mod platform;
+pub mod platform;
 pub mod settings;
+mod storage;
 
 pub use app::run;

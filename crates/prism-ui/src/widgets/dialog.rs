@@ -41,9 +41,19 @@ impl<'a> SoftDialog<'a> {
     }
 
     /// Show it while `open`; it pops in and fades out.
-    pub fn show<R>(self, ctx: &Context, open: bool, add: impl FnOnce(&mut Ui) -> R) -> DialogResponse<R> {
+    pub fn show<R>(
+        self,
+        ctx: &Context,
+        open: bool,
+        add: impl FnOnce(&mut Ui) -> R,
+    ) -> DialogResponse<R> {
         let id = Id::unique(("soft-dialog", self.title));
-        let t = anim::spring(ctx, id.with("shown"), if open { 1.0 } else { 0.0 }, spring::SPRING_SNAPPY);
+        let t = anim::spring(
+            ctx,
+            id.with("shown"),
+            if open { 1.0 } else { 0.0 },
+            spring::SPRING_SNAPPY,
+        );
         let mut close = false;
         if t < 0.01 && !open {
             return DialogResponse { inner: None, close };
@@ -58,7 +68,8 @@ impl<'a> SoftDialog<'a> {
             .interactable(open)
             .show(ctx, |ui| {
                 let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
-                ui.painter().rect_filled(r, 0.0, theme::fade(color::SCRIM, shown));
+                ui.painter()
+                    .rect_filled(r, 0.0, theme::fade(color::SCRIM, shown));
                 resp
             });
         if scrim.inner.clicked() {
@@ -86,33 +97,62 @@ impl<'a> SoftDialog<'a> {
                             ui.vertical(|ui| {
                                 ui.label(
                                     egui::RichText::new(self.title)
-                                        .font(egui::FontId::new(text::DIALOG_TITLE, theme::title().family))
+                                        .font(egui::FontId::new(
+                                            text::DIALOG_TITLE,
+                                            theme::title().family,
+                                        ))
                                         .color(color::INK),
                                 );
                                 if let Some(s) = &self.subtitle {
-                                    ui.label(egui::RichText::new(s).font(theme::mono()).color(color::MUTED));
+                                    ui.label(
+                                        egui::RichText::new(s)
+                                            .font(theme::mono())
+                                            .color(color::MUTED),
+                                    );
                                 }
                             });
                         });
                         let close_rect = Rect::from_min_size(
-                            pos2(head.response.rect.left() + self.width - 2.0 * px - size::CLOSE_BUTTON, head.response.rect.top()),
+                            pos2(
+                                head.response.rect.left() + self.width
+                                    - 2.0 * px
+                                    - size::CLOSE_BUTTON,
+                                head.response.rect.top(),
+                            ),
                             vec2(size::CLOSE_BUTTON, size::CLOSE_BUTTON),
                         );
                         let close_resp = ui.interact(close_rect, id.with("close"), Sense::click());
                         let hot = close_resp.hovered();
                         if hot {
                             let mut v = Vec::new();
-                            emboss::inset(&mut v, close_rect, radius::MENU_BUTTON, theme::depth::MENU_INSET);
+                            emboss::inset(
+                                &mut v,
+                                close_rect,
+                                radius::MENU_BUTTON,
+                                theme::depth::MENU_INSET,
+                            );
                             ui.painter().extend(v);
                         }
-                        ui.painter().text(close_rect.center(), Align2::CENTER_CENTER, "×", theme::title(), color::INK);
+                        ui.painter().text(
+                            close_rect.center(),
+                            Align2::CENTER_CENTER,
+                            "×",
+                            theme::title(),
+                            color::INK,
+                        );
                         if close_resp.clicked() {
                             close = true;
                         }
                         add(ui)
                     });
                 let mut shapes = Vec::new();
-                emboss::floating(&mut shapes, inner.response.rect, radius::CARD, color::SURFACE, 1.0);
+                emboss::floating(
+                    &mut shapes,
+                    inner.response.rect,
+                    radius::CARD,
+                    color::SURFACE,
+                    1.0,
+                );
                 ui.painter().set(bg, Shape::Vec(shapes));
                 inner.inner
             });

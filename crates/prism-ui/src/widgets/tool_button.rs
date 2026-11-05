@@ -46,7 +46,11 @@ impl<'a> ToolButton<'a> {
 impl Widget for ToolButton<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let side = size::DOCK_BUTTON;
-        let sense = if self.enabled { Sense::click() } else { Sense::hover() };
+        let sense = if self.enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
         let (rect, response) = ui.allocate_exact_size(vec2(side, side), sense);
         let down = self.enabled && (response.is_pointer_button_down_on() || self.active);
         let target = if !self.enabled {
@@ -61,8 +65,18 @@ impl Widget for ToolButton<'_> {
         let feel = if down { spring::PRESS } else { spring::RELEASE };
         let ctx = ui.ctx().clone();
         let d = anim::spring(&ctx, response.id.with("depth"), target, feel);
-        let press = anim::spring(&ctx, response.id.with("press"), if down { 1.0 } else { 0.0 }, spring::LABEL);
-        let dot = anim::spring(&ctx, response.id.with("dot"), if self.active { 1.0 } else { 0.0 }, spring::DOT);
+        let press = anim::spring(
+            &ctx,
+            response.id.with("press"),
+            if down { 1.0 } else { 0.0 },
+            spring::LABEL,
+        );
+        let dot = anim::spring(
+            &ctx,
+            response.id.with("dot"),
+            if self.active { 1.0 } else { 0.0 },
+            spring::DOT,
+        );
 
         if ui.is_rect_visible(rect) {
             let mut painter = ui.painter().clone();
@@ -70,11 +84,22 @@ impl Widget for ToolButton<'_> {
                 painter.multiply_opacity(color::GREYED_OPACITY);
             }
             let mut shapes = Vec::new();
-            emboss::soft(&mut shapes, rect, radius::DOCK_BUTTON, d, depth::DOCK, color::SURFACE);
+            emboss::soft(
+                &mut shapes,
+                rect,
+                radius::DOCK_BUTTON,
+                d,
+                depth::DOCK,
+                color::SURFACE,
+            );
             painter.extend(shapes);
             if let Some(icon) = self.icon {
                 let s = size::DOCK_ICON * (1.0 - (1.0 - motion::ICON_PRESS) * press);
-                icon.paint(&painter, Rect::from_center_size(rect.center(), vec2(s, s)), color::INK);
+                icon.paint(
+                    &painter,
+                    Rect::from_center_size(rect.center(), vec2(s, s)),
+                    color::INK,
+                );
             }
             if !self.hint.is_empty() {
                 let [x, y] = size::DOCK_HINT_INSET;

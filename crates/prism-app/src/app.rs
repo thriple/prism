@@ -8,6 +8,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
 
+use crate::chrome::Chrome;
 use crate::frame_stats::FrameStats;
 use crate::gpu::Gpu;
 use crate::input_log::{InputEvent, InputLog, Modifiers, WheelUnit};
@@ -56,6 +57,10 @@ struct App {
     system_reduce_motion: Option<bool>,
     /// When egui next wants a frame, if it asked for one later.
     next_redraw: Option<web_time::Instant>,
+    /// Menus, dock, search and the shortcut and feature windows.
+    chrome: Chrome,
+    /// The modifier keys held now, as the window reports them.
+    modifiers_state: winit::keyboard::ModifiersState,
 }
 
 impl App {
@@ -78,6 +83,8 @@ impl App {
             aurora: prism_ui::Aurora::new(),
             system_reduce_motion: crate::platform::system_reduces_motion(),
             next_redraw: None,
+            chrome: Chrome::new(crate::platform::keys()),
+            modifiers_state: winit::keyboard::ModifiersState::empty(),
         }
     }
 
@@ -127,6 +134,7 @@ impl App {
             WindowEvent::PinchGesture { delta, .. } => Some(InputEvent::Pinch { delta: *delta }),
             WindowEvent::ModifiersChanged(m) => {
                 let s = m.state();
+                self.modifiers_state = s;
                 self.modifiers = Modifiers {
                     shift: s.shift_key(),
                     ctrl: s.control_key(),
@@ -162,12 +170,22 @@ impl App {
             reduce_motion: motion.reduce_motion,
             aurora_redraws: self.aurora.redraws(),
         };
-        let (settings, demo, aurora) = (&mut self.settings, &mut self.demo, &mut self.aurora);
+        let (settings, demo, aurora, chrome) = (
+            &mut self.settings,
+            &mut self.demo,
+            &mut self.aurora,
+            &mut self.chrome,
+        );
         let output = self.egui_ctx.run_ui(raw_input, |ui| {
             let ctx = ui.ctx();
             prism_ui::set_motion(ctx, motion);
             aurora.prepare(ctx);
-            overlay::draw(ctx, &info, settings, demo);
+            let layout = chrome.show(ctx);
+            let shown = overlay::Shown {
+                debug: chrome.is_on("help.debug"),
+                demo: chrome.is_on("help.themedemo"),
+            };
+            overlay::draw(ctx, layout.viewport, shown, &info, settings, demo);
         });
         egui_state.handle_platform_output(window, output.platform_output);
         let jobs = self
@@ -281,8 +299,30 @@ impl ApplicationHandler<Gpu> for App {
             self.log.push(input);
             redraw = true;
         }
+        // Shortcuts, Esc and key recording go to the chrome first. A key it
+        // uses is not passed on, so it does not also type into a field.
+        let mut used = false;
+        if let WindowEvent::KeyboardInput { event: key, .. } = &event
+            && key.state == ElementState::Pressed
+            && !key.repeat
+            && let PhysicalKey::Code(code) = key.physical_key
+        {
+            let m = self.modifiers_state;
+            let press = crate::actions::keymap::KeyPress {
+                code: format!("{code:?}"),
+                ctrl: m.control_key(),
+                cmd: m.super_key(),
+                shift: m.shift_key(),
+                alt: m.alt_key(),
+            };
+            used = self
+                .chrome
+                .key(&press, self.egui_ctx.egui_wants_keyboard_input());
+            redraw |= used;
+        }
         // egui asks for a repaint after every redraw event, which would loop.
-        if !matches!(event, WindowEvent::RedrawRequested)
+        if !used
+            && !matches!(event, WindowEvent::RedrawRequested)
             && let (Some(window), Some(state)) = (&self.window, &mut self.egui_state)
         {
             redraw |= state.on_window_event(window, &event).repaint;
