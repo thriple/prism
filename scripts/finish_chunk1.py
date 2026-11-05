@@ -43,6 +43,14 @@ SOFTWARE.
 """
 
 args = None
+# Use your own git identity if set; otherwise a placeholder, so a fresh Windows install still works.
+GIT_ID = ["git"]
+def _ensure_identity():
+    global GIT_ID
+    name = subprocess.run(["git", "config", "user.name"], text=True, capture_output=True).stdout.strip()
+    email = subprocess.run(["git", "config", "user.email"], text=True, capture_output=True).stdout.strip()
+    if not name or not email:
+        GIT_ID = ["git", "-c", f"user.name={name or 'Prism owner'}", "-c", f"user.email={email or 'noreply@users.noreply.github.com'}"]
 
 
 def run(cmd, check=True, capture=True):
@@ -111,6 +119,8 @@ def main():
     if run(["git", "status", "--porcelain"]):
         stop("You have uncommitted changes here. Commit or stash them first.")
 
+    _ensure_identity()
+
     step("Looking at the Skeleton branch")
     run(["git", "fetch", "origin"])
     ls = run(["git", "ls-remote", "origin", f"refs/heads/{BRANCH}"], check=False)
@@ -141,12 +151,17 @@ def main():
     if already:
         ok("already merged, nothing to do")
     elif confirm(f"merge origin/{BRANCH} into main (a normal merge commit, no force)?"):
-        r = subprocess.run(["git", "merge", "--no-ff", "-m", "Merge Chunk 1: Skeleton", f"origin/{BRANCH}"],
+        r = subprocess.run(GIT_ID + ["merge", "--no-ff", "-m", "Merge Chunk 1: Skeleton", f"origin/{BRANCH}"],
                            text=True, capture_output=True)
         if r.returncode != 0:
-            subprocess.run(["git", "merge", "--abort"])
-            stop("The merge has conflicts, so nothing was changed. Most likely PLAN.md or README.md were "
-                 "edited on both sides. Ask Claude Code to merge main into the branch and fix them.")
+            details = ((r.stdout or "") + (r.stderr or "")).strip()
+            merging = subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                                     capture_output=True).returncode == 0
+            if merging:
+                subprocess.run(["git", "merge", "--abort"])
+                stop("The merge has real conflicts, so nothing was changed. Ask Claude Code to merge main "
+                     "into the branch and fix them.\n\ngit said:\n" + details)
+            stop("git could not do the merge (this is not a conflict). git said:\n" + details)
         ok("merged")
 
     step("Licence files")
@@ -163,7 +178,7 @@ def main():
             with open("LICENSE-APACHE", "w", newline="\n") as f:
                 f.write(text)
             run(["git", "add", "LICENSE-MIT", "LICENSE-APACHE"])
-            run(["git", "commit", "-m", "Add MIT and Apache-2.0 licence files"])
+            run(GIT_ID + ["commit", "-m", "Add MIT and Apache-2.0 licence files"])
             ok("added")
 
     step("Pushing main")

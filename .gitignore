@@ -3,3 +3,5 @@
 *.log
 .DS_Store
 node_modules/
+__pycache__/
+*.pyc
