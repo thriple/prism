@@ -187,20 +187,26 @@ def main():
         ok("pushed")
 
     step("GitHub Pages")
-    pages = gh_api("pages", check=False)
-    if pages and '"build_type":"workflow"' in pages.replace(" ", ""):
+    got = subprocess.run(["gh", "api", f"repos/{REPO}/pages"], text=True, capture_output=True)
+    exists = got.returncode == 0
+    if exists and '"build_type":"workflow"' in got.stdout.replace(" ", ""):
         ok("already set to deploy from GitHub Actions")
     elif confirm("set Pages > Source to GitHub Actions?"):
-        if pages:
-            gh_api("pages", "-X", "PUT", "-f", "build_type=workflow")
+        method = "PUT" if exists else "POST"
+        r = subprocess.run(["gh", "api", f"repos/{REPO}/pages", "-X", method, "-f", "build_type=workflow"],
+                           text=True, capture_output=True)
+        if r.returncode != 0:
+            print("   Could not switch Pages on automatically:")
+            print("   " + ((r.stdout or "") + (r.stderr or "")).strip().replace("\n", "\n   "))
+            print(f"   Do it by hand (30 seconds): open https://github.com/{REPO}/settings/pages")
+            print("   and under 'Build and deployment' set Source to 'GitHub Actions'. Then continue.")
         else:
-            gh_api("pages", "-X", "POST", "-f", "build_type=workflow")
-        ok("Pages enabled")
+            ok("Pages enabled")
         # Re-run the newest CI on main so the deploy job runs now that Pages exists.
         newest = json.loads(gh_api("actions/runs?branch=main&per_page=5"))["workflow_runs"]
-        newest = [r for r in newest if r["name"] == "CI"]
+        newest = [x for x in newest if x["name"] == "CI"]
         if newest:
-            subprocess.run(["gh", "run", "rerun", str(newest[0]["id"]), "-R", REPO])
+            subprocess.run(["gh", "run", "rerun", str(newest[0]["id"]), "-R", REPO], capture_output=True)
 
     if args.tag and confirm(f"create and push tag {args.tag} (starts the release build)?"):
         run(["git", "tag", args.tag])
