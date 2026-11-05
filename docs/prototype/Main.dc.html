@@ -1748,10 +1748,71 @@ class Component extends DCLogic {
     }
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = .17; ctx.drawImage(sc, 0, 0); ctx.restore();
   }
+  // Back-to-front order for the painter's algorithm. Sorting by centroid distance alone is wrong for faces with holes
+  // (a pocket's near wall has a nearer centroid than the rim around it, so it was painted over the rim). Instead, for each pair
+  // of faces that overlap on screen, a face lying wholly on the far side of the other's plane goes first (Newell's test),
+  // and centroid distance only breaks ties and cycles.
+  faceOrder() {
+    const c = this.faceOrd; if (c && c.v === this.ver && c.c === this.camVer) return c.list;
+    const vp = this.vp, e = vp.e, Fs = this.G.faces, n = Fs.length;
+    const info = Fs.map(F => {
+      const pl = F.P.map(q => this.scr(q)); let bb = null;
+      if (pl.every(Boolean)) { bb = [1e18, 1e18, -1e18, -1e18]; for (const s of pl) { bb[0] = Math.min(bb[0], s[0]); bb[1] = Math.min(bb[1], s[1]); bb[2] = Math.max(bb[2], s[0]); bb[3] = Math.max(bb[3], s[1]); } }
+      const es = V.dot(F.n, e) - F.d;
+      return { F, bb, es: Math.abs(es) < 1e-9 ? 0 : Math.sign(es), z: V.dist(F.cent, e) };
+    });
+    let list;
+    if (n > 500) list = info.slice().sort((a, b) => b.z - a.z).map(i => i.F);
+    else {
+      const eps = 1e-7 * Math.max(1, ...Fs.map(F => Math.abs(F.d)));
+      // B is behind A when B lies wholly beyond A's plane, or when A lies wholly on the eye's side of B's plane (Newell's two tests).
+      const far = (B, A) => A.es !== 0 && B.F.P.every(q => (V.dot(A.F.n, q) - A.F.d) * A.es <= eps);
+      const near = (A, B) => B.es !== 0 && A.F.P.every(q => (V.dot(B.F.n, q) - B.F.d) * B.es >= -eps);
+      const behind = (B, A) => far(B, A) || near(A, B);
+      const out = info.map(() => []), indeg = new Array(n).fill(0);
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        const A = info[i], B = info[j];
+        if (A.bb && B.bb && (A.bb[0] > B.bb[2] || B.bb[0] > A.bb[2] || A.bb[1] > B.bb[3] || B.bb[1] > A.bb[3])) continue;
+        const bA = behind(B, A), bB = behind(A, B); // bA: B is behind A
+        if (bA && !bB) { out[j].push(i); indeg[i]++; } else if (bB && !bA) { out[i].push(j); indeg[j]++; }
+      }
+      const done = new Array(n).fill(false); list = [];
+      for (let k = 0; k < n; k++) {
+        let pick = -1;
+        for (let i = 0; i < n; i++) if (!done[i] && indeg[i] === 0 && (pick < 0 || info[i].z > info[pick].z)) pick = i;
+        if (pick < 0) for (let i = 0; i < n; i++) if (!done[i] && (pick < 0 || info[i].z > info[pick].z)) pick = i; // cycle: farthest first
+        done[pick] = true; list.push(info[pick].F); for (const t of out[pick]) indeg[t]--;
+      }
+    }
+    this.faceOrd = { v: this.ver, c: this.camVer, list };
+    return list;
+  }
+  // Back faces of a closed (watertight) solid can never be seen from outside, so they are skipped. Doing this removes the
+  // last "blue interior showing through" cases that depth ordering alone cannot settle. From inside a closed solid
+  // (a room) they are kept, so interiors still show. Open surfaces always draw both sides.
+  closedCull() {
+    const c = this.cullC; if (c && c.v === this.ver && c.c === this.camVer) return c.set;
+    const m = this.m, Fs = this.G.faces, cnt = {}, par = Fs.map((_, i) => i), owner = {};
+    const find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    const loops = F => [F.f.o, ...(F.f.h || [])];
+    Fs.forEach((F, i) => { for (const L of loops(F)) for (let k = 0; k < L.length; k++) { const ek = m.ek(L[k], L[(k + 1) % L.length]); cnt[ek] = (cnt[ek] || 0) + 1; if (owner[ek] !== undefined) par[find(i)] = find(owner[ek]); else owner[ek] = i; } });
+    const comps = {}; Fs.forEach((F, i) => (comps[find(i)] = comps[find(i)] || []).push(i));
+    const set = new Set(), e = this.vp.e, dir = V.norm([.5773, .3141, .7517]);
+    for (const r in comps) {
+      const idx = comps[r]; let closed = idx.length >= 4;
+      for (const i of idx) { for (const L of loops(Fs[i])) for (let k = 0; k < L.length && closed; k++) if (cnt[m.ek(L[k], L[(k + 1) % L.length])] !== 2) closed = false; if (!closed) break; }
+      if (!closed) continue;
+      let hits = 0; for (const i of idx) if (this.rayFace(Fs[i], e, dir) !== null) hits++;
+      if (hits % 2 === 1) continue; // the eye is inside this solid
+      for (const i of idx) set.add(Fs[i].id);
+    }
+    this.cullC = { v: this.ver, c: this.camVer, set };
+    return set;
+  }
   drawFaces(ctx) {
-    const vp = this.vp, Ld = V.norm([.3, -.5, .8]);
-    const order = this.G.faces.map(F => ({ F, z: V.dist(F.cent, vp.e) })).sort((a, b) => b.z - a.z);
-    for (const { F } of order) {
+    const vp = this.vp, Ld = V.norm([.3, -.5, .8]), cull = this.closedCull();
+    for (const F of this.faceOrder()) {
+      if (cull.has(F.id) && V.dot(F.n, V.sub(vp.e, F.cent)) <= 0) continue;
       const pl = this.projLoop(F.P); if (pl.length < 3) continue;
       const front = V.dot(F.n, V.sub(vp.e, F.cent)) > 0, nv = front ? F.n : V.mul(F.n, -1), sh = .66 + .34 * Math.max(0, V.dot(nv, Ld));
       const base = front ? [248, 247, 244] : [150, 168, 198];

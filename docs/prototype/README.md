@@ -15,6 +15,7 @@ It is a Design-artifact page: the template and CSS are at the top, and the logic
 | Tools: Select, Line, Rectangle, Push/Pull, Move, Rotate, Scale, Eraser | `toolDown(`, `rectCorners(`, `commitScale(`, `commitErase(` |
 | Smart Guides (align, equal spacing, budget) | `smartInit(`, `smartSnap(`, `smartDraw(`, `smartDemoModel(` |
 | Box select (window and crossing) | `commitBox(`, `boxDraw(`, and the `box` branch of `toolDown(` |
+| Face drawing order and back-face culling (painter's algorithm fix) | `faceOrder(`, `closedCull(`, `drawFaces(` |
 | Action registry, menus, dock, icons | `const ACT`, `const MENUBAR`, `const DOCK`, `const IC` |
 | Menu, dock and context menu generation | `buildChrome(`, `menuHTML(`, `onContext(` |
 | Planned Features checklist | `openFeatures(`, `const BEHAVIOURS` |
