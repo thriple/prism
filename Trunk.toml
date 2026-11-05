@@ -1,0 +1,5 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Relative paths so the page works under GitHub Pages' /prism/ prefix.
+public_url = "./"

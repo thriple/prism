@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/prism-app"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/thriple/prism"
+rust-version = "1.88"
+
+[workspace.dependencies]
+winit = "0.30.13"
+wgpu = "30.0.1"
+egui = { version = "0.37.0", features = ["default_fonts"] }
+egui-wgpu = "0.37.0"
+egui-winit = { version = "0.37.0", default-features = false }
+log = "0.4.35"
+
+[profile.release]
+# Smaller web build; native speed is unaffected in practice.
+opt-level = 3
+lto = "thin"
