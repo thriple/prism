@@ -878,7 +878,7 @@ Illustrator's Smart Guides line an object up with the edges and centres of the o
 
 **Colours.** Illustrator uses magenta. SketchUp already uses magenta for parallel and perpendicular guides, so spacing guides get their own colour and arrows to avoid confusion. The colour is a setting.
 
-**Where it sits.** It is an extension of Inference & Drawing and of Groups & Components, because it needs objects. It should not start before Groups & Components exist. Until then the feel-test prototype could test the idea with plain rectangles if the owner wants to try it early.
+**Where it sits.** It is an extension of Inference & Drawing and of Groups & Components, because it needs objects. It should not start before Groups & Components exist. The feel-test prototype already tries it: with the Move tool, separate connected shapes count as objects, and Help > Smart Guides Demo Scene loads a row of boxes to drag one against. It has alignment (min, centre, max per axis, teal), equal spacing with arrows and a `d:` label (orange), an 8 px pull, a 2 ms budget that pauses spacing first, and Ctrl+U to switch it off. It does not yet have equal sizes or chains longer than two neighbours.
 
 ## 6. Roadmap
 

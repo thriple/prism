@@ -486,6 +486,20 @@ function initialModel() {
   }
   return m;
 }
+function boxAt(m, x0, x1, y0, y1, z0, z1) {
+  const c = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]].map(q => m.addRaw(q));
+  for (const l of [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]) {
+    const o = l.map(i => c[i]); m.addF(o);
+    for (let i = 0; i < 4; i++) m.addE(o[i], o[(i + 1) % 4]);
+  }
+}
+// Three boxes in a row with a 2 m gap between the first two, plus a loose box to drag.
+function smartDemoModel() {
+  const m = new Model();
+  boxAt(m, -8, -6, -1, 1, 0, 2); boxAt(m, -4, -2, -1, 1, 0, 3);
+  boxAt(m, 3, 5, -1, 1, 0, 1.5); boxAt(m, -2, 0, 5, 7, 0, 2);
+  return m;
+}
 function parseLen(s) {
   s = String(s).trim().toLowerCase().replace(/\s+/g, '');
   let m = /^(-?\d+(?:\.\d+)?)'(?:(\d+(?:\.\d+)?)"?)?$/.exec(s);
@@ -523,7 +537,7 @@ const ACT = {};
  ['flip.x','X (red)'],['flip.y','Y (green)'],['flip.z','Z (blue)'],
  ['isect.model','With Model'],['isect.sel','With Selection'],['isect.ctx','With Context'],
  ['edit.revface','Reverse Faces'],['edit.orient','Orient Faces'],['edit.soften','Soften/Smooth'],['edit.weld','Weld'],['edit.center','Center / Align'],
- ['view.toolbars','Toolbars and Panels'],['show.faces','Faces'],['show.lines','Lines'],['show.points','Points'],['view.linew','Line Thickness…'],['view.outline','Outline Thickness…'],['light.default','Default Lighting'],['light.sun','Sun'],['view.sunset','Sun and Shadow Settings…'],['view.styles','Styles…'],['view.settings','View Settings'],['view.axes','Axes'],['view.ground','Ground'],['view.grid','Grid'],['view.shadow','Ground Shadow','','cmd:shadow'],['view.guides','Guides'],['view.hidden','Hidden Geometry'],['view.xray','X-ray'],['view.edges','Edge Style'],['view.faces','Face Style'],['view.section','Section Display'],
+ ['view.toolbars','Toolbars and Panels'],['show.faces','Faces'],['show.lines','Lines'],['show.points','Points'],['view.linew','Line Thickness…'],['view.outline','Outline Thickness…'],['light.default','Default Lighting'],['light.sun','Sun'],['view.sunset','Sun and Shadow Settings…'],['view.styles','Styles…'],['view.settings','View Settings'],['view.axes','Axes'],['view.ground','Ground'],['view.grid','Grid'],['view.shadow','Ground Shadow','','cmd:shadow'],['view.guides','Guides'],['view.smart','Smart Guides','Ctrl+U','cmd:smart'],['view.hidden','Hidden Geometry'],['view.xray','X-ray'],['view.edges','Edge Style'],['view.faces','Face Style'],['view.section','Section Display'],
  ['cam.orbit','Orbit','O','nav:orbit'],['cam.pan','Pan','H','nav:pan'],['cam.zoom','Zoom','Z'],['cam.extents','Zoom Extents','Shift+Z','cmd:extents'],['cam.window','Zoom Window','Ctrl+Shift+W'],['cam.zoomsel','Zoom Selection'],
  ['cam.v.top','Top'],['cam.v.bottom','Bottom'],['cam.v.front','Front'],['cam.v.back','Back'],['cam.v.left','Left'],['cam.v.right','Right'],['cam.v.iso','Iso'],
  ['cam.persp','Perspective'],['cam.parallel','Parallel Projection'],['cam.fov','Field of View…'],['cam.walk','Walk'],['cam.look','Look Around'],
@@ -538,7 +552,7 @@ const ACT = {};
  ['solid.union','Union'],['solid.sub','Subtract'],['solid.isect','Intersect'],['solid.trim','Trim'],['solid.split','Split'],['solid.shell','Outer Shell'],['conv.curve','Curve Chain ↔ NURBS Curve'],['conv.patch','Faces ↔ Smooth Patch'],['solid.heal','Validate and Heal'],
  ['render.settings','Render Settings…'],['render.engine','Engine'],['render.passes','Output and Passes…'],['render.denoise','Denoise'],['render.queue','Render Queue'],['render.blender','Render in Blender'],['render.materials','Materials…'],['render.lights','Lights'],['render.env','Environment'],['render.view','Render View'],
  ['win.outliner','Outliner'],['win.inspector','Inspector'],['win.health','Model Health'],['win.info','Entity Info'],['win.materials','Materials'],['win.components','Components'],['win.tags','Tags'],['win.prefs','Preferences…'],['win.hotkeys','Keyboard Shortcuts…'],
- ['help.feel','Feel Panel','','cmd:feelpanel'],['help.features','Planned Features…','','cmd:features'],['help.keys','Shortcuts Reference','','cmd:keys'],['help.hints','Tool Hint Panel'],['help.search','Command Search…','Shift+S'],['help.about','About Prism'],
+ ['help.feel','Feel Panel','','cmd:feelpanel'],['help.features','Planned Features…','','cmd:features'],['help.smartdemo','Smart Guides Demo Scene','','cmd:smartdemo'],['help.keys','Shortcuts Reference','','cmd:keys'],['help.hints','Tool Hint Panel'],['help.search','Command Search…','Shift+S'],['help.about','About Prism'],
 ].forEach(r => { ACT[r[0]] = { id: r[0], name: r[1], key: r[2] || '', run: r[3] || '', when: r[4] || '' }; });
 
 const MENUBAR = [
@@ -546,7 +560,7 @@ const MENUBAR = [
  ['Edit', ['edit.undo','edit.redo','-','edit.cut','edit.copy','edit.paste','edit.pasteip','edit.delete','-','edit.selall','edit.desel','-',
    ['Hide & Lock',['edit.hide','edit.unhide','edit.unhideall','edit.unhidelast','edit.isolate','edit.lock','edit.unlock']],'-','edit.group','edit.comp','edit.explode','edit.unique','-',
    ['Flip Along',['flip.x','flip.y','flip.z']],['Intersect Faces',['isect.model','isect.sel','isect.ctx']],'edit.revface','edit.orient','edit.soften','edit.weld','edit.center']],
- ['View', ['view.toolbars','view.settings','-',['Show',['show.faces','show.lines','show.points','view.axes','view.ground','view.grid','view.guides','view.hidden']],['Lines',['view.linew','view.outline','view.edges']],['Faces',['view.faces','view.xray']],['Lighting',['light.default','light.sun','view.sunset','view.shadow']],'view.styles','-','view.section']],
+ ['View', ['view.toolbars','view.settings','-',['Show',['show.faces','show.lines','show.points','view.axes','view.ground','view.grid','view.guides','view.smart','view.hidden']],['Lines',['view.linew','view.outline','view.edges']],['Faces',['view.faces','view.xray']],['Lighting',['light.default','light.sun','view.sunset','view.shadow']],'view.styles','-','view.section']],
  ['Camera', ['cam.orbit','cam.pan','cam.zoom','cam.extents','cam.window','cam.zoomsel','-',['Standard Views',['cam.v.top','cam.v.bottom','cam.v.front','cam.v.back','cam.v.left','cam.v.right','cam.v.iso']],'-','cam.persp','cam.parallel','cam.fov','-','cam.walk','cam.look']],
  ['Draw', ['tool.line','tool.freehand','tool.rect','tool.rrect','tool.circle','tool.polygon',['Arc',['arc.2','arc.3','arc.c','arc.p']],'tool.curve','-',['Primitives',['prim.box','prim.cyl','prim.cone','prim.sphere','prim.torus','prim.capsule']],['Surface',['surf.loft','surf.revolve','surf.sweep','surf.patch']]]],
  ['Tools', ['tool.select','tool.erase','tool.paint','-','tool.move','tool.rotate','tool.scale','tool.push','tool.offset','tool.followme','tool.fillet','tool.shell','tool.mirror','-','tool.tape','tool.protractor','tool.dim','tool.text','tool.axes','tool.section','-',
@@ -554,12 +568,12 @@ const MENUBAR = [
  ['Solid', ['solid.union','solid.sub','solid.isect','solid.trim','solid.split','solid.shell','-',['Convert',['conv.curve','conv.patch']],'solid.heal']],
  ['Render', ['render.settings','render.engine','render.passes','render.denoise','-','render.materials','render.lights','render.env','render.view','render.queue','-','render.blender']],
  ['Window', ['win.outliner','win.inspector','win.health','win.info','win.materials','win.components','win.tags','-','win.prefs','win.hotkeys']],
- ['Help', ['help.feel','help.features','help.keys','help.hints','help.search','-','help.about']],
+ ['Help', ['help.feel','help.features','help.smartdemo','help.keys','help.hints','help.search','-','help.about']],
 ];
 const BEHAVIOURS = [
  ['Inference: endpoint, midpoint, on-edge, on-face, guides', 1],['Hover-wake anchors and guide intersections', 1],['Axis locks (arrows and Shift)', 1],['Typed values in the measurement box', 1],
  ['Push/Pull: stretch, extrude, Alt new loop', 1],['Selectable points, edges and faces', 1],['Snap target highlight (point and edge)', 1],['No overlapping coplanar faces: overlaps are split, faces with holes', 1],['Size-relative tolerance (mm to km)', 1],['Esc cancels, then backs out', 1],['Zoom to cursor, orbit around the point under the cursor', 1],['Live ghost previews', 1],
- ['Tool memory: double-click or Enter repeats the last value', 0],['Model Health: reversed faces, holes, interior faces, nesting counts', 0],['Mode switcher (Model, Materials, Render, Animate, Simulate, Project)', 0],['Scenes and named cameras (tentative)', 0],['Snap to grid (optional)', 0],['Exact circles, arcs and NURBS', 0],['Groups and components, open and exit', 0],['Command search (Shift+S)', 0],['Keymap presets (SketchUp, Blender, Fusion)', 0],['Trackpad gestures', 0],['Save, open and export', 0],
+ ['Tool memory: double-click or Enter repeats the last value', 0],['Model Health: reversed faces, holes, interior faces, nesting counts', 0],['Mode switcher (Model, Materials, Render, Animate, Simulate, Project)', 0],['Scenes and named cameras (tentative)', 0],['Smart Guides: align and equal spacing between objects, time budget, Ctrl+U (Move tool, whole islands)', 1],['Snap to grid (optional)', 0],['Exact circles, arcs and NURBS', 0],['Groups and components, open and exit', 0],['Command search (Shift+S)', 0],['Keymap presets (SketchUp, Blender, Fusion)', 0],['Trackpad gestures', 0],['Save, open and export', 0],
 ];
 const FLIP = ['flip.x','flip.y','flip.z'], ISECT = ['isect.model','isect.sel','isect.ctx'];
 
@@ -648,7 +662,7 @@ class Component extends DCLogic {
     const pc = document.createElement('canvas'); pc.width = pc.height = 6;
     const pg = pc.getContext('2d'); pg.fillStyle = 'rgba(31,95,224,.9)'; pg.fillRect(1, 1, 1.4, 1.4); pg.fillRect(4, 4, 1.4, 1.4);
     this.stipple = this.cx.createPattern(pc, 'repeat');
-    this.tune = { ap: 1, rel: 1.6, dwell: 220, shadow: true }; this.nav = null;
+    this.tune = { ap: 1, rel: 1.6, dwell: 220, shadow: true, smart: true, smartMs: 2 }; this.nav = null;
     this.tool = 'select'; this.reset(); this.resize(); this.bind(); this.buildChrome(); this.initSoft(); this.homeCam(); this.updateCursor(); this.dirty(); this.syncUI();
   }
   reset() {
@@ -1000,7 +1014,7 @@ class Component extends DCLogic {
   }
   when(w) { return w === 'undo' ? !!(this.undo.length || this.op) : w === 'redo' ? !!this.redo.length : w === 'sel' ? !this.selEmpty() : true; }
   enabled(a) { return !!a.run && (!a.when || this.when(a.when)); }
-  checked(a) { const p = a.run.split(':'); return p[0] === 'tool' ? !this.nav && this.tool === p[1] : p[0] === 'nav' ? this.nav === p[1] : a.run === 'cmd:shadow' ? !!this.tune.shadow : a.run === 'cmd:feelpanel' ? this.panelOn !== false : false; }
+  checked(a) { const p = a.run.split(':'); return p[0] === 'tool' ? !this.nav && this.tool === p[1] : p[0] === 'nav' ? this.nav === p[1] : a.run === 'cmd:shadow' ? !!this.tune.shadow : a.run === 'cmd:smart' ? !!this.tune.smart : a.run === 'cmd:feelpanel' ? this.panelOn !== false : false; }
   chromeSync() {
     if (!this.dockBtns) return;
     const sig = [this.tool, this.nav, this.undo.length > 0 || !!this.op, this.redo.length > 0, this.sel.v.size + this.sel.e.size + this.sel.f.size].join('|');
@@ -1059,6 +1073,8 @@ class Component extends DCLogic {
     else if (v === 'extents') this.zoomExtents();
     else if (v === 'new') { this.reset(); this.homeCam(); }
     else if (v === 'shadow') this.tune.shadow = !this.tune.shadow;
+    else if (v === 'smart') { this.tune.smart = !this.tune.smart; if (this.op && this.op.sg) { this.op.sg.guides = []; this.op.sg.note = ''; } }
+    else if (v === 'smartdemo') { this.reset(); this.m = smartDemoModel(); this.rebuild(); this.homeCam(); this.cam = { eye: [2, -17, 7], target: [-1, 0, 1.2] }; this.camVer++; this.setTool('select'); }
     else if (v === 'feelpanel') { this.panelOn = this.panelOn === false; const pn = this.root.querySelector('.panel'); if (pn) pn.style.display = this.panelOn ? '' : 'none'; }
     else if (v === 'features') this.openFeatures();
     else if (v === 'keys') { const el = this.root.querySelector('[data-prism="keys"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
@@ -1249,7 +1265,8 @@ class Component extends DCLogic {
       op.d = t; op.snap = snap; this.m = Model.load(op.base); this.m.pushPull(op.fid, t, op.loop); this.rebuild();
     } else if (op.type === 'move') {
       if (!this.inf) return;
-      this.moveApply(op, V.sub(this.inf.p, op.from));
+      if (!op.sg) this.smartInit(op);
+      this.moveApply(op, this.smartSnap(op, V.sub(this.inf.p, op.from)));
     } else if (op.type === 'rect') {
       if (!this.inf) return;
       const snapped = !['On Face', 'On Ground', 'Free'].includes(this.inf.kind);
@@ -1272,6 +1289,95 @@ class Component extends DCLogic {
       if (Math.abs(ang - nr) < .045) ang = nr;
       op.u1 = u1; this.rotApply(op, ang);
     }
+  }
+  // ---- Smart Guides: whole-object alignment and equal spacing (PLAN.md 5.1) ----
+  smartInit(op) {
+    const m = this.m, par = {}, find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    for (const k in m.v) par[k] = k;
+    for (const k in m.e) { const [a, b] = m.e[k], ra = find(String(a)), rb = find(String(b)); if (ra !== rb) par[ra] = rb; }
+    const groups = {}; for (const k in m.v) (groups[find(k)] = groups[find(k)] || []).push(k);
+    const objs = [];
+    for (const r in groups) {
+      const ids = groups[r]; if (ids.some(i => op.excl.has(+i) || op.excl.has(i))) continue;
+      const mn = [1e18, 1e18, 1e18], mx = [-1e18, -1e18, -1e18];
+      for (const i of ids) for (let a = 0; a < 3; a++) { mn[a] = Math.min(mn[a], m.v[i][a]); mx[a] = Math.max(mx[a], m.v[i][a]); }
+      objs.push({ mn, mx });
+    }
+    const mn = [1e18, 1e18, 1e18], mx = [-1e18, -1e18, -1e18];
+    for (const i of op.excl) { const q = m.v[i]; if (!q) continue; for (let a = 0; a < 3; a++) { mn[a] = Math.min(mn[a], q[a]); mx[a] = Math.max(mx[a], q[a]); } }
+    op.sg = { objs, mn, mx, guides: [], note: '', slow: 0, spacingOff: false, ms: 0 };
+    if (objs.length > 200) { op.sg.off = true; op.sg.note = 'Smart Guides paused: too many objects (' + objs.length + ')'; }
+  }
+  smartSnap(op, delta) {
+    const sg = op.sg; sg.guides = []; if (!this.tune.smart || !sg || sg.off || !sg.objs.length || !isFinite(sg.mn[0])) return delta;
+    const t0 = performance.now(), d = delta.slice();
+    const cen = [0, 1, 2].map(a => (sg.mn[a] + sg.mx[a]) / 2 + d[a]), sc = this.scr(cen);
+    const tol = 8 * this.tune.ap * (sc ? sc[2] : 10) / this.vp.foc;
+    const axes = this.locks.axis != null ? [this.locks.axis] : [0, 1, 2];
+    const Mv = a => [sg.mn[a] + d[a], cen[a] + 0 * a, sg.mx[a] + d[a]].map((v, i) => i === 1 ? (sg.mn[a] + sg.mx[a]) / 2 + d[a] : v);
+    const guides = [], names = ['X', 'Y', 'Z'];
+    // 1. alignment of min / centre / max, per axis
+    for (const a of axes) {
+      let best = null;
+      const mv = Mv(a);
+      for (const o of sg.objs) {
+        const ov = [o.mn[a], (o.mn[a] + o.mx[a]) / 2, o.mx[a]];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+          const df = ov[j] - mv[i]; if (Math.abs(df) < tol && (!best || Math.abs(df) < Math.abs(best.df))) best = { df, v: ov[j], o, a };
+        }
+      }
+      if (best) { d[a] += best.df; guides.push({ k: 'align', a, v: best.v, o: best.o }); }
+    }
+    // 2. equal spacing, using the objects that sit in the same row as the moving one
+    if (!sg.spacingOff) {
+      for (const a of axes) {
+        const b1 = (a + 1) % 3, b2 = (a + 2) % 3, lo = [sg.mn[b1] + d[b1], sg.mn[b2] + d[b2]], hi = [sg.mx[b1] + d[b1], sg.mx[b2] + d[b2]];
+        const row = sg.objs.filter(o => o.mn[b1] <= hi[0] + tol && o.mx[b1] >= lo[0] - tol && o.mn[b2] <= hi[1] + tol && o.mx[b2] >= lo[1] - tol).sort((p, q) => p.mn[a] - q.mn[a]);
+        const size = sg.mx[a] - sg.mn[a], cur = sg.mn[a] + d[a]; let best = null;
+        for (let i = 0; i + 1 < row.length; i++) {
+          const A = row[i], B = row[i + 1], g = B.mn[a] - A.mx[a]; if (g < tol) continue;
+          const cands = [{ t: B.mx[a] + g, A, B, kind: 'after' }, { t: A.mn[a] - g - size, A, B, kind: 'before' }];
+          if (g - size > 2 * tol) cands.push({ t: A.mx[a] + (g - size) / 2, A, B, kind: 'between' });
+          for (const c of cands) { const df = c.t - cur; if (Math.abs(df) < tol && (!best || Math.abs(df) < Math.abs(best.df))) best = Object.assign({ df, g }, c); }
+        }
+        if (best) {
+          d[a] += best.df; const mn = sg.mn[a] + d[a], mx = sg.mx[a] + d[a];
+          const gaps = best.kind === 'after' ? [[best.A.mx[a], best.B.mn[a]], [best.B.mx[a], mn]] : best.kind === 'before' ? [[mx, best.A.mn[a]], [best.A.mx[a], best.B.mn[a]]] : [[best.A.mx[a], mn], [mx, best.B.mn[a]]];
+          guides.push({ k: 'space', a, gaps: gaps.map(([s, e]) => [s, e]), g: best.g, kind: best.kind });
+        }
+      }
+    }
+    sg.guides = guides;
+    sg.ms = performance.now() - t0;
+    if (sg.ms > this.tune.smartMs) { if (++sg.slow >= 3 && !sg.spacingOff) { sg.spacingOff = true; sg.note = 'Smart Guides: spacing paused (over the ' + this.tune.smartMs + ' ms budget). Alignment still on.'; } } else sg.slow = Math.max(0, sg.slow - 1);
+    return d;
+  }
+  smartDraw(ctx, op) {
+    const sg = op.sg; if (!sg) return;
+    const sh = [0, 1, 2].map(a => op.delta[a]);
+    for (const g of sg.guides) {
+      if (g.k === 'align') {
+        const a = g.a, o = g.o, p1 = [0, 1, 2].map(i => i === a ? g.v : (o.mn[i] + o.mx[i]) / 2), p2 = [0, 1, 2].map(i => i === a ? g.v : (sg.mn[i] + sg.mx[i]) / 2 + sh[i]);
+        this.worldLine(ctx, p1, p2, '#00a3c4', 1.6, [6, 4]);
+        for (const p of [p1, p2]) { const s = this.scr(p); if (s) { ctx.fillStyle = '#00a3c4'; ctx.beginPath(); ctx.arc(s[0], s[1], 3.5, 0, 7); ctx.fill(); } }
+        const m = this.scr([0, 1, 2].map(i => (p1[i] + p2[i]) / 2)); if (m) this.pill(ctx, 'Align ' + 'XYZ'[a], m[0] + 10, m[1] - 14, '#00849f');
+      } else {
+        const a = g.a, other = i => (sg.mn[i] + sg.mx[i]) / 2 + sh[i];
+        for (const [s, e] of g.gaps) {
+          const P = v => [0, 1, 2].map(i => i === a ? v : other(i));
+          this.worldLine(ctx, P(s), P(e), '#e8742a', 2, null);
+          const sa = this.scr(P(s)), sb = this.scr(P(e)); if (!sa || !sb) continue;
+          ctx.strokeStyle = '#e8742a'; ctx.lineWidth = 2;
+          for (const [pt, dir] of [[sa, [sb[0] - sa[0], sb[1] - sa[1]]], [sb, [sa[0] - sb[0], sa[1] - sb[1]]]]) {
+            const L = Math.hypot(dir[0], dir[1]) || 1, ux = dir[0] / L, uy = dir[1] / L;
+            ctx.beginPath(); ctx.moveTo(pt[0], pt[1]); ctx.lineTo(pt[0] + ux * 8 - uy * 5, pt[1] + uy * 8 + ux * 5); ctx.moveTo(pt[0], pt[1]); ctx.lineTo(pt[0] + ux * 8 + uy * 5, pt[1] + uy * 8 - ux * 5); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(pt[0] - uy * 7, pt[1] + ux * 7); ctx.lineTo(pt[0] + uy * 7, pt[1] - ux * 7); ctx.stroke();
+          }
+          this.pill(ctx, 'd: ' + fmtLen(g.g), (sa[0] + sb[0]) / 2 - 36, (sa[1] + sb[1]) / 2 - 16, '#b9540f');
+        }
+      }
+    }
+    if (sg.note) this.pill(ctx, sg.note, 16, 44, '#7a3a0c');
   }
   moveApply(op, delta) {
     this.m = Model.load(op.base); let vs = op.excl;
@@ -1330,6 +1436,7 @@ class Component extends DCLogic {
     if (mod && (k === 'z' || k === 'Z')) { e.shiftKey ? this.doRedo() : this.doUndo(); }
     else if (mod && (k === 'y' || k === 'Y')) this.doRedo();
     else if (mod && (k === 'a' || k === 'A')) this.doSelectAll();
+    else if (mod && (k === 'u' || k === 'U')) this.act('view.smart');
     else if (k === 'Control' || k === 'Meta') { if (!e.repeat && this.op && (this.op.type === 'move' || this.op.type === 'rotate')) { this.op.copy = !this.op.copy; this.pendMove = true; } }
     else if (k === 'Shift') { if (!e.repeat) this.shiftLock(); }
     else if (k === 'Alt') { if (!e.repeat && this.op && this.op.type === 'push') { this.op.loop = !this.op.loop; this.pendMove = true; } }
@@ -1373,7 +1480,7 @@ class Component extends DCLogic {
     } else if (op && op.type === 'move') {
       const v = parseLen(s); if (v === null) return;
       let dir = V.norm(op.delta); if (V.len(dir) < 1e-9) dir = this.locks.axis !== null ? AX[this.locks.axis] : [1, 0, 0];
-      this.moveApply(op, V.mul(dir, v)); this.commitMove();
+      if (op.sg) op.sg.guides = []; this.moveApply(op, V.mul(dir, v)); this.commitMove();
     } else if (op && op.type === 'rotate' && op.stage === 2) {
       const v = parseFloat(s); if (isNaN(v)) return;
       this.rotApply(op, v * Math.PI / 180); this.commitRot();
@@ -1684,6 +1791,7 @@ class Component extends DCLogic {
     if (op && op.type === 'move' && inf) {
       this.worldLine(ctx, op.from, V.add(op.from, op.delta), '#16181c', 1.4, [4, 4]);
       const b = this.scr(V.add(op.from, op.delta)); if (b) this.pill(ctx, (op.copy ? 'Copy ' : '') + fmtLen(V.len(op.delta)), b[0] + 14, b[1] - 16);
+      this.smartDraw(ctx, op);
     }
     if (op && op.type === 'push') {
       const e = V.add(op.p0, V.mul(op.n, op.d));
