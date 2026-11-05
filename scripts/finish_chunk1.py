@@ -89,6 +89,13 @@ def main():
     ap.add_argument("--holder", help="name for the licence copyright line (default: your git user.name)")
     args = ap.parse_args()
 
+    if not args.yes and not args.dry_run:
+        print("This will: check that CI passed, merge the Skeleton branch into main, add the MIT and\n"
+              "Apache licence files, push main, and switch on GitHub Pages. Nothing is force-pushed.")
+        if input("Go ahead? [y/N] ").strip().lower() != "y":
+            sys.exit(0)
+        args.yes = True
+
     step("Checking tools")
     for tool in (["git", "--version"], ["gh", "--version"]):
         try:
@@ -105,9 +112,11 @@ def main():
 
     step("Looking at the Skeleton branch")
     run(["git", "fetch", "origin"])
-    sha = run(["git", "rev-parse", f"origin/{BRANCH}"], check=False)
+    ls = run(["git", "ls-remote", "origin", f"refs/heads/{BRANCH}"], check=False)
+    sha = ls.split()[0] if ls else ""
     if not sha:
         stop(f"Branch {BRANCH} is not on GitHub. Has it already been merged and deleted? Check `git log origin/main`.")
+    run(["git", "fetch", "origin", f"{BRANCH}:refs/remotes/origin/{BRANCH}"])
     ok(f"branch is at {sha[:8]}")
 
     step("Checking that CI passed on that exact commit")
