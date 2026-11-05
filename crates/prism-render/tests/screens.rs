@@ -427,12 +427,38 @@ fn plate_gap_threshold_report() {
                     }
                 }
             }
-            let sample: Vec<String> = dark
+            // The exact depths along the ray through each sampled pixel,
+            // for the plate's front and the detail's front (depth = near / distance).
+            let view = prism_render::View::new(&cam, 300.0, 300.0);
+            let mut boxes = vec![(DVec3::new(-30.0, -30.0, 0.0), DVec3::new(30.0, 30.0, 0.0))];
+            boxes.extend(m.bbox());
+            let (near, _) = prism_render::gpu::fit_depth(&view, &boxes);
+            let at = |x: u32, y: u32, plane_y: f64| {
+                let (o, d) = view.ray(prism_math::DVec2::new(
+                    f64::from(x) + 0.5,
+                    f64::from(y) + 0.5,
+                ));
+                let t = (plane_y - o.y) / d.y;
+                near / (t * d.dot(view.f))
+            };
+            // Always sample the middle too, so every GPU reports something.
+            let mut pts: Vec<(u32, u32)> = dark
                 .iter()
                 .step_by((dark.len() / 4).max(1))
+                .copied()
+                .collect();
+            pts.push((150, 150));
+            let sample: Vec<String> = pts
+                .iter()
                 .map(|&(x, y)| {
                     let v = ids[(y * 300 + x) as usize];
-                    format!("({x},{y}) face {} depth {:.9}", v[0], f32::from_bits(v[1]))
+                    format!(
+                        "({x},{y}) face {} stored {:.9} plate {:.9} detail {:.9}",
+                        v[0],
+                        f32::from_bits(v[1]),
+                        at(x, y, y0),
+                        at(x, y, d0)
+                    )
                 })
                 .collect();
             eprintln!(
