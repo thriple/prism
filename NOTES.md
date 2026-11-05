@@ -148,3 +148,39 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
 - Lookups scan all vertices and edges (`edge_between`, `insert_point`), so drawing is O(n) per point. Fine for now; a spatial index and an edge map are needed before large models (DECISIONS #8).
 - Loops that touch themselves at one vertex (two squares meeting at a corner) are traced as one pinched loop. Not covered by the golden cases.
 - `dup` and `connected` follow the prototype. A face selected without its edges still gets its edges copied, as there.
+
+## Viewport
+
+**What was built**
+- A new crate, `prism-render`. Its pure parts use no GPU or clock and are tested on their own: the camera (`camera.rs`), the display triangulator (`tess.rs`, our own ear clipping with bridged holes and exact predicates, as the owner chose), the visible scene that drawing and picking share (`scene.rs`, the one place hidden objects will be left out), picking (`pick.rs`), the Select tool's clicks (`clicks.rs`) and the viewport's colours (`style.rs`, taken from the feel test). `gpu.rs` and `viewport.wgsl` draw with wgpu.
+- **Drawing:** sky and ground gradients, the 1 m grid fading with distance, axes (dashed on the negative side), faces lit as in the feel test with the back colour on reversed faces, the ground shadow, 1.5 pt anti-aliased edges, hover (orange) and selection (blue, with the screen-space dot stipple, and vertex dots). Profile lines and hidden lines (dashed or faint) are in the renderer and set from the debug panel; both start off, as in the feel test.
+- **Depth:** reversed-Z in a 32-bit float buffer, near and far fitted every frame to the model, grid and axes. **No line bias at all:** a second pass records which face is nearest at each pixel and its depth. An edge is never hidden by its own faces, and any other face hides it if it is nearer at the edge's own centre-line point (worked out exactly from the face's depth gradient). So edges never flicker against their faces, and lines behind a 0.5 mm plate stay hidden at 1 km. Positions are sent as two f32 parts and taken relative to the eye on the GPU.
+- **Navigation** (PLAN 1.5a as changed in 1.8): the wheel zooms 12% per notch toward the surface under the cursor and stops short of it; middle-drag orbits about the point under the cursor; Shift+middle-drag pans with the grabbed point under the cursor; double middle-click re-centres; Orbit (O), Pan (H) and Zoom (Z, drag up to zoom in) are tools on left-drag, and Esc returns to the tool before; Shift+Z is Zoom Extents; two-finger trackpad scroll pans and pinch zooms. Wheel zoom and Zoom Extents ease briefly (off with reduce motion, or from the debug panel).
+- **Select tool:** click, double-click (face and its outer edges) and triple-click (everything connected), within 350 ms and 6 px, as in the feel test. Right-click selects first, and the context menu now shows the face and edge lists. Select All and Deselect All work.
+- **Help > Test Scenes:** Cube (the start), Box with a Pocket, Thin Plate, Large Scene (2,500 boxes). File > New empties the model.
+- The debug panel has the pick aperture, profile lines, hidden lines and ease settings, the model's counts, and the last pick and scene-build times.
+
+**Tests:** camera (zoom never reaches the surface and keeps the point under the cursor, pan keeps the grabbed point, orbit keeps the pivot and a level horizon, Zoom Extents fits wide and tall windows, all at three scales), picking (vertex over edge over face, hidden things not picked, aperture), triangulation of every golden-case model at three scales (areas add up, no triangle in a hole, all facing the right way, a 1,000-corner face with 36 holes), clicks, and three screenshot tests on the GPU: the pocket from 2,700 views never shows a back face, the thin plate at 5 m, 100 m and 1 km shows nothing behind it, and a 1.5 pt edge is 1.5 pt wide at 1x and 2x. CI installs Mesa's software renderer for them.
+
+**Measured here** (Linux, CPU software renderer, so a real GPU is much faster)
+- Large scene, 15,000 faces and 30,000 edges: scene built in 43 ms (only when the model changes), a pick in under 1 ms, an orbit frame at 1200x800 in about 100 ms including reading the picture back. To measure: `cargo test --release -p prism-render --test screens timing -- --ignored --nocapture`.
+- Idle: 0 CPU ticks over 5 seconds with the cube on screen.
+- Web: works on WebGL2 in headless Chrome (SwiftShader). The release wasm is 8.7 MB, 3.1 MB gzipped (was 8.2 MB).
+
+**Decisions and defaults used**
+- **Undo, Redo and Delete are wired** to the document (Delete erases the selection as one undoable command), because a selection made Delete enabled and it would otherwise do nothing. Not asked for in the brief; easy to take out.
+- **Selected vertices hidden behind a face show no dot.** The feel test draws them anyway; a dot showing through a solid looked wrong.
+- **O, H and Z mid-operation:** there are no operations yet, so "release the mouse to go back" cannot apply. They are normal tools, and Esc goes back.
+- The camera never comes closer than 100 model tolerances to the surface, so zooming in cannot get lost in rounding.
+- The prototype's ground and grid sizes are absolute (1 m grid, 30 m out). Sub-millimetre models show no grid; View Settings can scale it later.
+- Fixed in Core Model while here: `Model::edge_faces` looked each edge up with a scan, which took 2.3 s on the large scene. It now uses a map (43 ms); the results are the same.
+
+**Still to check by a person**
+- Windows and macOS: the look, orbit, pan and wheel zoom with a real mouse, and the trackpad (two-finger pan direction, pinch). Wheel and trackpad deltas were only simulated here.
+- Frame time while orbiting the Large Scene on the reference machine (DECISIONS #8), from the debug panel with continuous redraw on.
+
+**Leftovers and ideas**
+- Clicks are timed by frame, so on a very slow software renderer a quick double-click can count as two single clicks. Fine at normal frame rates.
+- Picking and the scene build scan everything; a spatial index comes with larger models (DECISIONS #8).
+- Dashes on a line that is cut at the screen's edge or the near plane restart from the cut, so they can shift while orbiting.
+- Parallel Projection, Standard Views, Zoom Window, Field of View, Walk and Look Around stay greyed.

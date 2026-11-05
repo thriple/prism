@@ -12,5 +12,6 @@ mod overlay;
 pub mod platform;
 pub mod settings;
 mod storage;
+mod viewport;
 
 pub use app::run;

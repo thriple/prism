@@ -11,7 +11,7 @@ use serde_json::Value;
 
 const SCALES: [f64; 3] = [1e-4, 1.0, 1e3];
 
-fn cases() -> Value {
+pub fn cases() -> Value {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/acceptance/golden-cases.json"

@@ -1,4 +1,5 @@
-//! GPU setup and the per-frame draw: clear the screen, then draw the egui overlay.
+//! GPU setup and the per-frame draw: the viewport's picture (when it
+//! changed), then the screen with the egui interface over it.
 
 use std::sync::Arc;
 
@@ -15,6 +16,22 @@ pub struct Gpu {
     config: wgpu::SurfaceConfiguration,
     adapter_info: wgpu::AdapterInfo,
     egui: egui_wgpu::Renderer,
+    viewport: prism_render::gpu::Renderer,
+    /// The viewport's picture, as egui knows it.
+    viewport_texture: Option<egui::TextureId>,
+}
+
+/// What the viewport needs this frame.
+pub struct ViewportDraw<'a> {
+    /// Its size in pixels.
+    pub size: [u32; 2],
+    /// The scene, when it changed.
+    pub upload: Option<&'a prism_render::Scene>,
+    /// The highlight, when it changed.
+    pub highlight: Option<(&'a prism_render::Scene, prism_render::gpu::Highlight)>,
+    /// Draw the picture again (camera, scene, highlight or style changed).
+    pub redraw: bool,
+    pub frame: prism_render::gpu::Frame<'a>,
 }
 
 impl Gpu {
@@ -65,6 +82,7 @@ impl Gpu {
         surface.configure(&device, &config);
 
         let egui = egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
+        let viewport = prism_render::gpu::Renderer::new(&device);
 
         Self {
             surface,
@@ -73,6 +91,8 @@ impl Gpu {
             config,
             adapter_info,
             egui,
+            viewport,
+            viewport_texture: None,
         }
     }
 
@@ -93,11 +113,53 @@ impl Gpu {
         self.surface.configure(&self.device, &self.config);
     }
 
+    /// The viewport's picture for egui to show (after the first frame).
+    pub fn viewport_texture(&self) -> Option<egui::TextureId> {
+        self.viewport_texture
+    }
+
+    /// Get the viewport's picture ready: size, scene, highlight. Returns
+    /// whether it must be drawn this frame.
+    fn prepare_viewport(&mut self, v: &ViewportDraw) -> bool {
+        let [w, h] = v.size;
+        let mut redraw = v.redraw;
+        if self.viewport.resize(&self.device, w, h) {
+            let view = self.viewport.color_view().expect("just made");
+            match self.viewport_texture {
+                None => {
+                    self.viewport_texture = Some(self.egui.register_native_texture(
+                        &self.device,
+                        view,
+                        wgpu::FilterMode::Nearest,
+                    ));
+                }
+                Some(id) => self.egui.update_egui_texture_from_wgpu_texture(
+                    &self.device,
+                    view,
+                    wgpu::FilterMode::Nearest,
+                    id,
+                ),
+            }
+            redraw = true;
+        }
+        if let Some(scene) = v.upload {
+            self.viewport.set_scene(&self.device, scene, v.frame.style);
+            redraw = true;
+        }
+        if let Some((scene, h)) = &v.highlight {
+            self.viewport
+                .set_highlight(&self.device, scene, h, v.frame.style);
+            redraw = true;
+        }
+        redraw
+    }
+
     pub fn render(
         &mut self,
         jobs: &[egui::ClippedPrimitive],
         mut textures: egui::TexturesDelta,
         pixels_per_point: f32,
+        viewport: Option<ViewportDraw>,
     ) {
         // Apply texture changes even if this frame is skipped, so none are lost.
         for (id, deltas) in textures.set.drain() {
@@ -107,13 +169,23 @@ impl Gpu {
             }
         }
         let freed: Vec<egui::TextureId> = textures.free.drain().collect();
-        self.draw(jobs, pixels_per_point);
+        let draw_viewport = viewport.as_ref().is_some_and(|v| self.prepare_viewport(v));
+        let frame = viewport
+            .as_ref()
+            .filter(|_| draw_viewport)
+            .map(|v| &v.frame);
+        self.draw(jobs, pixels_per_point, frame);
         for id in &freed {
             self.egui.free_texture(id);
         }
     }
 
-    fn draw(&mut self, jobs: &[egui::ClippedPrimitive], pixels_per_point: f32) {
+    fn draw(
+        &mut self,
+        jobs: &[egui::ClippedPrimitive],
+        pixels_per_point: f32,
+        viewport: Option<&prism_render::gpu::Frame>,
+    ) {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -138,6 +210,10 @@ impl Gpu {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame"),
             });
+        if let Some(f) = viewport {
+            self.viewport
+                .render(&self.device, &self.queue, &mut encoder, f);
+        }
         let mut buffers =
             self.egui
                 .update_buffers(&self.device, &self.queue, &mut encoder, jobs, &screen);

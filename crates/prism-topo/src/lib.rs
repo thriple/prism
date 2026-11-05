@@ -248,12 +248,17 @@ impl Model {
 
     /// For every edge, the faces whose loops use it.
     pub fn edge_faces(&self) -> BTreeMap<EdgeId, Vec<FaceId>> {
+        // Look edges up by their two vertices (a scan per pair was O(n²)).
+        let by_ends: BTreeMap<(VertexId, VertexId), EdgeId> = self
+            .edges()
+            .map(|(id, e)| ((e.a.min(e.b), e.a.max(e.b)), id))
+            .collect();
         let mut map: BTreeMap<EdgeId, Vec<FaceId>> = BTreeMap::new();
         for (fid, f) in &self.faces {
             for l in f.loops() {
                 for (a, b) in loop_pairs(l) {
-                    if let Some(e) = self.edge_between(a, b) {
-                        map.entry(e).or_default().push(*fid);
+                    if let Some(e) = by_ends.get(&(a.min(b), a.max(b))) {
+                        map.entry(*e).or_default().push(*fid);
                     }
                 }
             }

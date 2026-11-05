@@ -25,7 +25,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Clippy for the web target
         run: cargo clippy --workspace --all-targets --target wasm32-unknown-unknown -- -D warnings
+      - name: Install Mesa's software renderer, for the screenshot tests
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - run: cargo test --workspace
+        env:
+          PRISM_REQUIRE_GPU: "1"
 
   native:
     name: Native build (${{ matrix.os }})

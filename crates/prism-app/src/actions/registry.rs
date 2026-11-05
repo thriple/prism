@@ -111,7 +111,11 @@ const TOGGLES: [&str; 3] = ["view.shadow", "help.debug", "help.themedemo"];
 fn run_of(id: &str, proto_run: &str) -> Run {
     if COMMANDS.contains(&id) {
         Run::Command
-    } else if proto_run.starts_with("tool:") || proto_run.starts_with("nav:") {
+    } else if id.starts_with("help.scene.") {
+        // Test scenes for the viewport (brief 04), handled by the app.
+        Run::Event
+    } else if id == "cam.zoom" || proto_run.starts_with("tool:") || proto_run.starts_with("nav:") {
+        // Zoom (Z) is a tool here (PLAN 1.5a); the prototype has no Zoom tool.
         Run::Tool
     } else if EVENTS.contains(&proto_run) {
         Run::Event

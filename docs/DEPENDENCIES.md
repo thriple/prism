@@ -6,7 +6,7 @@ Add a row before adding a dependency. Allowed by default: MIT, Apache-2.0, BSD, 
 | Crate | Version | Used by | Licence | WASM | Why |
 |---|---|---|---|---|---|
 | winit | 0.30 | prism-app | Apache-2.0 | Yes | Window and input events |
-| wgpu | 30 | prism-app | MIT OR Apache-2.0 | Yes (WebGPU, WebGL2 fallback) | GPU access |
+| wgpu | 30 | prism-app, prism-render | MIT OR Apache-2.0 | Yes (WebGPU, WebGL2 fallback) | GPU access |
 | egui | 0.37 | prism-app, prism-ui | MIT OR Apache-2.0 | Yes | Panels and controls (no built-in fonts) |
 | egui-wgpu | 0.37 | prism-app | MIT OR Apache-2.0 | Yes | Draws egui with wgpu |
 | egui-winit | 0.37 | prism-app | MIT OR Apache-2.0 | Yes | Feeds winit events to egui |
@@ -14,9 +14,11 @@ Add a row before adding a dependency. Allowed by default: MIT, Apache-2.0, BSD, 
 | web-time | 1.1 | prism-app | MIT OR Apache-2.0 | Yes | `Instant` that works in the browser |
 | serde | 1.0 | prism-app, core crates | MIT OR Apache-2.0 | Yes | Keymap and model file formats |
 | serde_json | 1.0 | prism-app, prism-topo, prism-doc | MIT OR Apache-2.0 | Yes | Keymap and model saved as JSON; golden cases read in tests |
-| glam | 0.34 | prism-math (and the crates above it) | MIT OR Apache-2.0 | Yes | f64 vectors and rotations |
+| glam | 0.34 | prism-math, prism-render (and the crates above them) | MIT OR Apache-2.0 | Yes | f64 vectors and rotations |
 | robust | 1.2 | prism-math | MIT OR Apache-2.0 | Yes | Exact orientation predicates (Shewchuk) |
 | proptest | 1.12 | prism-ops, prism-doc (tests only, native only) | MIT OR Apache-2.0 | No (not needed: tests run natively) | Property tests |
+| bytemuck | 1.25 | prism-render | Zlib OR Apache-2.0 OR MIT | Yes | Vertex and uniform data as bytes for the GPU (already used inside wgpu and egui) |
+| pollster | 1.0 | prism-render (tests only) | Apache-2.0 OR MIT | n/a | Waits for the GPU in the screenshot tests |
 | env_logger | 0.11 | prism-app (native only) | MIT OR Apache-2.0 | n/a | Log output on the console |
 | pollster | 1.0 | prism-app (native only) | Apache-2.0 OR MIT | n/a | Waits for GPU setup natively |
 | console_log | 1.0 | prism-app (web only) | MIT OR Apache-2.0 | Yes | Log output in the browser console |

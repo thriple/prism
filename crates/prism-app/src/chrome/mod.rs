@@ -67,10 +67,11 @@ pub(crate) struct OpenMenu {
     pub serial: u64,
 }
 
-/// The layout this frame: where the viewport is.
-#[derive(Clone, Copy, Debug)]
+/// The layout this frame: where the viewport is, and the mouse over it.
+#[derive(Clone, Debug)]
 pub struct Layout {
     pub viewport: Rect,
+    pub response: Option<egui::Response>,
 }
 
 pub struct Chrome {
@@ -89,9 +90,11 @@ pub struct Chrome {
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
-    pub(crate) rules: actions::Context,
+    pub rules: actions::Context,
     /// Save keymap changes to disk (off in tests).
     persist: bool,
+    /// The renderer's picture of the model, shown in the viewport well.
+    pub viewport_texture: Option<egui::TextureId>,
 }
 
 impl Chrome {
@@ -126,16 +129,18 @@ impl Chrome {
             platform,
             icons,
             active_tool: "tool.select",
-            toggles: HashSet::new(),
+            // The ground shadow starts on, as in the prototype.
+            toggles: HashSet::from(["view.shadow"]),
             menu: None,
             menu_serial: 0,
             palette: None,
             features_open: false,
             hotkeys: None,
-            status: "Greyed items are not built yet. Tools can be picked; they are built in later chunks.".to_owned(),
+            status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
             rules: actions::Context::default(),
             persist: false,
+            viewport_texture: None,
         }
     }
 

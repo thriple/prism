@@ -1301,6 +1301,34 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "",
         when: "",
     },
+    RawAction {
+        id: "help.scene.cube",
+        name: "Cube",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "help.scene.pocket",
+        name: "Box with a Pocket",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "help.scene.plate",
+        name: "Thin Plate",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "help.scene.large",
+        name: "Large Scene (Timing)",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
 ];
 
 pub const MENUBAR: &[(&str, &[Item])] = &[
@@ -1637,6 +1665,15 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Separator,
             Item::Action("help.debug"),
             Item::Action("help.themedemo"),
+            Item::Sub(
+                "Test Scenes",
+                &[
+                    Item::Action("help.scene.cube"),
+                    Item::Action("help.scene.pocket"),
+                    Item::Action("help.scene.plate"),
+                    Item::Action("help.scene.large"),
+                ],
+            ),
             Item::Action("help.pen"),
             Item::Separator,
             Item::Action("help.about"),

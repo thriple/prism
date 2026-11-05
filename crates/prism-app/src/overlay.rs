@@ -7,6 +7,9 @@ use prism_ui::widgets::{SoftButton, SoftPanel, SoftSelect, SoftSlider, SoftToggl
 use crate::frame_stats::FrameStats;
 use crate::input_log::{InputLog, Modifiers};
 use crate::settings::{REDUCE_MOTION_CHOICES, Settings};
+use crate::viewport::Viewport;
+
+const HIDDEN_LINES: [&str; 3] = ["Not drawn", "Dashed", "Faint"];
 
 /// Which build this is, set by the release workflow (for example "build 12").
 /// Local builds say "local".
@@ -67,13 +70,14 @@ pub fn draw(
     info: &DebugInfo<'_>,
     settings: &mut Settings,
     demo: &mut Demo,
+    model_view: &mut Viewport,
 ) {
     let at = |p: [f32; 2]| viewport.min + egui::vec2(p[0], p[1]);
     if shown.debug {
         SoftPanel::new("Prism debug")
             .default_pos(at(DEBUG_POS))
             .width(DEBUG_WIDTH)
-            .show(ctx, |ui| debug_panel(ui, info));
+            .show(ctx, |ui| debug_panel(ui, info, model_view));
     }
     if shown.demo {
         let right = viewport.width() - DEMO_FROM_RIGHT;
@@ -87,7 +91,7 @@ fn mono(ui: &mut egui::Ui, text: String) {
     ui.label(RichText::new(text).font(theme::mono()).color(color::INK));
 }
 
-fn debug_panel(ui: &mut egui::Ui, info: &DebugInfo<'_>) {
+fn debug_panel(ui: &mut egui::Ui, info: &DebugInfo<'_>, viewport: &mut Viewport) {
     let fps = info
         .stats
         .fps()
@@ -116,12 +120,58 @@ fn debug_panel(ui: &mut egui::Ui, info: &DebugInfo<'_>) {
         ),
     );
     groove(ui);
+    viewport_controls(ui, viewport);
+    groove(ui);
     ui.label(
         RichText::new(format!("Input events ({} total)", info.log.total())).color(color::MUTED),
     );
     for line in info.log.lines() {
         mono(ui, line);
     }
+}
+
+/// The viewport's tuning (the prototype's Feel Panel sliders) and counts.
+fn viewport_controls(ui: &mut egui::Ui, v: &mut Viewport) {
+    let m = v.model();
+    mono(
+        ui,
+        format!(
+            "model {} faces, {} edges, {} points",
+            m.face_count(),
+            m.edge_count(),
+            m.vertex_count()
+        ),
+    );
+    mono(
+        ui,
+        format!(
+            "pick {:.2} ms   scene rebuilt in {:.1} ms",
+            v.timings.pick_ms, v.timings.scene_ms
+        ),
+    );
+    let mut ap = v.tuning.aperture as f32;
+    if ui
+        .add(SoftSlider::new(&mut ap, 0.5..=2.5, "Pick aperture").suffix("x"))
+        .changed()
+    {
+        v.tuning.aperture = f64::from(ap);
+    }
+    let mut profile = v.style.profile_width;
+    if ui
+        .add(SoftSlider::new(&mut profile, 0.0..=4.0, "Profile lines").suffix(" pt"))
+        .changed()
+    {
+        v.style.profile_width = profile;
+        v.mark_dirty();
+    }
+    let mut hidden = v.hidden_lines_index();
+    if ui
+        .add(SoftSelect::new(&mut hidden, &HIDDEN_LINES, "Hidden lines"))
+        .changed()
+    {
+        v.set_hidden_lines_index(hidden);
+    }
+    ui.add(SoftToggle::new(&mut v.tuning.ease, "Ease zoom"));
 }
 
 fn demo_panel(ui: &mut egui::Ui, settings: &mut Settings, demo: &mut Demo) {

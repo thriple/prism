@@ -14,6 +14,7 @@ use crate::gpu::Gpu;
 use crate::input_log::{InputEvent, InputLog, Modifiers, WheelUnit};
 use crate::overlay::{self, DebugInfo, Demo};
 use crate::settings::Settings;
+use crate::viewport::Viewport;
 
 /// How many input events the overlay keeps.
 const LOG_CAPACITY: usize = 14;
@@ -61,6 +62,10 @@ struct App {
     chrome: Chrome,
     /// The modifier keys held now, as the window reports them.
     modifiers_state: winit::keyboard::ModifiersState,
+    /// The model, the camera, hover and selection.
+    viewport: Viewport,
+    /// The tool picked last frame, to notice changes.
+    last_tool: &'static str,
 }
 
 impl App {
@@ -85,6 +90,8 @@ impl App {
             next_redraw: None,
             chrome: Chrome::new(crate::platform::keys()),
             modifiers_state: winit::keyboard::ModifiersState::empty(),
+            viewport: Viewport::new(),
+            last_tool: "tool.select",
         }
     }
 
@@ -170,29 +177,85 @@ impl App {
             reduce_motion: motion.reduce_motion,
             aurora_redraws: self.aurora.redraws(),
         };
-        let (settings, demo, aurora, chrome) = (
+        let (settings, demo, aurora, chrome, viewport, last_tool) = (
             &mut self.settings,
             &mut self.demo,
             &mut self.aurora,
             &mut self.chrome,
+            &mut self.viewport,
+            &mut self.last_tool,
         );
+        chrome.viewport_texture = gpu.viewport_texture();
+        let reduce = motion.reduce_motion;
+        let mut viewport_px = [1u32, 1u32];
         let output = self.egui_ctx.run_ui(raw_input, |ui| {
             let ctx = ui.ctx();
             prism_ui::set_motion(ctx, motion);
             aurora.prepare(ctx);
+            // What can run depends on the document and the selection.
+            chrome.rules = crate::actions::Context {
+                can_undo: viewport.can_undo(),
+                can_redo: viewport.can_redo(),
+                has_selection: !viewport.counts().is_empty(),
+            };
             let layout = chrome.show(ctx);
+            for e in std::mem::take(&mut chrome.events) {
+                viewport.action(e.id, reduce);
+            }
+            if chrome.active_tool != *last_tool {
+                viewport.tool_changed(last_tool, chrome.active_tool);
+                *last_tool = chrome.active_tool;
+            }
+            if let Some(resp) = &layout.response {
+                viewport.input(ctx, resp, layout.viewport, chrome, reduce);
+            }
+            if viewport.step(f64::from(ctx.input(|i| i.stable_dt))) {
+                ctx.request_repaint();
+            }
+            let ppp = ctx.pixels_per_point();
+            viewport_px = [
+                (layout.viewport.width() * ppp).round().max(1.0) as u32,
+                (layout.viewport.height() * ppp).round().max(1.0) as u32,
+            ];
             let shown = overlay::Shown {
                 debug: chrome.is_on("help.debug"),
                 demo: chrome.is_on("help.themedemo"),
             };
-            overlay::draw(ctx, layout.viewport, shown, &info, settings, demo);
+            overlay::draw(ctx, layout.viewport, shown, &info, settings, demo, viewport);
         });
         egui_state.handle_platform_output(window, output.platform_output);
         let jobs = self
             .egui_ctx
             .tessellate(output.shapes, output.pixels_per_point);
 
-        gpu.render(&jobs, output.textures_delta, output.pixels_per_point);
+        let shadow = self.chrome.is_on("view.shadow");
+        let vp = &mut self.viewport;
+        let redraw = vp.take_dirty();
+        let highlight_changed = vp.take_highlight_change();
+        let highlight = vp.highlight();
+        let camera = vp.camera();
+        let bounds = vp.scene().bounds;
+        let upload = vp.take_upload().is_some();
+        let (scene, style) = (vp.scene(), &vp.style);
+        let draw = crate::gpu::ViewportDraw {
+            size: viewport_px,
+            upload: upload.then_some(scene),
+            highlight: highlight_changed.then_some((scene, highlight)),
+            redraw,
+            frame: prism_render::gpu::Frame {
+                camera,
+                ppp: output.pixels_per_point,
+                style,
+                shadow,
+                bounds,
+            },
+        };
+        gpu.render(
+            &jobs,
+            output.textures_delta,
+            output.pixels_per_point,
+            Some(draw),
+        );
 
         // Draw again only when something will change: egui says when.
         let delay = output
@@ -318,6 +381,9 @@ impl ApplicationHandler<Gpu> for App {
             used = self
                 .chrome
                 .key(&press, self.egui_ctx.egui_wants_keyboard_input());
+            if !used && press.code == "Escape" {
+                used = self.viewport.escape(&mut self.chrome);
+            }
             redraw |= used;
         }
         // egui asks for a repaint after every redraw event, which would loop.

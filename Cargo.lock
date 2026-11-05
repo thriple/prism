@@ -1844,6 +1844,12 @@ dependencies = [
  "log",
  "objc2-app-kit 0.3.2",
  "pollster",
+ "prism-doc",
+ "prism-geom",
+ "prism-math",
+ "prism-ops",
+ "prism-render",
+ "prism-topo",
  "prism-ui",
  "serde",
  "serde_json",
@@ -1895,6 +1901,22 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "prism-render"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "pollster",
+ "prism-doc",
+ "prism-geom",
+ "prism-math",
+ "prism-ops",
+ "prism-topo",
+ "serde_json",
+ "wgpu",
 ]
 
 [[package]]

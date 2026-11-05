@@ -36,6 +36,11 @@ add('script.docs', 'Scripting Reference');
 // Rust app panels (the prototype's Feel Panel is its own tuning panel).
 add('help.debug', 'Debug Panel');
 add('help.themedemo', 'Theme Demo');
+// Scenes to look at until the drawing tools exist (brief 04).
+add('help.scene.cube', 'Cube');
+add('help.scene.pocket', 'Box with a Pocket');
+add('help.scene.plate', 'Thin Plate');
+add('help.scene.large', 'Large Scene (Timing)');
 // 3. Every action needs a menu path. Two tools were only in the dock.
 const walkEdit = (items, fn) => items.forEach((it, i) => { if (Array.isArray(it)) { fn(it, items, i); walkEdit(it[1], fn); } });
 data.MENUBAR.forEach(([, items]) => walkEdit(items, sub => {
@@ -47,7 +52,8 @@ const file = menu('File');
 file.splice(file.indexOf('file.recent'), 0, 'file.docsettings', '-');
 const help = menu('Help');
 help.splice(help.indexOf('help.smartdemo'), 1);
-help.splice(help.indexOf('-'), 0, '-', 'help.debug', 'help.themedemo', 'help.pen');
+help.splice(help.indexOf('-'), 0, '-', 'help.debug', 'help.themedemo',
+  ['Test Scenes', ['help.scene.cube', 'help.scene.pocket', 'help.scene.plate', 'help.scene.large']], 'help.pen');
 data.MENUBAR.splice(data.MENUBAR.findIndex(m => m[0] === 'Help'), 0,
   ['Scripting', ['script.console', 'script.run', '-', 'script.docs']]);
 

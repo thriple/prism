@@ -1,0 +1,22 @@
+[package]
+name = "prism-render"
+description = "Prism's viewport: camera, display tessellation, picking and the wgpu renderer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prism-math.workspace = true
+prism-topo.workspace = true
+prism-ops.workspace = true
+wgpu.workspace = true
+glam.workspace = true
+bytemuck = { version = "1.25.0", features = ["derive"] }
+
+[dev-dependencies]
+pollster = "1.0.1"
+serde_json.workspace = true
+prism-geom.workspace = true
+prism-doc.workspace = true

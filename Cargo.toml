@@ -6,6 +6,7 @@ members = [
     "crates/prism-topo",
     "crates/prism-ops",
     "crates/prism-doc",
+    "crates/prism-render",
     "crates/prism-ui",
     "crates/prism-app",
 ]
@@ -30,6 +31,7 @@ prism-geom = { path = "crates/prism-geom" }
 prism-topo = { path = "crates/prism-topo" }
 prism-ops = { path = "crates/prism-ops" }
 prism-doc = { path = "crates/prism-doc" }
+prism-render = { path = "crates/prism-render" }
 glam = { version = "0.34.2", features = ["serde"] }
 robust = "1.2.0"
 serde = { version = "1.0", features = ["derive"] }

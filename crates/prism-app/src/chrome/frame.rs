@@ -5,7 +5,7 @@ use prism_ui::emboss;
 use prism_ui::theme::{self, color, depth, radius, size};
 
 use super::{Chrome, Layout, MenuKind, OpenMenu, dock};
-use crate::actions::registry::Selection;
+use egui::epaint::RectShape;
 
 pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
     let screen = ctx.viewport_rect();
@@ -32,32 +32,33 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
     top_bar(chrome, ctx, top);
     dock::show(chrome, ctx, dock_rect);
 
-    // The viewport: a well the renderer will draw into. Right-click opens
-    // the context menu (for empty space until there is a model).
-    Area::new(Id::unique("viewport"))
+    // The viewport: a sunken well showing the renderer's picture, with the
+    // well's inner shadow over its edge. The app handles the mouse over it.
+    let texture = chrome.viewport_texture;
+    let response = Area::new(Id::unique("viewport"))
         .order(Order::Background)
         .fixed_pos(viewport.min)
         .show(ctx, |ui| {
-            let (rect, resp) = ui.allocate_exact_size(viewport.size(), Sense::click());
-            let mut shapes = Vec::new();
-            emboss::soft(
-                &mut shapes,
-                rect,
-                radius::CARD,
-                -1.0,
-                depth::WELL,
-                color::VIEWPORT,
-            );
-            ui.painter().extend(shapes);
-            if resp.secondary_clicked()
-                && let Some(p) = resp.interact_pointer_pos()
-            {
-                chrome.open_context(p, Selection::default());
+            let (rect, resp) = ui.allocate_exact_size(viewport.size(), Sense::click_and_drag());
+            let r = emboss::fit(rect, radius::CARD);
+            let mut shapes =
+                vec![RectShape::filled(rect, theme::corner(r), color::VIEWPORT).into()];
+            if let Some(id) = texture {
+                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                shapes.push(
+                    RectShape::filled(rect, theme::corner(r), color::UNTINTED)
+                        .with_texture(id, uv)
+                        .into(),
+                );
             }
+            emboss::inset(&mut shapes, rect, r, depth::WELL);
+            ui.painter().extend(shapes);
             if resp.clicked() {
                 chrome.menu = None;
             }
-        });
+            resp
+        })
+        .inner;
 
     // The status bar: a one-line hint.
     Area::new(Id::unique("status"))
@@ -82,7 +83,10 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
             );
         });
 
-    Layout { viewport }
+    Layout {
+        viewport,
+        response: Some(response),
+    }
 }
 
 /// Where each menu bar title is, for opening its menu below it.
