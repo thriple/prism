@@ -8,6 +8,6 @@ pub mod plane;
 pub mod predicates;
 pub mod tol;
 
-pub use glam::{DVec2, DVec3};
+pub use glam::{DQuat, DVec2, DVec3};
 pub use plane::{Plane, newell};
 pub use tol::Tol;
