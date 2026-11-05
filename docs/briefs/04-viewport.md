@@ -48,8 +48,14 @@ The feel test (`docs/prototype/Main.dc.html`, guide in `docs/prototype/README.md
 - **Hover and selection display.**
   - Whatever is under the cursor gets the hover highlight: a vertex, an edge, or a face.
   - Selected items are drawn in blue. The face stipple is in screen space, so it reads at any zoom.
-  - The Select tool does single clicks: click to select one item, click empty space to clear, and right-click selects before the context menu opens. Select All and Deselect All (already events) are wired, and the context menu now shows the face and edge lists.
-  - Shift, Ctrl, box select and double or triple click come in the next chunk.
+  - The Select tool clicks as in the feel test (`toolDown(`, select branch; the owner calls it perfect, so match it exactly):
+    - **Click** selects one item. Click empty space to clear.
+    - **Double-click** a face selects the face and its outer edges.
+    - **Triple-click** anything selects everything connected to it (`prism_ops::connected`).
+    - A press counts as the next click of a series when it is within 350 ms and 6 px of the previous press.
+  - Right-click selects before the context menu opens.
+  - Select All and Deselect All are already events and get wired here, and the context menu now shows the face and edge lists.
+  - Shift, Ctrl and box select come in the next chunk.
   - The selection is view state, not a command, so it is not undone.
 - **Scenes to look at.** There are no drawing tools yet, so the app starts with the prototype's cube hovering above the ground, built through `prism-doc` commands. Help > Debug > Test Scenes (registered actions, greyed in release builds if you prefer) loads:
   - the cube;
@@ -61,7 +67,7 @@ The feel test (`docs/prototype/Main.dc.html`, guide in `docs/prototype/README.md
 - **Web:** keeps building and works on WebGL2. If WebGL2 limits reversed-Z precision, record what was seen in NOTES and keep it working.
 
 ## Out of scope
-Inference, glyphs and guides from the inference engine, drawing tools, the measurement box, Shift/Ctrl and box select, Parallel Projection, Standard Views, Zoom Window, Field of View, Walk and Look Around (all stay greyed), the View Settings panel and styles, X-ray, the sun, textures, hide and unhide, groups, curved faces and the Outliner. The Smart Guides demo scene stays out (NOTES, "For the next Claude Code session").
+Inference, glyphs and guides from the inference engine, drawing tools, the measurement box, Shift/Ctrl and box select (next chunk), Parallel Projection, Standard Views, Zoom Window, Field of View, Walk and Look Around (all stay greyed), the View Settings panel and styles, X-ray, the sun, textures, hide and unhide, groups, curved faces and the Outliner. The Smart Guides demo scene stays out (NOTES, "For the next Claude Code session").
 
 ## Tests
 - **Camera (pure):**
@@ -76,6 +82,7 @@ Inference, glyphs and guides from the inference engine, drawing tools, the measu
   - An edge behind a face is not picked.
   - The aperture follows the DPI scale.
   - Hover gives the same answer as click.
+  - Click, double-click and triple-click give the feel test's selections, and the 350 ms and 6 px limits hold.
 - **Tessellation (pure):**
   - For every golden-case model, at the three scales, the triangle areas add up to the face area.
   - No triangle covers a hole.
