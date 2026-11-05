@@ -13,6 +13,7 @@ What is in this folder, and how to use it with Claude Code.
 | `docs/acceptance/golden-cases.json` | 19 test cases from the prototype, for Core Model |
 | `docs/acceptance/core-model-acceptance.md` | The same cases in words, plus the rules every model must satisfy |
 | `docs/prototype/` | The prototype's code and a guide to reading it |
+| `docs/UI-STYLE.md` | The dark "Soft" look every screen must use (colours, fonts, shadows, motion) |
 
 ## Putting it in the repo
 

@@ -28,4 +28,4 @@ Tool behaviour, the Mac system menu bar (later), mode switching, scenes, renderi
 - [ ] Physical-key tests: the same binding fires on QWERTY and AZERTY layouts.
 - [ ] Recording a conflicting key in the hotkeys window shows the other action and the three choices.
 - [ ] Greyed actions cannot be run, and say why on hover ("Not in this prototype yet" for now).
-- [ ] It looks like the prototype's menus and dock.
+- [ ] It matches `docs/UI-STYLE.md` and looks like the prototype's menus and dock, side by side.

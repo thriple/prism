@@ -28,7 +28,7 @@ Read these first, in this order:
 - **Licences.** Use only dependencies under MIT, Apache-2.0, BSD, zlib or MPL by default. Do not add GPL or LGPL code, and never copy code from Blender or SketchUp. Before adding a dependency, add a row to `docs/DEPENDENCIES.md` with its licence and whether it builds for WASM.
 - **Platforms.** Windows and macOS native builds are the main target. The web build must compile at every commit. No WASM threads yet (see Risks in section 7).
 - **Tests come with every change:** unit tests, the golden cases in `docs/acceptance/`, and property tests for geometry. CI must pass `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, and the web build.
-- **Look of the UI:** dark "Soft" style, IBM Plex Sans and IBM Plex Mono, as in the prototype. The viewport is drawn by our own renderer, not by egui.
+- **Look of the UI:** the dark "Soft" style of the prototype, for every screen of the program, written down in `docs/UI-STYLE.md` (colours, IBM Plex fonts, emboss shadows, sizes, motion). Build one theme layer and use it everywhere. The viewport is drawn by our own renderer, not by egui.
 
 ## Layout (from PLAN.md section 4)
 

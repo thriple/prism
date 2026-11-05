@@ -385,6 +385,10 @@ A mesh-only, browser-based prototype (a Design artifact, "Prism Feel Test") exis
 2. **Scale** currently scales about the selection's bounding-box centre; the plan says Ctrl = about centre. Decide which is the default.
 3. The Draw tools that matter next for feel testing are Circle and Arc (exact), then Offset and Tape Measure.
 
+### 1.8a UI style (the dark "Soft" look)
+
+The feel-test prototype's look is the look of the whole program, not only of the test page: dark, soft and embossed, with IBM Plex Sans and Mono. The tokens, the raised and pressed shadow recipe, sizes, motion and states are written down in `docs/UI-STYLE.md`, copied from the prototype's CSS. Every panel in later chunks (Inspector, View Settings, Model Health, hotkeys window, dialogs) is built from the same theme layer, so a new screen looks like it belongs without being designed from scratch. The viewport is drawn by our own renderer and is not part of this style.
+
 ### 1.9 Overlaps, duplicates and precision
 
 **The rule.** No two faces, edges or vertices may occupy the same space, unless they belong to different groups or to instances of a component. Overlapping coplanar faces are **split**, never merged: the shared patch becomes one face, and each leftover piece becomes its own face. A face drawn wholly inside another becomes a hole in it, and the inner face stays separately selectable and pullable.
