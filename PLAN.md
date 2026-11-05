@@ -263,6 +263,8 @@ Behaviour that makes it feel right:
 
 ### 1.6 Commands (not tools)
 
+**Greyed out until built (DECISIONS #20):** menus, the dock, the context menu and search show only what is built, even partly, as active. Everything else is greyed and says "Not built yet". Each change that builds something makes it active.
+
 Commands act on the current selection immediately, with no mouse steps. They live in the context menu and the main menu, and each can be given a shortcut.
 
 **Every operation has a menu entry.**

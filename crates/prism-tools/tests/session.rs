@@ -405,3 +405,63 @@ fn saved_sessions_replay() {
     }
     assert!(n >= 1, "no recorded sessions");
 }
+
+#[test]
+fn shift_double_and_triple_click_add_and_remove_without_touching_the_rest() {
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.tool(SELECT);
+    // Something else selected first: one edge of the box's base.
+    let base_edge = d.screen(DVec3::new(2.0, 0.0, 0.0));
+    d.click_px(base_edge, false, false);
+    assert_eq!(d.s.selection().edges.len(), 1);
+    let other = d.s.selection().clone();
+    // Shift + double-click the top ring face: it and its outer edges are added.
+    let ring = d.screen(DVec3::new(0.4, 0.4, 2.0));
+    let double = |d: &mut Driver, s: DVec2, shift: bool| {
+        for _ in 0..2 {
+            d.send(Input::Move { x: s.x, y: s.y });
+            d.send(Input::Press {
+                button: Button::Left,
+                x: s.x,
+                y: s.y,
+                shift,
+                ctrl: false,
+            });
+            d.send(Input::Release {
+                button: Button::Left,
+            });
+        }
+        d.t += 0.5;
+    };
+    double(&mut d, ring, true);
+    let sel = d.s.selection().clone();
+    assert!(
+        sel.edges.is_superset(&other.edges),
+        "the earlier edge stays"
+    );
+    assert_eq!(sel.faces.len(), 1);
+    assert!(sel.edges.len() > 4, "the ring's outer edges were added");
+    // Shift + double-click it again: the ring and its edges go, the edge stays.
+    double(&mut d, ring, true);
+    let back = d.s.selection();
+    assert!(back.faces.is_empty());
+    assert_eq!(back.edges, other.edges);
+    // Shift + triple-click adds everything connected, keeping the rest.
+    for _ in 0..3 {
+        d.send(Input::Move {
+            x: ring.x,
+            y: ring.y,
+        });
+        d.send(Input::Press {
+            button: Button::Left,
+            x: ring.x,
+            y: ring.y,
+            shift: true,
+            ctrl: false,
+        });
+        d.send(Input::Release {
+            button: Button::Left,
+        });
+    }
+    assert_eq!(d.s.selection().faces.len(), d.s.model().face_count());
+}

@@ -88,12 +88,25 @@ pub fn remove(model: &mut Model, sel: &Selection) {
     }
 }
 
-/// Everything reachable from `start` along edges.
+/// Everything reachable from `start` along edges, and across faces: a face
+/// with a hole joins its outer loop to the hole, so a pocket comes with the
+/// box it is cut into.
 pub fn connected(model: &Model, start: VertexId) -> Selection {
     let mut adj: BTreeMap<VertexId, Vec<VertexId>> = BTreeMap::new();
     for (_, e) in model.edges() {
         adj.entry(e.a).or_default().push(e.b);
         adj.entry(e.b).or_default().push(e.a);
+    }
+    for (_, f) in model.faces() {
+        let Some(&first) = f.outer.first() else {
+            continue;
+        };
+        for h in &f.holes {
+            if let Some(&v) = h.first() {
+                adj.entry(first).or_default().push(v);
+                adj.entry(v).or_default().push(first);
+            }
+        }
     }
     let mut seen: BTreeSet<VertexId> = [start].into();
     let mut stack = vec![start];

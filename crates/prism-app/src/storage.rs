@@ -24,7 +24,7 @@ pub fn export_keymap(json: &str) -> Result<String, String> {
 /// Save a recorded session as a file the user can send (natively in
 /// Downloads, on the web as a download). Returns where it went.
 pub fn export_session(json: &str) -> Result<String, String> {
-    imp::export("Prism session.json", json)
+    imp::export_new("Prism session", "json", json)
 }
 
 /// Read a shared keymap file back. On the web this opens a file picker and
@@ -92,6 +92,27 @@ mod imp {
         Ok(path.display().to_string())
     }
 
+    /// Export under a name no file has yet: "Prism session.json", then
+    /// "Prism session 2.json" and so on.
+    pub fn export_new(stem: &str, ext: &str, text: &str) -> Result<String, String> {
+        let dir = export_dir().ok_or("no home folder")?;
+        let mut n = 1;
+        let path = loop {
+            let name = if n == 1 {
+                format!("{stem}.{ext}")
+            } else {
+                format!("{stem} {n}.{ext}")
+            };
+            let p = dir.join(name);
+            if !p.exists() {
+                break p;
+            }
+            n += 1;
+        };
+        std::fs::write(&path, text).map_err(|e| e.to_string())?;
+        Ok(path.display().to_string())
+    }
+
     pub fn import(name: &str) -> Result<Option<String>, String> {
         let path = export_dir().ok_or("no home folder")?.join(name);
         std::fs::read_to_string(&path)
@@ -132,6 +153,11 @@ mod imp {
             .ok_or("no local storage")?
             .set_item(&key(name), text)
             .map_err(|_| "local storage refused".to_owned())
+    }
+
+    /// Download the text as a file (the browser numbers repeated names).
+    pub fn export_new(stem: &str, ext: &str, text: &str) -> Result<String, String> {
+        export(&format!("{stem}.{ext}"), text)
     }
 
     /// Download the text as a file.

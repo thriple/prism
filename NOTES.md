@@ -192,6 +192,10 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
 
 ## Inference & Drawing
 
+**Checked by the owner (2026-11-06)**
+- Waking points, line locks and the measurement box feel good.
+- Asked for: points in box select, Shift with double and triple click, and greyed-out items to match what is built. Done (DECISIONS #20, #21).
+
 **What was built**
 - **Three new pure crates** (in the purity test with the core crates):
   - `prism-view`: the viewport's pure parts, moved out of `prism-render` so the engine and tools can use them without the GPU (camera, scene, picking, triangulation, clicks, style), plus the description of tool feedback (`overlay.rs`).
@@ -216,7 +220,10 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
 **Decisions and defaults used**
 - Down releases the lock and only "Parallel to Edge" guides exist (DECISIONS #17, #19). Up in the Rotate tool will lock the protractor to a face's plane (DECISIONS #18), for Edit Tools.
 - Label text is drawn by egui over the viewport picture (in the viewport's own colours); the glyphs, guides and previews are drawn by the renderer. A text renderer in `prism-render` did not seem worth it for labels.
-- Box select picks edges and faces, as the feel test does; points are picked by clicking.
+- Box select picks points as well as edges and faces (the owner's decision, DECISIONS #21): points are the glue between them. Moving an edge or face always moves its points too, so nothing falls apart either way.
+- Shift or Ctrl with a double or triple click works from the selection as it was before the clicks, so other selections stay (DECISIONS #21). "Connected" now crosses faces with holes, so triple-clicking the pocket box takes the pocket too.
+- Only built tools and commands are active; the rest are greyed (DECISIONS #20). Tools come from `prism_tools::session::TOOLS`, so Push/Pull, Move, Rotate, Scale and Eraser are greyed again until Edit Tools builds them.
+- Recorded sessions save natively to the Downloads folder (or the home folder) as `Prism session.json`, then `Prism session 2.json` and so on; on the web the browser downloads them. The status bar says where.
 - Retyping a line's length works once the line has stopped. While still chaining, typing applies to the next segment, as in the feel test.
 - The decimal mark is assumed to be `.` (Rust has no portable way to read it). Document Settings can set it later.
 - Typing goes to the measurement box before shortcuts once a step is in progress or there is a last operation, so `2.5m` is a length, not the Move tool.

@@ -72,7 +72,7 @@ impl Action {
     /// Built means Rust does what the action promises. Picking a tool whose
     /// behaviour is not built yet, or sending an event nobody handles, is not.
     pub fn built(&self) -> bool {
-        self.run == Run::Command || BUILT_IN_RUST.contains(&self.id)
+        self.run != Run::NotBuilt
     }
 }
 
@@ -114,8 +114,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
     } else if id.starts_with("help.scene.") || id == "help.record" {
         // Test scenes for the viewport (brief 04), handled by the app.
         Run::Event
-    } else if id == "cam.zoom" || proto_run.starts_with("tool:") || proto_run.starts_with("nav:") {
-        // Zoom (Z) is a tool here (PLAN 1.5a); the prototype has no Zoom tool.
+    } else if prism_tools::session::TOOLS.contains(&id) {
+        // Only tools the session really runs can be picked (DECISIONS #20):
+        // the rest stay greyed until they are built, even partly.
         Run::Tool
     } else if EVENTS.contains(&proto_run) {
         Run::Event
@@ -402,26 +403,6 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
     groups.push(("Behaviours and feel", behaviours));
     groups
 }
-
-/// Tools and events the Rust app handles now (the viewport and drawing).
-const BUILT_IN_RUST: [&str; 16] = [
-    "tool.select",
-    "tool.line",
-    "tool.rect",
-    "cam.orbit",
-    "cam.pan",
-    "cam.zoom",
-    "cam.extents",
-    "edit.undo",
-    "edit.redo",
-    "edit.delete",
-    "edit.selall",
-    "edit.desel",
-    "file.new",
-    "view.shadow",
-    "help.record",
-    "help.scene.cube",
-];
 
 /// Behaviours from the prototype's list that the Rust app has now.
 const BUILT_BEHAVIOURS: [&str; 13] = [

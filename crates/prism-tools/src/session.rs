@@ -32,6 +32,10 @@ pub const ORBIT: &str = "cam.orbit";
 pub const PAN: &str = "cam.pan";
 pub const ZOOM: &str = "cam.zoom";
 
+/// Every tool the session runs. The action registry greys out every other
+/// tool (DECISIONS #20), so this list is the one place that says what is built.
+pub const TOOLS: [&str; 6] = [SELECT, LINE, RECT, ORBIT, PAN, ZOOM];
+
 fn is_nav(t: &str) -> bool {
     matches!(t, ORBIT | PAN | ZOOM)
 }
@@ -210,6 +214,8 @@ pub struct Session {
     selection: Selection,
     /// Selections saved at the start of a box drag.
     saved: Vec<Selection>,
+    /// The selection before the current click series began.
+    series_pre: Selection,
     clicks: ClickSeries,
     middle_clicks: ClickSeries,
     drag: Option<Drag>,
@@ -254,6 +260,7 @@ impl Session {
             hover: None,
             selection: Selection::default(),
             saved: Vec::new(),
+            series_pre: Selection::default(),
             clicks: ClickSeries::default(),
             middle_clicks: ClickSeries::default(),
             drag: None,
@@ -959,6 +966,13 @@ impl Session {
                             sel.edges.insert(e);
                         }
                     }
+                    for v in hits.vertices {
+                        if b.shift && sel.vertices.contains(&v) {
+                            sel.vertices.remove(&v);
+                        } else {
+                            sel.vertices.insert(v);
+                        }
+                    }
                     for f in hits.faces {
                         if b.shift && sel.faces.contains(&f) {
                             sel.faces.remove(&f);
@@ -979,28 +993,32 @@ impl Session {
         let n = self.clicks.press(self.time, s);
         let hit = pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit);
         let pre = self.selection.clone();
-        let mut sel = if shift || ctrl {
-            pre.clone()
-        } else {
-            Selection::default()
-        };
-        if let Some(h) = hit {
-            let m = self.doc.model();
-            if n >= 3 {
-                sel = click_select(m, Some(h), 3);
-            } else {
-                match h {
-                    Hit::Vertex(v) => toggle(&mut sel.vertices, v, shift),
-                    Hit::Edge(e) => toggle(&mut sel.edges, e, shift),
-                    Hit::Face(f) => {
-                        toggle(&mut sel.faces, f, shift);
-                        if n == 2 {
-                            sel.edges.extend(click_select(m, Some(h), 2).edges);
-                        }
-                    }
-                }
-            }
+        if n == 1 {
+            self.series_pre = pre.clone();
         }
+        // What this click names: the item, a face and its edges (double),
+        // or everything connected (triple).
+        let named = match hit {
+            Some(h) => click_select(self.doc.model(), Some(h), n.min(3)),
+            None => Selection::default(),
+        };
+        // With Shift or Ctrl, a double or triple click works from the
+        // selection as it was before the series started, so other
+        // selections are kept. Shift takes the named things out if the
+        // clicked item was already selected, and adds them otherwise.
+        let base = &self.series_pre;
+        let sel = if shift || ctrl {
+            let was = hit.is_some_and(|h| contains(base, h));
+            let mut out = base.clone();
+            if shift && was {
+                remove_all(&mut out, &named);
+            } else {
+                add_all(&mut out, &named);
+            }
+            out
+        } else {
+            named
+        };
         self.set_selection(sel);
         if n == 1 {
             self.saved.push(pre);
@@ -1386,12 +1404,24 @@ impl Session {
     }
 }
 
-fn toggle<T: Ord>(set: &mut std::collections::BTreeSet<T>, x: T, shift: bool) {
-    if shift && set.contains(&x) {
-        set.remove(&x);
-    } else {
-        set.insert(x);
+fn contains(s: &Selection, h: Hit) -> bool {
+    match h {
+        Hit::Vertex(v) => s.vertices.contains(&v),
+        Hit::Edge(e) => s.edges.contains(&e),
+        Hit::Face(f) => s.faces.contains(&f),
     }
+}
+
+fn add_all(s: &mut Selection, o: &Selection) {
+    s.vertices.extend(o.vertices.iter().copied());
+    s.edges.extend(o.edges.iter().copied());
+    s.faces.extend(o.faces.iter().copied());
+}
+
+fn remove_all(s: &mut Selection, o: &Selection) {
+    s.vertices.retain(|v| !o.vertices.contains(v));
+    s.edges.retain(|e| !o.edges.contains(e));
+    s.faces.retain(|f| !o.faces.contains(f));
 }
 
 /// Two directions on a rectangle's plane, along the world axes where they

@@ -1,6 +1,7 @@
 //! Box select (feel test `commitBox(`): left to right selects what is wholly
-//! inside (window), right to left what the box touches (crossing). Edges and
-//! faces; points are picked by clicking.
+//! inside (window), right to left what the box touches (crossing). Points,
+//! edges and faces: the points are what join edges and faces, so they come
+//! along (the owner's decision, DECISIONS #21).
 
 use std::collections::BTreeSet;
 
@@ -10,6 +11,7 @@ use prism_view::{Scene, View};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BoxHits {
+    pub vertices: BTreeSet<prism_topo::VertexId>,
     pub edges: BTreeSet<EdgeId>,
     pub faces: BTreeSet<FaceId>,
 }
@@ -68,6 +70,15 @@ fn in_polygon(p: DVec2, poly: &[DVec2]) -> bool {
 pub fn box_select(scene: &Scene, view: &View, lo: DVec2, hi: DVec2, crossing: bool) -> BoxHits {
     let scr = |p| view.to_screen(p).map(|(s, _)| s);
     let mut out = BoxHits::default();
+    // Points: inside the box, for both kinds (hidden ones too, as for
+    // edges and faces, so nothing is left behind).
+    for &(id, p) in &scene.vertices {
+        if let Some(s) = scr(p)
+            && inside(s, lo, hi)
+        {
+            out.vertices.insert(id);
+        }
+    }
     for e in &scene.edges {
         let (Some(a), Some(b)) = (scr(e.a), scr(e.b)) else {
             continue;
