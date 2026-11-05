@@ -1,0 +1,1754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prism Feel Test</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#2a2c33}
+.soft{--soft-surface:#2a2c33;--soft-ink:#e6e8ee;--soft-muted:#a4a9b5;--soft-dark:rgba(0,0,0,.55);--soft-light:rgba(255,255,255,.065);--soft-frost:#262830;--soft-accent:#02ceff;
+ --soft-aurora-base:#0d1030;--soft-aurora-1:#3f3cc0;--soft-aurora-2:#e0457a;--soft-aurora-3:#0aa3d6;--soft-aurora-4:#a177ff;--soft-aurora-5:#2fd4a0;
+ background:var(--soft-surface);color:var(--soft-ink);box-sizing:border-box}
+.soft *{box-sizing:border-box}
+/* raised <-> pressed: always four shadows so it animates through flat */
+.raised{--a:5;--b:0;background:var(--soft-surface);
+ box-shadow:calc(var(--a)*1px) calc(var(--a)*1px) calc(var(--a)*2px) var(--soft-dark),calc(var(--a)*-1px) calc(var(--a)*-1px) calc(var(--a)*2px) var(--soft-light),inset calc(var(--b)*1px) calc(var(--b)*1px) calc(var(--b)*2px) var(--soft-dark),inset calc(var(--b)*-1px) calc(var(--b)*-1px) calc(var(--b)*2px) var(--soft-light);
+ transition:box-shadow .38s cubic-bezier(.34,1.56,.64,1),transform .2s}
+.raised.card{--a:8}
+button.raised{border:0;color:var(--soft-ink);cursor:pointer;font-family:inherit}
+button.raised:hover:not(:disabled){--a:7}
+button.raised:active:not(:disabled),button.raised[data-active="true"]{--a:0;--b:4;transition-duration:.12s}
+button:focus-visible,.slider:focus-visible,.stage:focus-visible{outline:2px solid var(--soft-accent);outline-offset:4px}
+.tool{position:relative;width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
+.tool svg{transition:transform .2s}
+.tool:active:not(:disabled) svg,.tool[data-active="true"] svg{transform:scale(.94)}
+.tool kbd{position:absolute;right:6px;bottom:3px;font:500 9px 'IBM Plex Mono',monospace;color:var(--soft-muted)}
+.tool::after{content:"";position:absolute;right:7px;top:7px;width:6px;height:6px;border-radius:50%;background:var(--soft-accent);opacity:0;transform:scale(.2);transition:opacity .2s,transform .3s cubic-bezier(.34,1.56,.64,1)}
+.tool[data-active="true"]::after{opacity:1;transform:scale(1)}
+.tool[data-tip]:hover::before{content:attr(data-tip);position:absolute;left:calc(100% + 16px);top:50%;transform:translateY(-50%);background:var(--soft-surface);color:var(--soft-ink);font:500 12px 'IBM Plex Sans',sans-serif;padding:6px 10px;border-radius:10px;white-space:nowrap;box-shadow:3px 3px 6px var(--soft-dark),-3px -3px 6px var(--soft-light);z-index:30;pointer-events:none}
+.groove{height:4px;width:30px;border-radius:2px;margin:6px 0;box-shadow:inset 1px 1px 2px var(--soft-dark),inset -1px -1px 2px var(--soft-light);flex:none}
+.sbtn{height:44px;border-radius:16px;font-size:13px;font-weight:600;padding:0 12px}
+.sbtn:disabled{opacity:.4;cursor:default}
+.head{font:600 11px 'IBM Plex Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--soft-muted);margin:0 0 12px}
+.lab{display:flex;justify-content:space-between;font-size:12px;color:var(--soft-ink);margin-bottom:8px}
+.lab output{font-family:'IBM Plex Mono',monospace;color:var(--soft-muted)}
+.k{display:inline-block;--a:2;border-radius:6px;padding:2px 6px;font:500 11px 'IBM Plex Mono',monospace;color:var(--soft-ink);margin:0 2px 2px 0}
+/* glass cutouts */
+.well{position:relative;isolation:isolate;overflow:hidden;border-radius:14px}
+.well canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.well .rim{position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 3px 3px 6px var(--soft-dark),inset -3px -3px 6px var(--soft-light)}
+.slider{position:relative;height:30px;margin-bottom:18px;cursor:pointer;touch-action:none;--p:0;border-radius:15px}
+.slider .rail{position:absolute;left:0;right:0;top:8px;height:14px;border-radius:7px}
+.slider .handle{position:absolute;top:0;left:calc(var(--p)*(100% - 30px));width:30px;height:30px;border-radius:50%;--a:4;display:grid;place-items:center;transition:box-shadow .3s cubic-bezier(.34,1.56,.64,1),transform .25s cubic-bezier(.34,1.56,.64,1)}
+.slider[data-drag="true"] .handle{--a:7;transform:scale(1.1)}
+.slider .dimple{width:10px;height:10px;border-radius:50%;box-shadow:inset 1.5px 1.5px 3px var(--soft-dark),inset -1.5px -1.5px 3px var(--soft-light);transition:background .2s}
+.slider[data-drag="true"] .dimple{background:var(--soft-accent)}
+.slider .bubble{position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%) scale(.9);opacity:0;pointer-events:none;background:var(--soft-surface);box-shadow:3px 3px 6px var(--soft-dark),-3px -3px 6px var(--soft-light);border-radius:10px;padding:3px 8px;font:600 12px 'IBM Plex Mono',monospace;white-space:nowrap;transition:opacity .15s,transform .25s cubic-bezier(.34,1.56,.64,1);z-index:5}
+.slider:hover .bubble,.slider[data-drag="true"] .bubble{opacity:1;transform:translateX(-50%) scale(1)}
+.trow{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;margin-bottom:20px}
+.toggle{position:relative;width:64px;height:34px;border:0;padding:0;background:none;cursor:pointer;border-radius:17px;flex:none;--on:0}
+.toggle .well{position:absolute;inset:0;border-radius:17px}
+.toggle .knob{position:absolute;left:4px;top:4px;width:26px;height:26px;border-radius:50%;--a:3;transform:translateX(calc(var(--on)*30px));display:grid;place-items:center;transition:transform .4s cubic-bezier(.3,1.4,.5,1),box-shadow .3s}
+.toggle .knob i{width:6px;height:6px;border-radius:50%;background:var(--soft-accent);opacity:calc(var(--on));transform:scale(calc(.2 + var(--on)*.8));transition:opacity .2s,transform .3s}
+.vcbwell{min-width:138px;height:40px;border-radius:14px;display:flex;align-items:center;justify-content:flex-end;padding:0 14px}
+.vcbv{position:relative;z-index:2;font:500 14px 'IBM Plex Mono',monospace;color:var(--soft-ink)}
+.vcbv[data-typing="true"]{color:var(--soft-accent)}
+.chip{font:500 12px 'IBM Plex Mono',monospace;color:var(--soft-accent);border-radius:10px;padding:4px 10px;--a:3}
+.chip:empty{display:none}
+.monitor{position:relative;flex:1;min-width:0;border-radius:22px;overflow:hidden;background:#cfd8e0}
+.monitor .rim2{position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 3px 3px 8px rgba(0,0,0,.32),inset -3px -3px 8px rgba(255,255,255,.12)}
+.dock{width:116px;flex:none;border-radius:24px;display:grid;grid-template-columns:repeat(2,44px);gap:8px;justify-content:center;align-content:start;padding:14px 10px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.14) transparent}
+.dock .tool{width:44px;height:44px;border-radius:14px}
+.dg{grid-column:1/-1;font:600 9px 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--soft-muted);margin:8px 0 0 2px}
+.dg:first-child{margin-top:0}
+.soft .dis.raised,.soft button.raised.dis:hover{--a:2;--b:0;opacity:.36;cursor:default}
+.soft .tool.dis svg{transform:none}
+.mb{border:0;background:none;color:var(--soft-ink);font:500 13px 'IBM Plex Sans',sans-serif;height:34px;padding:0 12px;border-radius:11px;cursor:pointer;transition:box-shadow .2s}
+.mb:hover{color:#fff}
+.mb[data-open="true"]{box-shadow:inset 2px 2px 4px var(--soft-dark),inset -2px -2px 4px var(--soft-light)}
+.brand{font:600 15px 'IBM Plex Sans',sans-serif;margin-right:12px}
+.mlayer{position:fixed;inset:0;z-index:60;pointer-events:none}
+.mnu{background:var(--soft-surface);border-radius:14px;padding:6px;min-width:212px;border:1px solid rgba(255,255,255,.06);box-shadow:10px 10px 24px rgba(0,0,0,.55),-4px -4px 12px var(--soft-light);pointer-events:auto;font:400 13px 'IBM Plex Sans',sans-serif;color:var(--soft-ink);user-select:none}
+.mnu.top{position:fixed}
+.mnu.sub{display:none;position:absolute;left:calc(100% + 4px);top:-7px}
+.mnu.sub::before{content:"";position:absolute;left:-10px;top:0;bottom:0;width:10px}
+.mnu.sub.flip{left:auto;right:calc(100% + 4px)}
+.mnu.sub.flip::before{left:auto;right:-10px}
+.mi.has:hover>.mnu.sub{display:block}
+.mi{position:relative;display:flex;align-items:center;gap:6px;height:30px;padding:0 10px 0 4px;border-radius:9px;cursor:pointer;white-space:nowrap}
+.mi:hover{box-shadow:inset 2px 2px 4px var(--soft-dark),inset -2px -2px 4px var(--soft-light)}
+.mi .mc{width:14px;text-align:center;color:var(--soft-accent);font-size:9px}
+.mi .ml{flex:1;padding-right:18px}
+.mi .mk{font:500 11px 'IBM Plex Mono',monospace;color:var(--soft-muted)}
+.mi.dis{opacity:.36;cursor:default}
+.mi.dis:hover{box-shadow:none}
+.msep{height:1px;margin:5px 8px;background:rgba(255,255,255,.07)}
+.mhead{font:600 10px 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--soft-muted);padding:6px 10px 7px}
+.ovl{position:fixed;inset:0;z-index:80;background:rgba(10,11,16,.55);display:grid;place-items:center;padding:24px}
+.ovl[hidden]{display:none}
+.fcard{width:min(520px,100%);max-height:min(80vh,720px);display:flex;flex-direction:column;background:var(--soft-surface);border-radius:24px;padding:20px 22px;box-shadow:12px 12px 30px rgba(0,0,0,.6),-4px -4px 14px var(--soft-light);border:1px solid rgba(255,255,255,.06)}
+.fhead{display:flex;align-items:flex-start;justify-content:space-between}
+.ftitle{font:600 16px 'IBM Plex Sans',sans-serif}
+.fsub{font:500 12px 'IBM Plex Mono',monospace;color:var(--soft-muted);margin-top:4px}
+.fbar{height:8px;border-radius:4px;margin:14px 0 8px;box-shadow:inset 1px 1px 3px var(--soft-dark),inset -1px -1px 3px var(--soft-light);overflow:hidden}
+.fbar i{display:block;height:100%;background:var(--soft-accent);border-radius:4px}
+.flist{overflow-y:auto;padding-right:6px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent}
+.fg{font:600 10px 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--soft-muted);margin:16px 0 4px;display:flex;justify-content:space-between}
+.fg span{font-family:'IBM Plex Mono',monospace;letter-spacing:0}
+.fi{display:flex;gap:10px;align-items:baseline;font-size:13px;padding:3px 0}
+.fi b{width:14px;flex:none;color:var(--soft-accent);font-size:12px}
+.fi.done span{text-decoration:line-through;color:var(--soft-muted)}
+.tip{position:fixed;z-index:70;transform:translateY(-50%);background:var(--soft-surface);color:var(--soft-ink);font:500 12px 'IBM Plex Sans',sans-serif;padding:6px 10px;border-radius:10px;white-space:pre;pointer-events:none;opacity:0;box-shadow:4px 4px 10px var(--soft-dark),-3px -3px 8px var(--soft-light);transition:opacity .12s}
+.tip[data-show="true"]{opacity:1}
+@media (max-width:900px){.panel{display:none}}
+@media (prefers-reduced-motion:reduce){.raised,.tool svg,.tool::after,.slider .handle,.toggle .knob{transition:none}}
+</style>
+</helmet>
+<div class="soft" data-prism="root" style="display:flex;flex-direction:column;height:100vh;min-height:660px;padding:16px;gap:16px">
+  <header class="raised card" style="display:flex;align-items:center;gap:4px;height:52px;flex:none;padding:0 14px;border-radius:20px">
+    <span class="brand">Prism</span>
+    <nav data-prism="menubar" aria-label="Menu" style="display:flex;gap:2px"></nav>
+    <span style="flex:1"></span>
+    <span style="font-size:12px;color:var(--soft-muted)">Greyed items are not built yet</span>
+  </header>
+  <div style="display:flex;flex:1;min-height:0;gap:16px">
+    <nav class="raised card dock" data-prism="dock" aria-label="Tools"></nav>
+    <div class="monitor">
+      <main class="stage" data-prism="stage" tabindex="0" style="position:absolute;left:0;top:0;right:0;bottom:0;outline:none">
+        <canvas data-prism="canvas" style="position:absolute;left:0;top:0;width:100%;height:100%;display:block;touch-action:none;cursor:default"></canvas>
+      </main>
+      <div class="rim2" aria-hidden="true"></div>
+    </div>
+    <aside class="panel raised card" style="width:248px;flex:none;border-radius:24px;padding:20px;overflow-y:auto">
+      <div style="font:600 15px 'IBM Plex Sans',sans-serif">Prism <span style="font-weight:400;color:var(--soft-muted)">tool feel test</span></div>
+      <div class="head" style="margin-top:22px">Feel</div>
+      <div class="lab"><span>Pick aperture</span><output>{{apText}}</output></div>
+      <div class="slider" role="slider" tabindex="0" aria-label="Pick aperture" data-key="ap" data-min="0.5" data-max="2.5" data-step="0.05"><div class="well rail" data-well data-split="1"><canvas></canvas><div class="rim"></div></div><div class="handle raised"><span class="dimple"></span><span class="bubble"></span></div></div>
+      <div class="lab"><span>Snap release</span><output>{{relText}}</output></div>
+      <div class="slider" role="slider" tabindex="0" aria-label="Snap release" data-key="rel" data-min="1" data-max="3" data-step="0.1"><div class="well rail" data-well data-split="1"><canvas></canvas><div class="rim"></div></div><div class="handle raised"><span class="dimple"></span><span class="bubble"></span></div></div>
+      <div class="lab"><span>Hover wake</span><output>{{dwText}}</output></div>
+      <div class="slider" role="slider" tabindex="0" aria-label="Hover wake" data-key="dwell" data-min="80" data-max="800" data-step="20"><div class="well rail" data-well data-split="1"><canvas></canvas><div class="rim"></div></div><div class="handle raised"><span class="dimple"></span><span class="bubble"></span></div></div>
+      <div class="trow"><span id="lab-shadow">Ground shadow</span><button class="toggle" role="switch" aria-checked="true" aria-labelledby="lab-shadow" data-key="shadow"><div class="well" data-well data-frost="0.15" style="border-radius:17px"><canvas></canvas><div class="rim"></div></div><span class="knob raised"><i></i></span></button></div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px">
+        <button class="sbtn raised" data-act="undo">Undo</button>
+        <button class="sbtn raised" data-act="redo">Redo</button>
+        <button class="sbtn raised" data-act="reset" style="grid-column:span 2">Reset scene</button>
+      </div>
+      <div class="head" data-prism="keys">Keys</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 10px;font-size:12px;line-height:1.4;color:var(--soft-muted);align-items:start">
+        <span><kbd class="k raised">Shift</kbd></span><span>lock the inference</span>
+        <span><kbd class="k raised">↑</kbd><kbd class="k raised">→</kbd><kbd class="k raised">←</kbd></span><span>lock blue / red / green (rectangle: plane)</span>
+        <span><kbd class="k raised">↓</kbd></span><span>release lock</span>
+        <span><kbd class="k raised">0-9</kbd><kbd class="k raised">⏎</kbd></span><span>type a value: 2.5, 40cm, 45, 2,1.5</span>
+        <span><kbd class="k raised">Ctrl</kbd></span><span>copy while moving or rotating</span>
+        <span><kbd class="k raised">Alt</kbd></span><span>push/pull from a new loop</span>
+        <span><kbd class="k raised">O</kbd><kbd class="k raised">H</kbd></span><span>orbit, pan. Esc returns to your tool</span>
+        <span><kbd class="k raised">Wheel</kbd></span><span>zoom to cursor</span>
+        <span><kbd class="k raised">Mid drag</kbd></span><span>orbit around the point under the cursor (Shift pans)</span>
+        <span><kbd class="k raised">Esc</kbd></span><span>cancel</span>
+        <span><kbd class="k raised">Del</kbd></span><span>delete selection</span>
+      </div>
+    </aside>
+  </div>
+  <footer style="display:flex;align-items:center;gap:16px;min-height:44px;padding:0 4px 0 8px;font-size:13px">
+    <span style="flex:1;min-width:0;color:var(--soft-muted)">{{hint}}</span>
+    <span class="chip raised">{{lockText}}</span>
+    <span style="display:flex;align-items:center;gap:12px">
+      <span style="font-size:12px;color:var(--soft-muted)">{{vcbLabel}}</span>
+      <span class="well vcbwell" data-well data-frost="0.6"><canvas></canvas><span class="vcbv" data-typing="{{typing}}">{{vcbValue}}</span><span class="rim"></span></span>
+    </span>
+  </footer>
+  <div class="mlayer" data-prism="menus"></div>
+  <div class="tip" data-prism="tip"></div>
+  <div class="ovl" data-prism="ovl" hidden></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+// ================= math =================
+let TOL = 1e-4;  // relative to the model's size, see Model.updateTol
+const FOV = 35 * Math.PI / 180;
+const V = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  mul: (a, s) => [a[0] * s, a[1] * s, a[2] * s],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  len: a => Math.hypot(a[0], a[1], a[2]),
+  dist: (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]),
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]); return l < 1e-12 ? [0, 0, 0] : [a[0] / l, a[1] / l, a[2] / l]; },
+  lerp: (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+};
+const AX = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+const AXC = ['#d6382d', '#2a9448', '#2b57d6'];
+const AXN = ['Red', 'Green', 'Blue'];
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+function newell(P) {
+  let x = 0, y = 0, z = 0;
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length];
+    x += (a[1] - b[1]) * (a[2] + b[2]); y += (a[2] - b[2]) * (a[0] + b[0]); z += (a[0] - b[0]) * (a[1] + b[1]);
+  }
+  return [x, y, z];
+}
+const domAxis = n => { const a = [Math.abs(n[0]), Math.abs(n[1]), Math.abs(n[2])]; return a[0] >= a[1] && a[0] >= a[2] ? 0 : a[1] >= a[2] ? 1 : 2; };
+const proj2 = (p, ax) => [p[(ax + 1) % 3], p[(ax + 2) % 3]];
+function pip(q, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a[1] > q[1]) !== (b[1] > q[1]) && q[0] < (b[0] - a[0]) * (q[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+  }
+  return c;
+}
+function lineLine(o1, d1, o2, d2) {
+  const r = V.sub(o1, o2), a = V.dot(d1, d1), b = V.dot(d1, d2), c = V.dot(d1, r), e = V.dot(d2, d2), f = V.dot(d2, r);
+  const den = a * e - b * b;
+  if (Math.abs(den) < 1e-10 * a * e) return null;
+  const s = (b * f - c * e) / den, t = (a * f - b * c) / den;
+  const p1 = V.add(o1, V.mul(d1, s)), p2 = V.add(o2, V.mul(d2, t));
+  return { s, t, p1, p2, d: V.dist(p1, p2) };
+}
+function rotPt(p, c, n, ang) {
+  const v = V.sub(p, c), co = Math.cos(ang), si = Math.sin(ang);
+  return V.add(c, V.add(V.add(V.mul(v, co), V.mul(V.cross(n, v), si)), V.mul(n, V.dot(n, v) * (1 - co))));
+}
+function onSeg(a, b, p) {
+  const d = V.sub(b, a), t = V.dot(V.sub(p, a), d) / V.dot(d, d);
+  return t > 1e-9 && t < 1 - 1e-9 && V.dist(p, V.add(a, V.mul(d, t))) < TOL;
+}
+function triangulate(P) {
+  const ax = domAxis(V.norm(newell(P))), Q = P.map(p => proj2(p, ax));
+  let area = 0;
+  for (let i = 0; i < Q.length; i++) { const j = (i + 1) % Q.length; area += Q[i][0] * Q[j][1] - Q[j][0] * Q[i][1]; }
+  const sg = area > 0 ? 1 : -1, idx = P.map((_, i) => i), tris = [];
+  const cr = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 200) {
+    let cut = false;
+    for (let k = 0; k < idx.length; k++) {
+      const i0 = idx[(k + idx.length - 1) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length];
+      const a = Q[i0], b = Q[i1], c = Q[i2];
+      if (cr(a, b, c) * sg <= 1e-12) continue;
+      let inside = false;
+      for (const j of idx) {
+        if (j === i0 || j === i1 || j === i2) continue;
+        const q = Q[j];
+        if (cr(a, b, q) * sg >= 0 && cr(b, c, q) * sg >= 0 && cr(c, a, q) * sg >= 0) { inside = true; break; }
+      }
+      if (inside) continue;
+      tris.push([i0, i1, i2]); idx.splice(k, 1); cut = true; break;
+    }
+    if (!cut) break;
+  }
+  if (idx.length === 3) tris.push([idx[0], idx[1], idx[2]]);
+  else for (let k = 1; k < idx.length - 1; k++) tris.push([idx[0], idx[k], idx[k + 1]]);
+  return tris;
+}
+
+// ================= mesh model (planar polygons, loose edges, sticky geometry) =================
+class Model {
+  constructor() { this.v = {}; this.e = {}; this.f = []; this.nv = 1; this.nf = 1; }
+  static load(s) { const o = JSON.parse(s), m = new Model(); m.v = o.v; m.e = o.e; m.f = o.f; m.nv = o.nv; m.nf = o.nf; return m; }
+  dump() { return JSON.stringify({ v: this.v, e: this.e, f: this.f, nv: this.nv, nf: this.nf }); }
+  ek(a, b) { return a < b ? a + '_' + b : b + '_' + a; }
+  updateTol() {  // 'same point' is a fraction of the model's extent, so mm and km models both behave
+    let lo = [1e18, 1e18, 1e18], hi = [-1e18, -1e18, -1e18], n = 0;
+    for (const id in this.v) { n++; for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], this.v[id][i]); hi[i] = Math.max(hi[i], this.v[id][i]); } }
+    const ext = n ? Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) : 1;
+    TOL = clamp(ext * 1e-6, 1e-9, 1e-2);
+  }
+  holes(f) { return f.h || []; }
+  addRaw(p) { const id = this.nv++; this.v[id] = [p[0], p[1], p[2]]; return id; }
+  addV(p) { for (const id in this.v) if (V.dist(this.v[id], p) < TOL) return +id; return this.addRaw(p); }
+  addE(a, b) { if (a !== b) this.e[this.ek(a, b)] = a < b ? [a, b] : [b, a]; }
+  addF(o) { const f = { id: this.nf++, o: o.slice() }; this.f.push(f); return f; }
+  P(f) { return f.o.map(i => this.v[i]); }
+  edgeFaces() {
+    const m = {};
+    for (const f of this.f) for (const l of [f.o, ...this.holes(f)]) for (let i = 0; i < l.length; i++) { const k = this.ek(l[i], l[(i + 1) % l.length]); (m[k] = m[k] || []).push(f.id); }
+    return m;
+  }
+  splitEdge(a, b, id) {
+    delete this.e[this.ek(a, b)]; this.addE(a, id); this.addE(id, b);
+    for (const f of this.f) for (const l of [f.o, ...this.holes(f)]) {
+      const n = l.length;
+      for (let i = 0; i < n; i++) {
+        const x = l[i], y = l[(i + 1) % n];
+        if ((x === a && y === b) || (x === b && y === a)) { l.splice(i + 1, 0, id); break; }
+      }
+    }
+  }
+  insertPoint(P) {
+    const n0 = this.nv, id = this.addV(P);
+    if (this.nv !== n0) for (const k in this.e) {
+      const [a, b] = this.e[k];
+      if (a !== id && b !== id && onSeg(this.v[a], this.v[b], P)) { this.splitEdge(a, b, id); break; }
+    }
+    return id;
+  }
+  addSegment(P, Q, fwd) {
+    const a = this.insertPoint(P), b = this.insertPoint(Q);
+    if (a === b) return { b, faces: 0 };
+    const A = this.v[a], B = this.v[b], D = V.sub(B, A), L2 = V.dot(D, D), cuts = [];
+    for (const id in this.v) {
+      const n = +id; if (n === a || n === b) continue;
+      const t = V.dot(V.sub(this.v[id], A), D) / L2;
+      if (t > 1e-9 && t < 1 - 1e-9 && V.dist(this.v[id], V.add(A, V.mul(D, t))) < TOL) cuts.push({ t, id: n });
+    }
+    for (const k of Object.keys(this.e)) {
+      const [c, d] = this.e[k];
+      if (c === a || c === b || d === a || d === b) continue;
+      const r = lineLine(A, D, this.v[c], V.sub(this.v[d], this.v[c]));
+      if (r && r.d < TOL && r.s > 1e-9 && r.s < 1 - 1e-9 && r.t > 1e-9 && r.t < 1 - 1e-9) {
+        const id = this.addRaw(r.p1); this.splitEdge(c, d, id); cuts.push({ t: r.s, id });
+      }
+    }
+    cuts.sort((x, y) => x.t - y.t);
+    const chain = [a, ...cuts.map(c => c.id), b], added = [];
+    for (let i = 0; i < chain.length - 1; i++) if (!this.e[this.ek(chain[i], chain[i + 1])]) { this.addE(chain[i], chain[i + 1]); added.push([chain[i], chain[i + 1]]); }
+    let faces = 0;
+    for (const [u, w] of added) faces += this.detectFaces(u, w, fwd);
+    this.updateTol();
+    return { b, faces };
+  }
+  detectFaces(a, b, fwd) {
+    const adj = {};
+    for (const k in this.e) { const [x, y] = this.e[k]; (adj[x] = adj[x] || []).push(y); (adj[y] = adj[y] || []).push(x); }
+    const A = this.v[a], B = this.v[b], paths = [], path = [b], seen = new Set([b]);
+    let budget = 4000;
+    const dfs = (cur, pl) => {
+      if (budget-- <= 0 || paths.length > 12) return;
+      for (const nx of adj[cur] || []) {
+        if (nx === a) { if (path.length >= 2) paths.push(path.slice()); continue; }
+        if (seen.has(nx) || path.length >= 14) continue;
+        const P = this.v[nx]; let npl = pl;
+        if (!pl) { const n = V.cross(V.sub(B, A), V.sub(P, A)); if (V.len(n) > 1e-9) { const nn = V.norm(n); npl = { n: nn, d: V.dot(nn, A) }; } }
+        else if (Math.abs(V.dot(pl.n, P) - pl.d) > TOL) continue;
+        seen.add(nx); path.push(nx); dfs(nx, npl); path.pop(); seen.delete(nx);
+      }
+    };
+    dfs(b, null);
+    const made = [];
+    for (const p of paths) {
+      const loop = [...p, a], P3 = loop.map(i => this.v[i]), nr = newell(P3);
+      if (V.len(nr) / 2 < TOL * TOL) continue;
+      const key = loop.slice().sort((x, y) => x - y).join(',');
+      if (this.f.some(f => f.o.length === loop.length && f.o.slice().sort((x, y) => x - y).join(',') === key)) continue;
+      const nn = V.norm(nr), ax = domAxis(nn), poly = P3.map(q => proj2(q, ax)), set = new Set(loop);
+      let bad = false;
+      for (const k in this.e) {
+        const [x, y] = this.e[k];
+        if (!set.has(x) && !set.has(y)) continue;
+        if (set.has(x) && set.has(y)) { const df = Math.abs(loop.indexOf(x) - loop.indexOf(y)); if (df === 1 || df === loop.length - 1) continue; }
+        const mp = V.lerp(this.v[x], this.v[y], .5);
+        if (Math.abs(V.dot(nn, mp) - V.dot(nn, A)) < TOL && pip(proj2(mp, ax), poly)) { bad = true; break; }
+      }
+      if (bad) continue;
+      // orient: match an existing coplanar face that contains it, else face the viewer
+      let sign = V.dot(nn, fwd) > 0 ? -1 : 1;
+      for (const F of this.f) {
+        const Fn = V.norm(newell(this.P(F)));
+        if (Math.abs(Math.abs(V.dot(Fn, nn)) - 1) < 1e-6 && Math.abs(V.dot(Fn, this.v[F.o[0]]) - V.dot(Fn, A)) < TOL && F.o.includes(a) && F.o.includes(b)) { sign = V.dot(Fn, nn) > 0 ? 1 : -1; break; }
+      }
+      made.push(this.addF(sign > 0 ? loop : loop.slice().reverse()));
+    }
+    // remove coplanar faces that the new faces fully subdivide
+    for (const F of this.f.slice()) {
+      if (made.includes(F)) continue;
+      const FP = this.P(F), Fn = V.norm(newell(FP)), ax = domAxis(Fn), poly = FP.map(q => proj2(q, ax)), aF = this.area(F);
+      let sum = 0, cnt = 0;
+      for (const N of made) {
+        const NP = this.P(N), Nn = V.norm(newell(NP));
+        if (Math.abs(Math.abs(V.dot(Fn, Nn)) - 1) > 1e-6 || Math.abs(V.dot(Fn, NP[0]) - V.dot(Fn, FP[0])) > TOL) continue;
+        const c = NP.reduce((s, q) => V.add(s, q), [0, 0, 0]).map(x => x / NP.length);
+        if (pip(proj2(c, ax), poly) && !this.inHole(F, c)) { sum += this.area(N); cnt++; }
+      }
+      if (cnt >= 2 && Math.abs(sum - aF) < 1e-6 * Math.max(1, aF)) this.f = this.f.filter(x => x !== F);
+    }
+    for (const N of made) if (this.f.includes(N)) this.attachHoles(N);
+    return made.length;
+  }
+  area(f) { let a = V.len(newell(this.P(f))) / 2; for (const h of this.holes(f)) a -= V.len(newell(h.map(i => this.v[i]))) / 2; return a; }
+  inHole(F, p) { const n = V.norm(newell(this.P(F))), ax = domAxis(n); return this.holes(F).some(h => pip(proj2(p, ax), h.map(i => proj2(this.v[i], ax)))); }
+  // is every vertex of loop L strictly inside face F's region (disjoint from its boundary and holes)?
+  loopInside(L, F) {
+    const P = this.P(F), n = V.norm(newell(P)), ax = domAxis(n), d = V.dot(n, P[0]), poly = P.map(q => proj2(q, ax));
+    const bd = new Set([...F.o, ...this.holes(F).flat()]);
+    return L.every(i => !bd.has(i) && Math.abs(V.dot(n, this.v[i]) - d) < TOL && pip(proj2(this.v[i], ax), poly) && !this.inHole(F, this.v[i]));
+  }
+  // a face wholly inside another coplanar face becomes a hole in it (and holds any islands inside itself)
+  attachHoles(N) {
+    let host = null;
+    for (const F of this.f) if (F !== N && this.loopInside(N.o, F) && (!host || this.area(F) < this.area(host))) host = F;
+    if (host) { host.h = (host.h || []).filter(h => !h.every(i => this.loopInside([i], N))); host.h.push(N.o.slice()); }
+    for (const G of this.f) if (G !== N && G !== host && this.loopInside(G.o, N)) {
+      for (const F of this.f) if (F.h) F.h = F.h.filter(h => h.join() !== G.o.join() && !h.every(i => this.loopInside([i], N)));
+      N.h = (N.h || []); if (!N.h.some(h => h.join() === G.o.join())) N.h.push(G.o.slice());
+    }
+  }
+  fixFaces() {
+    const out = [];
+    for (const f of this.f) {
+      const P = this.P(f), nr = newell(P);
+      if (V.len(nr) / 2 < 1e-9) continue;
+      const n = V.norm(nr);
+      if (P.every(p => Math.abs(V.dot(V.sub(p, P[0]), n)) < 2e-4)) { out.push(f); continue; }
+      for (const t of triangulate(P)) {  // non-planar: any holes are dropped
+        const o = t.map(i => f.o[i]);
+        out.push({ id: this.nf++, o });
+        this.addE(o[0], o[1]); this.addE(o[1], o[2]); this.addE(o[2], o[0]);
+      }
+    }
+    this.f = out;
+  }
+  scale(vs, c, k) { for (const i of vs) this.v[i] = V.add(c, V.mul(V.sub(this.v[i], c), k)); }
+  translate(vs, d) { for (const i of vs) this.v[i] = V.add(this.v[i], d); this.fixFaces(); }
+  rotate(vs, c, n, ang) { for (const i of vs) this.v[i] = rotPt(this.v[i], c, n, ang); this.fixFaces(); }
+  pushPull(fid, d, loop) {
+    const f = this.f.find(x => x.id === fid);
+    if (!f || Math.abs(d) < 1e-9) return;
+    const n = V.norm(newell(this.P(f))), ef = this.edgeFaces(), L = f.o.length, hs = this.holes(f), loops = [f.o, ...hs];
+    let stretch = !hs.length, standalone = true;
+    for (const lp of loops) for (let i = 0; i < lp.length; i++) {
+      const others = (ef[this.ek(lp[i], lp[(i + 1) % lp.length])] || []).filter(id => id !== f.id);
+      if (others.length) standalone = false;
+      if (lp === f.o && !others.some(id => Math.abs(V.dot(V.norm(newell(this.P(this.f.find(g => g.id === id)))), n)) < 1e-6)) stretch = false;
+    }
+    if (stretch && !loop) { this.translate(f.o, V.mul(n, d)); return; }
+    const nv = {};
+    for (const lp of loops) for (const i of lp) nv[i] = this.addRaw(V.add(this.v[i], V.mul(n, d)));
+    const oldO = f.o.slice(), oldH = hs.map(h => h.slice());
+    loops.forEach((lp, li) => {
+      const ccw = V.dot(newell(lp.map(i => this.v[i])), n) > 0, rev = li > 0 && ccw;
+      for (let i = 0; i < lp.length; i++) {
+        const u = lp[i], w = lp[(i + 1) % lp.length];
+        this.addF(rev ? [nv[u], nv[w], w, u] : [u, w, nv[w], nv[u]]); this.addE(w, nv[w]); this.addE(nv[w], nv[u]); this.addE(nv[u], u);
+      }
+    });
+    f.o = oldO.map(i => nv[i]); if (hs.length) f.h = oldH.map(h => h.map(i => nv[i]));
+    const keep = () => { const g = this.addF(oldO); if (oldH.length) g.h = oldH.map(h => h.slice()); return g; };
+    if (loop && !standalone) keep();  // Alt: the original boundary stays as a face; a new loop is extruded from it
+    else if (standalone) {
+      if (d > 0) { const g = this.addF(oldO.slice().reverse()); if (oldH.length) g.h = oldH.map(h => h.slice()); }
+      else { f.o.reverse(); keep(); }
+    }
+  }
+  dup(sel) {
+    const vs = new Set(sel.v);
+    for (const k of sel.e) { const e = this.e[k]; vs.add(e[0]); vs.add(e[1]); }
+    const fs = this.f.filter(f => sel.f.has(f.id));
+    for (const f of fs) for (const i of [...f.o, ...this.holes(f).flat()]) vs.add(i);
+    const map = {};
+    for (const i of vs) map[i] = this.addRaw(this.v[i]);
+    const eset = new Set(sel.e);
+    for (const f of fs) for (const l of [f.o, ...this.holes(f)]) for (let i = 0; i < l.length; i++) eset.add(this.ek(l[i], l[(i + 1) % l.length]));
+    const ns = { v: new Set(), e: new Set(), f: new Set() };
+    for (const k of eset) { const e = this.e[k]; if (!e) continue; this.addE(map[e[0]], map[e[1]]); ns.e.add(this.ek(map[e[0]], map[e[1]])); }
+    for (const i of sel.v) ns.v.add(map[i]);
+    for (const f of fs) { const g = this.addF(f.o.map(i => map[i])); if (f.h) g.h = f.h.map(h => h.map(i => map[i])); ns.f.add(g.id); }
+    return { verts: new Set(Object.values(map)), sel: ns };
+  }
+  connected(vid) {
+    const adj = {};
+    for (const k in this.e) { const [a, b] = this.e[k]; (adj[a] = adj[a] || []).push(b); (adj[b] = adj[b] || []).push(a); }
+    const seen = new Set([vid]), q = [vid];
+    while (q.length) for (const n of adj[q.pop()] || []) if (!seen.has(n)) { seen.add(n); q.push(n); }
+    const sel = { v: new Set(), e: new Set(), f: new Set() };
+    for (const k in this.e) if (seen.has(this.e[k][0])) sel.e.add(k);
+    for (const f of this.f) if (seen.has(f.o[0])) sel.f.add(f.id);
+    return sel;
+  }
+  remove(sel) {
+    const rmE = new Set(sel.e), rmF = new Set(sel.f);
+    for (const i of sel.v) for (const k in this.e) if (this.e[k].includes(i)) rmE.add(k);
+    for (const f of this.f) {
+      for (let i = 0; i < f.o.length; i++) if (rmE.has(this.ek(f.o[i], f.o[(i + 1) % f.o.length]))) rmF.add(f.id);
+      if (f.h) f.h = f.h.filter(h => !h.some((a, i) => rmE.has(this.ek(a, h[(i + 1) % h.length]))));  // erasing a hole's edge closes the hole
+    }
+    for (const i of sel.v) for (const f of this.f) if (f.o.includes(i)) rmF.add(f.id);
+    this.f = this.f.filter(f => !rmF.has(f.id));
+    for (const k of rmE) delete this.e[k];
+    const used = new Set();
+    for (const k in this.e) { used.add(this.e[k][0]); used.add(this.e[k][1]); }
+    for (const id in this.v) if (!used.has(+id)) delete this.v[id];
+  }
+}
+function initialModel() {
+  const m = new Model(), c = [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1], [-1, -1, 3], [1, -1, 3], [1, 1, 3], [-1, 1, 3]].map(p => m.addRaw(p));
+  for (const l of [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]) {
+    const o = l.map(i => c[i]); m.addF(o);
+    for (let i = 0; i < 4; i++) m.addE(o[i], o[(i + 1) % 4]);
+  }
+  return m;
+}
+function parseLen(s) {
+  s = String(s).trim().toLowerCase().replace(/\s+/g, '');
+  let m = /^(-?\d+(?:\.\d+)?)'(?:(\d+(?:\.\d+)?)"?)?$/.exec(s);
+  if (m) return (parseFloat(m[1]) * 12 + (m[2] ? parseFloat(m[2]) : 0)) * 0.0254;
+  m = /^(-?\d*\.?\d+)(mm|cm|m|in|"|ft|')?$/.exec(s);
+  if (!m) return null;
+  const k = { mm: .001, cm: .01, m: 1, in: .0254, '"': .0254, ft: .3048, "'": .3048 }[m[2] || 'm'];
+  return parseFloat(m[1]) * k;
+}
+const fmtLen = x => x.toFixed(3) + ' m';
+const GLYPH = {
+  'Endpoint': ['circle', '#1b9a52'], 'Midpoint': ['tri', '#0b87a8'], 'On Edge': ['square', '#d4351c'],
+  'On Face': ['diamond', '#2b57d6'], 'On Ground': ['diamond', '#6b7280'], 'Intersection': ['cross', '#111111'],
+  'Guide Cross': ['cross', '#b21fc2'], 'Guide': ['bar', '#111111'], 'Free': ['circle', '#6b7280']
+};
+
+const AURORA_BLOBS = [
+  { cx: .20, cy: .25, ax: .20, ay: .18, px: 37, py: 53, r: .30 }, { cx: .70, cy: .20, ax: .22, ay: .20, px: 47, py: 31, r: .28 },
+  { cx: .50, cy: .70, ax: .30, ay: .18, px: 59, py: 41, r: .34 }, { cx: .15, cy: .75, ax: .16, ay: .22, px: 43, py: 67, r: .26 },
+  { cx: .85, cy: .65, ax: .14, ay: .26, px: 71, py: 49, r: .28 }, { cx: .45, cy: .35, ax: .32, ay: .24, px: 53, py: 61, r: .22 },
+  { cx: .80, cy: .90, ax: .24, ay: .14, px: 67, py: 29, r: .24 }
+];
+// ================= component =================
+// ---------- action registry (menus, dock and context menu are all generated from this) ----------
+// row: [id, name, hotkey, run, when]. An empty run means "not programmed yet" and renders greyed out.
+const ACT = {};
+[
+ ['file.new','New','Ctrl+N','cmd:new'],['file.open','Open…','Ctrl+O'],['file.save','Save','Ctrl+S'],['file.saveas','Save As…','Ctrl+Shift+S'],['file.import','Import…'],
+ ['exp.step','STEP / IGES (machining, CAM)'],['exp.3dm','3DM (Rhino)'],['exp.dxf','DXF / SVG (routing, laser, CNC)'],['exp.3mf','3MF / STL (3D printing)'],['exp.gltf','glTF / OBJ / USD (media, web)'],['file.recent','No recent files'],
+ ['edit.undo','Undo','Ctrl+Z','cmd:undo','undo'],['edit.redo','Redo','Ctrl+Y','cmd:redo','redo'],
+ ['edit.cut','Cut','Ctrl+X'],['edit.copy','Copy','Ctrl+C'],['edit.paste','Paste','Ctrl+V'],['edit.pasteip','Paste in Place','Ctrl+Shift+V'],['edit.delete','Delete','Del','cmd:delete','sel'],
+ ['edit.selall','Select All','Ctrl+A','cmd:selall'],['edit.desel','Deselect All','Ctrl+T','cmd:desel','sel'],
+ ['edit.hide','Hide Selected'],['edit.unhide','Unhide Selected'],['edit.unhideall','Unhide All'],['edit.unhidelast','Unhide Last'],['edit.isolate','Isolate'],['edit.lock','Lock'],['edit.unlock','Unlock'],
+ ['edit.group','Make Group','G'],['edit.comp','Make Component'],['edit.explode','Explode'],['edit.unique','Make Unique'],
+ ['flip.x','X (red)'],['flip.y','Y (green)'],['flip.z','Z (blue)'],
+ ['isect.model','With Model'],['isect.sel','With Selection'],['isect.ctx','With Context'],
+ ['edit.revface','Reverse Faces'],['edit.orient','Orient Faces'],['edit.soften','Soften/Smooth'],['edit.weld','Weld'],['edit.center','Center / Align'],
+ ['view.toolbars','Toolbars and Panels'],['show.faces','Faces'],['show.lines','Lines'],['show.points','Points'],['view.linew','Line Thickness…'],['view.outline','Outline Thickness…'],['light.default','Default Lighting'],['light.sun','Sun'],['view.sunset','Sun and Shadow Settings…'],['view.styles','Styles…'],['view.settings','View Settings'],['view.axes','Axes'],['view.ground','Ground'],['view.grid','Grid'],['view.shadow','Ground Shadow','','cmd:shadow'],['view.guides','Guides'],['view.hidden','Hidden Geometry'],['view.xray','X-ray'],['view.edges','Edge Style'],['view.faces','Face Style'],['view.section','Section Display'],
+ ['cam.orbit','Orbit','O','nav:orbit'],['cam.pan','Pan','H','nav:pan'],['cam.zoom','Zoom','Z'],['cam.extents','Zoom Extents','Shift+Z','cmd:extents'],['cam.window','Zoom Window','Ctrl+Shift+W'],['cam.zoomsel','Zoom Selection'],
+ ['cam.v.top','Top'],['cam.v.bottom','Bottom'],['cam.v.front','Front'],['cam.v.back','Back'],['cam.v.left','Left'],['cam.v.right','Right'],['cam.v.iso','Iso'],
+ ['cam.persp','Perspective'],['cam.parallel','Parallel Projection'],['cam.fov','Field of View…'],['cam.walk','Walk'],['cam.look','Look Around'],
+ ['tool.select','Select','Space','tool:select'],['tool.line','Line','L','tool:line'],['tool.freehand','Freehand'],['tool.rect','Rectangle','R','tool:rect'],['tool.rrect','Rotated Rectangle'],['tool.circle','Circle','C'],['tool.polygon','Polygon'],
+ ['tool.arc','Arc','A'],['arc.2','2-Point Arc'],['arc.3','3-Point Arc'],['arc.c','Centre Arc'],['arc.p','Pie'],['tool.curve','Curve'],
+ ['surf.loft','Loft'],['surf.revolve','Revolve'],['surf.sweep','Sweep'],['surf.patch','Patch'],
+ ['tool.prim','Primitives'],['prim.box','Box'],['prim.cyl','Cylinder'],['prim.cone','Cone'],['prim.sphere','Sphere'],['prim.torus','Torus'],['prim.capsule','Capsule'],
+ ['tool.erase','Eraser','E','tool:erase'],['tool.paint','Paint Bucket','B'],['tool.push','Push/Pull','P','tool:push'],['tool.move','Move','M','tool:move'],['tool.rotate','Rotate','Q','tool:rotate'],['tool.scale','Scale','S','tool:scale'],
+ ['tool.offset','Offset','F'],['tool.followme','Follow Me'],['tool.fillet','Fillet / Chamfer'],['tool.trim','Trim / Extend'],['tool.shell','Shell / Thicken'],['tool.subd','Smooth / Subdivide'],['tool.mirror','Mirror'],['tool.array','Array'],['tool.align','Align / Distribute'],['tool.drop','Drop to Face'],['tool.deform','Bend / Twist / Taper'],['tool.draft','Draft Angle'],
+ ['tool.tape','Tape Measure','T'],['tool.protractor','Protractor'],['tool.dim','Dimensions'],['tool.text','Text'],['tool.axes','Axes'],['tool.section','Section Plane'],['tool.cplane','Construction Plane'],['tool.project','Project Curves'],
+ ['tol.mod','Tolerance Modifier'],['fit.helper','Fit Helper'],['fit.check','Check Fit'],['tool.hinge','Hinge'],['tool.slide','Slide'],['tool.ball','Ball Joint'],['tool.fixed','Fixed Joint'],['mech.sweep','Sweep Motion Range'],['tool.unfold','Unfold / Flatten'],['tool.layflat','Lay Flat'],['tool.hole','Hole'],['tool.symmetry','Live Symmetry'],
+ ['solid.union','Union'],['solid.sub','Subtract'],['solid.isect','Intersect'],['solid.trim','Trim'],['solid.split','Split'],['solid.shell','Outer Shell'],['conv.curve','Curve Chain ↔ NURBS Curve'],['conv.patch','Faces ↔ Smooth Patch'],['solid.heal','Validate and Heal'],
+ ['render.settings','Render Settings…'],['render.engine','Engine'],['render.passes','Output and Passes…'],['render.denoise','Denoise'],['render.queue','Render Queue'],['render.blender','Render in Blender'],['render.materials','Materials…'],['render.lights','Lights'],['render.env','Environment'],['render.view','Render View'],
+ ['win.outliner','Outliner'],['win.inspector','Inspector'],['win.health','Model Health'],['win.info','Entity Info'],['win.materials','Materials'],['win.components','Components'],['win.tags','Tags'],['win.prefs','Preferences…'],['win.hotkeys','Keyboard Shortcuts…'],
+ ['help.feel','Feel Panel','','cmd:feelpanel'],['help.features','Planned Features…','','cmd:features'],['help.keys','Shortcuts Reference','','cmd:keys'],['help.hints','Tool Hint Panel'],['help.search','Command Search…','Shift+S'],['help.about','About Prism'],
+].forEach(r => { ACT[r[0]] = { id: r[0], name: r[1], key: r[2] || '', run: r[3] || '', when: r[4] || '' }; });
+
+const MENUBAR = [
+ ['File', ['file.new','file.open','file.save','file.saveas','-','file.import',['Export',['exp.step','exp.3dm','exp.dxf','exp.3mf','exp.gltf']],'-','file.recent']],
+ ['Edit', ['edit.undo','edit.redo','-','edit.cut','edit.copy','edit.paste','edit.pasteip','edit.delete','-','edit.selall','edit.desel','-',
+   ['Hide & Lock',['edit.hide','edit.unhide','edit.unhideall','edit.unhidelast','edit.isolate','edit.lock','edit.unlock']],'-','edit.group','edit.comp','edit.explode','edit.unique','-',
+   ['Flip Along',['flip.x','flip.y','flip.z']],['Intersect Faces',['isect.model','isect.sel','isect.ctx']],'edit.revface','edit.orient','edit.soften','edit.weld','edit.center']],
+ ['View', ['view.toolbars','view.settings','-',['Show',['show.faces','show.lines','show.points','view.axes','view.ground','view.grid','view.guides','view.hidden']],['Lines',['view.linew','view.outline','view.edges']],['Faces',['view.faces','view.xray']],['Lighting',['light.default','light.sun','view.sunset','view.shadow']],'view.styles','-','view.section']],
+ ['Camera', ['cam.orbit','cam.pan','cam.zoom','cam.extents','cam.window','cam.zoomsel','-',['Standard Views',['cam.v.top','cam.v.bottom','cam.v.front','cam.v.back','cam.v.left','cam.v.right','cam.v.iso']],'-','cam.persp','cam.parallel','cam.fov','-','cam.walk','cam.look']],
+ ['Draw', ['tool.line','tool.freehand','tool.rect','tool.rrect','tool.circle','tool.polygon',['Arc',['arc.2','arc.3','arc.c','arc.p']],'tool.curve','-',['Primitives',['prim.box','prim.cyl','prim.cone','prim.sphere','prim.torus','prim.capsule']],['Surface',['surf.loft','surf.revolve','surf.sweep','surf.patch']]]],
+ ['Tools', ['tool.select','tool.erase','tool.paint','-','tool.move','tool.rotate','tool.scale','tool.push','tool.offset','tool.followme','tool.fillet','tool.shell','tool.mirror','-','tool.tape','tool.protractor','tool.dim','tool.text','tool.axes','tool.section','-',
+   ['Fabrication',['tol.mod','fit.helper','fit.check']],['Mechanisms',['tool.hinge','tool.slide','tool.ball','tool.fixed','mech.sweep']],['More Tools',['tool.trim','tool.subd','tool.array','tool.align','tool.drop','tool.deform','tool.draft','tool.cplane','tool.project','tool.unfold','tool.layflat','tool.hole','tool.symmetry']]]],
+ ['Solid', ['solid.union','solid.sub','solid.isect','solid.trim','solid.split','solid.shell','-',['Convert',['conv.curve','conv.patch']],'solid.heal']],
+ ['Render', ['render.settings','render.engine','render.passes','render.denoise','-','render.materials','render.lights','render.env','render.view','render.queue','-','render.blender']],
+ ['Window', ['win.outliner','win.inspector','win.health','win.info','win.materials','win.components','win.tags','-','win.prefs','win.hotkeys']],
+ ['Help', ['help.feel','help.features','help.keys','help.hints','help.search','-','help.about']],
+];
+const BEHAVIOURS = [
+ ['Inference: endpoint, midpoint, on-edge, on-face, guides', 1],['Hover-wake anchors and guide intersections', 1],['Axis locks (arrows and Shift)', 1],['Typed values in the measurement box', 1],
+ ['Push/Pull: stretch, extrude, Alt new loop', 1],['Selectable points, edges and faces', 1],['Snap target highlight (point and edge)', 1],['No overlapping coplanar faces: overlaps are split, faces with holes', 1],['Size-relative tolerance (mm to km)', 1],['Esc cancels, then backs out', 1],['Zoom to cursor, orbit around the point under the cursor', 1],['Live ghost previews', 1],
+ ['Tool memory: double-click or Enter repeats the last value', 0],['Model Health: reversed faces, holes, interior faces, nesting counts', 0],['Mode switcher (Model, Materials, Render, Animate, Simulate, Project)', 0],['Scenes and named cameras (tentative)', 0],['Snap to grid (optional)', 0],['Exact circles, arcs and NURBS', 0],['Groups and components, open and exit', 0],['Command search (Shift+S)', 0],['Keymap presets (SketchUp, Blender, Fusion)', 0],['Trackpad gestures', 0],['Save, open and export', 0],
+];
+const FLIP = ['flip.x','flip.y','flip.z'], ISECT = ['isect.model','isect.sel','isect.ctx'];
+
+const DOCK = [
+ ['Principal', ['tool.select','tool.erase','tool.paint']],
+ ['Draw', ['tool.line','tool.freehand','tool.rect','tool.rrect','tool.circle','tool.polygon','tool.arc','tool.curve']],
+ ['Edit', ['tool.push','tool.move','tool.rotate','tool.scale','tool.offset','tool.followme','tool.fillet','tool.trim']],
+ ['Construct', ['tool.tape','tool.protractor','tool.dim','tool.text','tool.axes','tool.section','tool.cplane','tool.project']],
+ ['Camera', ['cam.orbit','cam.pan','cam.zoom','cam.extents','cam.walk','cam.look']],
+ ['Shapes', ['tool.prim','surf.revolve','surf.loft','surf.sweep','tool.shell','tool.subd']],
+ ['Copy & place', ['tool.mirror','tool.array','tool.align','tool.drop','tool.deform','tool.draft']],
+ ['Solid', ['solid.union','solid.sub','solid.isect','solid.trim','solid.split','solid.shell']],
+ ['Fabricate', ['tool.unfold','tool.layflat','tool.hole','tol.mod','fit.helper','tool.hinge','tool.slide']],
+];
+const IC = {
+ 'tool.select':'<path d="M6 3l12 8-5.2 1.2L16 19l-2.6 1.2-3.2-6.8L6 17z"/>',
+ 'tool.line':'<path d="M6 18L18 6"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="5" r="1.8"/>',
+ 'tool.rect':'<rect x="4" y="7" width="16" height="11" rx="1.5"/>',
+ 'tool.push':'<path d="M5 13l7 3.5 7-3.5v4.5L12 21l-7-3.5z"/><path d="M5 13l7 3.5 7-3.5"/><path d="M12 12V3M9 6l3-3 3 3"/>',
+ 'tool.move':'<path d="M12 3v18M3 12h18M9.5 5.5L12 3l2.5 2.5M9.5 18.5L12 21l2.5-2.5M5.5 9.5L3 12l2.5 2.5M18.5 9.5L21 12l-2.5 2.5"/>',
+ 'tool.rotate':'<path d="M19 12a7 7 0 1 1-2.2-5.1"/><path d="M19 4v4h-4"/>',
+ 'tool.scale':'<rect x="4" y="12" width="8" height="8" rx="1"/><path d="M15 4h5v5M20 4l-7 7"/>',
+ 'tool.erase':'<path d="M5.5 14.5L14 6l5 5-8.5 8.5H7z"/><path d="M10 10l5 5M13 19.5h7"/>',
+ 'cam.orbit':'<circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-25 12 12)"/>',
+ 'cam.pan':'<path d="M8 12V6.5a1.5 1.5 0 0 1 3 0V11m0-5a1.5 1.5 0 0 1 3 0v5m0-4a1.5 1.5 0 0 1 3 0v8a6 6 0 0 1-6 6h-.5a6 6 0 0 1-5-2.7L4.6 14a1.4 1.4 0 0 1 2.3-1.5L8 14"/>',
+ 'cam.extents':'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+ 'tool.paint':'<path d="M5 11l6-6 7 7-6 6z"/><path d="M18 15c1.5 2 2 3 2 4a2 2 0 0 1-4 0c0-1 .5-2 2-4z"/>',
+ 'tool.freehand':'<path d="M4 16c3-9 5 4 8-3s5-5 8-4"/>',
+ 'tool.rrect':'<rect x="6" y="6.5" width="12" height="9" rx="1" transform="rotate(-20 12 11)"/>',
+ 'tool.circle':'<circle cx="12" cy="12" r="8"/>',
+ 'tool.polygon':'<path d="M12 4l7.6 5.5-2.9 9H7.3l-2.9-9z"/>',
+ 'tool.arc':'<path d="M5 18a9 9 0 0 1 14-10"/><circle cx="5" cy="18" r="1.5"/><circle cx="19" cy="8" r="1.5"/>',
+ 'tool.curve':'<path d="M3 15c4-9 6 6 9-1s6-7 9-5"/><circle cx="3" cy="15" r="1.3"/><circle cx="21" cy="9" r="1.3"/>',
+ 'tool.offset':'<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><rect x="8" y="9" width="8" height="6" rx="1"/>',
+ 'tool.followme':'<path d="M5 19c0-8 6-6 8-10s3-4 6-4"/><rect x="2.5" y="16" width="5" height="5" rx="1"/><path d="M16 3l3 2-2 3"/>',
+ 'tool.fillet':'<path d="M5 5v8a6 6 0 0 0 6 6h8"/>',
+ 'tool.trim':'<path d="M4 12h9M13 5v14"/><path d="M13 12h7" stroke-dasharray="2 2"/>',
+ 'tool.tape':'<rect x="3" y="8" width="18" height="8" rx="1.5"/><path d="M7 8v3M11 8v4M15 8v3"/>',
+ 'tool.protractor':'<path d="M3 18a9 9 0 0 1 18 0z"/><path d="M12 18v-6M12 18l5-5"/>',
+ 'tool.dim':'<path d="M4 8v8M20 8v8M4 12h16M7 10l-3 2 3 2M17 10l3 2-3 2"/>',
+ 'tool.text':'<path d="M5 6h14M12 6v13M9 19h6"/>',
+ 'tool.axes':'<path d="M12 12V4M12 12l7 4M12 12l-7 4"/>',
+ 'tool.section':'<path d="M3 15l9-5 9 5-9 5z"/><path d="M12 4v8"/>',
+ 'tool.cplane':'<path d="M3 17l5-9h13l-5 9z"/>',
+ 'tool.project':'<path d="M4 6c5 0 5 5 10 5"/><path d="M3 20h18"/><path d="M9 8v12M14 11v9" stroke-dasharray="2 2"/>',
+ 'cam.zoom':'<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M8 10.5h5M10.5 8v5"/>',
+ 'cam.walk':'<circle cx="12" cy="5" r="2"/><path d="M12 8v6l-3 6M12 14l3 6M8 11l4-3 4 3"/>',
+ 'cam.look':'<path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/>',
+ 'tool.prim':'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12L4 7.5M12 12v9"/>',
+ 'surf.revolve':'<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M12 5c6 1 6 13 0 14"/>',
+ 'surf.loft':'<ellipse cx="12" cy="6" rx="5" ry="2"/><ellipse cx="12" cy="18" rx="8" ry="2.6"/><path d="M7 6.2L4 17.5M17 6.2l3 11.3"/>',
+ 'surf.sweep':'<circle cx="6" cy="17" r="2.5"/><path d="M8 15c3-2 4-7 10-8"/><path d="M15 5l3 2-2 3"/>',
+ 'tool.shell':'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 8l4 2.3v4.4L12 17l-4-2.3v-4.4z"/>',
+ 'tool.subd':'<path d="M3 17c3 0 3-10 6-10s3 10 6 10 3-6 6-6"/>',
+ 'tool.mirror':'<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L4 17h5zM15 7l5 10h-5z"/>',
+ 'tool.array':'<rect x="2.5" y="9" width="5" height="6" rx="1"/><rect x="9.5" y="9" width="5" height="6" rx="1"/><rect x="16.5" y="9" width="5" height="6" rx="1" stroke-dasharray="2 2"/>',
+ 'tool.align':'<path d="M4 4v16"/><rect x="7" y="6" width="12" height="4" rx="1"/><rect x="7" y="14" width="8" height="4" rx="1"/>',
+ 'tool.drop':'<path d="M12 3v11M8 10l4 4 4-4M4 20h16"/>',
+ 'tool.deform':'<path d="M4 19c8 0 12-5 12-14"/><path d="M9 19c5 0 7-3 7-8"/>',
+ 'tool.draft':'<path d="M6 20V5M6 20h14M6 20l11-9"/>',
+ 'solid.union':'<circle cx="9" cy="12" r="5.5"/><circle cx="15" cy="12" r="5.5"/>',
+ 'solid.sub':'<circle cx="9" cy="12" r="5.5"/><circle cx="15" cy="12" r="5.5" stroke-dasharray="2 2"/>',
+ 'solid.isect':'<circle cx="9" cy="12" r="5.5" stroke-dasharray="2 2"/><circle cx="15" cy="12" r="5.5" stroke-dasharray="2 2"/><path d="M12 7.2a5.5 5.5 0 0 1 0 9.6a5.5 5.5 0 0 1 0-9.6z"/>',
+ 'solid.trim':'<rect x="5" y="5" width="10" height="10" rx="1"/><path d="M11 11l8 8" /><path d="M13 19h6v-6"/>',
+ 'solid.split':'<rect x="5" y="5" width="14" height="14" rx="1.5"/><path d="M3 12h18" stroke-dasharray="2 2"/>',
+ 'solid.shell':'<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2"/><rect x="8" y="8" width="8" height="8" rx="1"/>',
+ 'tool.unfold':'<path d="M4 6h5v12H4zM9 9h6v6H9zM15 6h5v12h-5z"/>',
+ 'tool.layflat':'<path d="M4 20h16"/><path d="M6 20l3-9 9 3-2 6"/>',
+ 'tol.mod':'<path d="M4 12h5M15 12h5"/><rect x="9" y="8" width="6" height="8" rx="1" stroke-dasharray="2 2"/>',
+ 'fit.helper':'<path d="M3 9h6v6H3zM15 9h6v6h-6z"/><path d="M10.5 12h3"/>',
+ 'tool.hinge':'<circle cx="12" cy="12" r="2"/><path d="M4 7h6v10H4zM14 12l6-5v10z"/>',
+ 'tool.slide':'<rect x="3" y="9" width="18" height="6" rx="1"/><path d="M8 12h8M14 10l2 2-2 2"/>',
+ 'tool.hole':'<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/>',
+};
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+class Component extends DCLogic {
+  // ---------- setup ----------
+  componentDidMount() { this.boot(0); }
+  componentWillUnmount() { (this._offs || []).forEach(f => f()); cancelAnimationFrame(this._raf); cancelAnimationFrame(this._sraf); clearTimeout(this._dt); }
+  boot(n) {
+    const root = document.querySelector('[data-prism="root"]'), cv = document.querySelector('[data-prism="canvas"]'), stage = document.querySelector('[data-prism="stage"]');
+    if (!root || !cv || !stage) { if (n < 60) setTimeout(() => this.boot(n + 1), 50); return; }
+    this.root = root; this.cv = cv; this.stage = stage; this.cx = cv.getContext('2d'); cv.__prism = this;
+    this.shadowCv = document.createElement('canvas');
+    const pc = document.createElement('canvas'); pc.width = pc.height = 6;
+    const pg = pc.getContext('2d'); pg.fillStyle = 'rgba(31,95,224,.9)'; pg.fillRect(1, 1, 1.4, 1.4); pg.fillRect(4, 4, 1.4, 1.4);
+    this.stipple = this.cx.createPattern(pc, 'repeat');
+    this.tune = { ap: 1, rel: 1.6, dwell: 220, shadow: true }; this.nav = null;
+    this.tool = 'select'; this.reset(); this.resize(); this.bind(); this.buildChrome(); this.initSoft(); this.homeCam(); this.updateCursor(); this.dirty(); this.syncUI();
+  }
+  reset() {
+    this.m = initialModel(); this.sel = this.emptySel(); this.op = null; this.undo = []; this.redo = []; this.lastOp = null;
+    this.locks = { axis: null }; this.anchors = []; this.typed = ''; this.hover = null; this.inf = null; this.infKey = null;
+    this.cursor = [0, 0]; this.ver = 0; this.camVer = 0; this.rebuild();
+  }
+  homeCam() { this.cam = { eye: [7.5, -9, 5.4], target: [0, 0, 1.8] }; this.camVer++; }
+  emptySel() { return { v: new Set(), e: new Set(), f: new Set() }; }
+  cloneSel(s) { return { v: new Set(s.v), e: new Set(s.e), f: new Set(s.f) }; }
+  bind() {
+    this._offs = [];
+    const on = (el, ev, fn, o) => { el.addEventListener(ev, fn, o); this._offs.push(() => el.removeEventListener(ev, fn, o)); };
+    on(this.cv, 'pointerdown', e => this.onDown(e));
+    on(this.cv, 'pointermove', e => this.onMove(e));
+    on(this.cv, 'pointerup', e => this.onUp(e));
+    on(this.cv, 'pointerleave', () => { if (!this.drag && !this.op) { this.hover = null; this.inf = null; this.dirty(); } });
+    on(this.cv, 'contextmenu', e => this.onContext(e));
+    on(this.root, 'contextmenu', e => e.preventDefault());
+    on(this.root, 'pointerdown', e => { if (this.menu && !e.target.closest('.mnu') && !e.target.closest('[data-menu]')) { this.closeMenu(); e.stopPropagation(); e.preventDefault(); } }, true);
+    on(this.root, 'mouseover', e => {
+      const mb = e.target.closest('[data-menu]');
+      if (mb && this.menu && this.menu.bar && this.menu.bar !== mb.dataset.menu) this.openBar(mb.dataset.menu, mb);
+      const hs = e.target.closest('.mi.has');
+      if (hs) { const sub = hs.querySelector(':scope>.mnu.sub'); if (sub) { sub.classList.remove('flip'); sub.style.top = ''; let r = sub.getBoundingClientRect(); if (r.right > innerWidth - 8) { sub.classList.add('flip'); r = sub.getBoundingClientRect(); } if (r.bottom > innerHeight - 8) sub.style.top = (-7 - (r.bottom - innerHeight + 8)) + 'px'; } }
+      const db = e.target.closest('[data-dock]'); if (db) this.showTip(db); else if (this.tipEl) this.tipEl.dataset.show = 'false';
+    });
+    on(this.root, 'mouseleave', () => { if (this.tipEl) this.tipEl.dataset.show = 'false'; });
+    on(this.cv, 'wheel', e => this.onWheel(e), { passive: false });
+    on(this.cv, 'pointerenter', () => this.stage.focus({ preventScroll: true }));
+    on(this.root, 'click', e => {
+      if (e.target.closest('[data-close]') || (e.target.dataset && e.target.dataset.prism === 'ovl')) { this.closeOvl(); return; }
+      const mb = e.target.closest('[data-menu]');
+      if (mb) { if (this.menu && this.menu.bar === mb.dataset.menu) this.closeMenu(); else { this.closeMenu(); this.openBar(mb.dataset.menu, mb); } return; }
+      const ai = e.target.closest('[data-a]');
+      if (ai) { if (ai.classList.contains('has')) return; const id = ai.dataset.a; this.closeMenu(); if (this.tipEl) this.tipEl.dataset.show = 'false'; this.act(id); this.stage.focus({ preventScroll: true }); return; }
+      const tb = e.target.closest('[data-tool]');
+      if (tb) { const t = tb.dataset.tool; if (t === 'orbit' || t === 'pan') this.toggleNav(t); else this.setTool(t); this.stage.focus({ preventScroll: true }); return; }
+      const ab = e.target.closest('[data-act]');
+      if (!ab) return;
+      const a = ab.dataset.act;
+      if (a === 'undo') this.doUndo(); else if (a === 'redo') this.doRedo(); else if (a === 'extents') this.zoomExtents();
+      else if (a === 'reset') { this.reset(); this.homeCam(); this.pendMove = true; }
+      this.stage.focus({ preventScroll: true }); this.syncUI(); this.dirty();
+    });
+    on(this.root, 'keydown', e => this.onKey(e));
+    on(this.root, 'keyup', e => this.onKeyUp(e));
+    if (window.ResizeObserver) { const ro = new ResizeObserver(() => { this.resize(); this.dirty(); }); ro.observe(this.stage); this._offs.push(() => ro.disconnect()); }
+  }
+  resize() {
+    const r = this.stage.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    this.cw = Math.max(50, r.width); this.ch = Math.max(50, r.height); this.dpr = dpr;
+    this.cv.width = Math.round(this.cw * dpr); this.cv.height = Math.round(this.ch * dpr);
+    this.shadowCv.width = this.cv.width; this.shadowCv.height = this.cv.height; this.camVer++;
+  }
+  dirty() { if (this._raf) return; this._raf = requestAnimationFrame(() => { this._raf = 0; this.frame(); }); }
+
+  // ---------- model cache ----------
+  rebuild() {
+    const m = this.m;
+    this.G = { faces: [] };
+    for (const f of m.f) {
+      const P = m.P(f), nr = newell(P), n = V.norm(nr), ax = domAxis(n);
+      this.G.faces.push({ id: f.id, f, P, n, d: V.dot(n, P[0]), ax, o2: P.map(p => proj2(p, ax)), H: (f.h || []).map(h => h.map(i => m.v[i])), h2: (f.h || []).map(h => h.map(i => proj2(m.v[i], ax))), cent: P.reduce((s, p) => V.add(s, p), [0, 0, 0]).map(x => x / P.length) });
+    }
+    this.cleanSel(); this.ver++; this.visC = null;
+  }
+  cleanSel() {
+    const s = this.sel, m = this.m;
+    for (const i of [...s.v]) if (!m.v[i]) s.v.delete(i);
+    for (const k of [...s.e]) if (!m.e[k]) s.e.delete(k);
+    for (const i of [...s.f]) if (!m.f.some(f => f.id === i)) s.f.delete(i);
+  }
+  selVerts() {
+    const s = this.sel, out = new Set(s.v);
+    for (const k of s.e) { out.add(this.m.e[k][0]); out.add(this.m.e[k][1]); }
+    for (const f of this.m.f) if (s.f.has(f.id)) f.o.forEach(i => out.add(i));
+    return out;
+  }
+  selEmpty() { return !this.sel.v.size && !this.sel.e.size && !this.sel.f.size; }
+  pushUndo(base) { this.undo.push(base); if (this.undo.length > 100) this.undo.shift(); this.redo = []; }
+
+  // ---------- camera ----------
+  setView() {
+    const e = this.cam.eye, f = V.norm(V.sub(this.cam.target, e));
+    let r = V.cross(f, [0, 0, 1]); if (V.len(r) < 1e-6) r = [1, 0, 0]; r = V.norm(r);
+    this.vp = { w: this.cw, h: this.ch, cx: this.cw / 2, cy: this.ch / 2, foc: (this.ch / 2) / Math.tan(FOV / 2), f, r, u: V.cross(r, f), e };
+  }
+  scr(p) {
+    const vp = this.vp, d = V.sub(p, vp.e), z = V.dot(d, vp.f);
+    if (z < 0.05) return null;
+    return [vp.cx + V.dot(d, vp.r) / z * vp.foc, vp.cy - V.dot(d, vp.u) / z * vp.foc, z];
+  }
+  rayAt(x, y) {
+    const vp = this.vp;
+    return { o: vp.e, d: V.norm(V.add(vp.f, V.add(V.mul(vp.r, (x - vp.cx) / vp.foc), V.mul(vp.u, -(y - vp.cy) / vp.foc)))) };
+  }
+  rayFace(F, o, d) {
+    const den = V.dot(F.n, d);
+    if (Math.abs(den) < 1e-9) return null;
+    const t = (F.d - V.dot(F.n, o)) / den;
+    if (t < 1e-6) return null;
+    const q = proj2([o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t], F.ax);
+    return pip(q, F.o2) && !F.h2.some(h => pip(q, h)) ? t : null;
+  }
+  pickRay(ray, ground) {
+    let best = null;
+    for (const F of this.G.faces) { const t = this.rayFace(F, ray.o, ray.d); if (t !== null && (!best || t < best.t)) best = { t, face: F }; }
+    if (ground && ray.d[2] < -1e-6 && ray.o[2] > 0) {
+      const t = -ray.o[2] / ray.d[2];
+      if (t < 500 && (!best || t < best.t)) best = { t, face: null };
+    }
+    if (best) best.p = V.add(ray.o, V.mul(ray.d, best.t));
+    return best;
+  }
+  occl(p) {
+    const e = this.vp.e, d = V.sub(p, e), L = V.len(d), dir = [d[0] / L, d[1] / L, d[2] / L], tol = 1e-4 + L * 2e-5;
+    for (const F of this.G.faces) { const t = this.rayFace(F, e, dir); if (t !== null && t < L - tol) return true; }
+    return false;
+  }
+  surfacePoint(x, y) {
+    const ray = this.rayAt(x, y);
+    let h = this.pickRay(ray, false);                 // object under the cursor first
+    if (!h && ray.d[2] < -1e-6 && ray.o[2] > 0) { const t = -ray.o[2] / ray.d[2]; if (t < 500) return V.add(ray.o, V.mul(ray.d, t)); }  // then the ground
+    return h ? h.p : V.add(ray.o, V.mul(ray.d, V.dist(this.cam.eye, this.cam.target)));
+  }
+  onWheel(e) {
+    e.preventDefault(); this.setView();
+    const r = this.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    const k = e.ctrlKey ? clamp(-dy * .012, -.5, .5) : clamp(-dy / 100, -3, 3) * .12;
+    const Q = this.surfacePoint(x, y), mv = V.mul(V.sub(Q, this.cam.eye), k);
+    this.cam.eye = V.add(this.cam.eye, mv); this.cam.target = V.add(this.cam.target, mv);
+    this.camVer++; this.pendMove = true; this.dirty();
+  }
+  orbitBy(yaw, pitch, P) {
+    const c = this.cam, rotate = (p, ax, a) => rotPt(p, P, ax, a);
+    let e = rotate(c.eye, [0, 0, 1], yaw), t = rotate(c.target, [0, 0, 1], yaw);
+    const f = V.norm(V.sub(t, e)), r = V.norm(V.cross(f, [0, 0, 1]));
+    const e2 = rotate(e, r, -pitch), t2 = rotate(t, r, -pitch), f2 = V.norm(V.sub(t2, e2));
+    if (e2[2] > 0.05 && Math.abs(f2[2]) < 0.995) { e = e2; t = t2; }
+    c.eye = e; c.target = t;
+  }
+  panBy(dx, dy, x, y) {
+    this.setView();
+    const vp = this.vp, depth = V.dot(V.sub(this.surfacePoint(x, y), vp.e), vp.f), k = depth / vp.foc;
+    const mv = V.add(V.mul(vp.r, -dx * k), V.mul(vp.u, dy * k));
+    this.cam.eye = V.add(this.cam.eye, mv); this.cam.target = V.add(this.cam.target, mv);
+  }
+  zoomExtents() {
+    const vs = Object.values(this.m.v); if (!vs.length) return;
+    const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    vs.forEach(p => { for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i]); hi[i] = Math.max(hi[i], p[i]); } });
+    const c = V.lerp(lo, hi, .5), rad = Math.max(V.dist(lo, hi) / 2, .5), f = V.norm(V.sub(this.cam.target, this.cam.eye));
+    const asp = this.cw / this.ch, hf = Math.atan(Math.tan(FOV / 2) * Math.min(1, asp));
+    this.cam = { eye: V.sub(c, V.mul(f, rad / Math.sin(hf) * 1.15)), target: c }; this.camVer++; this.dirty();
+  }
+
+  // ---------- inference ----------
+  guideLines(ctx) {
+    const G = [], refs = [];
+    if (ctx.start) refs.push({ p: ctx.start, own: true });
+    this.anchors.forEach(a => { if (a.type === 'pt') refs.push({ p: a.p, own: false }); });
+    refs.forEach((r, ri) => { for (let ax = 0; ax < 3; ax++) G.push({ o: r.p, d: AX[ax], ax, key: 'g' + ri + ':' + ax, color: AXC[ax], label: r.own ? 'On ' + AXN[ax] + ' Axis' : AXN[ax] + ' from Point', ref: ri }); });
+    if (ctx.start) this.anchors.forEach((a, i) => { if (a.type === 'edge') G.push({ o: ctx.start, d: a.dir, ax: null, key: 'gp' + i, color: '#b21fc2', label: 'Parallel to Edge', ref: -1 }); });
+    return G;
+  }
+  infer(x, y, ctx) {
+    const ap = this.tune.ap, R = this.tune.rel, ray = this.rayAt(x, y), m = this.m, C = [], prev = this.infKey, ex = ctx.exclude;
+    const push = (kind, p, key, prio, cap, extra, vis) => {
+      const s = this.scr(p); if (!s) return;
+      const d = Math.hypot(s[0] - x, s[1] - y), cp = cap * ap;
+      if (d > cp * R || (d > cp && key !== prev)) return;
+      if (vis !== false && this.occl(p)) return;
+      C.push(Object.assign({ kind, p, key, score: prio - d / cp, d, cp }, extra || {}));
+    };
+    for (const id in m.v) { if (ex && ex.has(+id)) continue; push('Endpoint', m.v[id], 'v' + id, 6, 14, { vid: +id }); }
+    for (const k in m.e) {
+      const [a, b] = m.e[k]; if (ex && (ex.has(a) || ex.has(b))) continue;
+      const A = m.v[a], B = m.v[b], D = V.sub(B, A);
+      push('Midpoint', V.lerp(A, B, .5), 'm' + k, 5, 12, { ek: k });
+      const r = lineLine(ray.o, ray.d, A, D);
+      if (r) push('On Edge', V.add(A, V.mul(D, clamp(r.t, 0, 1))), 'e' + k, 3, 9, { ek: k, ea: A, eb: B });
+    }
+    const hit = this.pickRay(ray, true);
+    if (hit) C.push(hit.face ? { kind: 'On Face', p: hit.p, key: 'f' + hit.face.id, score: 1, d: 0, face: hit.face } : { kind: 'On Ground', p: hit.p, key: 'ground', score: .8, d: 0 });
+    const gl = this.guideLines(ctx);
+    gl.forEach(g => {
+      const r = lineLine(ray.o, ray.d, g.o, g.d);
+      if (r && r.s > 0 && Math.abs(r.t) > 1e-6 && Math.abs(r.t) < 500) push('Guide', r.p2, g.key, 3.3, 8, { guide: g, ax: g.ax, label: g.label }, false);
+    });
+    for (let i = 0; i < gl.length; i++) for (let j = i + 1; j < gl.length; j++) {
+      if (gl[i].ref === gl[j].ref) continue;
+      const r = lineLine(gl[i].o, gl[i].d, gl[j].o, gl[j].d);
+      if (r && r.d < 2e-3) push('Guide Cross', V.lerp(r.p1, r.p2, .5), 'x' + gl[i].key + gl[j].key, 5.5, 12, { gs: [gl[i], gl[j]] }, false);
+    }
+    gl.forEach(g => {
+      for (const k in m.e) {
+        const [a, b] = m.e[k]; if (ex && (ex.has(a) || ex.has(b))) continue;
+        const r = lineLine(g.o, g.d, m.v[a], V.sub(m.v[b], m.v[a]));
+        if (r && r.d < 2e-3 && r.t > 0 && r.t < 1 && Math.abs(r.s) < 500) push('Intersection', r.p2, 'i' + g.key + k, 4.6, 12, { gs: [g], ek: k });
+      }
+    });
+    this.cands = C;
+    let best = null;
+    C.forEach(c => { if (!best || c.score > best.score) best = c; });
+    if (prev) { const pv = C.find(c => c.key === prev); if (pv && best && best.key !== prev && best.score < pv.score + .5) best = pv; }
+    let res;
+    const pointKinds = { Endpoint: 1, Midpoint: 1, Intersection: 1, 'Guide Cross': 1 };
+    if (ctx.start && this.locks.axis !== null && !ctx.noLock) {
+      const ax = this.locks.axis, D = AX[ax];
+      let P;
+      if (best && pointKinds[best.kind]) P = V.add(ctx.start, V.mul(D, V.dot(V.sub(best.p, ctx.start), D)));
+      else { const r = lineLine(ray.o, ray.d, ctx.start, D); P = r ? r.p2 : ctx.start; }
+      res = { kind: 'Guide', p: P, key: 'lock', ax, label: 'On ' + AXN[ax] + ' Axis (locked)', locked: true };
+      this.infKey = 'lock';
+    } else if (best) {
+      res = Object.assign({}, best); this.infKey = best.key;
+    } else {
+      let P;
+      if (ctx.start) {
+        const f = this.vp.f; let ax = 0;
+        for (let i = 1; i < 3; i++) if (Math.abs(f[i]) > Math.abs(f[ax])) ax = i;
+        const den = ray.d[ax];
+        P = Math.abs(den) > 1e-6 ? V.add(ray.o, V.mul(ray.d, (ctx.start[ax] - ray.o[ax]) / den)) : V.add(ray.o, V.mul(ray.d, 10));
+      } else P = V.add(ray.o, V.mul(ray.d, V.dist(ray.o, this.cam.target)));
+      res = { kind: 'Free', p: P, key: 'free' }; this.infKey = null;
+    }
+    if (!res.label) res.label = res.kind;
+    res.guides = [];
+    gl.forEach(g => {
+      const r = V.sub(res.p, g.o), perp = V.sub(r, V.mul(g.d, V.dot(r, g.d)));
+      if (V.len(perp) < 5e-4 && V.len(r) > 1e-6) res.guides.push(g);
+    });
+    if (res.gs) res.gs.forEach(g => { if (!res.guides.includes(g)) res.guides.push(g); });
+    if (res.guide && !res.guides.includes(res.guide)) res.guides.push(res.guide);
+    return res;
+  }
+  inferCtx() {
+    const op = this.op, t = this.tool, ctx = { start: null, exclude: null, noLock: false };
+    if (op && t === 'line') ctx.start = op.start;
+    if (op && t === 'move') { ctx.start = op.from; ctx.exclude = op.excl; }
+    if (op && t === 'rotate') { ctx.start = op.c; ctx.noLock = true; }
+    if (op && t === 'scale') { ctx.start = op.c; ctx.exclude = op.excl; ctx.noLock = true; }
+    if (op && t === 'rect') { ctx.start = op.start; ctx.noLock = true; }
+    if ((t === 'rotate' || t === 'scale' || t === 'rect') && !op) ctx.noLock = true;
+    return ctx;
+  }
+  pickEntity(x, y, only) {
+    const m = this.m, ap = this.tune.ap, ray = this.rayAt(x, y);
+    let bv = null;
+    if (only !== 'e') for (const id in m.v) {
+      const s = this.scr(m.v[id]); if (!s) continue;
+      const d = Math.hypot(s[0] - x, s[1] - y);
+      if (d < 14 * ap && (!bv || d < bv.d) && !this.occl(m.v[id])) bv = { d, kind: 'v', id: +id };
+    }
+    if (bv) return bv;
+    let be = null;
+    for (const k in m.e) {
+      const [a, b] = m.e[k], A = m.v[a], D = V.sub(m.v[b], A), r = lineLine(ray.o, ray.d, A, D);
+      if (!r) continue;
+      const P = V.add(A, V.mul(D, clamp(r.t, 0, 1))), s = this.scr(P); if (!s) continue;
+      const d = Math.hypot(s[0] - x, s[1] - y);
+      if (d < 9 * ap && (!be || d < be.d) && !this.occl(P)) be = { d, kind: 'e', id: k };
+    }
+    if (be || only === 'e') return be;
+    const h = this.pickRay(ray, false);
+    return h && h.face ? { kind: 'f', id: h.face.id, p: h.p } : null;
+  }
+  trackDwell(inf) {
+    const wake = inf && (inf.kind === 'Endpoint' || inf.kind === 'Midpoint' || inf.kind === 'On Edge');
+    if (!wake) { this.dwell = null; return; }
+    if (!this.dwell || this.dwell.key !== inf.key) {
+      this.dwell = { key: inf.key, t0: performance.now(), inf };
+      clearTimeout(this._dt);
+      this._dt = setTimeout(() => this.wakeCheck(), this.tune.dwell + 20);
+    }
+  }
+  wakeCheck() {
+    const d = this.dwell;
+    if (!d || performance.now() - d.t0 < this.tune.dwell || this.anchors.some(a => a.key === d.key)) return;
+    const i = d.inf;
+    if (i.kind === 'On Edge') this.anchors.push({ type: 'edge', key: d.key, dir: V.norm(V.sub(i.eb, i.ea)), p: i.p });
+    else this.anchors.push({ type: 'pt', key: d.key, p: i.p.slice() });
+    if (this.anchors.length > 5) this.anchors.shift();
+    this.pendMove = true; this.dirty();
+  }
+
+  // ---------- events ----------
+  xy(e) { const r = this.cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  onDown(e) {
+    this.setView(); this.stage.focus({ preventScroll: true });
+    const [x, y] = this.xy(e); this.cursor = [x, y]; this.cv.setPointerCapture(e.pointerId);
+    if (e.button === 1 || (e.button === 0 && this.nav)) {
+      e.preventDefault();
+      this.drag = { mode: (e.button === 1 && !e.shiftKey && this.nav !== 'pan') || (e.button === 0 && this.nav === 'orbit' && !e.shiftKey) ? 'orbit' : 'pan', x, y, P: this.surfacePoint(x, y), btn: e.button }; this.cv.style.cursor = 'grabbing'; return;
+    }
+    if (e.button !== 0) return;
+    const now = performance.now(), ld = this._ld;
+    this.clickN = ld && now - ld.t < 350 && Math.hypot(ld.x - x, ld.y - y) < 6 ? (this.clickN || 1) + 1 : 1;
+    this._ld = { t: now, x, y };
+    this.refresh(x, y);
+    this.toolDown(x, y, e);
+    this.syncUI(); this.dirty();
+  }
+  onMove(e) {
+    const [x, y] = this.xy(e); this.cursor = [x, y]; this.mods = { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
+    if (this.drag) {
+      this.setView();
+      const dx = x - this.drag.x, dy = y - this.drag.y; this.drag.x = x; this.drag.y = y;
+      if (this.drag.mode === 'pan') this.panBy(dx, dy, x, y); else this.orbitBy(-dx * .006, dy * .006, this.drag.P);
+      this.camVer++; this.pendMove = true; this.dirty(); return;
+    }
+    this.pendMove = true; this.dirty();
+  }
+  onUp(e) {
+    if (this.drag && e.button === this.drag.btn) { this.drag = null; this.updateCursor(); return; }
+    if (e.button !== 0) return;
+    const [x, y] = this.xy(e); this.refresh(x, y); this.toolUp(x, y); this.syncUI(); this.dirty();
+  }
+  refresh(x, y) {
+    this.setView();
+    if (this.nav) { this.hover = null; this.inf = null; return; }
+    const t = this.tool, op = this.op;
+    if (['line', 'rect', 'move', 'rotate', 'scale'].includes(t)) { this.inf = this.infer(x, y, this.inferCtx()); this.trackDwell(this.inf); } else this.inf = null;
+    if (t === 'push') { const h = this.pickRay(this.rayAt(x, y), false); this.hover = h && h.face ? { kind: 'f', id: h.face.id } : null; }
+    else if (t === 'erase') { this.hover = this.pickEntity(x, y, 'e'); if (op && op.type === 'erase' && this.hover) op.set.add(this.hover.id); }
+    else if (t === 'select' || ((t === 'move' || t === 'rotate' || t === 'scale') && !op)) this.hover = this.pickEntity(x, y);
+    else this.hover = null;
+    if (op) this.preview(x, y);
+  }
+  frame() {
+    this.setView();
+    if (this.pendMove) { this.pendMove = false; this.refresh(this.cursor[0], this.cursor[1]); }
+    this.draw(); this.syncUI();
+  }
+
+  // ---------- menu bar, dock, context menu (all generated from ACT) ----------
+  buildChrome() {
+    const $ = s => this.root.querySelector(s);
+    const dock = $('[data-prism="dock"]');
+    dock.innerHTML = DOCK.map(([g, ids]) => '<div class="dg">' + esc(g) + '</div>' + ids.map(id => {
+      const a = ACT[id], k = /^[A-Za-z]$/.test(a.key) ? a.key : a.key === 'Space' ? 'Spc' : '';
+      return '<button class="tool raised" data-a="' + id + '" data-dock="1" aria-label="' + esc(a.name) + '"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (IC[id] || '<circle cx="12" cy="12" r="3"/>') + '</svg>' + (k ? '<kbd>' + k + '</kbd>' : '') + '</button>';
+    }).join('')).join('');
+    $('[data-prism="menubar"]').innerHTML = MENUBAR.map(m => '<button class="mb" data-menu="' + m[0] + '">' + m[0] + '</button>').join('');
+    this.layer = $('[data-prism="menus"]'); this.tipEl = $('[data-prism="tip"]'); this.menu = null; this._cs = '';
+    this.dockBtns = [...dock.querySelectorAll('[data-a]')];
+  }
+  when(w) { return w === 'undo' ? !!(this.undo.length || this.op) : w === 'redo' ? !!this.redo.length : w === 'sel' ? !this.selEmpty() : true; }
+  enabled(a) { return !!a.run && (!a.when || this.when(a.when)); }
+  checked(a) { const p = a.run.split(':'); return p[0] === 'tool' ? !this.nav && this.tool === p[1] : p[0] === 'nav' ? this.nav === p[1] : a.run === 'cmd:shadow' ? !!this.tune.shadow : a.run === 'cmd:feelpanel' ? this.panelOn !== false : false; }
+  chromeSync() {
+    if (!this.dockBtns) return;
+    const sig = [this.tool, this.nav, this.undo.length > 0 || !!this.op, this.redo.length > 0, this.sel.v.size + this.sel.e.size + this.sel.f.size].join('|');
+    if (sig === this._cs) return; this._cs = sig;
+    this.dockBtns.forEach(b => { const a = ACT[b.dataset.a], en = this.enabled(a); b.classList.toggle('dis', !en); b.setAttribute('aria-disabled', String(!en)); b.dataset.active = en && this.checked(a) ? 'true' : 'false'; });
+  }
+  anyOn(items) { return items.some(it => it === '-' ? false : Array.isArray(it) ? this.anyOn(it[1]) : this.enabled(ACT[it])); }
+  menuHTML(items, sub, head) {
+    return '<div class="mnu' + (sub ? ' sub' : ' top') + '" role="menu">' + (head ? '<div class="mhead">' + esc(head) + '</div>' : '') + items.map(it => {
+      if (it === '-') return '<div class="msep"></div>';
+      if (Array.isArray(it)) return '<div class="mi has' + (this.anyOn(it[1]) ? '' : ' dis') + '"><span class="mc"></span><span class="ml">' + esc(it[0]) + '</span><span class="mk">▸</span>' + this.menuHTML(it[1], true) + '</div>';
+      const a = ACT[it], en = this.enabled(a);
+      return '<div class="mi' + (en ? '' : ' dis') + '" role="menuitem" data-a="' + it + '" aria-disabled="' + !en + '"' + (a.run ? '' : ' title="Not in this prototype yet"') + '><span class="mc">' + (en && this.checked(a) ? '●' : '') + '</span><span class="ml">' + esc(a.name) + '</span><span class="mk">' + esc(a.key) + '</span></div>';
+    }).join('') + '</div>';
+  }
+  showMenu(items, x, y, head) {
+    this.layer.innerHTML = this.menuHTML(items, false, head);
+    const m = this.layer.firstChild, w = m.offsetWidth, h = m.offsetHeight;
+    m.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px'; m.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + 'px';
+  }
+  openBar(name, btn) {
+    const def = MENUBAR.find(m => m[0] === name), r = btn.getBoundingClientRect();
+    this.showMenu(def[1], r.left, r.bottom + 6); this.menu = { bar: name };
+    this.root.querySelectorAll('[data-menu]').forEach(b => b.dataset.open = String(b.dataset.menu === name));
+  }
+  closeMenu() {
+    if (!this.menu) return; this.menu = null; this.layer.innerHTML = '';
+    this.root.querySelectorAll('[data-menu]').forEach(b => b.dataset.open = 'false');
+  }
+  selLabel() {
+    const s = this.sel, p = [[s.f.size, 'face'], [s.e.size, 'edge'], [s.v.size, 'point']].filter(a => a[0]).map(a => a[0] + ' ' + a[1] + (a[0] > 1 ? 's' : ''));
+    return p.length ? p.join(', ') : 'Empty space';
+  }
+  onContext(e) {
+    e.preventDefault(); if (this.op || this.drag) return;
+    this.setView(); const [x, y] = this.xy(e); this.cursor = [x, y];
+    const h = this.nav ? null : this.pickEntity(x, y), key = h && (h.kind === 'v' ? 'v' : h.kind === 'e' ? 'e' : 'f');
+    if (!h) this.sel = this.emptySel(); else if (!this.sel[key].has(h.id)) { this.sel = this.emptySel(); this.sel[key].add(h.id); }
+    const s = this.sel; let it;
+    if (this.selEmpty()) it = ['edit.paste', 'edit.pasteip', '-', 'edit.selall', 'edit.unhide', '-', 'edit.undo', 'edit.redo', '-', 'cam.extents', 'win.info'];
+    else {
+      it = ['edit.cut', 'edit.copy', 'edit.delete', '-', 'edit.hide', 'edit.isolate', 'edit.lock', '-', 'edit.group', 'edit.comp', 'edit.explode', 'edit.unique', '-', ['Flip Along', FLIP], ['Intersect Faces', ISECT]];
+      if (s.f.size) it.push('edit.revface', 'edit.orient');
+      if (s.e.size) it.push('edit.soften', 'edit.weld');
+      it.push(['Convert', ['conv.curve', 'conv.patch']], '-', 'edit.center', 'cam.zoomsel', 'edit.desel', 'win.info');
+    }
+    this.closeMenu(); this.menu = { ctx: true }; this.showMenu(it, e.clientX, e.clientY, this.selLabel());
+    this.stage.focus({ preventScroll: true }); this.pendMove = true; this.syncUI(); this.dirty();
+  }
+  act(id) {
+    const a = ACT[id]; if (!a || !this.enabled(a)) return;
+    const [k, v] = a.run.split(':');
+    if (k === 'tool') this.setTool(v); else if (k === 'nav') this.toggleNav(v);
+    else if (v === 'undo') this.doUndo(); else if (v === 'redo') this.doRedo(); else if (v === 'delete') this.doDelete();
+    else if (v === 'selall') this.doSelectAll(); else if (v === 'desel') this.sel = this.emptySel();
+    else if (v === 'extents') this.zoomExtents();
+    else if (v === 'new') { this.reset(); this.homeCam(); }
+    else if (v === 'shadow') this.tune.shadow = !this.tune.shadow;
+    else if (v === 'feelpanel') { this.panelOn = this.panelOn === false; const pn = this.root.querySelector('.panel'); if (pn) pn.style.display = this.panelOn ? '' : 'none'; }
+    else if (v === 'features') this.openFeatures();
+    else if (v === 'keys') { const el = this.root.querySelector('[data-prism="keys"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+    this.pendMove = true; this._cs = ''; this.syncUI(); this.dirty();
+  }
+  doSelectAll() { this.sel = this.m.connected(+Object.keys(this.m.v)[0] || 0); this.sel.f = new Set(this.m.f.map(f => f.id)); this.sel.e = new Set(Object.keys(this.m.e)); }
+  openFeatures() {
+    const seen = new Set(['file.recent']), groups = [];
+    const walk = (items, out) => items.forEach(it => { if (it === '-') return; if (Array.isArray(it)) walk(it[1], out); else if (!seen.has(it)) { seen.add(it); out.push(it); } });
+    MENUBAR.forEach(([n, items]) => { const o = []; walk(items, o); groups.push([n, o.map(id => [ACT[id].name, !!ACT[id].run])]); });
+    const rest = Object.keys(ACT).filter(id => !seen.has(id)).map(id => [ACT[id].name, !!ACT[id].run]);
+    if (rest.length) groups.push(['Other tools', rest]);
+    groups.push(['Behaviours and feel', BEHAVIOURS.map(b => [b[0], !!b[1]])]);
+    let tot = 0, done = 0; groups.forEach(g => g[1].forEach(f => { tot++; if (f[1]) done++; }));
+    const o = this.root.querySelector('[data-prism="ovl"]');
+    o.innerHTML = '<div class="fcard" role="dialog" aria-label="Planned features"><div class="fhead"><div><div class="ftitle">Planned features</div><div class="fsub">' + done + ' of ' + tot + ' built</div></div><button class="mb" data-close="1" aria-label="Close">✕</button></div><div class="fbar"><i style="width:' + (done / tot * 100).toFixed(1) + '%"></i></div><div class="flist">' +
+      groups.map(g => '<div class="fg">' + esc(g[0]) + ' <span>' + g[1].filter(f => f[1]).length + '/' + g[1].length + '</span></div>' + g[1].map(f => '<div class="fi' + (f[1] ? ' done' : '') + '"><b>' + (f[1] ? '✓' : '') + '</b><span>' + esc(f[0]) + '</span></div>').join('')).join('') + '</div></div>';
+    o.hidden = false; o.querySelector('.flist').scrollTop = 0;
+  }
+  ovlOpen() { const o = this.root && this.root.querySelector('[data-prism="ovl"]'); return !!o && !o.hidden; }
+  closeOvl() { const o = this.root.querySelector('[data-prism="ovl"]'); o.hidden = true; o.innerHTML = ''; this.stage.focus({ preventScroll: true }); }
+  showTip(btn) {
+    const a = ACT[btn.dataset.a], r = btn.getBoundingClientRect(), t = this.tipEl;
+    t.textContent = a.name + (a.key ? '  ' + a.key : '') + (this.enabled(a) || a.run ? '' : '  ·  not built yet');
+    t.style.left = r.right + 10 + 'px'; t.style.top = r.top + r.height / 2 + 'px'; t.dataset.show = 'true';
+  }
+
+  // ---------- tools ----------
+  setTool(t) {
+    this.cancelOp(); this.tool = t; this.nav = null; this.locks.axis = null; this.typed = ''; this.anchors = []; this.lastOp = null; this.hover = null;
+    this.updateCursor(); this.pendMove = true; this.syncUI(); this.dirty();
+  }
+  toggleNav(n) { this.nav = this.nav === n ? null : n; this.hover = null; this.inf = null; this.updateCursor(); this.pendMove = true; this.syncUI(); this.dirty(); }
+  updateCursor() {
+    if (!this.cv) return;
+    this.cv.style.cursor = this.nav ? 'grab' : { select: 'default', line: 'crosshair', rect: 'crosshair', push: 'ns-resize', move: 'move', rotate: 'alias', scale: 'nwse-resize', erase: 'cell' }[this.tool];
+  }
+  cancelOp() {
+    if (this.op && this.op.base) { this.m = Model.load(this.op.base); if (this.op.selSnap) this.sel = this.cloneSel(this.op.selSnap); this.rebuild(); }
+    this.op = null; this.typed = ''; this.locks.axis = null;
+  }
+  toolDown(x, y, e) {
+    const t = this.tool, op = this.op;
+    if (t === 'select') {
+      const h = this.hover, s = this.sel;
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey) this.sel = this.emptySel();
+      if (h) {
+        const set = this.sel[h.kind === 'v' ? 'v' : h.kind === 'e' ? 'e' : 'f'];
+        if (e.shiftKey && set.has(h.id)) set.delete(h.id); else set.add(h.id);
+        if (this.clickN === 2 && h.kind === 'f') { const f = this.m.f.find(q => q.id === h.id); f.o.forEach((a, i) => this.sel.e.add(this.m.ek(a, f.o[(i + 1) % f.o.length]))); }
+        if (this.clickN >= 3) { const f = h.kind === 'f' ? this.m.f.find(q => q.id === h.id).o[0] : h.kind === 'v' ? h.id : this.m.e[h.id][0]; this.sel = this.m.connected(f); }
+      }
+    } else if (t === 'line') {
+      if (!this.inf) return;
+      if (!op) { this.op = { type: 'line', start: this.inf.p.slice() }; this.locks.axis = null; return; }
+      if (V.dist(this.inf.p, op.start) < 1e-6) { this.op = null; return; }
+      this.commitSeg(this.inf.p);
+    } else if (t === 'push') {
+      if (op) {
+        if (performance.now() - op.t0 < 350 && Math.abs(op.d) < 1e-3 && this.lastPush) { const fid = op.fid; this.cancelOp(); this.applyPush(fid, this.lastPush, true); return; }
+        this.commitPush(); return;
+      }
+      if (!this.hover) return;
+      const ray = this.rayAt(x, y), h = this.pickRay(ray, false), F = h.face;
+      if (this.clickN === 2 && this.lastPush) { this.applyPush(F.id, this.lastPush, true); return; }
+      this.op = { type: 'push', fid: F.id, n: F.n, p0: h.p, base: this.m.dump(), d: 0, t0: performance.now(), down: [x, y], dragged: false, snap: null };
+    } else if (t === 'move') {
+      if (op) { this.commitMove(); return; }
+      if (this.selEmpty()) { const h = this.hover; if (!h) return; this.sel = this.emptySel(); this.sel[h.kind === 'v' ? 'v' : h.kind === 'e' ? 'e' : 'f'].add(h.id); }
+      if (!this.inf) return;
+      const vs = this.selVerts(); if (!vs.size) return;
+      this.op = { type: 'move', base: this.m.dump(), from: this.inf.p.slice(), excl: vs, copy: false, down: [x, y], delta: [0, 0, 0], selSnap: this.cloneSel(this.sel) };
+      this.locks.axis = null;
+    } else if (t === 'rotate') {
+      if (!op) {
+        if (this.selEmpty()) { const h = this.hover; if (!h) return; const vid = h.kind === 'v' ? h.id : h.kind === 'e' ? this.m.e[h.id][0] : this.m.f.find(q => q.id === h.id).o[0]; this.sel = this.m.connected(vid); }
+        if (!this.inf) return;
+        const vs = this.selVerts(); if (!vs.size) return;
+        const n = this.rotNormal();
+        this.op = { type: 'rotate', stage: 1, c: this.inf.p.slice(), n, base: this.m.dump(), excl: vs, copy: false, selSnap: this.cloneSel(this.sel), u0: null, ang: 0, u1: null };
+        this.locks.axis = null; return;
+      }
+      if (op.stage === 1) { if (op.u1 && V.len(op.u1) > .2) { op.u0 = op.u1; op.stage = 2; } return; }
+      this.commitRot();
+    } else if (t === 'rect') {
+      if (!this.inf) return;
+      if (op) { this.commitRect(); return; }
+      const n = this.rotNormal(), bs = this.rectBasis(n);
+      this.op = { type: 'rect', start: this.inf.p.slice(), n, u: bs[0], v: bs[1], du: 0, dv: 0 }; this.locks.axis = null;
+    } else if (t === 'erase') {
+      if (op) return;
+      this.op = { type: 'erase', set: new Set(), down: [x, y] };
+      if (this.hover) this.op.set.add(this.hover.id);
+    } else if (t === 'scale') {
+      if (op) { this.commitScale(); return; }
+      if (this.selEmpty()) { const h = this.hover; if (!h) return; const vid = h.kind === 'v' ? h.id : h.kind === 'e' ? this.m.e[h.id][0] : this.m.f.find(q => q.id === h.id).o[0]; this.sel = this.m.connected(vid); }
+      if (!this.inf) return;
+      const vs = this.selVerts(); if (!vs.size) return;
+      const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+      vs.forEach(i => { const p = this.m.v[i]; for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); } });
+      const c = V.lerp(lo, hi, .5), r0 = V.dist(this.inf.p, c);
+      if (r0 < .05) return;
+      this.op = { type: 'scale', base: this.m.dump(), c, r0, k: 1, excl: vs, selSnap: this.cloneSel(this.sel), down: [x, y] };
+      this.locks.axis = null;
+    }
+  }
+  toolUp(x, y) {
+    const op = this.op;
+    if (!op || !op.down) return;
+    if (op.type === 'erase') { this.commitErase(); return; }
+    const far = Math.hypot(x - op.down[0], y - op.down[1]) > 6;
+    if (this.tool === 'push' && far) this.commitPush();
+    if (this.tool === 'move' && far) this.commitMove();
+    if (this.tool === 'scale' && far) this.commitScale();
+  }
+  rectBasis(n) {
+    if (Math.abs(n[2]) > .99) return [[1, 0, 0], [0, 1, 0]];
+    if (Math.abs(n[0]) > .99) return [[0, 1, 0], [0, 0, 1]];
+    if (Math.abs(n[1]) > .99) return [[1, 0, 0], [0, 0, 1]];
+    const u = V.norm(V.cross(n, [0, 0, 1]));
+    return [u, V.cross(n, u)];
+  }
+  rectCorners(op) {
+    const A = op.start, U = V.mul(op.u, op.du), W = V.mul(op.v, op.dv);
+    return [A, V.add(A, U), V.add(V.add(A, U), W), V.add(A, W)];
+  }
+  commitRect() {
+    const op = this.op; this.op = null; this.typed = ''; this.locks.axis = null;
+    if (Math.abs(op.du) < 1e-4 || Math.abs(op.dv) < 1e-4) return;
+    const base = this.m.dump(), c = this.rectCorners(op);
+    for (let i = 0; i < 4; i++) this.m.addSegment(c[i], c[(i + 1) % 4], this.vp.f);
+    this.pushUndo(base); this.rebuild(); this.anchors = [];
+  }
+  commitErase() {
+    const op = this.op; this.op = null;
+    if (!op.set.size) return;
+    const base = this.m.dump(); this.m.remove({ v: new Set(), e: op.set, f: new Set() });
+    this.pushUndo(base); this.rebuild(); this.hover = null; this.pendMove = true;
+  }
+  scaleApply(op, k) {
+    this.m = Model.load(op.base); this.sel = this.cloneSel(op.selSnap); this.m.scale(op.excl, op.c, k); op.k = k; this.rebuild();
+  }
+  commitScale() {
+    const op = this.op; this.op = null; this.typed = ''; this.locks.axis = null;
+    if (Math.abs(op.k - 1) < 1e-6) { this.m = Model.load(op.base); this.sel = this.cloneSel(op.selSnap); this.rebuild(); return; }
+    this.pushUndo(op.base);
+    this.lastOp = { label: 'Scale', value: op.k.toFixed(3) + '×', apply: s => { const v = parseFloat(s); if (!(v > 0)) return; this.scaleApply(op, v); this.lastOp.value = v.toFixed(3) + '×'; } };
+  }
+  commitSeg(p) {
+    const base = this.m.dump(), r = this.m.addSegment(this.op.start, p, this.vp.f);
+    this.pushUndo(base); this.rebuild(); this.locks.axis = null; this.typed = ''; this.anchors = [];
+    this.op = r.faces > 0 ? null : { type: 'line', start: this.m.v[r.b].slice() };
+  }
+  rotNormal() {
+    if (this.locks.axis !== null) return AX[this.locks.axis];
+    if (this.inf && this.inf.face) return this.inf.face.n;
+    if (this.inf && this.inf.kind === 'On Ground') return [0, 0, 1];
+    const f = this.vp.f; let ax = 0;
+    for (let i = 1; i < 3; i++) if (Math.abs(f[i]) > Math.abs(f[ax])) ax = i;
+    return AX[ax];
+  }
+  planePoint(x, y, c, n) {
+    const ray = this.rayAt(x, y), den = V.dot(n, ray.d);
+    if (Math.abs(den) < 1e-3) return null;
+    const t = V.dot(n, V.sub(c, ray.o)) / den;
+    return t > 0 && t < 1000 ? V.add(ray.o, V.mul(ray.d, t)) : null;
+  }
+  preview(x, y) {
+    const op = this.op;
+    if (op.type === 'push') {
+      const ray = this.rayAt(x, y), r = lineLine(ray.o, ray.d, op.p0, op.n);
+      let t = r ? r.t : 0, snap = null;
+      const ap = this.tune.ap, cs = this.scr(V.add(op.p0, V.mul(op.n, t)));
+      if (cs) {
+        let bestD = 1e9;
+        for (const id in this.m.v) {
+          const p = this.m.v[id], tv = V.dot(V.sub(p, op.p0), op.n), s = this.scr(p); if (!s) continue;
+          const d = Math.hypot(s[0] - x, s[1] - y);
+          if (d < 14 * ap && d < bestD) { bestD = d; t = tv; snap = { label: 'Match Endpoint', from: p, to: V.add(op.p0, V.mul(op.n, tv)) }; }
+        }
+        if (!snap && Math.abs(op.n[2]) > .3) {
+          const tg = -op.p0[2] / op.n[2], gp = V.add(op.p0, V.mul(op.n, tg)), s = this.scr(gp);
+          if (s && Math.hypot(s[0] - x, s[1] - y) < 12 * ap) { t = tg; snap = { label: 'On Ground', to: gp }; }
+        }
+        const s0 = this.scr(op.p0);
+        if (!snap && s0 && Math.hypot(cs[0] - s0[0], cs[1] - s0[1]) < 6) t = 0;
+      }
+      op.d = t; op.snap = snap; this.m = Model.load(op.base); this.m.pushPull(op.fid, t, op.loop); this.rebuild();
+    } else if (op.type === 'move') {
+      if (!this.inf) return;
+      this.moveApply(op, V.sub(this.inf.p, op.from));
+    } else if (op.type === 'rect') {
+      if (!this.inf) return;
+      const snapped = !['On Face', 'On Ground', 'Free'].includes(this.inf.kind);
+      let q = snapped ? null : this.planePoint(x, y, op.start, op.n);
+      if (!q) { const p = this.inf.p; q = V.sub(p, V.mul(op.n, V.dot(V.sub(p, op.start), op.n))); }
+      const d = V.sub(q, op.start); op.du = V.dot(d, op.u); op.dv = V.dot(d, op.v);
+    } else if (op.type === 'scale') {
+      if (!this.inf) return;
+      let k = clamp(V.dist(this.inf.p, op.c) / op.r0, .05, 20);
+      if (Math.abs(k - 1) < .02) k = 1;
+      this.scaleApply(op, k);
+    } else if (op.type === 'rotate') {
+      const p = this.planePoint(x, y, op.c, op.n);
+      if (!p) return;
+      const v = V.sub(p, op.c);
+      if (op.stage === 1) { op.u1 = V.norm(v); return; }
+      const u1 = V.norm(v); if (V.len(u1) < 1e-9) return;
+      let ang = Math.atan2(V.dot(op.n, V.cross(op.u0, u1)), V.dot(op.u0, u1)), q = Math.PI / 12;
+      const nr = Math.round(ang / q) * q;
+      if (Math.abs(ang - nr) < .045) ang = nr;
+      op.u1 = u1; this.rotApply(op, ang);
+    }
+  }
+  moveApply(op, delta) {
+    this.m = Model.load(op.base); let vs = op.excl;
+    if (op.copy) { const d = this.m.dup(op.selSnap); vs = d.verts; this.sel = d.sel; } else this.sel = this.cloneSel(op.selSnap);
+    this.m.translate(vs, delta); op.delta = delta; this.rebuild();
+  }
+  rotApply(op, ang) {
+    this.m = Model.load(op.base); let vs = op.excl;
+    if (op.copy) { const d = this.m.dup(op.selSnap); vs = d.verts; this.sel = d.sel; } else this.sel = this.cloneSel(op.selSnap);
+    this.m.rotate(vs, op.c, op.n, ang); op.ang = ang; this.rebuild();
+  }
+  applyPush(fid, d, commit) {
+    const base = this.m.dump(); this.m.pushPull(fid, d); this.rebuild();
+    if (commit) { this.pushUndo(base); this.lastOp = this.pushRedo(base, fid, d); }
+  }
+  pushRedo(base, fid, d, loop) {
+    return { label: 'Distance', value: fmtLen(d), apply: s => { const v = parseLen(s); if (v === null) return; const sg = d < 0 ? -1 : 1; d = Math.abs(v) * sg; this.m = Model.load(base); this.m.pushPull(fid, d, loop); this.rebuild(); this.lastPush = d; this.lastOp.value = fmtLen(d); } };
+  }
+  commitPush() {
+    const op = this.op; this.op = null; this.typed = '';
+    if (Math.abs(op.d) < 1e-6) { this.m = Model.load(op.base); this.rebuild(); return; }
+    this.pushUndo(op.base); this.lastPush = op.d; this.lastOp = this.pushRedo(op.base, op.fid, op.d, op.loop);
+  }
+  commitMove() {
+    const op = this.op; this.op = null; this.typed = ''; this.locks.axis = null;
+    if (V.len(op.delta) < 1e-9) { this.m = Model.load(op.base); this.sel = this.cloneSel(op.selSnap); this.rebuild(); return; }
+    this.pushUndo(op.base);
+    this.lastOp = { label: 'Distance', value: fmtLen(V.len(op.delta)), apply: s => { const v = parseLen(s); if (v === null) return; const dir = V.norm(op.delta); this.moveApply(op, V.mul(dir, v)); this.lastOp.value = fmtLen(Math.abs(v)); } };
+  }
+  commitRot() {
+    const op = this.op; this.op = null; this.typed = '';
+    if (Math.abs(op.ang) < 1e-9) { this.m = Model.load(op.base); this.sel = this.cloneSel(op.selSnap); this.rebuild(); return; }
+    this.pushUndo(op.base);
+    this.lastOp = { label: 'Angle', value: (op.ang * 180 / Math.PI).toFixed(1) + '°', apply: s => { const v = parseFloat(s); if (isNaN(v)) return; this.rotApply(op, v * Math.PI / 180); this.lastOp.value = v.toFixed(1) + '°'; } };
+  }
+  doUndo() {
+    if (this.op) { this.cancelOp(); this.dirty(); return; }
+    if (!this.undo.length) return;
+    this.redo.push(this.m.dump()); this.m = Model.load(this.undo.pop()); this.sel = this.emptySel(); this.lastOp = null; this.rebuild(); this.pendMove = true; this.syncUI(); this.dirty();
+  }
+  doRedo() {
+    if (!this.redo.length) return;
+    this.undo.push(this.m.dump()); this.m = Model.load(this.redo.pop()); this.sel = this.emptySel(); this.lastOp = null; this.rebuild(); this.pendMove = true; this.syncUI(); this.dirty();
+  }
+  doDelete() {
+    if (this.selEmpty()) return;
+    const base = this.m.dump(); this.m.remove(this.sel); this.sel = this.emptySel(); this.pushUndo(base); this.rebuild(); this.pendMove = true; this.dirty();
+  }
+
+  // ---------- keyboard ----------
+  onKey(e) {
+    if (e.target && e.target.closest && e.target.closest('[role=slider]')) return;
+    const k = e.key, mod = e.ctrlKey || e.metaKey;
+    if (!this.m) return;
+    let used = true;
+    if (mod && (k === 'z' || k === 'Z')) { e.shiftKey ? this.doRedo() : this.doUndo(); }
+    else if (mod && (k === 'y' || k === 'Y')) this.doRedo();
+    else if (mod && (k === 'a' || k === 'A')) this.doSelectAll();
+    else if (k === 'Control' || k === 'Meta') { if (!e.repeat && this.op && (this.op.type === 'move' || this.op.type === 'rotate')) { this.op.copy = !this.op.copy; this.pendMove = true; } }
+    else if (k === 'Shift') { if (!e.repeat) this.shiftLock(); }
+    else if (k === 'Alt') { if (!e.repeat && this.op && this.op.type === 'push') { this.op.loop = !this.op.loop; this.pendMove = true; } }
+    else if (k === 'Escape') {
+      if (this.ovlOpen()) this.closeOvl(); else if (this.menu) this.closeMenu(); else if (this.typed) this.typed = ''; else if (this.nav) { this.nav = null; this.updateCursor(); } else if (this.op) this.cancelOp(); else { this.locks.axis = null; this.anchors = []; }
+    }
+    else if (k === 'Enter') this.enter();
+    else if (k === 'ArrowUp' || k === 'ArrowRight' || k === 'ArrowLeft') { const a = k === 'ArrowUp' ? 2 : k === 'ArrowRight' ? 0 : 1; this.locks.axis = this.locks.axis === a ? null : a; }
+    else if (k === 'ArrowDown') this.locks.axis = null;
+    else if (k === 'Backspace' && this.typed) this.typed = this.typed.slice(0, -1);
+    else if ((k === 'Delete' || k === 'Backspace') && !this.op) this.doDelete();
+    else if (!mod && /^[0-9.\-]$/.test(k) && (this.op || this.lastOp || this.typed)) this.typed += k;
+    else if (!mod && k === ',' && this.op && this.op.type === 'rect') this.typed += k;
+    else if (!mod && this.typed && /^[a-zA-Z'"]$/.test(k)) this.typed += k;
+    else if (!mod && !this.typed && k === 'Z') this.zoomExtents();
+    else if (!mod && !this.typed && k === ' ') this.setTool('select');
+    else if (!mod && !this.typed && /^[lrpmqseLRPMQSE]$/.test(k)) this.setTool({ l: 'line', r: 'rect', p: 'push', m: 'move', q: 'rotate', s: 'scale', e: 'erase' }[k.toLowerCase()]);
+    else if (!mod && !this.typed && /^[ohOH]$/.test(k)) this.toggleNav(k.toLowerCase() === 'o' ? 'orbit' : 'pan');
+    else used = false;
+    if (used) e.preventDefault();
+    this.pendMove = true; this.syncUI(); this.dirty();
+  }
+  onKeyUp(e) { if (e.key === 'Alt') e.preventDefault(); if (e.key === 'Shift' && this._shiftLocked) { this.locks.axis = null; this._shiftLocked = false; this.pendMove = true; this.dirty(); } }
+  shiftLock() {
+    const i = this.inf;
+    if (i && i.ax !== undefined && i.ax !== null && this.locks.axis === null) { this.locks.axis = i.ax; this._shiftLocked = true; }
+  }
+  enter() {
+    const s = this.typed; this.typed = '';
+    if (!s) return;
+    const op = this.op;
+    if (op && op.type === 'line') {
+      const v = parseLen(s); if (v === null) return;
+      let dir = this.inf ? V.norm(V.sub(this.inf.p, op.start)) : [1, 0, 0];
+      if (this.locks.axis !== null) dir = V.mul(AX[this.locks.axis], V.dot(dir, AX[this.locks.axis]) < 0 ? -1 : 1);
+      if (V.len(dir) < 1e-9) dir = [1, 0, 0];
+      this.commitSeg(V.add(op.start, V.mul(dir, v)));
+    } else if (op && op.type === 'push') {
+      const v = parseLen(s); if (v === null) return;
+      op.d = (op.d < 0 ? -1 : 1) * Math.abs(v); this.m = Model.load(op.base); this.m.pushPull(op.fid, op.d, op.loop); this.rebuild(); this.commitPush();
+    } else if (op && op.type === 'move') {
+      const v = parseLen(s); if (v === null) return;
+      let dir = V.norm(op.delta); if (V.len(dir) < 1e-9) dir = this.locks.axis !== null ? AX[this.locks.axis] : [1, 0, 0];
+      this.moveApply(op, V.mul(dir, v)); this.commitMove();
+    } else if (op && op.type === 'rotate' && op.stage === 2) {
+      const v = parseFloat(s); if (isNaN(v)) return;
+      this.rotApply(op, v * Math.PI / 180); this.commitRot();
+    } else if (op && op.type === 'rect') {
+      const parts = s.split(','), w = parseLen(parts[0]), h = parts[1] !== undefined && parts[1] !== '' ? parseLen(parts[1]) : w;
+      if (w === null || h === null) return;
+      op.du = (op.du < 0 ? -1 : 1) * Math.abs(w); op.dv = (op.dv < 0 ? -1 : 1) * Math.abs(h); this.commitRect();
+    } else if (op && op.type === 'scale') {
+      const v = parseFloat(s); if (!(v > 0)) return;
+      this.scaleApply(op, v); this.commitScale();
+    } else if (!op && this.lastOp) this.lastOp.apply(s);
+  }
+
+  // ---------- UI state ----------
+  hintText() {
+    const t = this.tool, op = this.op;
+    if (this.nav) return (this.nav === 'orbit' ? 'Orbit: drag to look around (Shift pans)' : 'Pan: drag to slide the view') + ' · wheel zooms · Esc returns to your tool';
+    if (t === 'rect') return op ? 'Click the opposite corner · type width,height + Enter (2,1.5) · arrows pick the plane · Esc cancels' : 'Click the first corner. It draws on the face or plane under the cursor.';
+    if (t === 'erase') return op ? 'Release to erase the highlighted edges' : 'Click or drag across edges to erase them (the faces on them go too).';
+    if (t === 'scale') return op ? 'Move to scale about the centre · type a factor + Enter · Esc cancels' : this.selEmpty() ? 'Click an object, grabbing it at a point away from its centre.' : 'Click a grip point away from the centre of the selection.';
+    if (t === 'select') return 'Click to select · Shift toggles · double-click face + edges · triple-click connected · Del deletes';
+    if (t === 'line') return op ? 'Click the next point · Shift locks the inference · arrows lock an axis · type a length + Enter · Esc stops' : 'Click a start point. Hover points to wake them, then draw aligned to them from elsewhere.';
+    if (t === 'push') return op ? 'Move to set the distance · tap Alt to ' + (op.loop ? 'turn off' : 'extrude from a new loop on') + ' the face boundary · type a value + Enter · Esc cancels' : 'Hover a face, click, move, click. Double-click another face repeats the last distance.';
+    if (t === 'move') return op ? 'Click the destination · Ctrl ' + (op.copy ? '(copying) ' : 'copies ') + '· arrows lock an axis · type a length + Enter' : this.selEmpty() ? 'Click a point, edge or face to pick it up and move it, or select first.' : 'Click a base point to pick up the selection.';
+    if (t === 'rotate') return !op ? (this.selEmpty() ? 'Click the object, setting the rotation centre on it. Arrows pick the axis first.' : 'Click the rotation centre. Arrows pick the axis first.') : op.stage === 1 ? 'Click to set the start direction' : 'Move to rotate (15° snaps) · Ctrl copies · type degrees + Enter';
+    return '';
+  }
+  vcb() {
+    const op = this.op;
+    let label = '', val = '';
+    if (op && op.type === 'line' && this.inf) { label = 'Length'; val = fmtLen(V.dist(this.inf.p, op.start)); }
+    else if (op && op.type === 'push') { label = 'Distance'; val = fmtLen(op.d); }
+    else if (op && op.type === 'move') { label = 'Distance'; val = fmtLen(V.len(op.delta)); }
+    else if (op && op.type === 'rotate' && op.stage === 2) { label = 'Angle'; val = (op.ang * 180 / Math.PI).toFixed(1) + '°'; }
+    else if (op && op.type === 'rect') { label = 'Size'; val = fmtLen(Math.abs(op.du)).replace(' m', '') + ', ' + fmtLen(Math.abs(op.dv)); }
+    else if (op && op.type === 'scale') { label = 'Scale'; val = op.k.toFixed(3) + '×'; }
+    else if (!op && this.lastOp) { label = this.lastOp.label; val = this.lastOp.value; }
+    if (this.typed) val = this.typed + '▏';
+    return { label, val: val || '—' };
+  }
+  syncUI() {
+    if (!this.m) return;
+    const v = this.vcb(), tn = this.tune;
+    const ui = {
+      hint: this.hintText(), vcbLabel: v.label, vcbValue: v.val, typing: !!this.typed,
+      lock: this.locks.axis === null ? '' : 'Locked: ' + AXN[this.locks.axis],
+      apText: tn.ap.toFixed(2) + '×', relText: tn.rel.toFixed(1) + '×', dwText: tn.dwell + ' ms'
+    };
+    const s = JSON.stringify(ui);
+    if (s !== this._uiS) { this._uiS = s; this.setState({ ui }); }
+    this.applyNative();
+  }
+  renderVals() {
+    const ui = (this.state && this.state.ui) || { hint: '', vcbLabel: '', vcbValue: '—', typing: false, lock: '', apText: '1.00×', relText: '1.6×', dwText: '220 ms' };
+    return { hint: ui.hint, lockText: ui.lock, vcbLabel: ui.vcbLabel, vcbValue: ui.vcbValue, typing: String(ui.typing), apText: ui.apText, relText: ui.relText, dwText: ui.dwText };
+  }
+  applyNative() {
+    if (!this.root) return;
+    this.chromeSync();
+    const u = this.root.querySelector('[data-act="undo"]'), r = this.root.querySelector('[data-act="redo"]');
+    if (u) u.disabled = !this.undo.length && !this.op;
+    if (r) r.disabled = !this.redo.length;
+    (this.sliders || []).forEach(s => { s.tgt = (this.tune[s.key] - s.min) / (s.max - s.min); s.el.setAttribute('aria-valuenow', this.tune[s.key]); s.bubble.textContent = s.fmt(this.tune[s.key]); });
+    (this.toggles || []).forEach(t => { const on = !!this.tune[t.key]; t.el.setAttribute('aria-checked', String(on)); t.el.style.setProperty('--on', on ? 1 : 0); t.well.frostT = on ? .15 : .72; });
+  }
+
+  // ---------- Soft glass: aurora behind the cutouts, sliders, toggle ----------
+  initSoft() {
+    const cs = getComputedStyle(this.root), tmp = document.createElement('canvas').getContext('2d');
+    const rgb = k => { tmp.fillStyle = '#000'; tmp.fillStyle = cs.getPropertyValue(k).trim() || '#000'; const h = tmp.fillStyle; return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; };
+    this.aur = { cols: ['base', 1, 2, 3, 4, 5].map(k => rgb('--soft-aurora-' + k)), frost: rgb('--soft-frost'), t: 0, last: performance.now(), master: document.createElement('canvas') };
+    const nz = document.createElement('canvas'); nz.width = nz.height = 96;
+    const ng = nz.getContext('2d'), id = ng.createImageData(96, 96);
+    for (let i = 0; i < 96 * 96; i++) { id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = 128; id.data[i * 4 + 3] = Math.random() * 150; }
+    ng.putImageData(id, 0, 0); this.aur.noise = nz;
+    this.wells = [...this.root.querySelectorAll('[data-well]')].map(el => ({ el, cv: el.querySelector('canvas'), frost: parseFloat(el.dataset.frost || .5), frostT: parseFloat(el.dataset.frost || .5), split: !!el.dataset.split, p: 0 }));
+    const fmts = { ap: v => v.toFixed(2) + '×', rel: v => v.toFixed(1) + '×', dwell: v => Math.round(v) + ' ms' };
+    this.sliders = [...this.root.querySelectorAll('.slider')].map(el => {
+      const s = { el, key: el.dataset.key, min: +el.dataset.min, max: +el.dataset.max, step: +el.dataset.step, cur: 0, tgt: 0, drag: false, fmt: fmts[el.dataset.key], bubble: el.querySelector('.bubble'), well: null };
+      s.cur = s.tgt = (this.tune[s.key] - s.min) / (s.max - s.min);
+      s.well = this.wells.find(w => w.el.parentNode === el);
+      const set = e => {
+        const r = el.getBoundingClientRect(), f = clamp((e.clientX - r.left - 15) / Math.max(1, r.width - 30), 0, 1);
+        this.tune[s.key] = +(Math.round((s.min + f * (s.max - s.min) - s.min) / s.step) * s.step + s.min).toFixed(6);
+        this.syncUI(); this.pendMove = true; this.dirty();
+      };
+      el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); s.drag = true; el.dataset.drag = 'true'; set(e); });
+      el.addEventListener('pointermove', e => { if (s.drag) set(e); });
+      const end = () => { s.drag = false; el.dataset.drag = 'false'; };
+      el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+      el.addEventListener('keydown', e => {
+        const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 10, PageDown: -10 }[e.key];
+        if (d === undefined) return;
+        this.tune[s.key] = +clamp(this.tune[s.key] + d * s.step, s.min, s.max).toFixed(6); e.preventDefault(); this.syncUI(); this.pendMove = true; this.dirty();
+      });
+      return s;
+    });
+    this.toggles = [...this.root.querySelectorAll('.toggle')].map(el => {
+      const t = { el, key: el.dataset.key, well: this.wells.find(w => w.el.parentNode === el) };
+      el.addEventListener('click', () => { this.tune[t.key] = !this.tune[t.key]; this.syncUI(); this.dirty(); });
+      return t;
+    });
+    const loop = now => { this._sraf = requestAnimationFrame(loop); this.softFrame(now); };
+    this._sraf = requestAnimationFrame(loop);
+  }
+  softFrame(now) {
+    const A = this.aur, still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!still) A.t += Math.min(now - A.last, 100) / 1000;
+    A.last = now;
+    const m = A.master, w = Math.max(64, Math.round(innerWidth / 8)), h = Math.max(48, Math.round(innerHeight / 8));
+    if (m.width !== w) m.width = w;
+    if (m.height !== h) m.height = h;
+    const g = m.getContext('2d'), [base, ...cols] = A.cols, TAU = Math.PI * 2, t = A.t;
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = 'rgb(' + base.join(',') + ')'; g.fillRect(0, 0, w, h);
+    const size = Math.max(w, h);
+    AURORA_BLOBS.forEach((b, i) => {
+      const x = (b.cx + b.ax * Math.sin(TAU * t / b.px + i)) * w, y = (b.cy + b.ay * Math.cos(TAU * t / b.py + i * 2)) * h;
+      const r = b.r * size * (.85 + .15 * Math.sin(TAU * t / (b.px * .7) + i)), c = cols[i % cols.length].join(',');
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, 'rgba(' + c + ',.95)'); gr.addColorStop(.5, 'rgba(' + c + ',.45)'); gr.addColorStop(1, 'rgba(' + c + ',0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    this.sliders.forEach(s => { s.cur += (s.tgt - s.cur) * (still ? 1 : .35); if (Math.abs(s.tgt - s.cur) < 1e-4) s.cur = s.tgt; s.el.style.setProperty('--p', s.cur.toFixed(4)); });
+    for (const wl of this.wells) {
+      wl.frost += (wl.frostT - wl.frost) * (still ? 1 : .14);
+      const r = wl.el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1 || r.bottom < 0 || r.top > innerHeight) continue;
+      const cw = Math.ceil(r.width / 2), ch = Math.ceil(r.height / 2), c = wl.cv;
+      if (c.width !== cw) c.width = cw;
+      if (c.height !== ch) c.height = ch;
+      const x = c.getContext('2d'), f = A.frost.join(',');
+      x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1;
+      x.drawImage(m, r.left * m.width / innerWidth, r.top * m.height / innerHeight, r.width * m.width / innerWidth, r.height * m.height / innerHeight, 0, 0, cw, ch);
+      if (wl.split) {
+        const s = this.sliders.find(q => q.well === wl), cx = (15 + s.cur * (r.width - 30)) / 2;
+        x.fillStyle = 'rgba(' + f + ',.12)'; x.fillRect(0, 0, cx, ch);
+        x.fillStyle = 'rgba(' + f + ',.75)'; x.fillRect(cx, 0, cw - cx, ch);
+      } else { x.fillStyle = 'rgba(' + f + ',' + wl.frost.toFixed(3) + ')'; x.fillRect(0, 0, cw, ch); }
+      x.globalCompositeOperation = 'overlay'; x.globalAlpha = .5; x.fillStyle = x.createPattern(A.noise, 'repeat'); x.fillRect(0, 0, cw, ch);
+      x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1;
+    }
+  }
+
+  // ---------- drawing ----------
+  draw() {
+    const ctx = this.cx, vp = this.vp, w = this.cw, h = this.ch;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.drawGround(ctx, w, h);
+    this.drawShadow(ctx, w, h);
+    this.drawFaces(ctx);
+    this.drawEdges(ctx);
+    this.drawOverlay(ctx);
+  }
+  drawGround(ctx, w, h) {
+    const vp = this.vp, hy = vp.cy + vp.foc * Math.tan(Math.asin(clamp(vp.f[2], -1, 1)));
+    let g = ctx.createLinearGradient(0, 0, 0, Math.max(1, Math.min(h, hy)));
+    g.addColorStop(0, '#c9d9ea'); g.addColorStop(1, '#eef2f5');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    if (hy < h) {
+      const y0 = Math.max(0, hy);
+      g = ctx.createLinearGradient(0, y0, 0, h);
+      g.addColorStop(0, '#e9ebe9'); g.addColorStop(1, '#d9dcd9');
+      ctx.fillStyle = g; ctx.fillRect(0, y0, w, h - y0);
+    }
+    const N = 30, step = 5, line = (a, b, col, wd, alpha, dash) => {
+      const c = this.clip(a, b); if (!c) return;
+      const sa = this.scr(c[0]), sb = this.scr(c[1]); if (!sa || !sb) return;
+      ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = wd; ctx.setLineDash(dash || []);
+      ctx.beginPath(); ctx.moveTo(sa[0], sa[1]); ctx.lineTo(sb[0], sb[1]); ctx.stroke();
+    };
+    for (let k = -N; k <= N; k++) {
+      const major = k % 5 === 0, col = major ? '#8f959b' : '#b4babf';
+      for (let s = -N; s < N; s += step) {
+        for (const ori of [0, 1]) {
+          const a = ori ? [s, k, 0] : [k, s, 0], b = ori ? [s + step, k, 0] : [k, s + step, 0];
+          const mid = V.lerp(a, b, .5), dist = V.dist(mid, vp.e), al = clamp(1.25 - dist / 45, 0, 1) * (major ? .8 : .55);
+          if (al > .02 && !(k === 0)) line(a, b, col, major ? 1 : .8, al);
+        }
+      }
+    }
+    ctx.globalAlpha = 1; ctx.setLineDash([]);
+    const L = 60;
+    line([0, 0, 0], [L, 0, 0], AXC[0], 1.4, .9); line([-L, 0, 0], [0, 0, 0], AXC[0], 1.4, .55, [2, 4]);
+    line([0, 0, 0], [0, L, 0], AXC[1], 1.4, .9); line([0, -L, 0], [0, 0, 0], AXC[1], 1.4, .55, [2, 4]);
+    line([0, 0, 0], [0, 0, L], AXC[2], 1.4, .9);
+    ctx.globalAlpha = 1; ctx.setLineDash([]);
+  }
+  clip(a, b) {
+    const vp = this.vp, N = .05, za = V.dot(V.sub(a, vp.e), vp.f), zb = V.dot(V.sub(b, vp.e), vp.f);
+    if (za < N && zb < N) return null;
+    if (za >= N && zb >= N) return [a, b];
+    const m = V.lerp(a, b, (N - za) / (zb - za));
+    return za < N ? [m, b] : [a, m];
+  }
+  projLoop(P) {
+    const vp = this.vp, N = .05, C = P.map(p => { const d = V.sub(p, vp.e); return [V.dot(d, vp.r), V.dot(d, vp.u), V.dot(d, vp.f)]; }), out = [];
+    for (let i = 0; i < C.length; i++) {
+      const a = C[i], b = C[(i + 1) % C.length], ai = a[2] >= N, bi = b[2] >= N;
+      if (ai) out.push(a);
+      if (ai !== bi) { const t = (N - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, N]); }
+    }
+    return out.map(c => [vp.cx + c[0] / c[2] * vp.foc, vp.cy - c[1] / c[2] * vp.foc]);
+  }
+  drawShadow(ctx, w, h) {
+    if (!this.G.faces.length || !this.tune.shadow) return;
+    const sc = this.shadowCv, sx = sc.getContext('2d'), L = V.norm([.35, .3, -1]);
+    sx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); sx.clearRect(0, 0, w, h); sx.fillStyle = '#000';
+    for (const F of this.G.faces) {
+      if (F.P.every(p => p[2] <= 1e-6)) continue;
+      const Q = F.P.map(p => p[2] > 0 ? V.add(p, V.mul(L, -p[2] / L[2])) : p), pl = this.projLoop(Q);
+      if (pl.length < 3) continue;
+      sx.beginPath(); pl.forEach((q, i) => i ? sx.lineTo(q[0], q[1]) : sx.moveTo(q[0], q[1])); sx.closePath(); sx.fill();
+    }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = .17; ctx.drawImage(sc, 0, 0); ctx.restore();
+  }
+  drawFaces(ctx) {
+    const vp = this.vp, Ld = V.norm([.3, -.5, .8]);
+    const order = this.G.faces.map(F => ({ F, z: V.dist(F.cent, vp.e) })).sort((a, b) => b.z - a.z);
+    for (const { F } of order) {
+      const pl = this.projLoop(F.P); if (pl.length < 3) continue;
+      const front = V.dot(F.n, V.sub(vp.e, F.cent)) > 0, nv = front ? F.n : V.mul(F.n, -1), sh = .66 + .34 * Math.max(0, V.dot(nv, Ld));
+      const base = front ? [248, 247, 244] : [150, 168, 198];
+      ctx.fillStyle = 'rgb(' + base.map(c => Math.round(c * sh)).join(',') + ')';
+      ctx.beginPath(); pl.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath();
+      for (const H of F.H) { const hp = this.projLoop(H); if (hp.length < 3) continue; hp.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); }
+      ctx.fill('evenodd');
+      const hov = this.hover && this.hover.kind === 'f' && this.hover.id === F.id, sel = this.sel.f.has(F.id);
+      if (sel) { ctx.fillStyle = 'rgba(31,95,224,.12)'; ctx.fill('evenodd'); ctx.fillStyle = this.stipple; ctx.fill('evenodd'); }
+      if (hov) { ctx.fillStyle = 'rgba(255,138,0,.24)'; ctx.fill('evenodd'); }
+    }
+  }
+  visRuns(k, a, b) {
+    if (!this.visC || this.visC.v !== this.ver || this.visC.c !== this.camVer) this.visC = { v: this.ver, c: this.camVer, m: {} };
+    if (this.visC.m[k]) return this.visC.m[k];
+    const sa = this.scr(a), sb = this.scr(b), px = sa && sb ? Math.hypot(sa[0] - sb[0], sa[1] - sb[1]) : 100, N = clamp(Math.ceil(px / 6), 2, 60);
+    const vis = t => !this.occl(V.lerp(a, b, t)), runs = [];
+    let cur = null, pv = vis(0), pt = 0;
+    if (pv) cur = 0;
+    for (let i = 1; i <= N; i++) {
+      const t = i / N, v = vis(t);
+      if (v !== pv) {
+        let lo = pt, hi = t;
+        for (let q = 0; q < 7; q++) { const mid = (lo + hi) / 2; if (vis(mid) === pv) lo = mid; else hi = mid; }
+        const tb = (lo + hi) / 2;
+        if (v) cur = tb; else { runs.push([cur, tb]); cur = null; }
+      }
+      pv = v; pt = t;
+    }
+    if (cur !== null) runs.push([cur, 1]);
+    return (this.visC.m[k] = runs);
+  }
+  drawEdges(ctx) {
+    const m = this.m; ctx.lineCap = 'round'; ctx.setLineDash([]);
+    for (const k in m.e) {
+      const [ia, ib] = m.e[k], c = this.clip(m.v[ia], m.v[ib]); if (!c) continue;
+      const er = this.op && this.op.type === 'erase' && this.op.set.has(k), hov = this.hover && this.hover.kind === 'e' && this.hover.id === k, sel = this.sel.e.has(k);
+      ctx.strokeStyle = er ? '#ff3b4d' : hov ? (this.tool === 'erase' ? '#ff3b4d' : '#ff8a00') : sel ? '#1f5fe0' : '#16181c'; ctx.lineWidth = er || hov || sel ? 2.8 : 1.5;
+      for (const [t0, t1] of this.visRuns(k, c[0], c[1])) {
+        const sa = this.scr(V.lerp(c[0], c[1], t0)), sb = this.scr(V.lerp(c[0], c[1], t1)); if (!sa || !sb) continue;
+        ctx.beginPath(); ctx.moveTo(sa[0], sa[1]); ctx.lineTo(sb[0], sb[1]); ctx.stroke();
+      }
+    }
+    const dot = (id, col) => { const s = this.scr(m.v[id]); if (!s) return; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(s[0], s[1], 4.5, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); };
+    this.sel.v.forEach(id => dot(id, '#1f5fe0'));
+    if (this.hover && this.hover.kind === 'v') dot(this.hover.id, '#ff8a00');
+  }
+  glyph(ctx, kind, p, col) {
+    const s = this.scr(p); if (!s) return;
+    const [shape] = GLYPH[kind] || GLYPH.Free; const [x, y] = s, r = 6;
+    ctx.fillStyle = col; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.beginPath();
+    if (shape === 'circle') ctx.arc(x, y, r, 0, 7);
+    else if (shape === 'square') ctx.rect(x - r, y - r, 2 * r, 2 * r);
+    else if (shape === 'diamond') { ctx.moveTo(x, y - r - 1); ctx.lineTo(x + r + 1, y); ctx.lineTo(x, y + r + 1); ctx.lineTo(x - r - 1, y); ctx.closePath(); }
+    else if (shape === 'tri') { ctx.moveTo(x, y - r - 1); ctx.lineTo(x + r + 1, y + r); ctx.lineTo(x - r - 1, y + r); ctx.closePath(); }
+    else if (shape === 'cross') { ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke(); return; }
+    else { ctx.arc(x, y, 4, 0, 7); }
+    ctx.fill(); ctx.stroke();
+  }
+  pill(ctx, text, x, y, col) {
+    ctx.font = "500 12px 'IBM Plex Mono', monospace"; const w = ctx.measureText(text).width + 14;
+    ctx.fillStyle = col || '#1c1e22'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y - 12, w, 22, 4) : ctx.rect(x, y - 12, w, 22); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(text, x + 7, y);
+  }
+  worldLine(ctx, a, b, col, wd, dash, alpha) {
+    const c = this.clip(a, b); if (!c) return;
+    const sa = this.scr(c[0]), sb = this.scr(c[1]); if (!sa || !sb) return;
+    ctx.globalAlpha = alpha == null ? 1 : alpha; ctx.strokeStyle = col; ctx.lineWidth = wd; ctx.setLineDash(dash || []); ctx.beginPath(); ctx.moveTo(sa[0], sa[1]); ctx.lineTo(sb[0], sb[1]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  drawOverlay(ctx) {
+    const op = this.op, inf = this.inf, t = this.tool;
+    // woken anchors
+    this.anchors.forEach(a => {
+      const s = this.scr(a.p); if (!s) return;
+      ctx.strokeStyle = a.type === 'edge' ? '#b21fc2' : '#3d4046'; ctx.lineWidth = 1.5; ctx.beginPath();
+      ctx.moveTo(s[0], s[1] - 7); ctx.lineTo(s[0] + 7, s[1]); ctx.lineTo(s[0], s[1] + 7); ctx.lineTo(s[0] - 7, s[1]); ctx.closePath(); ctx.stroke();
+    });
+    // guides that the current inference sits on
+    if (inf && inf.guides) inf.guides.forEach(g => {
+      const r = V.sub(inf.p, g.o), s = V.dot(r, g.d), end = V.add(g.o, V.mul(g.d, s + (s >= 0 ? .4 : -.4)));
+      this.worldLine(ctx, g.o, end, g.color, 1.6, [5, 4]);
+    });
+    if (op && op.type === 'line' && inf) {
+      const col = inf.ax !== undefined && inf.ax !== null ? AXC[inf.ax] : '#16181c';
+      this.worldLine(ctx, op.start, inf.p, col, 1.8);
+      const a = this.scr(op.start), b = this.scr(inf.p);
+      if (a && b) this.pill(ctx, fmtLen(V.dist(op.start, inf.p)), (a[0] + b[0]) / 2 + 10, (a[1] + b[1]) / 2 - 14);
+    }
+    if (op && op.type === 'move' && inf) {
+      this.worldLine(ctx, op.from, V.add(op.from, op.delta), '#16181c', 1.4, [4, 4]);
+      const b = this.scr(V.add(op.from, op.delta)); if (b) this.pill(ctx, (op.copy ? 'Copy ' : '') + fmtLen(V.len(op.delta)), b[0] + 14, b[1] - 16);
+    }
+    if (op && op.type === 'push') {
+      const e = V.add(op.p0, V.mul(op.n, op.d));
+      this.worldLine(ctx, op.p0, e, '#16181c', 1.4, [4, 4]);
+      if (op.snap) { if (op.snap.from) this.worldLine(ctx, op.snap.from, op.snap.to, '#b21fc2', 1.4, [5, 4]); this.glyph(ctx, 'Endpoint', op.snap.to, '#1b9a52'); }
+      const b = this.scr(e); if (b) this.pill(ctx, fmtLen(op.d) + (op.loop ? '  New loop' : '') + (op.snap ? '  ' + op.snap.label : ''), b[0] + 14, b[1] - 16);
+    }
+    if (op && op.type === 'rect') {
+      const c = this.rectCorners(op).map(p => this.scr(p));
+      if (c.every(Boolean)) {
+        ctx.beginPath(); c.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath();
+        ctx.fillStyle = 'rgba(31,95,224,.14)'; ctx.fill(); ctx.strokeStyle = '#16181c'; ctx.lineWidth = 1.8; ctx.setLineDash([]); ctx.stroke();
+        const mid = [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2]; this.pill(ctx, fmtLen(Math.abs(op.du)).replace(' m', '') + ' × ' + fmtLen(Math.abs(op.dv)), mid[0] - 40, mid[1]);
+      }
+    }
+    if (op && op.type === 'scale' && inf) {
+      this.worldLine(ctx, op.c, inf.p, '#16181c', 1.4, [4, 4]);
+      const cs = this.scr(op.c); if (cs) { ctx.fillStyle = '#1f5fe0'; ctx.beginPath(); ctx.arc(cs[0], cs[1], 4.5, 0, 7); ctx.fill(); this.pill(ctx, '× ' + op.k.toFixed(3), cs[0] + 12, cs[1] - 16); }
+    }
+    if (t === 'rotate') this.drawProtractor(ctx);
+    // glyph + label
+    if (inf && !this.nav && (t === 'line' || t === 'rect' || t === 'move' || t === 'rotate' || t === 'scale') && !(op && op.type === 'rotate' && op.stage === 2)) {
+      const g = GLYPH[inf.kind] || GLYPH.Free, col = inf.ax !== undefined && inf.ax !== null ? AXC[inf.ax] : g[1];
+      const m = this.m;  // highlight the thing being snapped to: the edge, and/or the point
+      if (inf.ek && m.e[inf.ek]) { const [ea, eb] = m.e[inf.ek]; ctx.lineCap = 'round'; this.worldLine(ctx, m.v[ea], m.v[eb], col, 7, null, .28); this.worldLine(ctx, m.v[ea], m.v[eb], col, 2.8, null, 1); }
+      if (inf.vid != null && m.v[inf.vid]) { const vs = this.scr(m.v[inf.vid]); if (vs) { ctx.beginPath(); ctx.arc(vs[0], vs[1], 9, 0, 7); ctx.fillStyle = col + '33'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2.4; ctx.stroke(); } }
+      this.glyph(ctx, inf.kind === 'Guide' ? 'Free' : inf.kind, inf.p, col);
+      const s = this.scr(inf.p);
+      if (s && inf.kind !== 'Free') this.pill(ctx, inf.label, s[0] + 14, s[1] + 20, col === '#111111' ? '#1c1e22' : col);
+    }
+    if (this.hover && this.hover.kind === 'f' && t === 'push' && !op) { /* orange tint already drawn */ }
+  }
+  drawProtractor(ctx) {
+    const op = this.op, inf = this.inf;
+    let c, n, u0 = null, u1 = null;
+    if (op) { c = op.c; n = op.n; u0 = op.u0; u1 = op.u1; }
+    else if (inf) { c = inf.p; n = this.rotNormal(); }
+    else return;
+    const s = this.scr(c); if (!s) return;
+    const R = 80 * s[2] / this.vp.foc;
+    let a = V.cross(n, Math.abs(n[2]) < .9 ? [0, 0, 1] : [1, 0, 0]); a = V.norm(a); const b = V.cross(n, a);
+    const pt = ang => V.add(c, V.add(V.mul(a, Math.cos(ang) * R), V.mul(b, Math.sin(ang) * R)));
+    ctx.setLineDash([]);
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath(); let started = false;
+      for (let k = 0; k <= 72; k++) { const q = this.scr(pt(k / 72 * Math.PI * 2)); if (!q) { started = false; continue; } started ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); started = true; }
+      ctx.strokeStyle = i ? '#1c1e22' : '#fff'; ctx.lineWidth = i ? 1.2 : 3.2; ctx.globalAlpha = i ? .8 : .7; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (let k = 0; k < 24; k++) {
+      const ang = k / 24 * Math.PI * 2, k0 = this.scr(V.lerp(c, pt(ang), k % 6 === 0 ? .86 : .93)), k1 = this.scr(pt(ang));
+      if (k0 && k1) { ctx.strokeStyle = '#1c1e22'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(k0[0], k0[1]); ctx.lineTo(k1[0], k1[1]); ctx.stroke(); }
+    }
+    const cs = this.scr(c); ctx.fillStyle = '#1f5fe0'; ctx.beginPath(); ctx.arc(cs[0], cs[1], 4.5, 0, 7); ctx.fill();
+    if (op && op.stage === 1 && u1) this.worldLine(ctx, c, V.add(c, V.mul(u1, R)), '#16181c', 1.6);
+    if (op && op.stage === 2) {
+      this.worldLine(ctx, c, V.add(c, V.mul(u0, R)), '#16181c', 1.6);
+      this.worldLine(ctx, c, V.add(c, V.mul(u1, R)), '#1f5fe0', 2);
+      const sw = [], N = 24;
+      for (let k = 0; k <= N; k++) sw.push(this.scr(rotPt(V.add(c, V.mul(u0, R * .5)), c, n, op.ang * k / N)));
+      ctx.beginPath(); ctx.moveTo(cs[0], cs[1]); sw.forEach(q => q && ctx.lineTo(q[0], q[1])); ctx.closePath(); ctx.fillStyle = 'rgba(31,95,224,.18)'; ctx.fill();
+      const e = this.scr(V.add(c, V.mul(u1, R))); if (e) this.pill(ctx, (op.ang * 180 / Math.PI).toFixed(1) + '°' + (op.copy ? ' copy' : ''), e[0] + 12, e[1] - 14);
+    }
+  }
+}
+</script>
+</body>
+</html>

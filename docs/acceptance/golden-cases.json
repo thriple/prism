@@ -1,0 +1,1241 @@
+{
+ "note": "Expected values are the output of the browser prototype (docs/prototype/Main.dc.html), reviewed by hand. Areas are in model units squared. Faces are listed by ascending area. A hole list gives the vertex count of each hole loop. Rust must reproduce vertices, edges, faces, face_list and bbox (within the relative tolerance). Case \"start\":\"cube\" means the initial cube: x and y from -1 to 1, z from 1 to 3 (a 2 by 2 by 2 box).",
+ "cases": [
+  {
+   "id": "triangle_makes_face",
+   "doc": "Three segments forming a closed triangle make one face.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "segment",
+     "p": [
+      0,
+      0,
+      0
+     ],
+     "q": [
+      4,
+      0,
+      0
+     ]
+    },
+    {
+     "op": "segment",
+     "p": [
+      4,
+      0,
+      0
+     ],
+     "q": [
+      0,
+      3,
+      0
+     ]
+    },
+    {
+     "op": "segment",
+     "p": [
+      0,
+      3,
+      0
+     ],
+     "q": [
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "expect": {
+    "vertices": 3,
+    "edges": 3,
+    "faces": 1,
+    "face_list": [
+     {
+      "loop": 3,
+      "holes": [],
+      "area": 6
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      3,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "rect_makes_face",
+   "doc": "A rectangle makes one face of area 16.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 4,
+    "edges": 4,
+    "faces": 1,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "line_across_face_splits",
+   "doc": "A line across a face splits it into two faces, with the two new vertices on the boundary.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "segment",
+     "p": [
+      0,
+      2,
+      0
+     ],
+     "q": [
+      4,
+      2,
+      0
+     ]
+    }
+   ],
+   "expect": {
+    "vertices": 6,
+    "edges": 7,
+    "faces": 2,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 8
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 8
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "identical_rect_twice",
+   "doc": "Drawing the same rectangle twice creates no duplicates.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 4,
+    "edges": 4,
+    "faces": 1,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "adjacent_rects_share_edge",
+   "doc": "Two rectangles sharing an edge share its edge and vertices.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 4,
+     "y0": 0,
+     "x1": 8,
+     "y1": 4,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 6,
+    "edges": 7,
+    "faces": 2,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      8,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "partial_overlap_splits",
+   "doc": "Overlapping rectangles split into overlap, A-only and B-only. Exactly 3 faces, no face overlaps another.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 2,
+     "y0": 2,
+     "x1": 6,
+     "y1": 6,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 10,
+    "edges": 12,
+    "faces": 3,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 6,
+      "holes": [],
+      "area": 12
+     },
+     {
+      "loop": 6,
+      "holes": [],
+      "area": 12
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      6,
+      6,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "edge_cross_overlap",
+   "doc": "A rectangle crossing one side of another splits into 3 faces.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": -1,
+     "y0": 1,
+     "x1": 2,
+     "y1": 3,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 10,
+    "edges": 12,
+    "faces": 3,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 8,
+      "holes": [],
+      "area": 12
+     }
+    ],
+    "bbox": {
+     "min": [
+      -1,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "cross_shape_overlap",
+   "doc": "Two rectangles crossing like a plus sign split into 5 faces.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 1,
+     "y0": -1,
+     "x1": 3,
+     "y1": 5,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 12,
+    "edges": 16,
+    "faces": 5,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 8
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      -1,
+      0
+     ],
+     "max": [
+      4,
+      5,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "rect_inside_makes_hole",
+   "doc": "A rectangle wholly inside a face becomes a hole in it. The inner face stays separate.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 1,
+     "y0": 1,
+     "x1": 3,
+     "y1": 3,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 8,
+    "edges": 8,
+    "faces": 2,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [
+       4
+      ],
+      "area": 12
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "outer_rect_after_inner",
+   "doc": "Same result when the outer rectangle is drawn second.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 1,
+     "y0": 1,
+     "x1": 3,
+     "y1": 3,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 8,
+    "edges": 8,
+    "faces": 2,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [
+       4
+      ],
+      "area": 12
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "three_level_nesting",
+   "doc": "Three nested rectangles give two faces with holes and one plain face.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 8,
+     "y1": 8,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 1,
+     "y0": 1,
+     "x1": 7,
+     "y1": 7,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 2,
+     "y0": 2,
+     "x1": 6,
+     "y1": 6,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 12,
+    "edges": 12,
+    "faces": 3,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     },
+     {
+      "loop": 4,
+      "holes": [
+       4
+      ],
+      "area": 20
+     },
+     {
+      "loop": 4,
+      "holes": [
+       4
+      ],
+      "area": 28
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      8,
+      8,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "erase_hole_edge_closes_hole",
+   "doc": "Erasing an edge of the inner rectangle removes the inner face and closes the hole. The other three edges stay as loose edges.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 1,
+     "y0": 1,
+     "x1": 3,
+     "y1": 3,
+     "z": 0
+    },
+    {
+     "op": "eraseEdge",
+     "p": [
+      1,
+      1,
+      0
+     ],
+     "q": [
+      3,
+      1,
+      0
+     ]
+    }
+   ],
+   "expect": {
+    "vertices": 8,
+    "edges": 7,
+    "faces": 1,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "pushpull_hole_inner",
+   "doc": "Push/Pull on the inner face of a holed face extrudes it. The host face keeps its hole.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 1,
+     "y0": 1,
+     "x1": 3,
+     "y1": 3,
+     "z": 0
+    },
+    {
+     "op": "pushpull",
+     "faceAt": [
+      2,
+      2,
+      0
+     ],
+     "d": 1,
+     "loop": false
+    }
+   ],
+   "expect": {
+    "vertices": 12,
+    "edges": 16,
+    "faces": 6,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [
+       4
+      ],
+      "area": 12
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      1
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "pushpull_ring_face",
+   "doc": "Push/Pull on a face with a hole extrudes both its outer and its hole walls.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 1,
+     "y0": 1,
+     "x1": 3,
+     "y1": 3,
+     "z": 0
+    },
+    {
+     "op": "pushpull",
+     "faceAt": [
+      0.5,
+      0.5,
+      0
+     ],
+     "d": 1,
+     "loop": false
+    }
+   ],
+   "expect": {
+    "vertices": 16,
+    "edges": 24,
+    "faces": 10,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [
+       4
+      ],
+      "area": 12
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      1
+     ]
+    }
+   },
+   "status": "review: when a face with a hole is pulled and the hole borders another face, no floor is made under the outer boundary. Decide the intended behaviour before relying on this case."
+  },
+  {
+   "id": "pushpull_standalone_rect",
+   "doc": "Push/Pull on a standalone rectangle makes a closed box of 6 faces.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4,
+     "y1": 4,
+     "z": 0
+    },
+    {
+     "op": "pushpull",
+     "faceAt": [
+      2,
+      2,
+      0
+     ],
+     "d": 2,
+     "loop": false
+    }
+   ],
+   "expect": {
+    "vertices": 8,
+    "edges": 12,
+    "faces": 6,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 8
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 8
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 8
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 8
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 16
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      4,
+      4,
+      2
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "pushpull_cube_top_stretches",
+   "doc": "Push/Pull on the top of the starting cube stretches it. Still 6 faces and 8 vertices.",
+   "start": "cube",
+   "ops": [
+    {
+     "op": "pushpull",
+     "faceAt": [
+      0,
+      0,
+      3
+     ],
+     "d": 1,
+     "loop": false
+    }
+   ],
+   "expect": {
+    "vertices": 8,
+    "edges": 12,
+    "faces": 6,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 6
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 6
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 6
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 6
+     }
+    ],
+    "bbox": {
+     "min": [
+      -1,
+      -1,
+      1
+     ],
+     "max": [
+      1,
+      1,
+      4
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "pushpull_cube_top_alt_loop",
+   "doc": "Alt (loop=true): the original top boundary stays as a face and a new loop is extruded from it.",
+   "start": "cube",
+   "ops": [
+    {
+     "op": "pushpull",
+     "faceAt": [
+      0,
+      0,
+      3
+     ],
+     "d": 1,
+     "loop": true
+    }
+   ],
+   "expect": {
+    "vertices": 12,
+    "edges": 20,
+    "faces": 11,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 2
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     },
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4
+     }
+    ],
+    "bbox": {
+     "min": [
+      -1,
+      -1,
+      1
+     ],
+     "max": [
+      1,
+      1,
+      4
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "scale_mm_partial_overlap",
+   "doc": "The partial overlap case at 0.4 mm scale gives the same topology.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 0.0004,
+     "y1": 0.0004,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 0.0002,
+     "y0": 0.0002,
+     "x1": 0.0006,
+     "y1": 0.0006,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 10,
+    "edges": 12,
+    "faces": 3,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4e-08
+     },
+     {
+      "loop": 6,
+      "holes": [],
+      "area": 1.2e-07
+     },
+     {
+      "loop": 6,
+      "holes": [],
+      "area": 1.2e-07
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      0.0006,
+      0.0006,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  },
+  {
+   "id": "scale_km_partial_overlap",
+   "doc": "The partial overlap case at 4 km scale gives the same topology.",
+   "start": "empty",
+   "ops": [
+    {
+     "op": "rect",
+     "x0": 0,
+     "y0": 0,
+     "x1": 4000,
+     "y1": 4000,
+     "z": 0
+    },
+    {
+     "op": "rect",
+     "x0": 2000,
+     "y0": 2000,
+     "x1": 6000,
+     "y1": 6000,
+     "z": 0
+    }
+   ],
+   "expect": {
+    "vertices": 10,
+    "edges": 12,
+    "faces": 3,
+    "face_list": [
+     {
+      "loop": 4,
+      "holes": [],
+      "area": 4000000
+     },
+     {
+      "loop": 6,
+      "holes": [],
+      "area": 12000000
+     },
+     {
+      "loop": 6,
+      "holes": [],
+      "area": 12000000
+     }
+    ],
+    "bbox": {
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      6000,
+      6000,
+      0
+     ]
+    }
+   },
+   "status": "verified"
+  }
+ ],
+ "status_note": "\"verified\" means the expected values were checked by hand against the rules in PLAN.md section 1.9. Anything else is prototype behaviour that is not yet reviewed."
+}
