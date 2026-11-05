@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use prism_doc::{Command, Document};
 use prism_math::DVec3;
 use prism_ops::select::Selection;
+use prism_topo::Guide;
 use proptest::prelude::*;
 
 fn setup() -> Document {
@@ -24,6 +25,12 @@ fn setup() -> Document {
         x1: 3.0,
         y1: 3.0,
         z: 0.0,
+    });
+    d.run(Command::AddGuide {
+        guide: Guide::Line {
+            origin: DVec3::new(0.0, -1.0, 0.0),
+            dir: DVec3::X,
+        },
     });
     d
 }
@@ -100,6 +107,29 @@ fn every_kind(d: &Document) -> Vec<Command> {
             count: 1,
         });
     }
+    if let Some(ring) = prism_ops::face_at(m, DVec3::new(0.5, 0.5, 0.0)) {
+        out.push(Command::Offset {
+            face: ring,
+            distance: 0.25,
+        });
+        out.push(Command::Offset {
+            face: ring,
+            distance: -0.5,
+        });
+    }
+    out.push(Command::AddGuide {
+        guide: Guide::Point {
+            at: DVec3::new(1.0, 2.0, 3.0),
+        },
+    });
+    if let Some((g, _)) = m.guides().next() {
+        out.push(Command::Erase {
+            selection: Selection {
+                guides: [g].into(),
+                ..Default::default()
+            },
+        });
+    }
     out.push(Command::Rotate {
         vertices: all.clone(),
         centre: DVec3::ZERO,
@@ -118,7 +148,7 @@ fn every_kind(d: &Document) -> Vec<Command> {
 fn undo_and_redo_of_every_operation_are_exact() {
     let base = setup();
     let kinds = every_kind(&base);
-    assert_eq!(kinds.len(), 12, "one of each kind");
+    assert_eq!(kinds.len(), 16, "one of each kind");
     for c in kinds {
         let mut d = base.clone();
         let before = d.model().geometry_json();
@@ -137,7 +167,7 @@ proptest! {
     /// Any sequence of commands, undone all the way and redone, ends exactly
     /// where it was.
     #[test]
-    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..12, 1..6)) {
+    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..16, 1..6)) {
         let mut d = setup();
         let start = d.model().geometry_json();
         let mut ran = 0;

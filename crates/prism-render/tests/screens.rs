@@ -468,3 +468,51 @@ fn tool_feedback_draws() {
         "the endpoint glyph is drawn"
     );
 }
+
+/// Guides stored in the model are hidden by faces in front of them; other
+/// tool feedback draws on top.
+#[test]
+fn faces_hide_guides() {
+    use prism_view::overlay::{Line, Overlay};
+    let Some(mut g) = gpu() else { return };
+    let style = Style::default();
+    let m = golden::cube(1.0);
+    let scene = prism_render::Scene::build(&m);
+    let color = Rgba::rgb(255, 0, 255);
+    // A guide through the middle of the cube, along red.
+    let guide = Line {
+        a: DVec3::new(-6.0, 0.0, 2.0),
+        b: DVec3::new(6.0, 0.0, 2.0),
+        color,
+        width: 3.0,
+        dash: [0.0, 0.0],
+    };
+    let mut count = |o: &Overlay| {
+        g.renderer.resize(&g.device, 640, 400);
+        g.renderer.set_scene(&g.device, &scene, &style);
+        g.renderer
+            .set_highlight(&g.device, &scene, &Highlight::default(), &style);
+        g.renderer.set_overlay(&g.device, o);
+        let img = g.draw(Camera::home(), 640, 400, 1.0, &style, scene.bounds);
+        img.save(if o.tested.is_empty() {
+            "guide-on-top"
+        } else {
+            "guide-tested"
+        });
+        img.count_near([255, 0, 255], 40)
+    };
+    let on_top = count(&Overlay {
+        lines: vec![guide],
+        ..Overlay::default()
+    });
+    let tested = count(&Overlay {
+        tested: vec![guide],
+        ..Overlay::default()
+    });
+    assert!(on_top > 200, "the guide is drawn: {on_top}");
+    assert!(tested > 100, "the guide shows outside the cube: {tested}");
+    assert!(
+        (tested as f64) < on_top as f64 * 0.9,
+        "the part inside the cube is hidden: {tested} of {on_top}"
+    );
+}

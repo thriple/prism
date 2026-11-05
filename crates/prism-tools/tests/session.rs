@@ -832,3 +832,315 @@ fn model_a_small_building() {
         std::fs::write(dir.join("small-building.json"), &json).expect("write");
     }
 }
+
+// ---------- Edit Tools part 2 (brief 07) ----------
+
+use prism_tools::session::{OFFSET, PROTRACTOR, TAPE};
+use prism_topo::Guide;
+
+fn areas(d: &Driver) -> Vec<f64> {
+    let m = d.s.model();
+    let mut a: Vec<f64> = m.faces().map(|(id, _)| m.face_area(id)).collect();
+    a.sort_by(f64::total_cmp);
+    a
+}
+
+fn same(a: &[f64], b: &[f64]) {
+    assert_eq!(a.len(), b.len(), "{a:?} vs {b:?}");
+    for (x, y) in a.iter().zip(b) {
+        assert!((x - y).abs() < 1e-9, "{a:?} vs {b:?}");
+    }
+}
+
+fn undo(d: &mut Driver) {
+    d.send(Input::Action {
+        id: "edit.undo".into(),
+    });
+}
+
+fn guides(d: &Driver) -> Vec<Guide> {
+    d.s.model().guides().map(|(_, g)| *g).collect()
+}
+
+fn double_click(d: &mut Driver, p: DVec3) {
+    let s = d.screen(p);
+    for _ in 0..2 {
+        d.send(Input::Move { x: s.x, y: s.y });
+        d.send(Input::Press {
+            button: Button::Left,
+            x: s.x,
+            y: s.y,
+            shift: false,
+            ctrl: false,
+        });
+        d.send(Input::Release {
+            button: Button::Left,
+        });
+    }
+    d.t += 0.5;
+}
+
+#[test]
+fn offset_by_a_typed_distance_then_retyped() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    d.tool(OFFSET);
+    d.click(DVec3::new(0.5, 2.0, 0.0));
+    d.hover(DVec3::new(1.0, 2.0, 0.0));
+    assert!(d.s.display_scene().faces.len() == 2, "a live preview");
+    d.typed("1");
+    same(&areas(&d), &[4.0, 12.0]);
+    valid(&d);
+    d.typed("0.5");
+    same(&areas(&d), &[7.0, 9.0]);
+    undo(&mut d);
+    assert_eq!(d.faces(), 1, "one undo removes the offset");
+}
+
+#[test]
+fn offset_by_the_mouse_inward_and_outward() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    d.tool(OFFSET);
+    d.click(DVec3::new(1.0, 2.0, 0.0));
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    same(&areas(&d), &[4.0, 12.0]);
+    rect_on_ground(&mut d, 10.0, 10.0, 12.0, 12.0);
+    d.tool(OFFSET);
+    d.click(DVec3::new(10.5, 11.0, 0.0));
+    d.click(DVec3::new(9.5, 11.0, 0.0));
+    // The 2 x 2 square grows a 1 m ring: 16 - 4.
+    same(&areas(&d), &[4.0, 4.0, 12.0, 12.0]);
+    valid(&d);
+}
+
+#[test]
+fn double_click_repeats_the_last_offset() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    rect_on_ground(&mut d, 4.0, 0.0, 6.0, 2.0);
+    d.tool(OFFSET);
+    d.click(DVec3::new(0.2, 1.0, 0.0));
+    d.typed("0.25");
+    double_click(&mut d, DVec3::new(5.0, 1.0, 0.0));
+    same(&areas(&d), &[1.75, 1.75, 2.25, 2.25]);
+    valid(&d);
+}
+
+#[test]
+fn tape_makes_a_parallel_guide_that_snaps() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 2.0);
+    d.tool(TAPE);
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("0.5");
+    let on = |g: &Guide, y: f64| match *g {
+        Guide::Line { origin, dir } => {
+            (origin.y - y).abs() < 1e-9 && origin.z.abs() < 1e-9 && dir.x.abs() > 1.0 - 1e-12
+        }
+        Guide::Point { .. } => false,
+    };
+    assert!(on(&guides(&d)[0], 0.5), "{:?}", guides(&d));
+    // Retyping moves it, still one guide.
+    d.typed("0.75");
+    assert_eq!(guides(&d).len(), 1);
+    assert!(on(&guides(&d)[0], 0.75));
+    // Line snaps to it, and to where it crosses an edge.
+    d.tool(LINE);
+    d.hover(DVec3::new(2.6, 0.75, 0.0));
+    assert_eq!(d.s.inference().expect("inference").label, "On Guide");
+    d.hover(DVec3::new(0.0, 0.75, 0.0));
+    let i = d.s.inference().expect("inference");
+    assert_eq!(i.kind, Kind::Intersection);
+    assert!((i.point - DVec3::new(0.0, 0.75, 0.0)).length() < 1e-9);
+    // Double-click the top edge: a guide along it at the last offset,
+    // towards its face.
+    d.tool(TAPE);
+    double_click(&mut d, DVec3::new(3.0, 2.0, 0.0));
+    assert_eq!(guides(&d).len(), 2);
+    assert!(on(&guides(&d)[1], 1.25), "{:?}", guides(&d));
+    valid(&d);
+}
+
+#[test]
+fn tape_from_a_corner_makes_a_guide_point() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 2.0);
+    d.tool(TAPE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.hover(DVec3::new(1.0, 0.3, 0.0));
+    d.typed("1.5");
+    match guides(&d)[..] {
+        [Guide::Point { at }] => assert!((at - DVec3::new(1.5, 0.0, 0.0)).length() < 1e-9),
+        ref g => panic!("{g:?}"),
+    }
+    d.tool(LINE);
+    d.hover(DVec3::new(1.5, 0.0, 0.0));
+    assert_eq!(d.s.inference().expect("inference").kind, Kind::GuidePoint);
+}
+
+#[test]
+fn ctrl_makes_the_tape_measure_only() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 2.0);
+    let steps = d.s.document().log().count();
+    d.tool(TAPE);
+    d.send(Input::CtrlTap);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.hover(DVec3::new(4.0, 2.0, 0.0));
+    let (label, value, _) = d.s.measurement();
+    assert_eq!(label, "Length");
+    assert!(value.contains("4.47"), "{value}");
+    d.click(DVec3::new(4.0, 2.0, 0.0));
+    assert!(guides(&d).is_empty());
+    assert_eq!(d.s.document().log().count(), steps, "nothing to undo");
+}
+
+#[test]
+fn protractor_makes_a_guide_at_a_typed_angle() {
+    let mut d = Driver::empty();
+    d.tool(PROTRACTOR);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.hover(DVec3::new(2.0, 0.0, 0.0));
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.typed("30");
+    match guides(&d)[..] {
+        [Guide::Line { origin, dir }] => {
+            assert!(origin.length() < 1e-9);
+            assert!(dir.z.abs() < 1e-12, "on the ground plane");
+            assert!(
+                (dir.x.abs() - 30f64.to_radians().cos()).abs() < 1e-9,
+                "{dir:?}"
+            );
+        }
+        ref g => panic!("{g:?}"),
+    }
+    // Retyping turns it, still one guide.
+    d.typed("45");
+    match guides(&d)[..] {
+        [Guide::Line { dir, .. }] => {
+            assert!((dir.x.abs() - 45f64.to_radians().cos()).abs() < 1e-9)
+        }
+        ref g => panic!("{g:?}"),
+    }
+}
+
+#[test]
+fn the_eraser_takes_a_guide_and_an_edge_in_one_step() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 2.0);
+    d.tool(TAPE);
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("0.5");
+    assert_eq!(guides(&d).len(), 1);
+    let before = d.s.model().geometry_json();
+    d.tool(ERASE);
+    let a = d.screen(DVec3::new(2.5, 0.5, 0.0));
+    let b = d.screen(DVec3::new(4.0, 1.0, 0.0));
+    d.send(Input::Move { x: a.x, y: a.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: a.x,
+        y: a.y,
+        shift: false,
+        ctrl: false,
+    });
+    d.send(Input::Move { x: b.x, y: b.y });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert!(guides(&d).is_empty());
+    assert_eq!(d.faces(), 0, "the edge took its face");
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(
+        d.s.model().geometry_json(),
+        before,
+        "one undo brings both back"
+    );
+}
+
+#[test]
+fn hidden_guides_are_not_snapped_to() {
+    let mut d = Driver::empty();
+    d.tool(TAPE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.typed("2");
+    d.tool(LINE);
+    d.hover(DVec3::new(2.0, 0.0, 0.0));
+    assert_eq!(d.s.inference().expect("i").kind, Kind::GuidePoint);
+    d.send(Input::Action {
+        id: "view.guides".into(),
+    });
+    assert!(
+        d.s.scene().guides.is_empty(),
+        "hidden guides are not in the scene"
+    );
+    d.hover(DVec3::new(2.0, 0.0, 0.0));
+    assert_ne!(d.s.inference().expect("i").kind, Kind::GuidePoint);
+    d.send(Input::Action {
+        id: "view.guides".into(),
+    });
+    d.hover(DVec3::new(2.0, 0.0, 0.0));
+    assert_eq!(d.s.inference().expect("i").kind, Kind::GuidePoint);
+}
+
+/// A window placed from tape guides, and the roof offset in: saved as
+/// an acceptance session with PRISM_WRITE_SESSIONS=1.
+#[test]
+fn model_a_window_from_guides() {
+    let mut d = Driver::empty();
+    d.s.start_recording();
+    rect_on_ground(&mut d, 0.0, 0.0, 6.0, 4.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    d.typed("3");
+    // A sill guide 1 m up the front wall, and a jamb guide 2 m in.
+    d.tool(TAPE);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.hover(DVec3::new(2.0, 0.0, 0.6));
+    d.typed("1");
+    // (Not at z = 1, where the sill guide crosses the edge.)
+    d.click(DVec3::new(0.0, 0.0, 1.3));
+    d.hover(DVec3::new(0.6, 0.0, 1.3));
+    d.typed("2");
+    assert_eq!(guides(&d).len(), 2);
+    // The window from where the guides cross.
+    d.tool(RECT);
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    assert_eq!(d.s.inference().expect("i").kind, Kind::GuideCross);
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.hover(DVec3::new(3.0, 0.0, 2.0));
+    d.typed("1.5,1.2");
+    d.tool(PUSH);
+    d.click(DVec3::new(2.7, 0.0, 1.6));
+    d.typed("-0.2");
+    let inner =
+        d.s.model()
+            .vertices()
+            .filter(|(_, p)| (p.y - 0.2).abs() < 1e-9)
+            .count();
+    assert_eq!(inner, 4, "the window is 0.2 m into the wall");
+    assert!(
+        prism_ops::vertex_at(d.s.model(), DVec3::new(3.5, 0.2, 2.2)).is_some(),
+        "1.5 by 1.2 from the guide cross"
+    );
+    // A parapet: the roof offset 0.3 m in.
+    d.tool(OFFSET);
+    d.click(DVec3::new(3.0, 0.2, 3.0));
+    d.typed("0.3");
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(0.3, 0.3, 3.0)).is_some());
+    valid(&d);
+    let json = d.s.stop_recording().expect("recording");
+    let r: Recording = serde_json::from_str(&json).expect("valid");
+    assert_eq!(Session::replay(&r).model().geometry_json(), r.result);
+    if std::env::var_os("PRISM_WRITE_SESSIONS").is_some() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/acceptance/sessions");
+        std::fs::write(dir.join("window-from-guides.json"), &json).expect("write");
+    }
+}

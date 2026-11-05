@@ -105,13 +105,19 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 4] = ["view.shadow", "help.debug", "help.themedemo", "help.record"];
+const TOGGLES: [&str; 5] = [
+    "view.shadow",
+    "view.guides",
+    "help.debug",
+    "help.themedemo",
+    "help.record",
+];
 
 /// Decide how an imported action runs in Rust.
 fn run_of(id: &str, proto_run: &str) -> Run {
     if COMMANDS.contains(&id) {
         Run::Command
-    } else if id.starts_with("help.scene.") || id == "help.record" {
+    } else if id.starts_with("help.scene.") || id == "help.record" || id == "view.guides" {
         // Test scenes for the viewport (brief 04), handled by the app.
         Run::Event
     } else if prism_tools::session::TOOLS.contains(&id) {
@@ -405,7 +411,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 13] = [
+const BUILT_BEHAVIOURS: [&str; 16] = [
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
     "Hover-wake anchors and guide intersections",
@@ -419,6 +425,9 @@ const BUILT_BEHAVIOURS: [&str; 13] = [
     "Zoom to cursor, orbit around the point under the cursor",
     "Box select: window (left to right) and crossing (right to left), Shift toggles, Ctrl adds",
     "Keymap presets (SketchUp, Blender, Fusion)",
+    "Push/Pull: stretch, extrude, Alt new loop",
+    "Live ghost previews",
+    "Tool memory: double-click or Enter repeats the last value",
 ];
 
 fn collect(

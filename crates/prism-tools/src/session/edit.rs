@@ -7,13 +7,14 @@ use prism_doc::{Command, Motion};
 use prism_infer::{AXES, Kind};
 use prism_math::{DQuat, DVec2, DVec3};
 use prism_ops::select::Selection;
-use prism_topo::{EdgeId, FaceId, Model, VertexId};
+use prism_topo::{EdgeId, FaceId, GuideId, Model, VertexId};
 use prism_view::View;
 use prism_view::clicks::click_select;
 use prism_view::overlay::{Label, Line, Mark, Overlay, Shape, Tri};
 use prism_view::pick::{self, Hit};
 use prism_view::style::alpha;
 
+use super::construct::{OFFSET, PROTRACTOR, TAPE};
 use super::{LastOp, Session, rect_basis};
 
 pub const PUSH: &str = "tool.push";
@@ -36,7 +37,7 @@ const SCALE_MIN: f64 = 0.05;
 const SCALE_MAX: f64 = 20.0;
 const SCALE_SNAP: f64 = 0.02;
 /// Protractor radius on screen, in points.
-const PROTRACTOR: f64 = 80.0;
+const PROTRACTOR_RADIUS: f64 = 80.0;
 /// A press that moves less than this before release is a click.
 const DRAG_MIN: f64 = 6.0;
 
@@ -79,11 +80,41 @@ pub(super) enum EditOp {
     },
     Erase {
         edges: BTreeSet<EdgeId>,
+        guides: BTreeSet<GuideId>,
+    },
+    Offset {
+        face: FaceId,
+        /// The face's plane.
+        origin: DVec3,
+        n: DVec3,
+        /// The cursor's distance from the outline when clicked.
+        d0: f64,
+        d: f64,
+        /// The cursor on the plane.
+        at: DVec3,
+    },
+    Tape {
+        start: DVec3,
+        /// Started on an edge: its direction (the guide is parallel to it).
+        along: Option<DVec3>,
+        edge: Option<EdgeId>,
+        end: DVec3,
+    },
+    Protractor {
+        centre: DVec3,
+        normal: DVec3,
+        u0: Option<DVec3>,
+        u1: Option<DVec3>,
+        angle: f64,
+        pressed: Option<DVec2>,
     },
 }
 
 pub(super) fn is_edit(t: &str) -> bool {
-    matches!(t, PUSH | MOVE | ROTATE | SCALE | ERASE)
+    matches!(
+        t,
+        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR
+    )
 }
 
 /// The rotation of `p` about the line through `c` along unit `n`.
@@ -92,7 +123,7 @@ fn rotate_point(p: DVec3, c: DVec3, n: DVec3, a: f64) -> DVec3 {
 }
 
 /// Where the ray through `s` meets the plane through `c` with normal `n`.
-fn plane_point(view: &View, s: DVec2, c: DVec3, n: DVec3) -> Option<DVec3> {
+pub(super) fn plane_point(view: &View, s: DVec2, c: DVec3, n: DVec3) -> Option<DVec3> {
     let (o, d) = view.ray(s);
     let den = n.dot(d);
     if den.abs() < 1e-3 {
@@ -115,7 +146,10 @@ fn along_line(o: DVec3, d: DVec3, a: DVec3, u: DVec3) -> Option<f64> {
 
 impl Session {
     pub(super) fn edit_wants_inference(&self) -> bool {
-        matches!(self.tool.as_str(), MOVE | ROTATE | SCALE)
+        matches!(
+            self.tool.as_str(),
+            MOVE | ROTATE | SCALE | TAPE | PROTRACTOR
+        )
     }
 
     /// The selection a tool works on: the selection, or else (Move) the item
@@ -204,16 +238,43 @@ impl Session {
                 }
             }
             ERASE => {
-                let h = edge_pick(&self.scene, view, s, self.settings.aperture);
-                self.set_hover_pick(h);
-                if let (Some(EditOp::Erase { edges }), Some(p)) = (&mut self.edit, h)
-                    && let Hit::Edge(e) = p.hit
-                    && edges.insert(e)
-                {
+                let mut h = edge_pick(&self.scene, view, s, self.settings.aperture);
+                // A guide nearer than the edge wins.
+                let g = self.guide_pick(view, s).filter(|(_, gd)| {
+                    h.is_none_or(|p| {
+                        view.to_screen(p.point)
+                            .is_none_or(|(q, _)| q.distance(s) > *gd)
+                    })
+                });
+                if g.is_some() {
+                    h = None;
+                }
+                let g = g.map(|(id, _)| id);
+                if g != self.hover_guide {
+                    self.hover_guide = g;
                     self.overlay_dirty = true;
                     self.dirty = true;
                 }
+                self.set_hover_pick(h);
+                if let Some(EditOp::Erase { edges, guides }) = &mut self.edit {
+                    let mut more = false;
+                    if let Some(p) = h
+                        && let Hit::Edge(e) = p.hit
+                    {
+                        more |= edges.insert(e);
+                    }
+                    if let Some(g) = g {
+                        more |= guides.insert(g);
+                    }
+                    if more {
+                        self.overlay_dirty = true;
+                        self.dirty = true;
+                    }
+                }
             }
+            OFFSET => self.offset_hover(s, view),
+            TAPE => self.tape_drag(),
+            PROTRACTOR => self.transform_drag(s, view),
             MOVE | ROTATE | SCALE => {
                 if self.edit.is_none() && self.selection.is_empty() {
                     let h = pick::pick(&self.scene, view, s, self.settings.aperture);
@@ -227,7 +288,7 @@ impl Session {
         }
     }
 
-    fn set_hover_pick(&mut self, h: Option<prism_view::Picked>) {
+    pub(super) fn set_hover_pick(&mut self, h: Option<prism_view::Picked>) {
         if h.map(|p| p.hit) != self.hover.map(|p| p.hit) {
             self.highlight_dirty = true;
             self.dirty = true;
@@ -285,14 +346,24 @@ impl Session {
             Some(EditOp::Move { from, delta, .. }) => {
                 *delta = i.point - *from;
             }
-            Some(EditOp::Rotate {
-                centre,
-                normal,
-                u0,
-                u1,
-                angle,
-                ..
-            }) => {
+            Some(
+                EditOp::Rotate {
+                    centre,
+                    normal,
+                    u0,
+                    u1,
+                    angle,
+                    ..
+                }
+                | EditOp::Protractor {
+                    centre,
+                    normal,
+                    u0,
+                    u1,
+                    angle,
+                    ..
+                },
+            ) => {
                 let Some(p) = plane_point(view, s, *centre, *normal) else {
                     return;
                 };
@@ -338,6 +409,13 @@ impl Session {
                 let mut m = base.clone();
                 if d.abs() > 0.0 {
                     prism_ops::push_pull(&mut m, *face, *d, *new_loop);
+                }
+                Some(m)
+            }
+            Some(EditOp::Offset { face, d, .. }) => {
+                let mut m = base.clone();
+                if d.abs() > 0.0 {
+                    prism_ops::offset::offset(&mut m, *face, *d);
                 }
                 Some(m)
             }
@@ -428,9 +506,13 @@ impl Session {
                 if let Some(Hit::Edge(e)) = self.hover.map(|p| p.hit) {
                     edges.insert(e);
                 }
-                self.edit = Some(EditOp::Erase { edges });
+                let guides = self.hover_guide.into_iter().collect();
+                self.edit = Some(EditOp::Erase { edges, guides });
                 self.overlay_dirty = true;
             }
+            OFFSET => self.offset_press(s, n_clicks),
+            TAPE => self.tape_press(n_clicks),
+            PROTRACTOR => self.protractor_press(s),
             MOVE => self.move_press(s),
             ROTATE => self.rotate_press(s),
             SCALE => self.scale_press(s),
@@ -441,26 +523,34 @@ impl Session {
     pub(super) fn edit_release(&mut self, s: DVec2) {
         let view = self.view();
         match &mut self.edit {
-            Some(EditOp::Erase { edges }) => {
-                let edges = std::mem::take(edges);
+            Some(EditOp::Erase { edges, guides }) => {
+                let selection = Selection {
+                    edges: std::mem::take(edges),
+                    guides: std::mem::take(guides),
+                    ..Default::default()
+                };
                 self.edit = None;
-                if !edges.is_empty() {
-                    self.run(Command::Erase {
-                        selection: Selection {
-                            edges,
-                            ..Default::default()
-                        },
-                    });
+                if !selection.is_empty() {
+                    self.run(Command::Erase { selection });
                 }
                 self.overlay_dirty = true;
             }
-            Some(EditOp::Rotate {
-                pressed,
-                u0,
-                centre,
-                normal,
-                ..
-            }) => {
+            Some(
+                EditOp::Rotate {
+                    pressed,
+                    u0,
+                    centre,
+                    normal,
+                    ..
+                }
+                | EditOp::Protractor {
+                    pressed,
+                    u0,
+                    centre,
+                    normal,
+                    ..
+                },
+            ) => {
                 // Released after a drag from the centre: the drag sets the start arm.
                 if let Some(p) = pressed.take()
                     && p.distance(s) >= DRAG_MIN
@@ -578,6 +668,33 @@ impl Session {
         }
     }
 
+    fn protractor_press(&mut self, s: DVec2) {
+        match &mut self.edit {
+            None => {
+                let Some(i) = self.inference.clone() else {
+                    return;
+                };
+                let normal = self.protractor_normal();
+                self.edit = Some(EditOp::Protractor {
+                    centre: i.point,
+                    normal,
+                    u0: None,
+                    u1: None,
+                    angle: 0.0,
+                    pressed: Some(s),
+                });
+                self.after_start();
+            }
+            Some(EditOp::Protractor { u0, u1, .. }) if u0.is_none() => {
+                if let Some(u) = *u1 {
+                    *u0 = Some(u);
+                    self.overlay_dirty = true;
+                }
+            }
+            Some(_) => self.finish_edit(),
+        }
+    }
+
     fn scale_press(&mut self, s: DVec2) {
         if self.edit.is_some() {
             self.finish_edit();
@@ -636,6 +753,7 @@ impl Session {
                 }
             }
             EditOp::Erase { .. } => {}
+            ref t if self.finish_construct(t) => {}
             ref t => {
                 let still = match t {
                     EditOp::Move { delta, .. } => delta.length() <= self.scene.tol.dist,
@@ -667,6 +785,12 @@ impl Session {
     pub(super) fn toggle_copy(&mut self) {
         // Only while moving or rotating, so Ctrl+Z and other shortcuts do
         // not flip it (as in the feel test).
+        if self.tool == TAPE {
+            self.measure_only = !self.measure_only;
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
         if let Some(EditOp::Move { copy, .. } | EditOp::Rotate { copy, .. }) = &mut self.edit {
             *copy = !*copy;
             self.ctrl_copy = *copy;
@@ -695,6 +819,10 @@ impl Session {
         let Some(e) = self.edit.clone() else {
             return false;
         };
+        if self.construct_enter(&e, text).is_some() {
+            self.refresh();
+            return true;
+        }
         match e {
             EditOp::Push {
                 face, d, new_loop, ..
@@ -757,7 +885,21 @@ impl Session {
     pub(super) fn edit_retype(&mut self, text: &str) -> bool {
         let nf = self.number;
         let t = text.trim();
+        if let Some(LastOp::Edit(e)) = &self.last_op
+            && self.construct_retype(&e.clone(), t).is_some()
+        {
+            self.refresh();
+            return true;
+        }
         match self.last_op.clone() {
+            Some(LastOp::Offset { face, d }) => {
+                let Some(v) = nf.length(t) else { return true };
+                if self.doc.undo() {
+                    self.model_changed();
+                }
+                let sign = if d < 0.0 { -1.0 } else { 1.0 };
+                self.commit_offset(face, sign * v.abs());
+            }
             Some(LastOp::Push { face, d, new_loop }) => {
                 let Some(v) = nf.length(t) else { return true };
                 if self.doc.undo() {
@@ -838,6 +980,9 @@ impl Session {
 
     /// The measurement box while an edit tool is active.
     pub(super) fn edit_measurement(&self) -> Option<(&'static str, String)> {
+        if let Some(m) = self.construct_measurement() {
+            return Some(m);
+        }
         let nf = &self.number;
         Some(match (&self.edit, &self.last_op) {
             (Some(EditOp::Push { d, .. }), _) => ("Distance", nf.show(*d)),
@@ -867,6 +1012,9 @@ impl Session {
     }
 
     pub(super) fn edit_hint(&self) -> Option<&'static str> {
+        if let Some(h) = self.construct_hint() {
+            return Some(h);
+        }
         Some(match (self.tool.as_str(), &self.edit) {
             (PUSH, Some(_)) => {
                 "Move to pull · click to finish · type a distance + Enter · Alt toggles new loop · Esc cancels"
@@ -993,7 +1141,7 @@ impl Session {
                     color: fb.pill,
                 });
             }
-            Some(EditOp::Erase { edges }) => {
+            Some(EditOp::Erase { edges, .. }) => {
                 for e in edges.iter().filter_map(|e| self.scene.edge(*e)) {
                     o.lines.push(Line {
                         a: e.a,
@@ -1018,8 +1166,9 @@ impl Session {
                 dash: [0.0, 0.0],
             });
         }
+        self.construct_overlay(o);
         // The protractor.
-        if self.tool == ROTATE {
+        if self.tool == ROTATE || self.tool == PROTRACTOR {
             let (c, n, u0, u1, angle, copy) = match &self.edit {
                 Some(EditOp::Rotate {
                     centre,
@@ -1030,12 +1179,20 @@ impl Session {
                     copy,
                     ..
                 }) => (*centre, *normal, *u0, *u1, *angle, *copy),
+                Some(EditOp::Protractor {
+                    centre,
+                    normal,
+                    u0,
+                    u1,
+                    angle,
+                    ..
+                }) => (*centre, *normal, *u0, *u1, *angle, false),
                 _ => match &self.inference {
                     Some(i) => (i.point, self.protractor_normal(), None, None, 0.0, false),
                     None => return,
                 },
             };
-            let r = px(c) * PROTRACTOR;
+            let r = px(c) * PROTRACTOR_RADIUS;
             if r <= 0.0 {
                 return;
             }

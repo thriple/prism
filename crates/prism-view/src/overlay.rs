@@ -68,6 +68,8 @@ pub struct ScreenBox {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Overlay {
     pub lines: Vec<Line>,
+    /// Lines that faces in front hide (guides stored in the model).
+    pub tested: Vec<Line>,
     pub marks: Vec<Mark>,
     pub tris: Vec<Tri>,
     pub labels: Vec<Label>,

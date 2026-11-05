@@ -23,8 +23,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::select::box_select;
 
+mod construct;
 mod edit;
 use crate::units::NumberFormat;
+pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 
@@ -38,8 +40,9 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 11] = [
-    SELECT, LINE, RECT, ORBIT, PAN, ZOOM, PUSH, MOVE, ROTATE, SCALE, ERASE,
+pub const TOOLS: [&str; 14] = [
+    SELECT, LINE, RECT, ORBIT, PAN, ZOOM, PUSH, MOVE, ROTATE, SCALE, ERASE, OFFSET, TAPE,
+    PROTRACTOR,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -211,6 +214,10 @@ enum LastOp {
         d: f64,
         new_loop: bool,
     },
+    Offset {
+        face: prism_topo::FaceId,
+        d: f64,
+    },
     Edit(EditOp),
 }
 
@@ -274,6 +281,15 @@ pub struct Session {
     alt_loop: bool,
     /// Push/Pull's last distance, for double-click.
     last_push: Option<(f64, bool)>,
+    /// Offset's and Tape Measure's last distances, for double-click.
+    last_offset: Option<f64>,
+    last_tape: Option<f64>,
+    /// Tape Measure measures without making a guide (Ctrl).
+    measure_only: bool,
+    /// View > Guides.
+    show_guides: bool,
+    /// The guide under the Eraser.
+    hover_guide: Option<prism_topo::GuideId>,
 }
 
 impl Session {
@@ -287,6 +303,11 @@ impl Session {
             ctrl_copy: false,
             alt_loop: false,
             last_push: None,
+            last_offset: None,
+            last_tape: None,
+            measure_only: false,
+            show_guides: true,
+            hover_guide: None,
             doc,
             version: 1,
             scene,
@@ -350,7 +371,7 @@ impl Session {
 
     fn set_preview(&mut self, m: Option<Model>) {
         let had = self.preview.is_some();
-        self.preview = m.map(|m| Scene::build(&m));
+        self.preview = m.map(|m| Scene::build_with(&m, self.show_guides));
         if had || self.preview.is_some() {
             self.version += 1;
             self.highlight_dirty = true;
@@ -431,7 +452,10 @@ impl Session {
     fn typing_tool(&self) -> bool {
         self.tool == LINE
             || self.tool == RECT
-            || matches!(self.tool.as_str(), PUSH | MOVE | ROTATE | SCALE)
+            || matches!(
+                self.tool.as_str(),
+                PUSH | MOVE | ROTATE | SCALE | OFFSET | TAPE | PROTRACTOR
+            )
     }
 
     /// The measurement box: its label, value, and whether it shows typing.
@@ -704,7 +728,7 @@ impl Session {
             }
             Key::Enter => self.enter(),
             Key::Up | Key::Right | Key::Left | Key::Down
-                if self.tool == ROTATE && self.edit.is_none() =>
+                if matches!(self.tool.as_str(), ROTATE | PROTRACTOR) && self.edit.is_none() =>
             {
                 let axis = match key {
                     Key::Right => Some(0),
@@ -779,7 +803,7 @@ impl Session {
     fn model_changed(&mut self) {
         self.version += 1;
         let t0 = self.measure.map(|f| f());
-        self.scene = Scene::build(self.doc.model());
+        self.scene = Scene::build_with(self.doc.model(), self.show_guides);
         if let (Some(f), Some(t0)) = (self.measure, t0) {
             self.timings.scene_ms = (f() - t0) * 1e3;
         }
@@ -787,6 +811,8 @@ impl Session {
         self.selection.vertices.retain(|v| m.has_vertex(*v));
         self.selection.edges.retain(|e| m.edge(*e).is_some());
         self.selection.faces.retain(|f| m.face(*f).is_some());
+        self.selection.guides.retain(|g| m.guide(*g).is_some());
+        self.hover_guide = None;
         self.hover = None;
         self.mem.prev = None;
         self.highlight_dirty = true;
@@ -830,6 +856,7 @@ impl Session {
                     vertices: Default::default(),
                     edges: m.edges().map(|(id, _)| id).collect(),
                     faces: m.faces().map(|(id, _)| id).collect(),
+                    ..Default::default()
                 };
                 self.set_selection(s);
             }
@@ -856,6 +883,11 @@ impl Session {
             }
             "file.new" => self.load(Document::new()),
             "view.shadow" => self.dirty = true,
+            "view.guides" => {
+                self.show_guides = !self.show_guides;
+                self.model_changed();
+                self.refresh();
+            }
             _ => {
                 if let Some(doc) = crate::scenes::by_action(id) {
                     self.load(doc);
@@ -896,12 +928,21 @@ impl Session {
                 },
                 _ => Context::default(),
             },
-            ROTATE => match &self.edit {
-                Some(EditOp::Rotate { centre, .. }) => Context {
-                    start: Some(*centre),
-                    no_lock: true,
-                    ..Default::default()
+            TAPE => Context {
+                start: match &self.edit {
+                    Some(EditOp::Tape { start, .. }) => Some(*start),
+                    _ => None,
                 },
+                ..Default::default()
+            },
+            ROTATE | PROTRACTOR => match &self.edit {
+                Some(EditOp::Rotate { centre, .. } | EditOp::Protractor { centre, .. }) => {
+                    Context {
+                        start: Some(*centre),
+                        no_lock: true,
+                        ..Default::default()
+                    }
+                }
                 _ => Context {
                     no_lock: true,
                     ..Default::default()
@@ -1269,6 +1310,19 @@ impl Session {
         if i.kind == Kind::OnGround {
             return DVec3::Z;
         }
+        // A point on a guide or an edge: the face under the cursor, if the
+        // point lies in its plane.
+        if let Some(s) = self.cursor {
+            let (o, d) = self.view().ray(s);
+            if let Some(f) = self
+                .scene
+                .ray_face(o, d)
+                .and_then(|(f, _)| self.scene.face(f))
+                && (i.point - f.origin).dot(f.normal).abs() <= self.scene.tol.dist * 10.0
+            {
+                return f.normal;
+            }
+        }
         let f = self.view().f;
         let a = (0..3)
             .max_by(|&i, &j| f[i].abs().total_cmp(&f[j].abs()))
@@ -1386,6 +1440,7 @@ impl Session {
                 }
             ));
         }
+        self.guides_overlay(&mut o);
         if is_edit(&self.tool) {
             self.edit_overlay(&mut o);
         }
@@ -1419,7 +1474,10 @@ impl Session {
             o.lines.push(Line {
                 a: g.origin,
                 b: end,
-                color: g.axis.map_or(fb.parallel, axis_color),
+                color: match g.source {
+                    infer::GuideSource::Stored(_) => fb.guide,
+                    _ => g.axis.map_or(fb.parallel, axis_color),
+                },
                 width: fb.guide_width,
                 dash: fb.guide_dash,
             });
@@ -1482,6 +1540,7 @@ impl Session {
             Kind::Intersection => fb.intersection,
             Kind::GuideCross => fb.guide_cross,
             Kind::Guide => fb.intersection,
+            Kind::GuidePoint => fb.endpoint,
             Kind::Free => fb.free,
         };
         let color = i.axis.map_or(glyph_color, axis_color);
@@ -1516,7 +1575,7 @@ impl Session {
             Kind::Midpoint => Shape::Triangle,
             Kind::OnEdge => Shape::Square,
             Kind::OnFace | Kind::OnGround => Shape::Diamond,
-            Kind::Intersection | Kind::GuideCross => Shape::Cross,
+            Kind::Intersection | Kind::GuideCross | Kind::GuidePoint => Shape::Cross,
         };
         o.marks.push(Mark {
             at: i.point,

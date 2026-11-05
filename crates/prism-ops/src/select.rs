@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, FaceId, GuideId, Model, VertexId, loop_pairs};
 use serde::{Deserialize, Serialize};
 
 /// Some vertices, edges and faces.
@@ -11,11 +11,17 @@ pub struct Selection {
     pub vertices: BTreeSet<VertexId>,
     pub edges: BTreeSet<EdgeId>,
     pub faces: BTreeSet<FaceId>,
+    /// Guides (only the Eraser picks them, for now).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub guides: BTreeSet<GuideId>,
 }
 
 impl Selection {
     pub fn is_empty(&self) -> bool {
-        self.vertices.is_empty() && self.edges.is_empty() && self.faces.is_empty()
+        self.vertices.is_empty()
+            && self.edges.is_empty()
+            && self.faces.is_empty()
+            && self.guides.is_empty()
     }
 
     pub fn edge(e: EdgeId) -> Self {
@@ -47,6 +53,9 @@ impl Selection {
 /// uses it; removing an edge of a hole closes the hole. Removing a vertex
 /// removes its edges. Vertices left with no edges go too.
 pub fn remove(model: &mut Model, sel: &Selection) {
+    for g in &sel.guides {
+        model.remove_guide(*g);
+    }
     let mut gone_edges = sel.edges.clone();
     for v in &sel.vertices {
         gone_edges.extend(model.edges().filter(|(_, e)| e.has(*v)).map(|(id, _)| id));
@@ -129,6 +138,7 @@ pub fn connected(model: &Model, start: VertexId) -> Selection {
             .map(|(id, _)| id)
             .collect(),
         vertices: seen,
+        guides: BTreeSet::new(),
     }
 }
 

@@ -282,3 +282,61 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
 - The Eraser samples where the mouse is; a fast drag can step over an edge. Testing the path between samples would fix it.
 - Previews rebuild the whole scene each mouse move: fine for small models, slow on the Large Scene (about 40 ms per move).
 - Shift (hide) and Ctrl (soften) in the Eraser wait for hiding and soft edges.
+
+## Edit Tools (part 2)
+
+Brief: `docs/briefs/07-edit-tools-2.md`. Built: Offset, Tape Measure, Protractor, and guides stored in the model.
+
+**What to try**
+- **Offset (F):** click a face, move in or out, and click; or type a distance and press Enter.
+  - Every loop moves, holes included, with mitred corners.
+  - It stops just short if the outline would cross itself or meet a hole, so the result is always valid.
+  - Double-click a face to repeat the last distance. Typing right after an offset changes it.
+  - With one face selected, it offsets that face wherever you click.
+- **Tape Measure (T):**
+  - Start on an edge, and it makes a guide line parallel to it, measured square to the edge.
+  - Start on a point, and it makes a guide point.
+  - **Ctrl** (Option on a Mac) switches to measuring only.
+  - Arrows lock an axis. Type a length and press Enter; typing right after changes it.
+  - Double-click an edge for a guide along it, moved the last tape distance towards its face.
+- **Protractor:** the Rotate protractor, with the same plane rules and Up, Right, Left and Down locks. Click the centre, set the base direction, then place an angled guide line through the centre. Type degrees to set the angle.
+- **Guides:**
+  - Drawn dashed and dark grey. Faces in front hide them, as they hide edges.
+  - Every drawing and editing tool snaps to them: "On Guide", "Guide Point", and where they cross each other, axis guides and edges.
+  - The Eraser erases them with the edges in the same drag, as one undo step.
+  - **View > Guides** hides them. Hidden guides are left out of the scene, so inference never looks at them (PLAN 1.14).
+
+**Tests**
+- `prism-ops/tests/offset.rs`:
+  - a square in and out, an L shape, a face with a hole, a tilted wall;
+  - the clamp, and a hole meeting the outline;
+  - a property test that convex offsets stay inside and parallel.
+- `prism-doc`: Offset, adding a guide and erasing one undo and redo exactly (16 kinds now).
+- `prism-infer`: a stored guide line, a crossing of two guides, a guide crossing an edge, a guide point, and hidden guides.
+- Scenario tests (10 new):
+  - Offset: typed and retyped, by mouse in and out, double-click repeat.
+  - Tape: a parallel guide, its snaps and the double-click guide; a guide point; measure only.
+  - Protractor: a typed angle and retype.
+  - Eraser: a guide and an edge in one step.
+  - Hiding guides.
+- GPU: `faces_hide_guides` checks a guide through the cube is hidden inside it.
+- A recorded session, `docs/acceptance/sessions/window-from-guides.json`, replays in CI. It covers:
+  - two tape guides on a wall;
+  - a 1.5 by 1.2 m window drawn from where they cross, pushed in;
+  - the roof offset 0.3 m.
+
+**Decisions and defaults used** (none were open in DECISIONS.md)
+- Guides live in the model (`prism_topo::Guide`), so undo, saving and replay cover them with no extra work. They are not geometry: edges do not stick to them.
+- Offset's distance is how much nearer to or further from the outline the cursor has moved since the click, so a click away from the edge does not jump. Clicking near the edge, as in SketchUp, gives the same result.
+- Offset's clamp searches for the largest valid distance, to within the tolerance, and stops 10 tolerances short of touching.
+- A tape started on an edge's midpoint snaps to the midpoint, so it makes a guide point. Start elsewhere on the edge for a parallel guide.
+- The Protractor has no hotkey; SketchUp has none either.
+- Rectangle now takes its plane from the face under the cursor when it starts on a guide or an edge that lies in that face. Before, it used the view's main plane there.
+
+**Leftovers and ideas**
+- Guides cannot be selected or moved yet, and there is no Edit > Delete Guides.
+- Move and Rotate do not take guides with the geometry.
+- Offset works on faces only. Edge chains wait for arcs.
+- Tape Measure's "type a length to resize the model" is not built.
+- Screenshot (web build, WebGL2): `docs/screenshots/edit-tools-2-web.png`, with the cube's top offset, a vertical tape guide and a guide point.
+- A guide line is drawn 60 times the scene's size each way, not to infinity. This is far enough to look endless, but a guide could end on screen when zoomed far out from a tiny model.

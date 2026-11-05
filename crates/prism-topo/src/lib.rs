@@ -24,6 +24,22 @@ macro_rules! id {
 id!(VertexId);
 id!(EdgeId);
 id!(FaceId);
+id!(GuideId);
+
+/// A guide: a construction line or point the tools make (Tape Measure,
+/// Protractor). Guides are not geometry: they bound no face and edges do
+/// not stick to them, but inference snaps to them.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Guide {
+    /// An infinite line through `origin` along unit `dir`.
+    Line {
+        origin: DVec3,
+        dir: DVec3,
+    },
+    Point {
+        at: DVec3,
+    },
+}
 
 /// An edge between two vertices. `a` is always the smaller id.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -73,15 +89,23 @@ pub fn loop_pairs(l: &[VertexId]) -> impl Iterator<Item = (VertexId, VertexId)> 
     (0..l.len()).map(move |i| (l[i], l[(i + 1) % l.len()]))
 }
 
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
 /// The model: plain data, cloned to make undo snapshots.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Model {
     vertices: BTreeMap<VertexId, DVec3>,
     edges: BTreeMap<EdgeId, Edge>,
     faces: BTreeMap<FaceId, Face>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    guides: BTreeMap<GuideId, Guide>,
     next_vertex: u32,
     next_edge: u32,
     next_face: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    next_guide: u32,
 }
 
 /// The id counters, kept across undo so ids are never handed out twice.
@@ -90,6 +114,8 @@ pub struct Counters {
     pub vertex: u32,
     pub edge: u32,
     pub face: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub guide: u32,
 }
 
 impl Model {
@@ -266,6 +292,31 @@ impl Model {
         map
     }
 
+    // ---- guides ----
+
+    pub fn add_guide(&mut self, g: Guide) -> GuideId {
+        let id = GuideId(self.next_guide);
+        self.next_guide += 1;
+        self.guides.insert(id, g);
+        id
+    }
+
+    pub fn guide(&self, id: GuideId) -> Option<&Guide> {
+        self.guides.get(&id)
+    }
+
+    pub fn guides(&self) -> impl Iterator<Item = (GuideId, &Guide)> + '_ {
+        self.guides.iter().map(|(k, v)| (*k, v))
+    }
+
+    pub fn remove_guide(&mut self, id: GuideId) {
+        self.guides.remove(&id);
+    }
+
+    pub fn guide_count(&self) -> usize {
+        self.guides.len()
+    }
+
     // ---- whole model ----
 
     /// The tolerance for this model, from its size.
@@ -285,6 +336,7 @@ impl Model {
             vertex: self.next_vertex,
             edge: self.next_edge,
             face: self.next_face,
+            guide: self.next_guide,
         }
     }
 
@@ -293,6 +345,7 @@ impl Model {
         self.next_vertex = self.next_vertex.max(c.vertex);
         self.next_edge = self.next_edge.max(c.edge);
         self.next_face = self.next_face.max(c.face);
+        self.next_guide = self.next_guide.max(c.guide);
     }
 
     /// The saved form: deterministic JSON.
@@ -310,6 +363,7 @@ impl Model {
         copy.next_vertex = 0;
         copy.next_edge = 0;
         copy.next_face = 0;
+        copy.next_guide = 0;
         copy.to_json()
     }
 

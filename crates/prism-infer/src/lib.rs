@@ -14,7 +14,7 @@
 use std::collections::BTreeSet;
 
 use prism_math::{DVec2, DVec3};
-use prism_topo::{EdgeId, FaceId, VertexId};
+use prism_topo::{EdgeId, FaceId, Guide as StoredGuide, GuideId, VertexId};
 use prism_view::{Scene, View};
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +56,8 @@ pub enum Kind {
     Intersection,
     GuideCross,
     Guide,
+    /// A guide point in the model (Tape Measure).
+    GuidePoint,
     Free,
 }
 
@@ -64,6 +66,7 @@ impl Kind {
     pub fn priority(self) -> (f64, f64) {
         match self {
             Kind::Endpoint => (6.0, 14.0),
+            Kind::GuidePoint => (5.8, 14.0),
             Kind::GuideCross => (5.5, 12.0),
             Kind::Midpoint => (5.0, 12.0),
             Kind::Intersection => (4.6, 12.0),
@@ -85,6 +88,7 @@ impl Kind {
             Kind::Intersection => "Intersection",
             Kind::GuideCross => "Guide Cross",
             Kind::Guide => "Guide",
+            Kind::GuidePoint => "Guide Point",
             Kind::Free => "Free",
         }
     }
@@ -93,13 +97,20 @@ impl Kind {
     pub fn is_point(self) -> bool {
         matches!(
             self,
-            Kind::Endpoint | Kind::Midpoint | Kind::Intersection | Kind::GuideCross
+            Kind::Endpoint
+                | Kind::Midpoint
+                | Kind::Intersection
+                | Kind::GuideCross
+                | Kind::GuidePoint
         )
     }
 
     /// Kinds that wake when hovered long enough.
     pub fn wakes(self) -> bool {
-        matches!(self, Kind::Endpoint | Kind::Midpoint | Kind::OnEdge)
+        matches!(
+            self,
+            Kind::Endpoint | Kind::Midpoint | Kind::OnEdge | Kind::GuidePoint
+        )
     }
 }
 
@@ -116,6 +127,8 @@ pub enum GuideSource {
     Woken(u32, u8),
     /// Parallel to woken edge number `n`, through the start point.
     Parallel(u32),
+    /// A guide line stored in the model (by its id).
+    Stored(u32),
 }
 
 /// A guide line: infinite, through `origin` along unit `dir`.
@@ -134,6 +147,7 @@ impl Guide {
             GuideSource::Start(a) => format!("On {} Axis", AXIS_NAMES[a as usize]),
             GuideSource::Woken(_, a) => format!("{} from Point", AXIS_NAMES[a as usize]),
             GuideSource::Parallel(_) => "Parallel to Edge".to_owned(),
+            GuideSource::Stored(_) => "On Guide".to_owned(),
         }
     }
 
@@ -141,7 +155,7 @@ impl Guide {
     /// guide cross with each other).
     fn owner(&self) -> Option<u32> {
         match self.source {
-            GuideSource::Start(_) | GuideSource::Parallel(_) => None,
+            GuideSource::Start(_) | GuideSource::Parallel(_) | GuideSource::Stored(_) => None,
             GuideSource::Woken(n, _) => Some(n),
         }
     }
@@ -151,6 +165,7 @@ impl Guide {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Key {
     Vertex(VertexId),
+    GuidePoint(GuideId),
     Mid(EdgeId),
     Edge(EdgeId),
     Face(FaceId),
@@ -452,11 +467,31 @@ pub fn infer(
             push(Kind::OnEdge, p, Key::Edge(e.id), true, c);
         }
     }
-    let gl = guides(ctx, mem);
+    let mut gl = guides(ctx, mem);
+    for (id, g) in &scene.guides {
+        match *g {
+            StoredGuide::Line { origin, dir } => gl.push(Guide {
+                source: GuideSource::Stored(id.0),
+                origin,
+                dir,
+                axis: None,
+            }),
+            StoredGuide::Point { at } => {
+                let key = Key::GuidePoint(*id);
+                push(
+                    Kind::GuidePoint,
+                    at,
+                    key,
+                    false,
+                    blank(Kind::GuidePoint, key),
+                );
+            }
+        }
+    }
     for g in &gl {
         if let Some((s, t, _)) = closest(o, dir, g.origin, g.dir)
             && s > 0.0
-            && t.abs() > tol
+            && (t.abs() > tol || matches!(g.source, GuideSource::Stored(_)))
             && t.abs() < reach
         {
             let mut c = blank(Kind::Guide, Key::Guide(g.source));

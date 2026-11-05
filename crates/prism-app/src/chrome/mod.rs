@@ -139,7 +139,7 @@ impl Chrome {
             icons,
             active_tool: "tool.select",
             // The ground shadow starts on, as in the prototype.
-            toggles: HashSet::from(["view.shadow"]),
+            toggles: HashSet::from(["view.shadow", "view.guides"]),
             menu: None,
             menu_serial: 0,
             palette: None,

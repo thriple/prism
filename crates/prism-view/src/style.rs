@@ -125,6 +125,8 @@ pub struct Feedback {
     pub erase: Rgba,
     /// The Rotate tool's protractor.
     pub protractor: Rgba,
+    /// Guide lines and points stored in the model (Tape Measure, Protractor).
+    pub guide: Rgba,
 }
 
 impl Default for Feedback {
@@ -158,6 +160,7 @@ impl Default for Feedback {
             box_fill_alpha: 0.13,
             box_dash: [6.0, 4.0],
             erase: Rgba::rgb(0xff, 0x3b, 0x4d),
+            guide: Rgba::rgb(0x3a, 0x40, 0x4c).with_alpha(alpha(0.85)),
             protractor: Rgba::rgb(0x1c, 0x1e, 0x22),
         }
     }

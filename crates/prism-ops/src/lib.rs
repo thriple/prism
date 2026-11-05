@@ -10,6 +10,7 @@
 //! All of it is pure: no clock, no randomness, ordered iteration.
 
 pub mod check;
+pub mod offset;
 pub mod pushpull;
 mod regions;
 pub mod select;

@@ -7,7 +7,7 @@
 ## Requirements
 - **Offset (F).**
   - The face under the cursor is tinted. Click it, move, and click to finish; or type a distance and press Enter.
-  - The distance is how far the cursor is from the face's outline, measured in the face's plane. Inside the face it offsets inward; outside, outward.
+  - The distance is how much nearer to or further from the face's outline the cursor has moved since the click, measured in the face's plane. Moving inward offsets inward; moving outward, outward.
   - Every loop of the face is offset: the outline and its holes.
   - Corners are mitred. The offset stops just before the new outline would cross itself or another loop, so the result is always valid.
   - The new loop splits the face (inward) or adds a ring around it (outward), through the same sticky geometry as drawing.
@@ -57,7 +57,7 @@ Offset of edge chains and curves (that waits for arcs), Tape Measure's resize-th
   - Protractor: a typed 30° guide.
   - Eraser: a drag over a guide and an edge erases both in one undo step.
   - Hidden guides are not snapped to.
-- A recorded session in `docs/acceptance/sessions/` that offsets a wall face and places a window from tape guides.
+- A recorded session in `docs/acceptance/sessions/` that places a window from tape guides and offsets the roof.
 
 ## Acceptance
 - [ ] Each tool works as described above, natively and on the web, with live previews and one undo step.

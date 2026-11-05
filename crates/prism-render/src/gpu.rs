@@ -634,6 +634,12 @@ impl Renderer {
                     .flags(NO_TEST)
             })
             .collect();
+        // Guides: faces in front of them hide them, as they do edges.
+        lines.extend(
+            o.tested
+                .iter()
+                .map(|l| LineInstance::new(l.a, l.b, l.color, l.width).dashed(l.dash)),
+        );
         for m in &o.marks {
             let shape = match m.shape {
                 Shape::Circle => 0.0,

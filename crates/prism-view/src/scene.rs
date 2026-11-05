@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Tol};
-use prism_topo::{EdgeId, FaceId, Model, VertexId};
+use prism_topo::{EdgeId, FaceId, Guide, GuideId, Model, VertexId};
 
 use crate::tess::triangulate;
 
@@ -118,10 +118,18 @@ pub struct Scene {
     pub mesh: Mesh,
     pub bounds: Option<(DVec3, DVec3)>,
     pub tol: Tol,
+    /// The guides, if they are shown (hidden guides are left out, so they
+    /// cost nothing: PLAN 1.14).
+    pub guides: Vec<(GuideId, Guide)>,
 }
 
 impl Scene {
     pub fn build(model: &Model) -> Scene {
+        Self::build_with(model, true)
+    }
+
+    /// The scene, with or without the guides.
+    pub fn build_with(model: &Model, show_guides: bool) -> Scene {
         let mut s = Scene {
             faces: Vec::new(),
             face_index: BTreeMap::new(),
@@ -131,6 +139,11 @@ impl Scene {
             mesh: Mesh::default(),
             bounds: model.bbox(),
             tol: model.tol(),
+            guides: if show_guides {
+                model.guides().map(|(id, g)| (id, *g)).collect()
+            } else {
+                Vec::new()
+            },
         };
         let edge_faces = model.edge_faces();
         for (id, f) in model.faces() {

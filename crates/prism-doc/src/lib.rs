@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use prism_math::DVec3;
 use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
-use prism_topo::{FaceId, Model, VertexId};
+use prism_topo::{FaceId, Guide, Model, VertexId};
 use serde::{Deserialize, Serialize};
 
 /// One edit.
@@ -65,6 +65,15 @@ pub enum Command {
         step: Motion,
         count: u32,
     },
+    /// Offset a face's loops (positive into the face).
+    Offset {
+        face: FaceId,
+        distance: f64,
+    },
+    /// Add a guide line or point.
+    AddGuide {
+        guide: Guide,
+    },
 }
 
 /// How a copy is placed.
@@ -96,6 +105,8 @@ impl Command {
             Command::Duplicate { .. } => "Copy",
             Command::Copy { count, .. } if *count > 1 => "Array",
             Command::Copy { .. } => "Copy",
+            Command::Offset { .. } => "Offset",
+            Command::AddGuide { .. } => "Guide",
         }
     }
 
@@ -154,6 +165,12 @@ impl Command {
                         } => transform::rotate(m, &vs, centre, axis, angle * k),
                     }
                 }
+            }
+            Command::Offset { face, distance } => {
+                prism_ops::offset::offset(m, *face, *distance);
+            }
+            Command::AddGuide { guide } => {
+                m.add_guide(*guide);
             }
         }
     }

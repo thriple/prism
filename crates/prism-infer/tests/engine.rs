@@ -374,3 +374,66 @@ mod stability {
         }
     }
 }
+
+/// The setup, with guides in the model: a line along y = 3 (crossing the
+/// square's edges x = 0 and x = 4), a line along x = 3.5, and a point.
+fn with_guides(k: f64) -> Setup {
+    use prism_topo::Guide;
+    let mut m = model(k);
+    m.add_guide(Guide::Line {
+        origin: DVec3::new(0.5, 3.0, 0.0) * k,
+        dir: DVec3::X,
+    });
+    m.add_guide(Guide::Line {
+        origin: DVec3::new(3.5, 0.5, 0.0) * k,
+        dir: DVec3::Y,
+    });
+    m.add_guide(Guide::Point {
+        at: DVec3::new(3.0, 0.5, 0.0) * k,
+    });
+    let mut t = setup(k);
+    t.scene = Scene::build(&m);
+    t
+}
+
+#[test]
+fn stored_guides_snap_cross_each_other_and_edges() {
+    for k in SCALES {
+        let t = with_guides(k);
+        let i = t.plain(t.screen(DVec3::new(2.5, 3.0, 0.0)) + DVec2::new(0.0, 3.0));
+        assert_eq!(i.label, "On Guide", "at {k}");
+        assert!((i.point.y - 3.0 * k).abs() < 1e-9 * k);
+        let i = t.plain(t.screen(DVec3::new(3.5, 3.0, 0.0)) + DVec2::new(4.0, 0.0));
+        assert_eq!(i.kind, Kind::GuideCross, "at {k}");
+        assert!(i.point.distance(DVec3::new(3.5, 3.0, 0.0) * k) < 1e-9 * k);
+        let i = t.plain(t.screen(DVec3::new(4.0, 3.0, 0.0)) + DVec2::new(3.0, 3.0));
+        assert_eq!(i.kind, Kind::Intersection, "at {k}");
+        assert!(i.point.distance(DVec3::new(4.0, 3.0, 0.0) * k) < 1e-9 * k);
+        let i = t.plain(t.screen(DVec3::new(3.0, 0.5, 0.0)) + DVec2::new(5.0, 0.0));
+        assert_eq!(i.kind, Kind::GuidePoint, "at {k}");
+        assert!(i.point.distance(DVec3::new(3.0, 0.5, 0.0) * k) < 1e-9 * k);
+    }
+}
+
+#[test]
+fn hidden_guides_cost_nothing_and_do_not_snap() {
+    let k = 1.0;
+    let t = with_guides(k);
+    let mut m = model(k);
+    m.add_guide(prism_topo::Guide::Point {
+        at: DVec3::new(3.0, 0.5, 0.0),
+    });
+    let hidden = Scene::build_with(&m, false);
+    assert!(hidden.guides.is_empty());
+    let s = t.screen(DVec3::new(3.0, 0.5, 0.0));
+    let i = infer(
+        &hidden,
+        &t.view,
+        s,
+        &Context::default(),
+        Lock::None,
+        &Memory::default(),
+        &Settings::default(),
+    );
+    assert_ne!(i.kind, Kind::GuidePoint);
+}
