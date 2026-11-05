@@ -4,11 +4,20 @@ Things noticed while building that are outside the current chunk, defaults that 
 
 ## Chunk 1: Skeleton
 
+**Checked by the owner (2026-11-05)**
+- **Windows:** the app runs on Windows 11 with an NVIDIA GeForce RTX 3050 over Vulkan, about 85 fps, at 1280x800 and scale 1.00. The debug panel logs mouse buttons and keys (see `docs/screenshots/skeleton-windows.png`). The overlay still uses egui's default look, so the Soft theme is the next job (`docs/briefs/02a-soft-theme.md`).
+- **Licence files:** `LICENSE-MIT` and `LICENSE-APACHE` were added.
+- **Skeleton branch** merged into `main` by `scripts/finish_chunk1.py`.
+
 **Still to check by a person**
-- **iPad (DECISIONS #10):** not tested yet. Open the Pages URL on the iPad once `main` is deployed and record here: runs or not, iPadOS version, browser.
-- **Windows and macOS:** CI builds both, but nobody has opened the window on either yet. Run `cargo run` on one of them and tick the box.
-- **GitHub Pages:** in the repo settings, set Pages > Source to "GitHub Actions", or the deploy job fails.
-- **Licence files:** DECISIONS #1 says to add `LICENSE-MIT` and `LICENSE-APACHE` when the first release is cut. Add them before tagging `v0.0.1`.
+- **GitHub Pages:** Source must be "GitHub Actions" (settings > Pages). The script tries to set it. Confirm the web page loads at https://thriple.github.io/prism/.
+- **iPad (DECISIONS #10):** not tested yet. Open the Pages URL on the iPad and record here: runs or not, iPadOS version, browser.
+- **macOS:** CI builds it, nobody has opened it yet.
+- **Release:** `v0.0.1` tag and its Windows and macOS files (the script's `--tag v0.0.1`). Confirm the Releases page has them.
+
+**Seen in the Windows screenshot (for Actions & Keys)**
+- The Windows key shows up as `SuperLeft` and as the modifier `Logo`. Windows reserves many Win+key combinations (Win+Shift+S was in use for screenshots), so the keymap engine must never rely on the Win key.
+- Pressing Enter reports both `Enter` and `NumpadEnter`. Treat them as the same by default.
 
 **What was checked here (Linux cloud machine, no real GPU)**
 - Native: the window opens under Xvfb on Mesa's software Vulkan (llvmpipe), clears to `#262830`, shows the frame counter, and logs mouse buttons.
