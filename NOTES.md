@@ -152,7 +152,7 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
 ## Viewport
 
 **Checked by the owner (2026-11-05)**
-- The release build works. The Large Scene takes a few seconds to load, then orbits and zooms fast, with no flicker or lag.
+- The release build works. The Large Scene takes a few seconds to load, then orbits and zooms fast, with no flicker or lag. Zooming into it dips to about 40 fps for a moment, which the owner does not notice.
 - The defaults below are accepted. O, H and Z staying active after the mouse is released, with Esc to go back, is how they should work (DECISIONS #16; PLAN 1.5a updated).
 
 **What was built**
