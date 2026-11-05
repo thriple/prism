@@ -14,6 +14,7 @@ It is a Design-artifact page: the template and CSS are at the top, and the logic
 | Camera: zoom to cursor, orbit about the point under the cursor, pan | `onWheel(`, `surfacePoint(`, `orbitBy(`, `panBy(` |
 | Tools: Select, Line, Rectangle, Push/Pull, Move, Rotate, Scale, Eraser | `toolDown(`, `rectCorners(`, `commitScale(`, `commitErase(` |
 | Smart Guides (align, equal spacing, budget) | `smartInit(`, `smartSnap(`, `smartDraw(`, `smartDemoModel(` |
+| Box select (window and crossing) | `commitBox(`, `boxDraw(`, and the `box` branch of `toolDown(` |
 | Action registry, menus, dock, icons | `const ACT`, `const MENUBAR`, `const DOCK`, `const IC` |
 | Menu, dock and context menu generation | `buildChrome(`, `menuHTML(`, `onContext(` |
 | Planned Features checklist | `openFeatures(`, `const BEHAVIOURS` |
