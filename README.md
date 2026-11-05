@@ -55,3 +55,5 @@ trunk serve                     # web build at http://127.0.0.1:8080 (install wi
 ```
 
 CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, Windows and macOS builds and the web build on every push. Pushes to `main` publish the web build to GitHub Pages. Every push also rebuilds the **latest** release: https://github.com/thriple/prism/releases/tag/latest (Windows zip and macOS `.app` zip). Each build is also kept as "Prism build N" on the Releases page (newest 30), so an older one can be downloaded again.
+
+https://thriple.github.io/prism/
