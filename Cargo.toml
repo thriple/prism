@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["crates/prism-app", "crates/prism-ui"]
+members = [
+    "crates/prism-math",
+    "crates/prism-geom",
+    "crates/prism-topo",
+    "crates/prism-ops",
+    "crates/prism-doc",
+    "crates/prism-ui",
+    "crates/prism-app",
+]
 
 [workspace.package]
 version = "0.0.1"
@@ -17,6 +25,16 @@ egui-wgpu = "0.37.0"
 egui-winit = { version = "0.37.0", default-features = false }
 log = "0.4.35"
 prism-ui = { path = "crates/prism-ui" }
+prism-math = { path = "crates/prism-math" }
+prism-geom = { path = "crates/prism-geom" }
+prism-topo = { path = "crates/prism-topo" }
+prism-ops = { path = "crates/prism-ops" }
+prism-doc = { path = "crates/prism-doc" }
+glam = { version = "0.34.2", features = ["serde"] }
+robust = "1.2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+proptest = "1.12.0"
 
 [profile.release]
 # Smaller web build; native speed is unaffected in practice.

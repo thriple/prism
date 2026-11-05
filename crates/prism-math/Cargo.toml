@@ -1,0 +1,13 @@
+[package]
+name = "prism-math"
+description = "Vectors, relative tolerance, exact predicates and planes for Prism's geometry."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+glam.workspace = true
+robust.workspace = true
+serde.workspace = true

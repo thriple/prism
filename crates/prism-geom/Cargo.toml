@@ -1,0 +1,12 @@
+[package]
+name = "prism-geom"
+description = "Curves and surfaces (lines and planes for now)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prism-math.workspace = true
+serde.workspace = true
