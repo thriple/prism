@@ -72,7 +72,7 @@ impl Action {
     /// Built means Rust does what the action promises. Picking a tool whose
     /// behaviour is not built yet, or sending an event nobody handles, is not.
     pub fn built(&self) -> bool {
-        self.run == Run::Command
+        self.run == Run::Command || BUILT_IN_RUST.contains(&self.id)
     }
 }
 
@@ -105,13 +105,13 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 3] = ["view.shadow", "help.debug", "help.themedemo"];
+const TOGGLES: [&str; 4] = ["view.shadow", "help.debug", "help.themedemo", "help.record"];
 
 /// Decide how an imported action runs in Rust.
 fn run_of(id: &str, proto_run: &str) -> Run {
     if COMMANDS.contains(&id) {
         Run::Command
-    } else if id.starts_with("help.scene.") {
+    } else if id.starts_with("help.scene.") || id == "help.record" {
         // Test scenes for the viewport (brief 04), handled by the app.
         Run::Event
     } else if id == "cam.zoom" || proto_run.starts_with("tool:") || proto_run.starts_with("nav:") {
@@ -403,8 +403,42 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
     groups
 }
 
+/// Tools and events the Rust app handles now (the viewport and drawing).
+const BUILT_IN_RUST: [&str; 16] = [
+    "tool.select",
+    "tool.line",
+    "tool.rect",
+    "cam.orbit",
+    "cam.pan",
+    "cam.zoom",
+    "cam.extents",
+    "edit.undo",
+    "edit.redo",
+    "edit.delete",
+    "edit.selall",
+    "edit.desel",
+    "file.new",
+    "view.shadow",
+    "help.record",
+    "help.scene.cube",
+];
+
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 1] = ["Command search (Shift+S)"];
+const BUILT_BEHAVIOURS: [&str; 13] = [
+    "Command search (Shift+S)",
+    "Inference: endpoint, midpoint, on-edge, on-face, guides",
+    "Hover-wake anchors and guide intersections",
+    "Axis locks (arrows and Shift)",
+    "Typed values in the measurement box",
+    "Selectable points, edges and faces",
+    "Snap target highlight (point and edge)",
+    "No overlapping coplanar faces: overlaps are split, faces with holes",
+    "Size-relative tolerance (mm to km)",
+    "Esc cancels, then backs out",
+    "Zoom to cursor, orbit around the point under the cursor",
+    "Box select: window (left to right) and crossing (right to left), Shift toggles, Ctrl adds",
+    "Keymap presets (SketchUp, Blender, Fusion)",
+];
 
 fn collect(
     items: &'static [Item],

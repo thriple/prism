@@ -1849,8 +1849,10 @@ dependencies = [
  "prism-math",
  "prism-ops",
  "prism-render",
+ "prism-tools",
  "prism-topo",
  "prism-ui",
+ "prism-view",
  "serde",
  "serde_json",
  "wasm-bindgen",
@@ -1879,6 +1881,18 @@ name = "prism-geom"
 version = "0.0.1"
 dependencies = [
  "prism-math",
+ "serde",
+]
+
+[[package]]
+name = "prism-infer"
+version = "0.0.1"
+dependencies = [
+ "prism-math",
+ "prism-ops",
+ "prism-topo",
+ "prism-view",
+ "proptest",
  "serde",
 ]
 
@@ -1915,8 +1929,24 @@ dependencies = [
  "prism-math",
  "prism-ops",
  "prism-topo",
+ "prism-view",
  "serde_json",
  "wgpu",
+]
+
+[[package]]
+name = "prism-tools"
+version = "0.0.1"
+dependencies = [
+ "prism-doc",
+ "prism-geom",
+ "prism-infer",
+ "prism-math",
+ "prism-ops",
+ "prism-topo",
+ "prism-view",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1934,6 +1964,16 @@ name = "prism-ui"
 version = "0.0.1"
 dependencies = [
  "egui",
+]
+
+[[package]]
+name = "prism-view"
+version = "0.0.1"
+dependencies = [
+ "prism-math",
+ "prism-ops",
+ "prism-topo",
+ "serde",
 ]
 
 [[package]]

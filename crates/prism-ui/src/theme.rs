@@ -23,6 +23,10 @@ pub mod color {
     pub const FROST: Color32 = Color32::from_rgb(0x26, 0x28, 0x30);
     /// Focus ring, active dots, selection.
     pub const ACCENT: Color32 = Color32::from_rgb(0x02, 0xce, 0xff);
+    /// Box select (feel test `boxDraw(`): window blue, crossing green.
+    pub const BOX_WINDOW: Color32 = Color32::from_rgb(0x1f, 0x5f, 0xe0);
+    pub const BOX_CROSSING: Color32 = Color32::from_rgb(0x2e, 0xa0, 0x5a);
+    pub const BOX_FILL: f32 = 0.14;
     /// The 1 px edge of floating things (white at 6%).
     pub const FLOAT_EDGE: Color32 = Color32::from_rgba_premultiplied(15, 15, 15, 15);
     /// Behind the 3D viewport until the renderer draws there.
@@ -79,6 +83,8 @@ pub mod radius {
     /// Tool dock buttons, menu rows, the top bar and dialogs (prototype CSS).
     pub const DOCK_BUTTON: f32 = 14.0;
     pub const MENU_ROW: f32 = 9.0;
+    pub const MEASURE: f32 = 14.0;
+    pub const PILL: f32 = 4.0;
     pub const KEYCAP: f32 = 6.0;
     pub const BAR: f32 = 4.0;
 }
@@ -93,6 +99,8 @@ pub mod text {
     pub const TITLE: f32 = 15.0;
     /// Numbers, values and the measurement box.
     pub const MONO: f32 = 12.0;
+    pub const MONO_VALUE: f32 = 14.0;
+    pub const MONO_SMALL: f32 = 12.0;
     /// Hotkey hints on dock buttons.
     pub const HINT: f32 = 9.0;
     /// Small uppercase group labels (dock groups, menu headings).
@@ -151,6 +159,21 @@ pub mod size {
     pub const TOP_BAR_HEIGHT: f32 = 52.0;
     pub const TOP_BAR_PAD: f32 = 14.0;
     pub const STATUS_HEIGHT: f32 = 36.0;
+    /// The measurement box in the status bar (prototype `.vcbwell`).
+    pub const MEASURE_WIDTH: f32 = 138.0;
+    pub const MEASURE_HEIGHT: f32 = 30.0;
+    pub const MEASURE_PAD: f32 = 14.0;
+    pub const STATUS_ITEM_GAP: f32 = 12.0;
+    /// The lock chip.
+    pub const CHIP_HEIGHT: f32 = 24.0;
+    pub const CHIP_PAD: f32 = 10.0;
+    /// Label pills in the viewport (feel test `pill(`).
+    pub const PILL_HEIGHT: f32 = 22.0;
+    pub const PILL_PAD: f32 = 7.0;
+    /// Box select's outline.
+    pub const BOX_STROKE: f32 = 1.5;
+    pub const BOX_DASH: f32 = 6.0;
+    pub const BOX_GAP: f32 = 4.0;
     pub const MENU_BAR_BUTTON_HEIGHT: f32 = 34.0;
     pub const MENU_BAR_BUTTON_PAD: f32 = 12.0;
     pub const MENU_BAR_GAP: f32 = 2.0;
@@ -295,6 +318,26 @@ pub fn title() -> FontId {
 /// Numbers and values.
 pub fn mono() -> FontId {
     FontId::new(text::MONO, FontFamily::Monospace)
+}
+
+/// Small text (the status bar's measurement label, chips).
+pub fn small() -> FontId {
+    FontId::new(text::SMALL, FontFamily::Proportional)
+}
+
+/// The measurement box's value (Plex Mono 14).
+pub fn mono_value() -> FontId {
+    FontId::new(text::MONO_VALUE, FontFamily::Monospace)
+}
+
+/// Label pills in the viewport (Plex Mono 12).
+pub fn mono_small() -> FontId {
+    FontId::new(text::MONO_SMALL, FontFamily::Monospace)
+}
+
+/// A colour from the viewport's style (sRGB bytes, unmultiplied alpha).
+pub fn srgba(c: [u8; 4]) -> Color32 {
+    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
 /// Install fonts and egui's base style. Call once at start.

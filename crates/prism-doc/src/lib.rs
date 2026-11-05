@@ -27,6 +27,11 @@ pub enum Command {
         y1: f64,
         z: f64,
     },
+    /// A closed loop of segments through these points, in one step (a
+    /// rectangle on any plane).
+    Loop {
+        points: Vec<DVec3>,
+    },
     Erase {
         selection: Selection,
     },
@@ -61,6 +66,8 @@ impl Command {
         match self {
             Command::Segment { .. } => "Line",
             Command::Rect { .. } => "Rectangle",
+            Command::Loop { points } if points.len() == 4 => "Rectangle",
+            Command::Loop { .. } => "Shape",
             Command::Erase { .. } => "Erase",
             Command::PushPull { .. } => "Push/Pull",
             Command::Translate { .. } => "Move",
@@ -78,6 +85,11 @@ impl Command {
             }
             Command::Rect { x0, y0, x1, y1, z } => {
                 prism_ops::add_rect(m, *x0, *y0, *x1, *y1, *z);
+            }
+            Command::Loop { points } => {
+                for i in 0..points.len() {
+                    prism_ops::add_segment(m, points[i], points[(i + 1) % points.len()]);
+                }
             }
             Command::Erase { selection } => prism_ops::remove(m, selection),
             Command::PushPull {

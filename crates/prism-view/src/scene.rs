@@ -87,6 +87,8 @@ fn ray_box(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> bool {
 #[derive(Clone, Debug)]
 pub struct SceneEdge {
     pub id: EdgeId,
+    pub va: VertexId,
+    pub vb: VertexId,
     pub a: DVec3,
     pub b: DVec3,
     /// The first two faces' normals; `None` where there are fewer faces.
@@ -191,6 +193,8 @@ impl Scene {
             s.edge_index.insert(id, s.edges.len());
             s.edges.push(SceneEdge {
                 id,
+                va: e.a,
+                vb: e.b,
                 a: model.vertex(e.a),
                 b: model.vertex(e.b),
                 normals: [n(0), n(1)],

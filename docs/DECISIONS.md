@@ -22,3 +22,4 @@ Until the owner decides, use the default. Note in `NOTES.md` whenever a default 
 | 16 | Orbit, Pan and Zoom (O, H, Z) picked while another tool is active | Decided | They stay active after the mouse is released; Esc returns to the previous tool. They are not temporary. |
 | 17 | What the Down arrow does while drawing | Decided | Down releases the lock (as in the feel test). It does not lock parallel or perpendicular. |
 | 18 | Locking the Rotate tool's protractor | Decided | The protractor is a full circle. In Rotate, Up locks it to the plane of the face under it; you can then move the locked protractor to another place and click and drag there to start the rotation, as in SketchUp. Rotate uses the same snaps as the other tools. Built with Edit Tools. |
+| 19 | Perpendicular guides while drawing | Decided | Not wanted for now: only "Parallel to Edge" guides, as in the feel test. |

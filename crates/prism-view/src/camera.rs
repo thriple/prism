@@ -27,7 +27,7 @@ pub const ZOOM_PER_DRAG_PX: f64 = 0.005;
 pub const MAX_ZOOM_STEP: f64 = 0.5;
 
 /// Where the camera is and what it looks at. Up is always +Z (gravity).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Camera {
     pub eye: DVec3,
     pub target: DVec3,

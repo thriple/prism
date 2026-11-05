@@ -1,4 +1,4 @@
-//! Scenes to look at until the drawing tools exist (Help > Test Scenes).
+//! Test scenes (Help > Test Scenes).
 
 use prism_doc::{Command, Document};
 use prism_geom::Surface;

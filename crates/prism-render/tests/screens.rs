@@ -412,3 +412,59 @@ fn prism_render_large(n: i32) -> Model {
     }
     m
 }
+
+/// The tools' feedback: every glyph shape, a dashed guide and a preview.
+#[test]
+fn tool_feedback_draws() {
+    use prism_view::overlay::{Line, Mark, Overlay, Shape, Tri};
+    let Some(mut g) = gpu() else { return };
+    let style = Style::default();
+    let fb = style.feedback;
+    let m = golden::cube(1.0);
+    let scene = prism_render::Scene::build(&m);
+    let mut o = Overlay::default();
+    let shapes = [
+        (Shape::Circle, fb.endpoint),
+        (Shape::Triangle, fb.midpoint),
+        (Shape::Square, fb.on_edge),
+        (Shape::Diamond, fb.on_face),
+        (Shape::Cross, fb.guide_cross),
+        (Shape::Ring, fb.endpoint),
+        (Shape::DiamondOutline, fb.woken),
+    ];
+    for (k, (shape, color)) in shapes.into_iter().enumerate() {
+        o.marks.push(Mark {
+            at: DVec3::new(-3.0 + k as f64, -2.0, 0.0),
+            shape,
+            color,
+            size: fb.glyph_size,
+        });
+    }
+    o.lines.push(Line {
+        a: DVec3::new(-4.0, 2.0, 0.0),
+        b: DVec3::new(4.0, 2.0, 0.0),
+        color: style.axes[0],
+        width: fb.guide_width,
+        dash: fb.guide_dash,
+    });
+    o.tris.push(Tri {
+        p: [
+            DVec3::new(2.0, 3.0, 0.0),
+            DVec3::new(4.0, 3.0, 0.0),
+            DVec3::new(4.0, 5.0, 0.0),
+        ],
+        color: fb.preview_fill,
+    });
+    g.renderer.resize(&g.device, 640, 400);
+    g.renderer.set_scene(&g.device, &scene, &style);
+    g.renderer
+        .set_highlight(&g.device, &scene, &Highlight::default(), &style);
+    g.renderer.set_overlay(&g.device, &o);
+    let img = g.draw(Camera::home(), 640, 400, 1.0, &style, scene.bounds);
+    img.save("feedback");
+    let green = fb.endpoint.0;
+    assert!(
+        img.count_near([green[0], green[1], green[2]], 20) > 20,
+        "the endpoint glyph is drawn"
+    );
+}

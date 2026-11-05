@@ -1329,6 +1329,13 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "",
         when: "",
     },
+    RawAction {
+        id: "help.record",
+        name: "Record Session",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
 ];
 
 pub const MENUBAR: &[(&str, &[Item])] = &[
@@ -1674,6 +1681,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                     Item::Action("help.scene.large"),
                 ],
             ),
+            Item::Action("help.record"),
             Item::Action("help.pen"),
             Item::Separator,
             Item::Action("help.about"),

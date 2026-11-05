@@ -1,18 +1,8 @@
-//! Prism's viewport (PLAN 4, `prism-render`).
-//!
-//! The pure parts (camera, display triangulation, the visible scene,
-//! picking, the Select tool's clicks and the viewport style) use no GPU and
-//! no clock, and are tested on their own. `gpu` draws with wgpu.
+//! Prism's viewport renderer (PLAN 4, `prism-render`): draws the scene with
+//! wgpu. The pure parts it draws from live in `prism-view` and are
+//! re-exported here.
 
-pub mod camera;
-pub mod clicks;
 pub mod gpu;
-pub mod pick;
-pub mod scene;
-pub mod style;
-pub mod tess;
 
-pub use camera::{Camera, Motion, View};
-pub use pick::{Hit, Picked};
-pub use scene::Scene;
-pub use style::Style;
+pub use prism_view::{Camera, Hit, Motion, Picked, Scene, Style, View};
+pub use prism_view::{camera, clicks, pick, scene, style, tess};

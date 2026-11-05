@@ -4,12 +4,15 @@
 use std::fs;
 use std::path::Path;
 
-const CORE: [&str; 5] = [
+const CORE: [&str; 8] = [
     "prism-math",
     "prism-geom",
     "prism-topo",
     "prism-ops",
     "prism-doc",
+    "prism-view",
+    "prism-infer",
+    "prism-tools",
 ];
 const BANNED_DEPS: [&str; 6] = ["wgpu", "winit", "egui", "web-time", "rand", "getrandom"];
 const BANNED_CODE: [&str; 5] = [

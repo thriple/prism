@@ -21,6 +21,12 @@ pub fn export_keymap(json: &str) -> Result<String, String> {
     imp::export(EXPORT_NAME, json)
 }
 
+/// Save a recorded session as a file the user can send (natively in
+/// Downloads, on the web as a download). Returns where it went.
+pub fn export_session(json: &str) -> Result<String, String> {
+    imp::export("Prism session.json", json)
+}
+
 /// Read a shared keymap file back. On the web this opens a file picker and
 /// the result arrives later through [`take_imported`].
 pub fn import_keymap() -> Result<Option<String>, String> {

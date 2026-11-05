@@ -195,6 +195,10 @@ const FADE: u32 = 8u;
 const PUSH_BACK: u32 = 16u;
 // A vertex dot: shown unless a face is in front of the vertex itself.
 const POINT: u32 = 64u;
+// Tool feedback, drawn over everything.
+const NO_TEST: u32 = 128u;
+// A glyph: shape number in the dash slot, radius in the gap slot.
+const MARK: u32 = 256u;
 // A line may be this fraction of its depth behind a face and still show.
 const DEPTH_SLACK: f32 = 5e-7;
 
@@ -354,6 +358,9 @@ fn face_depth(face: u32, d0: f32, k: vec2<i32>, p: vec2<f32>) -> f32 {
 // across the line's width asks about the same point on its centre line, so
 // a line is hidden or shown across its whole width at once.
 fn line_visible(in: LineOut) -> bool {
+    if ((in.flags & NO_TEST) != 0u) {
+        return true;
+    }
     let along = in.geo.x;
     let across = in.geo.y;
     let len = in.geo.z;
@@ -386,6 +393,9 @@ fn line_visible(in: LineOut) -> bool {
 
 @fragment
 fn line_fs(in: LineOut) -> @location(0) vec4<f32> {
+    if ((in.flags & MARK) != 0u) {
+        return mark(in);
+    }
     // Mode 0 draws visible lines; modes 1 and 2 draw only hidden ones.
     if (line_visible(in) != (d.mode.x < 0.5)) {
         discard;
@@ -420,4 +430,99 @@ fn line_fs(in: LineOut) -> @location(0) vec4<f32> {
         color = vec4<f32>(d.color.rgb, color.a);
     }
     return vec4<f32>(color.rgb, color.a * cover * d.mode.y);
+}
+
+// Glyphs (feel test `glyph(`): a coloured shape with a white outline.
+// Shapes: 0 circle, 1 triangle, 2 square, 3 diamond, 4 cross, 5 ring,
+// 6 diamond outline.
+fn mark(in: LineOut) -> vec4<f32> {
+    let ppp = g.viewport.z;
+    let shape = u32(round(in.dash.x / ppp));
+    let r = in.dash.y;
+    // Screen offset from the centre (y down).
+    let p = vec2<f32>(in.geo.x, in.geo.y);
+    let edge = 2.0 * ppp;
+    var d = length(p) - r;
+    var stroke_only = false;
+    var thin = 0.0;
+    switch shape {
+        case 1u: {
+            // Pointing up: corners (0,-r-1), (r+1,r), (-r-1,r).
+            let h = r + ppp;
+            let a = vec2<f32>(abs(p.x), p.y);
+            // The slanted side's outward normal.
+            let n = normalize(vec2<f32>(r + h, -h));
+            d = max(a.y - r, dot(a - vec2<f32>(0.0, -h), n));
+        }
+        case 2u: {
+            d = max(abs(p.x), abs(p.y)) - r;
+        }
+        case 3u: {
+            d = (abs(p.x) + abs(p.y) - (r + ppp)) * 0.7071;
+        }
+        case 4u: {
+            // Two diagonal bars.
+            let q = abs(p);
+            let off = abs(q.x - q.y) * 0.7071;
+            d = max(off - ppp, max(q.x, q.y) - r);
+        }
+        case 5u: {
+            // A soft disc with a ring of the colour.
+            let ring = abs(length(p) - r) - ppp;
+            let ca = clamp(0.5 - ring, 0.0, 1.0);
+            let fill = clamp(0.5 - (length(p) - r), 0.0, 1.0) * 0.2;
+            let a = max(ca, fill);
+            if (a <= 0.0) {
+                discard;
+            }
+            return vec4<f32>(in.color.rgb, a * in.color.a);
+        }
+        case 6u: {
+            stroke_only = true;
+            d = (abs(p.x) + abs(p.y) - r) * 0.7071;
+            thin = 0.75 * ppp;
+        }
+        default: {}
+    }
+    if (stroke_only) {
+        let a = clamp(0.5 - (abs(d) - thin), 0.0, 1.0);
+        if (a <= 0.0) {
+            discard;
+        }
+        return vec4<f32>(in.color.rgb, a * in.color.a);
+    }
+    let inner = clamp(0.5 - d, 0.0, 1.0);
+    let outer = clamp(0.5 - (d - edge), 0.0, 1.0);
+    if (outer <= 0.0) {
+        discard;
+    }
+    // White outline, colour inside.
+    let c = mix(vec3<f32>(1.0), in.color.rgb, inner);
+    return vec4<f32>(c, outer * in.color.a);
+}
+
+// ---------- tool feedback: filled triangles (the rectangle preview) ----------
+
+struct TriIn {
+    @location(0) hi: vec3<f32>,
+    @location(1) lo: vec3<f32>,
+    @location(2) color: vec4<f32>,
+};
+
+struct TriOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn tri_vs(v: TriIn) -> TriOut {
+    var o: TriOut;
+    o.pos = g.view_proj * vec4<f32>(rel(v.hi, v.lo), 1.0);
+    o.color = v.color;
+    return o;
+}
+
+@fragment
+fn tri_fs(in: TriOut) -> @location(0) vec4<f32> {
+    return in.color;
 }

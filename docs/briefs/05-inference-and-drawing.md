@@ -118,5 +118,4 @@ As in the Viewport chunk, the feel test (`docs/prototype/Main.dc.html`) shows **
 - **Down arrow** releases the lock (DECISIONS #17).
 - **Up arrow in Rotate** locks the protractor to a face's plane (DECISIONS #18). Rotate is built in Edit Tools, but the engine here must let a tool lock its plane and keep snapping while the lock is moved, so build the lock as a plane as well as an axis.
 
-## Open (default used)
-- **Perpendicular guides.** The plan lists them; the prototype has only "Parallel to Edge". *Default: parallel only, as in the prototype.*
+- **Perpendicular guides** are not wanted for now: parallel only, as in the prototype (DECISIONS #19).

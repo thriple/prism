@@ -44,6 +44,15 @@ fn every_kind(d: &Document) -> Vec<Command> {
             z: 0.0,
         },
     ];
+    // A standing rectangle (on the plane x = 5).
+    out.push(Command::Loop {
+        points: vec![
+            DVec3::new(5.0, 0.0, 0.0),
+            DVec3::new(5.0, 2.0, 0.0),
+            DVec3::new(5.0, 2.0, 1.0),
+            DVec3::new(5.0, 0.0, 1.0),
+        ],
+    });
     if let Some((edge, _)) = m.edges().next() {
         out.push(Command::Erase {
             selection: Selection::edge(edge),
@@ -91,7 +100,7 @@ fn every_kind(d: &Document) -> Vec<Command> {
 fn undo_and_redo_of_every_operation_are_exact() {
     let base = setup();
     let kinds = every_kind(&base);
-    assert_eq!(kinds.len(), 9, "one of each kind");
+    assert_eq!(kinds.len(), 10, "one of each kind");
     for c in kinds {
         let mut d = base.clone();
         let before = d.model().geometry_json();
@@ -110,7 +119,7 @@ proptest! {
     /// Any sequence of commands, undone all the way and redone, ends exactly
     /// where it was.
     #[test]
-    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..9, 1..6)) {
+    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..10, 1..6)) {
         let mut d = setup();
         let start = d.model().geometry_json();
         let mut ran = 0;

@@ -66,6 +66,8 @@ struct App {
     viewport: Viewport,
     /// The tool picked last frame, to notice changes.
     last_tool: &'static str,
+    /// The model version the GPU has.
+    uploaded: Option<u64>,
 }
 
 impl App {
@@ -92,6 +94,7 @@ impl App {
             modifiers_state: winit::keyboard::ModifiersState::empty(),
             viewport: Viewport::new(),
             last_tool: "tool.select",
+            uploaded: None,
         }
     }
 
@@ -186,7 +189,7 @@ impl App {
             &mut self.last_tool,
         );
         chrome.viewport_texture = gpu.viewport_texture();
-        let reduce = motion.reduce_motion;
+        viewport.session.reduce_motion = motion.reduce_motion;
         let mut viewport_px = [1u32, 1u32];
         let output = self.egui_ctx.run_ui(raw_input, |ui| {
             let ctx = ui.ctx();
@@ -198,19 +201,45 @@ impl App {
                 can_redo: viewport.can_redo(),
                 has_selection: !viewport.counts().is_empty(),
             };
+            let status = viewport.status();
+            chrome.set_hint(status.hint);
+            chrome.measure = status.measure;
+            chrome.lock_chip = status.lock.map(|(t, c)| (t, prism_ui::theme::srgba(c)));
+            // Labels and the select box, from last frame's feedback.
+            let o = viewport.overlay();
+            chrome.viewport_labels = o
+                .labels
+                .iter()
+                .filter_map(|l| {
+                    let p = viewport.to_screen(l.at)? + egui::vec2(l.offset[0], l.offset[1]);
+                    Some((p, l.text.clone(), prism_ui::theme::srgba(l.color.0)))
+                })
+                .collect();
+            chrome.viewport_box = o.screen_box.map(|b| {
+                (
+                    egui::Rect::from_min_max(
+                        viewport.local_to_screen(b.min),
+                        viewport.local_to_screen(b.max),
+                    ),
+                    b.crossing,
+                    o.box_label.clone().unwrap_or_default(),
+                )
+            });
             let layout = chrome.show(ctx);
-            for e in std::mem::take(&mut chrome.events) {
-                viewport.action(e.id, reduce);
-            }
             if chrome.active_tool != *last_tool {
-                viewport.tool_changed(last_tool, chrome.active_tool);
+                viewport.tool_changed(chrome.active_tool);
                 *last_tool = chrome.active_tool;
             }
-            if let Some(resp) = &layout.response {
-                viewport.input(ctx, resp, layout.viewport, chrome, reduce);
+            for e in std::mem::take(&mut chrome.events) {
+                viewport.action(e.id, chrome);
             }
-            if viewport.step(f64::from(ctx.input(|i| i.stable_dt))) {
-                ctx.request_repaint();
+            if let Some(resp) = &layout.response {
+                viewport.input(ctx, resp, layout.viewport, chrome);
+            }
+            *last_tool = chrome.active_tool;
+            let now = ctx.input(|i| i.time);
+            if let Some(after) = viewport.time(now) {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(after.min(1.0)));
             }
             let ppp = ctx.pixels_per_point();
             viewport_px = [
@@ -229,25 +258,31 @@ impl App {
             .tessellate(output.shapes, output.pixels_per_point);
 
         let shadow = self.chrome.is_on("view.shadow");
-        let vp = &mut self.viewport;
-        let redraw = vp.take_dirty();
-        let highlight_changed = vp.take_highlight_change();
-        let highlight = vp.highlight();
-        let camera = vp.camera();
-        let bounds = vp.scene().bounds;
-        let upload = vp.take_upload().is_some();
-        let (scene, style) = (vp.scene(), &vp.style);
+        let s = &mut self.viewport.session;
+        let mut redraw = s.take_dirty();
+        let highlight_changed = s.take_highlight_dirty();
+        let overlay_changed = s.take_overlay_dirty();
+        redraw |= overlay_changed || highlight_changed;
+        let upload = self.uploaded != Some(s.version());
+        self.uploaded = Some(s.version());
+        let overlay = overlay_changed.then(|| s.overlay());
+        let highlight = prism_render::gpu::Highlight {
+            hover: s.hover(),
+            selection: s.selection().clone(),
+        };
+        let (scene, style) = (s.scene(), &s.style);
         let draw = crate::gpu::ViewportDraw {
             size: viewport_px,
             upload: upload.then_some(scene),
-            highlight: highlight_changed.then_some((scene, highlight)),
+            highlight: (highlight_changed || upload).then_some((scene, highlight)),
+            overlay: overlay.as_ref(),
             redraw,
             frame: prism_render::gpu::Frame {
-                camera,
+                camera: s.camera(),
                 ppp: output.pixels_per_point,
                 style,
                 shadow,
-                bounds,
+                bounds: scene.bounds,
             },
         };
         gpu.render(
@@ -362,27 +397,44 @@ impl ApplicationHandler<Gpu> for App {
             self.log.push(input);
             redraw = true;
         }
-        // Shortcuts, Esc and key recording go to the chrome first. A key it
-        // uses is not passed on, so it does not also type into a field.
+        // Typing for the measurement box comes first (so "m" after "2.5" is
+        // a unit, not the Move tool); then shortcuts, Esc and key recording
+        // go to the chrome; then what is left goes to the viewport.
         let mut used = false;
         if let WindowEvent::KeyboardInput { event: key, .. } = &event
-            && key.state == ElementState::Pressed
-            && !key.repeat
             && let PhysicalKey::Code(code) = key.physical_key
         {
-            let m = self.modifiers_state;
-            let press = crate::actions::keymap::KeyPress {
-                code: format!("{code:?}"),
-                ctrl: m.control_key(),
-                cmd: m.super_key(),
-                shift: m.shift_key(),
-                alt: m.alt_key(),
-            };
-            used = self
-                .chrome
-                .key(&press, self.egui_ctx.egui_wants_keyboard_input());
-            if !used && press.code == "Escape" {
-                used = self.viewport.escape(&mut self.chrome);
+            let code_name = format!("{code:?}");
+            let typing_elsewhere = self.egui_ctx.egui_wants_keyboard_input();
+            let pressed = key.state == ElementState::Pressed;
+            let chrome_ui = self.chrome.ui_open_pub();
+            if pressed
+                && !typing_elsewhere
+                && !chrome_ui
+                && !self.modifiers_state.control_key()
+                && !self.modifiers_state.super_key()
+                && let Some(t) = key.text.as_ref()
+                && !t.chars().any(char::is_control)
+            {
+                used = self.viewport.text(t);
+            }
+            if !used && pressed && !key.repeat {
+                let m = self.modifiers_state;
+                let press = crate::actions::keymap::KeyPress {
+                    code: code_name.clone(),
+                    ctrl: m.control_key(),
+                    cmd: m.super_key(),
+                    shift: m.shift_key(),
+                    alt: m.alt_key(),
+                };
+                used = self.chrome.key(&press, typing_elsewhere);
+            }
+            if !used
+                && !typing_elsewhere
+                && !chrome_ui
+                && (!key.repeat || code_name.starts_with("Backspace"))
+            {
+                used = self.viewport.key(&code_name, pressed, &mut self.chrome);
             }
             redraw |= used;
         }

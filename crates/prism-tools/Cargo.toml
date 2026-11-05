@@ -1,0 +1,22 @@
+[package]
+name = "prism-tools"
+description = "Tool state machines (Select, Line, Rectangle), the measurement box and the viewport session, all pure."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prism-math.workspace = true
+prism-geom.workspace = true
+prism-topo.workspace = true
+prism-ops.workspace = true
+prism-doc.workspace = true
+prism-view.workspace = true
+prism-infer.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

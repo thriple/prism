@@ -132,7 +132,9 @@ fn debug_panel(ui: &mut egui::Ui, info: &DebugInfo<'_>, viewport: &mut Viewport)
 
 /// The viewport's tuning (the prototype's Feel Panel sliders) and counts.
 fn viewport_controls(ui: &mut egui::Ui, v: &mut Viewport) {
-    let m = v.model();
+    use prism_view::style::HiddenLines;
+    let s = &mut v.session;
+    let m = s.model();
     mono(
         ui,
         format!(
@@ -142,36 +144,57 @@ fn viewport_controls(ui: &mut egui::Ui, v: &mut Viewport) {
             m.vertex_count()
         ),
     );
+    let t = s.timings();
     mono(
         ui,
         format!(
-            "pick {:.2} ms   scene rebuilt in {:.1} ms",
-            v.timings.pick_ms, v.timings.scene_ms
+            "pick {:.2} ms   infer {:.2} ms   scene {:.1} ms",
+            t.pick_ms, t.infer_ms, t.scene_ms
         ),
     );
-    let mut ap = v.tuning.aperture as f32;
+    let mut ap = s.settings.aperture as f32;
     if ui
         .add(SoftSlider::new(&mut ap, 0.5..=2.5, "Pick aperture").suffix("x"))
         .changed()
     {
-        v.tuning.aperture = f64::from(ap);
+        s.settings.aperture = f64::from(ap);
     }
-    let mut profile = v.style.profile_width;
+    let mut rel = s.settings.release as f32;
+    if ui
+        .add(SoftSlider::new(&mut rel, 1.0..=3.0, "Snap release").suffix("x"))
+        .changed()
+    {
+        s.settings.release = f64::from(rel);
+    }
+    let mut wake = (s.settings.wake * 1000.0) as f32;
+    if ui
+        .add(SoftSlider::new(&mut wake, 50.0..=800.0, "Hover wake").suffix(" ms"))
+        .changed()
+    {
+        s.settings.wake = f64::from(wake) / 1000.0;
+    }
+    let mut profile = s.style.profile_width;
     if ui
         .add(SoftSlider::new(&mut profile, 0.0..=4.0, "Profile lines").suffix(" pt"))
         .changed()
     {
-        v.style.profile_width = profile;
-        v.mark_dirty();
+        s.style.profile_width = profile;
+        s.mark_dirty();
     }
-    let mut hidden = v.hidden_lines_index();
+    let mut hidden = match s.style.hidden_lines {
+        HiddenLines::Off => 0,
+        HiddenLines::Dashed => 1,
+        HiddenLines::Faint => 2,
+    };
     if ui
         .add(SoftSelect::new(&mut hidden, &HIDDEN_LINES, "Hidden lines"))
         .changed()
     {
-        v.set_hidden_lines_index(hidden);
+        s.style.hidden_lines =
+            [HiddenLines::Off, HiddenLines::Dashed, HiddenLines::Faint][hidden.min(2)];
+        s.mark_dirty();
     }
-    ui.add(SoftToggle::new(&mut v.tuning.ease, "Ease zoom"));
+    ui.add(SoftToggle::new(&mut s.ease, "Ease zoom"));
 }
 
 fn demo_panel(ui: &mut egui::Ui, settings: &mut Settings, demo: &mut Demo) {

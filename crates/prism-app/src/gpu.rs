@@ -29,6 +29,8 @@ pub struct ViewportDraw<'a> {
     pub upload: Option<&'a prism_render::Scene>,
     /// The highlight, when it changed.
     pub highlight: Option<(&'a prism_render::Scene, prism_render::gpu::Highlight)>,
+    /// The tools' feedback, when it changed.
+    pub overlay: Option<&'a prism_view::overlay::Overlay>,
     /// Draw the picture again (camera, scene, highlight or style changed).
     pub redraw: bool,
     pub frame: prism_render::gpu::Frame<'a>,
@@ -149,6 +151,10 @@ impl Gpu {
         if let Some((scene, h)) = &v.highlight {
             self.viewport
                 .set_highlight(&self.device, scene, h, v.frame.style);
+            redraw = true;
+        }
+        if let Some(o) = v.overlay {
+            self.viewport.set_overlay(&self.device, o);
             redraw = true;
         }
         redraw

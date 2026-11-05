@@ -95,6 +95,15 @@ pub struct Chrome {
     persist: bool,
     /// The renderer's picture of the model, shown in the viewport well.
     pub viewport_texture: Option<egui::TextureId>,
+    /// Drawn over the picture: label pills (screen position, text, pill colour).
+    pub viewport_labels: Vec<(Pos2, String, egui::Color32)>,
+    /// A box-select rectangle (crossing when true) and its label.
+    pub viewport_box: Option<(Rect, bool, String)>,
+    /// The status bar's right side: the lock chip and the measurement box.
+    pub lock_chip: Option<(String, egui::Color32)>,
+    pub measure: (String, String, bool),
+    /// A message that replaces the tool hint until the tool changes.
+    note: Option<(String, &'static str)>,
 }
 
 impl Chrome {
@@ -141,7 +150,43 @@ impl Chrome {
             rules: actions::Context::default(),
             persist: false,
             viewport_texture: None,
+            viewport_labels: Vec::new(),
+            viewport_box: None,
+            lock_chip: None,
+            measure: (String::new(), String::new(), false),
+            note: None,
         }
+    }
+
+    /// Show a message in the status bar until the tool changes.
+    pub fn status_note(&mut self, text: String) {
+        self.note = Some((text, self.active_tool));
+    }
+
+    /// Show the tool's hint, unless a message is up for this tool.
+    pub fn set_hint(&mut self, hint: &str) {
+        match &self.note {
+            Some((text, tool)) if *tool == self.active_tool => self.status = text.clone(),
+            _ => {
+                self.note = None;
+                self.status = hint.to_owned();
+            }
+        }
+    }
+
+    /// The registry's id for a tool name (so a `String` from the session can
+    /// become the chrome's `&'static str`).
+    pub fn tool_id(&self, id: &str) -> Option<&'static str> {
+        self.reg.get(id).map(|a| a.id)
+    }
+
+    pub fn menu_close(&mut self) {
+        self.menu = None;
+    }
+
+    /// Whether a menu, the search or a window has the keys.
+    pub fn ui_open_pub(&self) -> bool {
+        self.ui_open()
     }
 
     pub fn is_on(&self, id: &str) -> bool {
@@ -198,16 +243,13 @@ impl Chrome {
             Run::NotBuilt => return,
             Run::Tool => {
                 self.active_tool = id;
-                self.status = format!(
-                    "{}: picked. The tool itself is built in a later chunk.",
-                    a.name
-                );
+                self.note = None;
             }
             Run::Event => {
                 if a.check == Check::Toggle && !self.toggles.remove(id) {
                     self.toggles.insert(id);
                 }
-                self.status = format!("{}: sent. Nothing handles it until a later chunk.", a.name);
+                self.status = a.name.to_owned();
             }
             Run::Command => {
                 match id {

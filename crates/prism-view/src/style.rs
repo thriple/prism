@@ -81,6 +81,80 @@ pub struct Style {
     pub hidden_lines: HiddenLines,
     pub hidden_alpha: f32,
     pub hidden_dash: [f32; 2],
+    /// Inference and tool feedback.
+    pub feedback: Feedback,
+}
+
+/// The colours and sizes of inference and tool feedback (feel test:
+/// `GLYPH`, `drawOverlay(`, `boxDraw(`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Feedback {
+    pub endpoint: Rgba,
+    pub midpoint: Rgba,
+    pub on_edge: Rgba,
+    pub on_face: Rgba,
+    pub on_ground: Rgba,
+    pub intersection: Rgba,
+    pub guide_cross: Rgba,
+    pub free: Rgba,
+    /// Parallel guides and woken edges.
+    pub parallel: Rgba,
+    /// Woken points' diamonds.
+    pub woken: Rgba,
+    pub glyph_size: f32,
+    pub woken_size: f32,
+    pub guide_width: f32,
+    pub guide_dash: [f32; 2],
+    pub rubber_band: Rgba,
+    pub rubber_band_width: f32,
+    /// The rectangle preview's fill.
+    pub preview_fill: Rgba,
+    /// Snap target highlight: a wide faint glow and a line.
+    pub target_glow_width: f32,
+    pub target_glow_alpha: f32,
+    pub target_width: f32,
+    pub target_ring: f32,
+    /// Label pills.
+    pub pill: Rgba,
+    pub pill_text: Rgba,
+    pub box_window: Rgba,
+    pub box_crossing: Rgba,
+    pub box_fill_alpha: f32,
+    pub box_dash: [f32; 2],
+}
+
+impl Default for Feedback {
+    fn default() -> Self {
+        Self {
+            endpoint: Rgba::rgb(0x1b, 0x9a, 0x52),
+            midpoint: Rgba::rgb(0x0b, 0x87, 0xa8),
+            on_edge: Rgba::rgb(0xd4, 0x35, 0x1c),
+            on_face: Rgba::rgb(0x2b, 0x57, 0xd6),
+            on_ground: Rgba::rgb(0x6b, 0x72, 0x80),
+            intersection: Rgba::rgb(0x11, 0x11, 0x11),
+            guide_cross: Rgba::rgb(0xb2, 0x1f, 0xc2),
+            free: Rgba::rgb(0x6b, 0x72, 0x80),
+            parallel: Rgba::rgb(0xb2, 0x1f, 0xc2),
+            woken: Rgba::rgb(0x3d, 0x40, 0x46),
+            glyph_size: 6.0,
+            woken_size: 7.0,
+            guide_width: 1.6,
+            guide_dash: [5.0, 4.0],
+            rubber_band: Rgba::rgb(0x16, 0x18, 0x1c),
+            rubber_band_width: 1.8,
+            preview_fill: Rgba::rgb(31, 95, 224).with_alpha(alpha(0.14)),
+            target_glow_width: 7.0,
+            target_glow_alpha: 0.28,
+            target_width: 2.8,
+            target_ring: 9.0,
+            pill: Rgba::rgb(0x1c, 0x1e, 0x22),
+            pill_text: Rgba::rgb(255, 255, 255),
+            box_window: Rgba::rgb(0x1f, 0x5f, 0xe0),
+            box_crossing: Rgba::rgb(0x2e, 0xa0, 0x5a),
+            box_fill_alpha: 0.13,
+            box_dash: [6.0, 4.0],
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,6 +215,7 @@ impl Default for Style {
             hidden_lines: HiddenLines::Off,
             hidden_alpha: 0.35,
             hidden_dash: [4.0, 4.0],
+            feedback: Feedback::default(),
         }
     }
 }

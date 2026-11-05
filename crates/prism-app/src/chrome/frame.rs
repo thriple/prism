@@ -53,6 +53,38 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
             }
             emboss::inset(&mut shapes, rect, r, depth::WELL);
             ui.painter().extend(shapes);
+            // Tool feedback text over the picture, clipped to the well.
+            let painter = ui.painter().with_clip_rect(rect);
+            if let Some((b, crossing, label)) = &chrome.viewport_box {
+                let c = if *crossing {
+                    color::BOX_CROSSING
+                } else {
+                    color::BOX_WINDOW
+                };
+                painter.rect_filled(*b, 0.0, c.gamma_multiply(color::BOX_FILL));
+                let stroke = egui::Stroke::new(size::BOX_STROKE, c);
+                if *crossing {
+                    let pts = [
+                        b.left_top(),
+                        b.right_top(),
+                        b.right_bottom(),
+                        b.left_bottom(),
+                        b.left_top(),
+                    ];
+                    painter.extend(egui::Shape::dashed_line(
+                        &pts,
+                        stroke,
+                        size::BOX_DASH,
+                        size::BOX_GAP,
+                    ));
+                } else {
+                    painter.rect_stroke(*b, 0.0, stroke, egui::StrokeKind::Inside);
+                }
+                pill(&painter, b.left_top() + vec2(8.0, -14.0), label, c);
+            }
+            for (at, text, c) in &chrome.viewport_labels {
+                pill(&painter, *at, text, *c);
+            }
             if resp.clicked() {
                 chrome.menu = None;
             }
@@ -60,25 +92,87 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
         })
         .inner;
 
-    // The status bar: a one-line hint.
+    // The status bar: the tool's hint, then the lock chip, the measurement
+    // box and the build.
     Area::new(Id::unique("status"))
         .order(Order::Background)
         .fixed_pos(status.min)
         .interactable(false)
         .show(ctx, |ui| {
             let (rect, _) = ui.allocate_exact_size(status.size(), Sense::hover());
-            ui.painter().text(
-                pos2(rect.left() + size::TOP_BAR_PAD, rect.center().y),
-                Align2::LEFT_CENTER,
-                &chrome.status,
-                theme::body(),
-                color::MUTED,
-            );
-            ui.painter().text(
+            let p = ui.painter();
+            let build = p.text(
                 pos2(rect.right() - size::TOP_BAR_PAD, rect.center().y),
                 Align2::RIGHT_CENTER,
                 crate::overlay::BUILD,
                 theme::mono(),
+                color::MUTED,
+            );
+            // The measurement box: a sunken well with the value in it.
+            let well = Rect::from_min_size(
+                pos2(
+                    build.left() - size::STATUS_ITEM_GAP * 2.0 - size::MEASURE_WIDTH,
+                    rect.center().y - size::MEASURE_HEIGHT * 0.5,
+                ),
+                vec2(size::MEASURE_WIDTH, size::MEASURE_HEIGHT),
+            );
+            let mut shapes = Vec::new();
+            emboss::soft(
+                &mut shapes,
+                well,
+                radius::MEASURE,
+                -1.0,
+                depth::FIELD_WELL,
+                color::SURFACE,
+            );
+            p.extend(shapes);
+            let (label, value, typing) = &chrome.measure;
+            p.text(
+                pos2(well.right() - size::MEASURE_PAD, well.center().y),
+                Align2::RIGHT_CENTER,
+                if *typing {
+                    format!("{value}▏")
+                } else {
+                    value.clone()
+                },
+                theme::mono_value(),
+                if *typing { color::ACCENT } else { color::INK },
+            );
+            let lab = p.text(
+                pos2(well.left() - size::STATUS_ITEM_GAP, rect.center().y),
+                Align2::RIGHT_CENTER,
+                label,
+                theme::small(),
+                color::MUTED,
+            );
+            let mut left_end = lab.left();
+            if let Some((text, c)) = &chrome.lock_chip {
+                let g = p.layout_no_wrap(text.clone(), theme::small(), color::INK_BRIGHT);
+                let w = g.size().x + 2.0 * size::CHIP_PAD;
+                let chip = Rect::from_min_size(
+                    pos2(
+                        left_end - size::STATUS_ITEM_GAP * 2.0 - w,
+                        rect.center().y - size::CHIP_HEIGHT * 0.5,
+                    ),
+                    vec2(w, size::CHIP_HEIGHT),
+                );
+                p.rect_filled(chip, theme::corner(radius::ROUND), *c);
+                p.galley(chip.center() - g.size() * 0.5, g, color::INK_BRIGHT);
+                left_end = chip.left();
+            }
+            let hint = p.layout(
+                chrome.status.clone(),
+                theme::body(),
+                color::MUTED,
+                (left_end - rect.left() - 3.0 * size::TOP_BAR_PAD).max(50.0),
+            );
+            let first = hint.rows.first().map(|r| r.row.size.y).unwrap_or(0.0);
+            p.galley(
+                pos2(
+                    rect.left() + size::TOP_BAR_PAD,
+                    rect.center().y - first * 0.5,
+                ),
+                hint,
                 color::MUTED,
             );
         });
@@ -183,4 +277,19 @@ fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
             }
             ctx.data_mut(|d| d.insert_temp(Id::unique("menu-bar-titles"), titles));
         });
+}
+
+/// A dark pill with white text (feel test `pill(`): its left middle at `at`.
+fn pill(p: &egui::Painter, at: egui::Pos2, text: &str, fill: egui::Color32) {
+    let g = p.layout_no_wrap(text.to_owned(), theme::mono_small(), color::INK_BRIGHT);
+    let r = Rect::from_min_size(
+        pos2(at.x, at.y - size::PILL_HEIGHT * 0.5),
+        vec2(g.size().x + 2.0 * size::PILL_PAD, size::PILL_HEIGHT),
+    );
+    p.rect_filled(r, theme::corner(radius::PILL), fill);
+    p.galley(
+        pos2(r.left() + size::PILL_PAD, r.center().y - g.size().y * 0.5),
+        g,
+        color::INK_BRIGHT,
+    );
 }

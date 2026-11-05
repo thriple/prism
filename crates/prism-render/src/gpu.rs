@@ -99,6 +99,8 @@ const MODEL_EDGE: u32 = 4;
 const FADE: u32 = 8;
 const PUSH_BACK: u32 = 16;
 const POINT: u32 = 64;
+const NO_TEST: u32 = 128;
+const MARK: u32 = 256;
 
 fn split(v: DVec3) -> ([f32; 3], [f32; 3]) {
     let hi = v.as_vec3();
@@ -285,6 +287,17 @@ pub struct Renderer {
     grid_style: Option<Style>,
     highlight_lines: Lines,
     dots: Lines,
+    tris: wgpu::RenderPipeline,
+    overlay_tris: Option<(wgpu::Buffer, u32)>,
+    overlay: Lines,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct TriVertex {
+    hi: [f32; 3],
+    lo: [f32; 3],
+    color: [u8; 4],
 }
 
 // Draw slots.
@@ -394,6 +407,11 @@ impl Renderer {
                 4 => Float32x3, 5 => Float32x3, 6 => Unorm8x4, 7 => Float32x3, 8 => Uint32,
                 9 => Uint32x2
             ],
+        };
+        let tri_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<TriVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4],
         };
         let alpha = Some(wgpu::BlendState::ALPHA_BLENDING);
         let min_blend = Some(wgpu::BlendState {
@@ -566,6 +584,16 @@ impl Renderer {
             line: pipeline(
                 "lines", "line_vs", "line_fs", line_l, alpha, None, false, none,
             ),
+            tris: pipeline(
+                "overlay triangles",
+                "tri_vs",
+                "tri_fs",
+                std::slice::from_ref(&tri_layout),
+                alpha,
+                None,
+                false,
+                none,
+            ),
             ids_layout,
             globals,
             globals_group,
@@ -589,7 +617,65 @@ impl Renderer {
             grid_style: None,
             highlight_lines: Lines::empty(),
             dots: Lines::empty(),
+            overlay_tris: None,
+            overlay: Lines::empty(),
         }
+    }
+
+    /// Upload the tools' feedback (guides, glyphs, rubber bands, previews).
+    pub fn set_overlay(&mut self, device: &wgpu::Device, o: &prism_view::overlay::Overlay) {
+        use prism_view::overlay::Shape;
+        let mut lines: Vec<LineInstance> = o
+            .lines
+            .iter()
+            .map(|l| {
+                LineInstance::new(l.a, l.b, l.color, l.width)
+                    .dashed(l.dash)
+                    .flags(NO_TEST)
+            })
+            .collect();
+        for m in &o.marks {
+            let shape = match m.shape {
+                Shape::Circle => 0.0,
+                Shape::Triangle => 1.0,
+                Shape::Square => 2.0,
+                Shape::Diamond => 3.0,
+                Shape::Cross => 4.0,
+                Shape::Ring => 5.0,
+                Shape::DiamondOutline => 6.0,
+            };
+            // The quad covers the shape and its outline.
+            let mut l =
+                LineInstance::new(m.at, m.at, m.color, 2.0 * (m.size + 4.0)).flags(MARK | NO_TEST);
+            l.shape[1] = shape;
+            l.shape[2] = m.size;
+            lines.push(l);
+        }
+        self.overlay.set(device, "tool feedback", &lines);
+        let verts: Vec<TriVertex> = o
+            .tris
+            .iter()
+            .flat_map(|t| {
+                t.p.map(|p| {
+                    let (hi, lo) = split(p);
+                    TriVertex {
+                        hi,
+                        lo,
+                        color: t.color.0,
+                    }
+                })
+            })
+            .collect();
+        self.overlay_tris = (!verts.is_empty()).then(|| {
+            (
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("tool feedback triangles"),
+                    contents: bytemuck::cast_slice(&verts),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }),
+                verts.len() as u32,
+            )
+        });
     }
 
     /// Make sure the target is `w` by `h` pixels. Returns true if it was
@@ -1068,5 +1154,12 @@ impl Renderer {
         }
         self.highlight_lines.draw(&mut pass);
         self.dots.draw(&mut pass);
+        if let Some((b, n)) = &self.overlay_tris {
+            pass.set_pipeline(&self.tris);
+            pass.set_vertex_buffer(0, b.slice(..));
+            pass.draw(0..*n, 0..1);
+            pass.set_pipeline(&self.line);
+        }
+        self.overlay.draw(&mut pass);
     }
 }
