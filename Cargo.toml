@@ -6,6 +6,7 @@ members = [
     "crates/prism-topo",
     "crates/prism-ops",
     "crates/prism-doc",
+    "crates/prism-file",
     "crates/prism-view",
     "crates/prism-infer",
     "crates/prism-tools",
@@ -34,6 +35,7 @@ prism-geom = { path = "crates/prism-geom" }
 prism-topo = { path = "crates/prism-topo" }
 prism-ops = { path = "crates/prism-ops" }
 prism-doc = { path = "crates/prism-doc" }
+prism-file = { path = "crates/prism-file" }
 prism-render = { path = "crates/prism-render" }
 prism-view = { path = "crates/prism-view" }
 prism-infer = { path = "crates/prism-infer" }
@@ -41,7 +43,13 @@ prism-tools = { path = "crates/prism-tools" }
 glam = { version = "0.34.2", features = ["serde"] }
 robust = "1.2.0"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# float_roundtrip: f64 values come back from JSON bit for bit (without it,
+# about 11% of coordinates come back one bit off; docs/research).
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+# The .prism container: deflate only, pure Rust (no zstd or bzip2, which are C).
+zip = { version = "9.4", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 proptest = "1.12.0"
 
 [profile.release]

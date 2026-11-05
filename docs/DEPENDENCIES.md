@@ -13,7 +13,7 @@ Add a row before adding a dependency. Allowed by default: MIT, Apache-2.0, BSD, 
 | log | 0.4 | prism-app | MIT OR Apache-2.0 | Yes | Logging facade |
 | web-time | 1.1 | prism-app | MIT OR Apache-2.0 | Yes | `Instant` that works in the browser |
 | serde | 1.0 | prism-app, core crates | MIT OR Apache-2.0 | Yes | Keymap and model file formats |
-| serde_json | 1.0 | prism-app, prism-topo, prism-doc | MIT OR Apache-2.0 | Yes | Keymap and model saved as JSON; golden cases read in tests |
+| serde_json | 1.0 | prism-app, prism-topo, prism-doc, prism-file | MIT OR Apache-2.0 | Yes | Keymap, model and `.prism` manifest as JSON. The `float_roundtrip` feature is on, so f64 values come back bit for bit |
 | glam | 0.34 | prism-math, prism-render (and the crates above them) | MIT OR Apache-2.0 | Yes | f64 vectors and rotations |
 | robust | 1.2 | prism-math | MIT OR Apache-2.0 | Yes | Exact orientation predicates (Shewchuk) |
 | proptest | 1.12 | prism-ops, prism-doc (tests only, native only) | MIT OR Apache-2.0 | No (not needed: tests run natively) | Property tests |
@@ -56,3 +56,6 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 |---|---|---|
 | trunk 0.22.1 | MIT OR Apache-2.0 | Builds and bundles the web version |
 | Node.js | MIT | Runs `scripts/import_prototype.js`, which copies the prototype's action tables into Rust (only when they change) |
+| zip | 9.4 | prism-file | MIT | Yes (default features off: deflate only, no C) | The `.prism` container (PLAN 1.13) |
+| flate2 | 1.1 | prism-file | MIT OR Apache-2.0 | Yes (`rust_backend`: miniz_oxide, pure Rust) | Deflate for the zip |
+| postcard | 1.1 | prism-file | MIT OR Apache-2.0 | Yes | The geometry entry: compact, f64 stored as raw bits |

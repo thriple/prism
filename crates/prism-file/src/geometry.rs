@@ -1,0 +1,204 @@
+//! The model's binary entry: its own versioned layout, in postcard.
+
+use prism_geom::{Curve, Surface};
+use prism_math::{DVec3, Plane};
+use prism_topo::{
+    Counters, Edge, EdgeId, Face, FaceId, Guide, GuideId, Model, ModelParts, VertexId,
+};
+use serde::{Deserialize, Serialize};
+
+use crate::FileError;
+
+/// The geometry layout this version writes.
+pub const VERSION: u32 = 1;
+
+type P = [f64; 3];
+
+#[derive(Serialize, Deserialize)]
+enum CurveV1 {
+    Line,
+}
+
+#[derive(Serialize, Deserialize)]
+enum SurfaceV1 {
+    Plane { origin: P, normal: P },
+}
+
+#[derive(Serialize, Deserialize)]
+enum GuideV1 {
+    Line { origin: P, dir: P },
+    Point { at: P },
+}
+
+#[derive(Serialize, Deserialize)]
+struct EdgeV1 {
+    id: u32,
+    a: u32,
+    b: u32,
+    curve: CurveV1,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FaceV1 {
+    id: u32,
+    outer: Vec<u32>,
+    holes: Vec<Vec<u32>>,
+    surface: SurfaceV1,
+}
+
+#[derive(Serialize, Deserialize)]
+struct GeometryV1 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV1>,
+    faces: Vec<FaceV1>,
+    guides: Vec<(u32, GuideV1)>,
+    /// Vertex, edge, face and guide counters.
+    counters: [u32; 4],
+}
+
+fn p(v: DVec3) -> P {
+    v.to_array()
+}
+
+fn ids(l: &[VertexId]) -> Vec<u32> {
+    l.iter().map(|v| v.0).collect()
+}
+
+pub fn encode(m: &Model) -> Vec<u8> {
+    let parts = m.to_parts();
+    let g = GeometryV1 {
+        vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
+        edges: parts
+            .edges
+            .iter()
+            .map(|(id, e)| EdgeV1 {
+                id: id.0,
+                a: e.a.0,
+                b: e.b.0,
+                curve: match e.curve {
+                    Curve::Line => CurveV1::Line,
+                },
+            })
+            .collect(),
+        faces: parts
+            .faces
+            .iter()
+            .map(|(id, f)| FaceV1 {
+                id: id.0,
+                outer: ids(&f.outer),
+                holes: f.holes.iter().map(|h| ids(h)).collect(),
+                surface: match f.surface {
+                    Surface::Plane(pl) => SurfaceV1::Plane {
+                        origin: p(pl.origin),
+                        normal: p(pl.normal),
+                    },
+                },
+            })
+            .collect(),
+        guides: parts
+            .guides
+            .iter()
+            .map(|(id, g)| {
+                (
+                    id.0,
+                    match *g {
+                        Guide::Line { origin, dir } => GuideV1::Line {
+                            origin: p(origin),
+                            dir: p(dir),
+                        },
+                        Guide::Point { at } => GuideV1::Point { at: p(at) },
+                    },
+                )
+            })
+            .collect(),
+        counters: [
+            parts.counters.vertex,
+            parts.counters.edge,
+            parts.counters.face,
+            parts.counters.guide,
+        ],
+    };
+    postcard::to_allocvec(&g).unwrap_or_default()
+}
+
+pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
+    if version != VERSION {
+        return Err(FileError::Damaged(format!(
+            "unknown geometry layout {version}"
+        )));
+    }
+    let g: GeometryV1 =
+        postcard::from_bytes(bytes).map_err(|e| FileError::Damaged(format!("geometry: {e}")))?;
+    let v = |a: u32| VertexId(a);
+    let parts = ModelParts {
+        vertices: g
+            .vertices
+            .into_iter()
+            .map(|(id, q)| (VertexId(id), DVec3::from_array(q)))
+            .collect(),
+        edges: g
+            .edges
+            .into_iter()
+            .map(|e| {
+                (
+                    EdgeId(e.id),
+                    Edge {
+                        a: v(e.a),
+                        b: v(e.b),
+                        curve: match e.curve {
+                            CurveV1::Line => Curve::Line,
+                        },
+                    },
+                )
+            })
+            .collect(),
+        faces: g
+            .faces
+            .into_iter()
+            .map(|f| {
+                (
+                    FaceId(f.id),
+                    Face {
+                        outer: f.outer.into_iter().map(v).collect(),
+                        holes: f
+                            .holes
+                            .into_iter()
+                            .map(|h| h.into_iter().map(v).collect())
+                            .collect(),
+                        surface: match f.surface {
+                            SurfaceV1::Plane { origin, normal } => Surface::Plane(Plane {
+                                origin: DVec3::from_array(origin),
+                                normal: DVec3::from_array(normal),
+                            }),
+                        },
+                    },
+                )
+            })
+            .collect(),
+        guides: g
+            .guides
+            .into_iter()
+            .map(|(id, gd)| {
+                (
+                    GuideId(id),
+                    match gd {
+                        GuideV1::Line { origin, dir } => Guide::Line {
+                            origin: DVec3::from_array(origin),
+                            dir: DVec3::from_array(dir),
+                        },
+                        GuideV1::Point { at } => Guide::Point {
+                            at: DVec3::from_array(at),
+                        },
+                    },
+                )
+            })
+            .collect(),
+        counters: Counters {
+            vertex: g.counters[0],
+            edge: g.counters[1],
+            face: g.counters[2],
+            guide: g.counters[3],
+        },
+    };
+    Model::from_parts(parts).map_err(|e| FileError::Damaged(format!("geometry: {e}")))
+}

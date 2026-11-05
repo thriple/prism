@@ -5,16 +5,23 @@
 //! are separated as DECISIONS #5 says: `,` where the decimal mark is `.`,
 //! `;` where it is `,`, and `;` always.
 
+use prism_math::{DisplayUnits, LengthUnit};
+
 /// How numbers are written where the user is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NumberFormat {
     /// `.` or `,`.
     pub decimal: char,
+    /// The unit lengths are shown in (File > Document Settings).
+    pub units: DisplayUnits,
 }
 
 impl Default for NumberFormat {
     fn default() -> Self {
-        Self { decimal: '.' }
+        Self {
+            decimal: '.',
+            units: DisplayUnits::default(),
+        }
     }
 }
 
@@ -43,8 +50,47 @@ impl NumberFormat {
         t.parse::<f64>().ok().filter(|v| v.is_finite())
     }
 
+    /// A number, or a whole number and a fraction ("6 1/2", "1/2").
+    fn with_fraction(&self, s: &str) -> Option<f64> {
+        let s = s.trim();
+        let Some((left, den)) = s.split_once('/') else {
+            return self.number(&s.replace(' ', ""));
+        };
+        let den = self.number(den.trim())?;
+        let (whole, num) = match left.trim().rsplit_once(' ') {
+            Some((w, n)) => (self.number(w.trim())?, self.number(n.trim())?),
+            None => (0.0, self.number(left.trim())?),
+        };
+        if den <= 0.0 || num < 0.0 || whole < 0.0 {
+            return None;
+        }
+        Some(whole + num / den)
+    }
+
     /// A length in metres.
     pub fn length(&self, s: &str) -> Option<f64> {
+        // Inches with a fraction keep their space: 2' 6 1/2" or 6 1/2".
+        let low = s.trim().to_lowercase();
+        if low.contains('/') {
+            let (ft, inch) = match low.split_once('\'') {
+                Some((f, i)) => (Some(f.trim()), i),
+                None => (None, low.as_str()),
+            };
+            let inch = inch.trim();
+            let inch = inch
+                .strip_suffix('"')
+                .or_else(|| inch.strip_suffix("in"))
+                .unwrap_or(inch);
+            let inches = self.with_fraction(inch)?;
+            let (sign, feet) = match ft {
+                Some(f) => {
+                    let v = self.number(f)?;
+                    (if f.starts_with('-') { -1.0 } else { 1.0 }, v.abs())
+                }
+                None => (1.0, 0.0),
+            };
+            return Some(sign * (feet * 12.0 + inches) * 0.0254);
+        }
         let s: String = s
             .trim()
             .to_lowercase()
@@ -105,21 +151,59 @@ impl NumberFormat {
         Some((a, b))
     }
 
-    /// A length as the measurement box shows it: three decimals, metres.
-    pub fn show(&self, metres: f64) -> String {
-        let t = format!("{metres:.3} m");
+    fn fixed(&self, v: f64) -> String {
+        let d = usize::from(self.units.decimals.min(prism_math::units::MAX_DECIMALS));
+        let mut t = format!("{v:.d$}");
+        // No "-0.000".
+        if t.starts_with('-') && t[1..].chars().all(|c| c == '0' || c == '.') {
+            t.remove(0);
+        }
         if self.decimal == ',' {
-            t.replace('.', ",")
-        } else {
-            t
+            t = t.replace('.', ",");
+        }
+        t
+    }
+
+    /// A length in the document's unit, with or without the unit's mark.
+    fn show_in(&self, metres: f64, mark: bool) -> String {
+        let u = self.units.length;
+        let v = metres / u.metres();
+        match u {
+            LengthUnit::FeetInches => {
+                let d = i32::from(self.units.decimals.min(prism_math::units::MAX_DECIMALS));
+                let step = 10f64.powi(-d);
+                // Round the inches first, so 11.9999" shows as the next foot.
+                let total = (v.abs() / step).round() * step;
+                let feet = (total / 12.0 + 1e-9).floor();
+                let inches = (total - feet * 12.0).max(0.0);
+                let sign = if v < 0.0 && total > 0.0 { "-" } else { "" };
+                format!("{sign}{}' {}\"", feet as i64, self.fixed(inches))
+            }
+            _ => {
+                let t = self.fixed(v);
+                if !mark {
+                    return t;
+                }
+                let m = match u {
+                    LengthUnit::Millimetres => " mm",
+                    LengthUnit::Centimetres => " cm",
+                    LengthUnit::Metres => " m",
+                    _ => "\"",
+                };
+                format!("{t}{m}")
+            }
         }
     }
 
-    /// Two lengths ("2.000, 1.500").
+    /// A length as the measurement box shows it, in the document's unit.
+    pub fn show(&self, metres: f64) -> String {
+        self.show_in(metres, true)
+    }
+
+    /// Two lengths ("2.000, 1.500 m").
     pub fn show_pair(&self, a: f64, b: f64) -> String {
         let sep = if self.decimal == ',' { "; " } else { ", " };
-        let (x, y) = (self.show(a), self.show(b));
-        format!("{}{sep}{}", x.trim_end_matches(" m"), y)
+        format!("{}{sep}{}", self.show_in(a, false), self.show(b))
     }
 }
 
@@ -127,8 +211,24 @@ impl NumberFormat {
 mod tests {
     use super::*;
 
-    const DOT: NumberFormat = NumberFormat { decimal: '.' };
-    const COMMA: NumberFormat = NumberFormat { decimal: ',' };
+    const DOT: NumberFormat = NumberFormat {
+        decimal: '.',
+        units: DisplayUnits {
+            length: LengthUnit::Metres,
+            decimals: 3,
+        },
+    };
+    const COMMA: NumberFormat = NumberFormat {
+        decimal: ',',
+        ..DOT
+    };
+
+    fn shown_in(length: LengthUnit, decimals: u8) -> NumberFormat {
+        NumberFormat {
+            units: DisplayUnits { length, decimals },
+            ..DOT
+        }
+    }
 
     fn close(a: Option<f64>, b: f64) -> bool {
         a.is_some_and(|a| (a - b).abs() < 1e-12)
@@ -178,5 +278,50 @@ mod tests {
         assert_eq!(DOT.show(1.23456), "1.235 m");
         assert_eq!(COMMA.show(1.5), "1,500 m");
         assert_eq!(DOT.show_pair(2.0, 1.5), "2.000, 1.500 m");
+    }
+
+    #[test]
+    fn shown_in_each_unit() {
+        assert_eq!(shown_in(LengthUnit::Millimetres, 0).show(0.75), "750 mm");
+        assert_eq!(shown_in(LengthUnit::Centimetres, 1).show(0.4), "40.0 cm");
+        assert_eq!(shown_in(LengthUnit::Metres, 2).show(-0.0001), "0.00 m");
+        assert_eq!(shown_in(LengthUnit::Inches, 2).show(0.3048), "12.00\"");
+        let fi = shown_in(LengthUnit::FeetInches, 1);
+        assert_eq!(fi.show(0.762 + 0.0127), "2' 6.5\"");
+        assert_eq!(fi.show(0.3048 * 3.0 - 1e-9), "3' 0.0\"");
+        assert_eq!(fi.show(-0.762), "-2' 6.0\"");
+        assert_eq!(
+            shown_in(LengthUnit::FeetInches, 0).show(0.0254 * 11.6),
+            "1' 0\""
+        );
+        assert_eq!(
+            shown_in(LengthUnit::Millimetres, 0).show_pair(2.0, 1.5),
+            "2000, 1500 mm"
+        );
+        let c = NumberFormat {
+            decimal: ',',
+            ..shown_in(LengthUnit::Centimetres, 1)
+        };
+        assert_eq!(c.show(0.125), "12,5 cm");
+    }
+
+    #[test]
+    fn shown_lengths_read_back() {
+        for u in LengthUnit::ALL {
+            let nf = shown_in(u, 4);
+            for v in [0.0, 0.0254, 0.762, 1.5, 12.3456, -2.0] {
+                let back = nf.length(&nf.show(v)).expect("reads back");
+                assert!((back - v).abs() < 0.0254 * 1e-4 + 1e-9, "{u:?} {v} {back}");
+            }
+        }
+    }
+
+    #[test]
+    fn inches_with_fractions() {
+        assert!(close(DOT.length("2' 6 1/2\""), 0.7747));
+        assert!(close(DOT.length("6 1/2\""), 0.1651));
+        assert!(close(DOT.length("1/2in"), 0.0127));
+        assert!(close(DOT.length("-1' 1/2"), -(12.5 * 0.0254)));
+        assert_eq!(DOT.length("1/0\""), None);
     }
 }

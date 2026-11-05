@@ -4,12 +4,13 @@
 use std::fs;
 use std::path::Path;
 
-const CORE: [&str; 8] = [
+const CORE: [&str; 9] = [
     "prism-math",
     "prism-geom",
     "prism-topo",
     "prism-ops",
     "prism-doc",
+    "prism-file",
     "prism-view",
     "prism-infer",
     "prism-tools",

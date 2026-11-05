@@ -7,7 +7,9 @@
 pub mod plane;
 pub mod predicates;
 pub mod tol;
+pub mod units;
 
 pub use glam::{DQuat, DVec2, DVec3};
 pub use plane::{Plane, newell};
 pub use tol::Tol;
+pub use units::{DisplayUnits, LengthUnit};

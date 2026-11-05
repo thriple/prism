@@ -108,6 +108,16 @@ pub struct Model {
     next_guide: u32,
 }
 
+/// A model taken apart: every item with its id, and the id counters.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModelParts {
+    pub vertices: Vec<(VertexId, DVec3)>,
+    pub edges: Vec<(EdgeId, Edge)>,
+    pub faces: Vec<(FaceId, Face)>,
+    pub guides: Vec<(GuideId, Guide)>,
+    pub counters: Counters,
+}
+
 /// The id counters, kept across undo so ids are never handed out twice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Counters {
@@ -348,6 +358,74 @@ impl Model {
         self.next_guide = self.next_guide.max(c.guide);
     }
 
+    /// Everything in the model, with its ids and counters (for files).
+    pub fn to_parts(&self) -> ModelParts {
+        ModelParts {
+            vertices: self.vertices().collect(),
+            edges: self.edges.iter().map(|(k, v)| (*k, *v)).collect(),
+            faces: self.faces.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            guides: self.guides.iter().map(|(k, v)| (*k, *v)).collect(),
+            counters: self.counters(),
+        }
+    }
+
+    /// A model from its parts. Refused if the parts do not fit together:
+    /// a repeated id, an id at or above its counter, or the bookkeeping
+    /// problems [`Model::bookkeeping_problems`] finds.
+    pub fn from_parts(p: ModelParts) -> Result<Model, String> {
+        fn ids<K: Ord + Copy + std::fmt::Debug, V>(
+            items: Vec<(K, V)>,
+            what: &str,
+            below: impl Fn(K) -> bool,
+        ) -> Result<BTreeMap<K, V>, String> {
+            let mut map = BTreeMap::new();
+            for (k, v) in items {
+                if !below(k) {
+                    return Err(format!("{what} {k:?} is not below its counter"));
+                }
+                if map.insert(k, v).is_some() {
+                    return Err(format!("{what} {k:?} appears twice"));
+                }
+            }
+            Ok(map)
+        }
+        let c = p.counters;
+        let vertices = ids(p.vertices, "vertex", |k: VertexId| k.0 < c.vertex)?;
+        if let Some((id, _)) = vertices.iter().find(|(_, v)| !v.is_finite()) {
+            return Err(format!("vertex {id:?} is not a finite point"));
+        }
+        let finite = |g: &Guide| match *g {
+            Guide::Line { origin, dir } => {
+                origin.is_finite() && dir.is_finite() && dir != DVec3::ZERO
+            }
+            Guide::Point { at } => at.is_finite(),
+        };
+        if let Some((id, _)) = p.guides.iter().find(|(_, g)| !finite(g)) {
+            return Err(format!("guide {id:?} is not finite"));
+        }
+        if let Some((id, _)) = p.faces.iter().find(|(_, f)| {
+            let pl = f.plane();
+            !(pl.origin.is_finite() && pl.normal.is_finite())
+        }) {
+            return Err(format!("face {id:?} has no finite plane"));
+        }
+        let m = Model {
+            vertices,
+            edges: ids(p.edges, "edge", |k: EdgeId| k.0 < c.edge)?,
+            faces: ids(p.faces, "face", |k: FaceId| k.0 < c.face)?,
+            guides: ids(p.guides, "guide", |k: GuideId| k.0 < c.guide)?,
+            next_vertex: c.vertex,
+            next_edge: c.edge,
+            next_face: c.face,
+            next_guide: c.guide,
+        };
+        let problems = m.bookkeeping_problems();
+        if let Some(first) = problems.first() {
+            return Err(first.clone());
+        }
+        Ok(m)
+    }
+
     /// The saved form: deterministic JSON.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
@@ -391,7 +469,7 @@ impl Model {
                     out.push(format!("face {id:?} has a loop of {} vertices", l.len()));
                 }
                 for (a, b) in loop_pairs(l) {
-                    if self.edge_between(a, b).is_none() {
+                    if !pairs.contains(&(a.min(b), a.max(b))) {
                         out.push(format!("face {id:?} uses a missing edge {a:?}-{b:?}"));
                     }
                 }
