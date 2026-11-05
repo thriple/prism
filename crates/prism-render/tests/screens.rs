@@ -385,3 +385,60 @@ fn prism_render_large(n: i32) -> Model {
     }
     m
 }
+
+/// Diagnostic for CI: how big a gap behind a far thin plate each GPU
+/// resolves. Prints only; never fails.
+#[test]
+fn plate_gap_threshold_report() {
+    let Some(mut g) = gpu() else { return };
+    let style = tell_tale();
+    let dist = 1000.0;
+    let s = dist * 0.3;
+    let t = 0.0005;
+    for gap in [0.001, 0.003, 0.01, 0.03, 0.1] {
+        let mut m = Model::new();
+        let y0 = -s * 0.05;
+        prism_ops::add_rect(&mut m, -s / 2.0, y0, s / 2.0, y0 + t, 0.0);
+        let f = prism_ops::face_at(&m, DVec3::new(0.0, y0 + t / 2.0, 0.0)).expect("plate");
+        let up = if m.face(f).expect("f").plane().normal.z > 0.0 {
+            s
+        } else {
+            -s
+        };
+        prism_ops::push_pull(&mut m, f, up, false);
+        let (d0, d1) = (y0 + t + gap, y0 + t + gap + s * 0.2);
+        prism_ops::add_rect(&mut m, -s * 0.2, d0, s * 0.2, d1, s * 0.3);
+        let f = prism_ops::face_at(&m, DVec3::new(0.0, (d0 + d1) / 2.0, s * 0.3)).expect("detail");
+        let up = if m.face(f).expect("f").plane().normal.z > 0.0 {
+            s * 0.4
+        } else {
+            -s * 0.4
+        };
+        prism_ops::push_pull(&mut m, f, up, false);
+        for el in [0.0, 20.0] {
+            let cam = looking_at(DVec3::new(0.0, 0.0, s / 2.0), dist, -90.0, el);
+            let img = g.shot(&m, cam, 300, 300, 1.0, &style, &Highlight::default());
+            let ids = g.ids(300, 300);
+            let mut dark = Vec::new();
+            for y in 110..190 {
+                for x in 110..190 {
+                    if img.at(x, y)[0] < 120 {
+                        dark.push((x, y));
+                    }
+                }
+            }
+            let sample: Vec<String> = dark
+                .iter()
+                .step_by((dark.len() / 4).max(1))
+                .map(|&(x, y)| {
+                    let v = ids[(y * 300 + x) as usize];
+                    format!("({x},{y}) face {} depth {:.9}", v[0], f32::from_bits(v[1]))
+                })
+                .collect();
+            eprintln!(
+                "GAP REPORT gap {gap} m, elevation {el}: {} dark pixels {sample:?}",
+                dark.len()
+            );
+        }
+    }
+}
