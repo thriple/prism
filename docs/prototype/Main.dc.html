@@ -1356,7 +1356,8 @@ class Component extends DCLogic {
     const t0 = performance.now(), d = delta.slice();
     const cen = [0, 1, 2].map(a => (sg.mn[a] + sg.mx[a]) / 2 + d[a]), sc = this.scr(cen);
     const tol = 8 * this.tune.ap * (sc ? sc[2] : 10) / this.vp.foc;
-    const axes = this.locks.axis != null ? [this.locks.axis] : [0, 1, 2];
+    // Only guide along axes the object is actually moving along. A flat shape sliding on the ground stays aligned in Z the whole time, so Z is never interesting.
+    const axes = (this.locks.axis != null ? [this.locks.axis] : [0, 1, 2]).filter(a => Math.abs(delta[a]) > tol);
     const Mv = a => [sg.mn[a] + d[a], cen[a] + 0 * a, sg.mx[a] + d[a]].map((v, i) => i === 1 ? (sg.mn[a] + sg.mx[a]) / 2 + d[a] : v);
     const guides = [], names = ['X', 'Y', 'Z'];
     // 1. alignment of min / centre / max, per axis
@@ -1366,10 +1367,12 @@ class Component extends DCLogic {
       for (const o of sg.objs) {
         const ov = [o.mn[a], (o.mn[a] + o.mx[a]) / 2, o.mx[a]];
         for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-          const df = ov[j] - mv[i]; if (Math.abs(df) < tol && (!best || Math.abs(df) < Math.abs(best.df))) best = { df, v: ov[j], o, a, ctr: i === 1 || j === 1 };
+          const df = ov[j] - mv[i]; if (Math.abs(df) >= tol) continue;
+          const dist = Math.hypot(...[0, 1, 2].map(q => (o.mn[q] + o.mx[q]) / 2 - cen[q]));
+          if (!best || Math.abs(df) < Math.abs(best.df) - 1e-9 || (Math.abs(Math.abs(df) - Math.abs(best.df)) <= 1e-9 && dist < best.dist)) best = { df, v: ov[j], o, a, ctr: i === 1 || j === 1, dist };
         }
       }
-      if (best) { d[a] += best.df; guides.push({ k: 'align', a, v: best.v, o: best.o, show: !best.ctr || Math.abs(best.df) < tol / 4 }); }
+      if (best) { d[a] += best.df; guides.push({ k: 'align', a, v: best.v, o: best.o, ctr: best.ctr, show: !best.ctr || Math.abs(best.df) < tol / 4 }); }
     }
     // 2. equal spacing, using the objects that sit in the same row as the moving one
     if (!sg.spacingOff) {
@@ -1402,7 +1405,11 @@ class Component extends DCLogic {
     for (const g of sg.guides) {
       if (g.k === 'align') {
         if (!g.show) continue;
-        const a = g.a, o = g.o, p1 = [0, 1, 2].map(i => i === a ? g.v : (o.mn[i] + o.mx[i]) / 2), p2 = [0, 1, 2].map(i => i === a ? g.v : (sg.mn[i] + sg.mx[i]) / 2 + sh[i]);
+        const a = g.a, o = g.o, cl = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        const oc = [0, 1, 2].map(i => (o.mn[i] + o.mx[i]) / 2), mc = [0, 1, 2].map(i => (sg.mn[i] + sg.mx[i]) / 2 + sh[i]);
+        // Join the two nearest points of the boxes at the aligned coordinate (centres only for a centre match).
+        const p1 = [0, 1, 2].map(i => i === a ? g.v : g.ctr ? oc[i] : cl(mc[i], o.mn[i], o.mx[i]));
+        const p2 = [0, 1, 2].map(i => i === a ? g.v : g.ctr ? mc[i] : cl(oc[i], sg.mn[i] + sh[i], sg.mx[i] + sh[i]));
         this.worldLine(ctx, p1, p2, '#00a3c4', 1.6, [6, 4]);
         for (const p of [p1, p2]) { const s = this.scr(p); if (s) { ctx.fillStyle = '#00a3c4'; ctx.beginPath(); ctx.arc(s[0], s[1], 3.5, 0, 7); ctx.fill(); } }
         const m = this.scr([0, 1, 2].map(i => (p1[i] + p2[i]) / 2)); if (m) this.pill(ctx, 'Align ' + 'XYZ'[a], m[0] + 10, m[1] - 14, '#00849f');
