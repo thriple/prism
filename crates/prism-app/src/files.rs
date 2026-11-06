@@ -22,6 +22,8 @@ pub const AUTOSAVE_EVERY: f64 = 10.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Next {
     New,
+    /// Open the dropped `.prism` file.
+    Dropped,
     Open,
     Recent(usize),
     Close,
@@ -61,6 +63,11 @@ pub struct Files {
     /// A journal left behind by a crash, offered at start.
     offer: Option<(Journal, Vec<u8>)>,
     title: String,
+    /// Import and Export.
+    transfer: crate::transfer::Transfer,
+    /// A `.prism` file dropped while there were unsaved changes, opened
+    /// once they are dealt with.
+    dropped: Option<Opened>,
 }
 
 fn contents(s: &Session, extra: &Map<String, Value>) -> Contents {
@@ -104,6 +111,8 @@ impl Files {
             last_autosave: 0.0,
             offer: recovery::left_behind(),
             title: String::new(),
+            transfer: crate::transfer::Transfer::default(),
+            dropped: None,
         }
     }
 
@@ -113,7 +122,7 @@ impl Files {
 
     /// A dialog of ours is open (keys go to it, not to the tools).
     pub fn modal(&self) -> bool {
-        self.asking.is_some() || self.settings_open || self.offer.is_some()
+        self.asking.is_some() || self.settings_open || self.offer.is_some() || self.transfer.modal()
     }
 
     pub fn take_quit(&mut self) -> bool {
@@ -160,6 +169,7 @@ impl Files {
             "file.save" => self.save(false, None, s, chrome),
             "file.saveas" => self.save(true, None, s, chrome),
             "file.docsettings" => self.settings_open = true,
+            "file.import" | "exp.3mf" | "exp.gltf" => self.transfer.action(id, s, chrome),
             _ => {
                 if let Some(n) = id
                     .strip_prefix("file.recent")
@@ -169,6 +179,17 @@ impl Files {
                     self.then(Next::Recent(n - 1), s, chrome);
                 }
             }
+        }
+    }
+
+    /// A file dropped onto the window: a `.prism` opens (asking about
+    /// unsaved changes first), anything else imports.
+    pub fn dropped(&mut self, o: Opened, s: &mut Session, chrome: &mut Chrome) {
+        if o.name.to_ascii_lowercase().ends_with(".prism") {
+            self.dropped = Some(o);
+            self.then(Next::Dropped, s, chrome);
+        } else {
+            self.transfer.open(o, chrome);
         }
     }
 
@@ -214,6 +235,11 @@ impl Files {
                         doc_files::set_recent(&self.recent);
                         chrome.status_note(e);
                     }
+                }
+            }
+            Next::Dropped => {
+                if let Some(o) = self.dropped.take() {
+                    self.load(o, s, chrome);
                 }
             }
             Next::Close => {
@@ -342,6 +368,13 @@ impl Files {
         {
             self.offer = Some(o);
         }
+        if let Some(r) = crate::mesh_files::take_dropped() {
+            match r {
+                Ok(o) => self.dropped(o, s, chrome),
+                Err(e) => chrome.status_note(format!("Could not read the dropped file: {e}")),
+            }
+        }
+        self.transfer.frame(ctx, s, chrome);
         doc_files::set_unsaved(self.dirty(s));
         self.autosave(now, s);
         self.dialogs(ctx, s, chrome);

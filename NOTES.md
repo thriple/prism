@@ -401,3 +401,45 @@ Brief: `docs/briefs/08-files-and-formats.md`. Research: `docs/research/files-and
 - Recent files on the web would need stored file handles in IndexedDB.
 - **Fixed after the owner tested the web build:** the mouse wheel panned instead of zooming. Browsers report a wheel in points, as they do a trackpad. Now a vertical step of 40 points or more with no sideways part counts as a wheel notch (100 points) and zooms. Smaller or sideways steps still pan, as DECISIONS #4 says trackpads do. Natively the wheel already zoomed.
 - **Changed after the owner tested (DECISIONS #15):** erasing the edge between two faces on one plane now merges them into one face, as in SketchUp, so the merged face can be offset or pulled. Where faces meet at an angle, erasing their edge still takes both. In `prism_ops::remove`, such an edge is removed on its own and the plane's faces are rebuilt.
+
+## Files & Formats (part 2)
+
+Brief: `docs/briefs/09-files-and-formats-2.md`.
+
+**What to try**
+- **File > Import…** (or drop a file on the window): STL, OBJ, 3MF, glTF (GLB, or `.gltf` with embedded buffers) and PLY.
+  - The dialog shows the triangle count and the size, and asks for the unit when the file does not say it (STL, OBJ and PLY).
+  - "Y is up" is on by default for glTF and OBJ.
+  - "Merge coplanar triangles into faces" is on by default: an STL box comes in as 6 faces.
+  - The import is one undo step. The view fits it, and the status bar gives the face count.
+- **File > Export:** "3MF / STL (3D printing)" or "glTF / OBJ / USD (media, web)".
+  - Pick the format (3MF or STL; GLB, OBJ or PLY), the unit, Y up, and "Only the selected faces".
+  - The file saves natively, or downloads on the web. The dialog says that a mesh keeps only triangles.
+- **Drag and drop:** natively through winit, and on the web through the page's own drop listeners. A dropped `.prism` opens, asking "Save changes?" first; anything else imports.
+- Screenshot: `docs/screenshots/import-dialog-web.png`, a dropped STL box on the web build. Imported, it became 6 faces.
+
+**Tests**
+- `prism-file/tests/mesh.rs`:
+  - round trips through every format for the cube and the box with a pocket (same faces and areas after merging);
+  - the same bytes twice;
+  - hand-written STL, OBJ (a quad, a pentagon, negative indices) and PLY;
+  - a GLB with a node transform;
+  - merging (two triangles, a ring with a hole, a bend that stays apart);
+  - selection-only export, units and up axis;
+  - a damaged-file fuzz test.
+- `prism-doc`: undo of `Import` (17 command kinds).
+- **Large Scene timing** (15,000 faces, release build): export takes 5–60 ms and import 44–96 ms per format. Import was 1.2 s until `Model::add_new_edge` skipped `add_edge`'s scan for an existing edge.
+
+**Decisions and defaults used**
+- STL, OBJ, PLY and GLB are written and read with our own code. Only 3MF uses a crate, `quick-xml`, to read its XML (DECISIONS #25), so `gltf`, `stl_io`, `tobj` and the PLY crates were not needed.
+- Imports are added beside the model, not joined to it, as PLAN 1.13 allows.
+- Files over 50 MB get a note that they may take a while, instead of a question before reading. Background import waits for threads.
+- There is no highlight while a file is dragged over the web page; the native window shows a status note.
+
+**Leftovers**
+- Materials and colours in all formats.
+- USD.
+- Joining imports to existing geometry, which needs Groups & Components or Model Health.
+- Recovering exact curves from meshes, and softening edges.
+- A progress bar for big imports.
+- Exports are triangles even where the format could keep holes.

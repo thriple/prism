@@ -126,7 +126,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
     } else if id.starts_with("help.scene.")
         || id == "help.record"
         || id == "view.guides"
-        || id.starts_with("file.") && id != "file.import"
+        || id.starts_with("file.")
+        || id == "exp.3mf"
+        || id == "exp.gltf"
     {
         // The file actions (brief 08) are handled by the app.
         // Test scenes for the viewport (brief 04), handled by the app.

@@ -10,11 +10,13 @@ mod files;
 pub mod frame_stats;
 mod gpu;
 pub mod input_log;
+mod mesh_files;
 mod overlay;
 pub mod platform;
 mod recovery;
 pub mod settings;
 mod storage;
+mod transfer;
 mod viewport;
 
 pub use app::run;

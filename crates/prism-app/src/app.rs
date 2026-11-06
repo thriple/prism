@@ -252,7 +252,7 @@ impl App {
                 *last_tool = chrome.active_tool;
             }
             for e in std::mem::take(&mut chrome.events) {
-                if e.id.starts_with("file.") {
+                if e.id.starts_with("file.") || e.id.starts_with("exp.") {
                     files.action(e.id, &mut viewport.session, chrome);
                 } else {
                     viewport.action(e.id, chrome);
@@ -502,6 +502,21 @@ impl ApplicationHandler<Gpu> for App {
                 self.request_redraw();
             }
             WindowEvent::RedrawRequested => self.redraw(),
+            #[cfg(not(target_arch = "wasm32"))]
+            WindowEvent::DroppedFile(path) => {
+                match crate::doc_files::open_path(&path.display().to_string()) {
+                    Ok(o) => self
+                        .files
+                        .dropped(o, &mut self.viewport.session, &mut self.chrome),
+                    Err(e) => self.chrome.status_note(e),
+                }
+                self.request_redraw();
+            }
+            WindowEvent::HoveredFile(_) => {
+                self.chrome
+                    .status_note("Drop to import (or open a .prism file)".into());
+                self.request_redraw();
+            }
             _ => {}
         }
     }

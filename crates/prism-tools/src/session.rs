@@ -832,6 +832,22 @@ impl Session {
         }
     }
 
+    /// Add imported geometry beside the model, in one undo step, and fit
+    /// the view to it. Returns whether anything was added.
+    pub fn import(&mut self, model: Model) -> bool {
+        let Some((lo, hi)) = model.bbox() else {
+            return false;
+        };
+        self.cancel();
+        if !self.run(Command::Import { model }) {
+            return false;
+        }
+        let goal = self.camera.extents(lo, hi, self.view().aspect());
+        self.ease_to(goal, EASE_EXTENTS);
+        self.refresh();
+        true
+    }
+
     /// How lengths are shown (File > Document Settings).
     pub fn set_units(&mut self, units: prism_math::DisplayUnits) {
         if self.number.units != units {
