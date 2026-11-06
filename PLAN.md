@@ -425,6 +425,7 @@ A panel, opened from Window, that lists things that probably should not be there
 | Holes and open edges | Boundary edges that should be shared, gaps in a shell, non-manifold edges, and whether each shell is watertight |
 | Interior faces | Faces fully enclosed by other geometry. **Clean envelope** removes them and keeps the outer shell, with a preview first and one undo step. It works on the selection by default, to avoid deleting hidden detail by accident |
 | Degenerate geometry | Zero-area faces, slivers, zero-length edges, stray loose edges |
+| Crossing faces | Faces that pass through each other with no edge along the crossing, connected or not (DECISIONS #29). **Intersect Faces** fixes them |
 | Nesting | Counts of groups and components, nesting depth, and instances that share a definition |
 | Scale | Parts far from the origin or smaller than the tolerance |
 
