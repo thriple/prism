@@ -70,6 +70,10 @@ struct App {
     uploaded: Option<u64>,
     /// The document's file: save, open, recovery (brief 08).
     files: crate::files::Files,
+    /// The other open documents (brief 11).
+    tabs: crate::tabs::Tabs,
+    /// Next and previous tab, asked for this frame.
+    tab_actions: Vec<isize>,
     /// A file named on the command line, opened on the first frame.
     start_file: Option<String>,
 }
@@ -78,8 +82,12 @@ impl App {
     fn new(event_loop: &EventLoop<Gpu>) -> Self {
         let egui_ctx = egui::Context::default();
         prism_ui::theme::install(&egui_ctx);
-        let viewport = Viewport::new();
-        let files = crate::files::Files::new(&viewport.session);
+        let mut viewport = Viewport::new();
+        let mut files = crate::files::Files::new(&viewport.session, 1);
+        let mut tabs = crate::tabs::Tabs::new(1);
+        // Work a crash left behind comes back, one tab each (natively it is
+        // read now; on the web it arrives in later frames).
+        tabs.offer(crate::recovery::left_behind(), &mut viewport, &mut files);
         // `prism model.prism` (how Windows passes a double-clicked file).
         // macOS adds a -psn_ argument when Finder starts an app.
         #[cfg(not(target_arch = "wasm32"))]
@@ -108,6 +116,8 @@ impl App {
             last_tool: "tool.select",
             uploaded: None,
             files,
+            tabs,
+            tab_actions: Vec::new(),
             start_file,
         }
     }
@@ -171,6 +181,37 @@ impl App {
         }
     }
 
+    /// Tab requests, clicks and closes after a frame. Returns whether the
+    /// active document changed (then the GPU gets the new one).
+    fn tab_work(&mut self) -> bool {
+        let (vp, f, chrome) = (&mut self.viewport, &mut self.files, &mut self.chrome);
+        let mut changed = self.tabs.handle(vp, f, chrome);
+        match chrome.doc_event.take() {
+            Some(crate::chrome::DocEvent::Switch(i)) => changed |= self.tabs.switch(i, vp, f),
+            Some(crate::chrome::DocEvent::Close(i)) => changed |= self.tabs.close(i, vp, f, chrome),
+            Some(crate::chrome::DocEvent::New) => {
+                f.requests.push(crate::files::Request::NewTab);
+                changed |= self.tabs.handle(vp, f, chrome);
+            }
+            None => {}
+        }
+        for e in std::mem::take(&mut self.tab_actions) {
+            changed |= self.tabs.step(e, vp, f);
+        }
+        changed |= self.tabs.offer(crate::recovery::take_found(), vp, f);
+        changed |= self.tabs.after_frame(vp, f, chrome);
+        if changed {
+            // The GPU uploads the new tab's scene; the dock shows its tool.
+            self.uploaded = None;
+            if let Some(id) = chrome.tool_id(vp.session.tool()) {
+                chrome.active_tool = id;
+                self.last_tool = id;
+            }
+            vp.session.mark_dirty();
+        }
+        changed
+    }
+
     fn redraw(&mut self) {
         let (Some(window), Some(gpu), Some(egui_state)) =
             (&self.window, &mut self.gpu, &mut self.egui_state)
@@ -194,6 +235,8 @@ impl App {
             reduce_motion: motion.reduce_motion,
             aurora_redraws: self.aurora.redraws(),
         };
+        let tabs_labels = self.tabs.labels(&self.viewport, &self.files);
+        let active_tab = self.tabs.active();
         let (settings, demo, aurora, chrome, viewport, last_tool, files) = (
             &mut self.settings,
             &mut self.demo,
@@ -204,6 +247,7 @@ impl App {
             &mut self.files,
         );
         let start_file = self.start_file.take();
+        let mut tab_actions: Vec<isize> = Vec::new();
         chrome.viewport_texture = gpu.viewport_texture();
         viewport.session.reduce_motion = motion.reduce_motion;
         let mut viewport_px = [1u32, 1u32];
@@ -215,6 +259,8 @@ impl App {
             if let Some(p) = &start_file {
                 files.open_at_start(p, &mut viewport.session, chrome);
             }
+            chrome.docs = tabs_labels.clone();
+            chrome.active_doc = active_tab;
             chrome.recent = files.recent_names();
             chrome.rules = crate::actions::Context {
                 can_undo: viewport.can_undo(),
@@ -252,7 +298,9 @@ impl App {
                 *last_tool = chrome.active_tool;
             }
             for e in std::mem::take(&mut chrome.events) {
-                if e.id.starts_with("file.") || e.id.starts_with("exp.") {
+                if e.id == "win.nexttab" || e.id == "win.prevtab" {
+                    tab_actions.push(if e.id == "win.nexttab" { 1 } else { -1 });
+                } else if e.id.starts_with("file.") || e.id.starts_with("exp.") {
                     files.action(e.id, &mut viewport.session, chrome);
                 } else {
                     viewport.action(e.id, chrome);
@@ -279,6 +327,7 @@ impl App {
             overlay::draw(ctx, layout.viewport, shown, &info, settings, demo, viewport);
         });
         egui_state.handle_platform_output(window, output.platform_output);
+        self.tab_actions = tab_actions;
         if let Some(t) = self.files.new_title(&self.viewport.session) {
             window.set_title(&t);
             // winit does not set the page's title on the web.
@@ -490,8 +539,9 @@ impl ApplicationHandler<Gpu> for App {
 
         match event {
             WindowEvent::CloseRequested => {
-                self.files
-                    .close_requested(&mut self.viewport.session, &mut self.chrome);
+                self.tabs
+                    .close_window(&mut self.viewport, &mut self.files, &mut self.chrome);
+                self.tab_work();
                 self.request_redraw();
             }
             WindowEvent::Resized(size) => {
@@ -501,7 +551,12 @@ impl ApplicationHandler<Gpu> for App {
                 }
                 self.request_redraw();
             }
-            WindowEvent::RedrawRequested => self.redraw(),
+            WindowEvent::RedrawRequested => {
+                self.redraw();
+                if self.tab_work() {
+                    self.request_redraw();
+                }
+            }
             #[cfg(not(target_arch = "wasm32"))]
             WindowEvent::DroppedFile(path) => {
                 match crate::doc_files::open_path(&path.display().to_string()) {
@@ -522,7 +577,7 @@ impl ApplicationHandler<Gpu> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if self.files.take_quit() {
+        if self.tabs.exit {
             event_loop.exit();
             return;
         }

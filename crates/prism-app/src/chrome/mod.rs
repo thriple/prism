@@ -34,6 +34,14 @@ pub enum Source {
     Search,
 }
 
+/// Clicked in the document tabs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DocEvent {
+    Switch(usize),
+    New,
+    Close(usize),
+}
+
 /// An action that ran, for later chunks to handle (tools, files, edits).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActionEvent {
@@ -92,6 +100,11 @@ pub struct Chrome {
     pub events: Vec<ActionEvent>,
     /// The recent files' names, for File > Open Recent.
     pub recent: Vec<String>,
+    /// The open documents (name, unsaved), the active one, whether the
+    /// list is open, and what was picked in it (brief 11).
+    pub docs: Vec<(String, bool)>,
+    pub active_doc: usize,
+    pub doc_event: Option<DocEvent>,
     pub rules: actions::Context,
     /// Save keymap changes to disk (off in tests).
     persist: bool,
@@ -150,6 +163,9 @@ impl Chrome {
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
             recent: Vec::new(),
+            docs: Vec::new(),
+            active_doc: 0,
+            doc_event: None,
             rules: actions::Context::default(),
             persist: false,
             viewport_texture: None,

@@ -4,6 +4,7 @@ use egui::{Align2, Area, Context, Id, Order, Rect, Sense, pos2, vec2};
 use prism_ui::emboss;
 use prism_ui::theme::{self, color, depth, radius, size};
 
+use super::DocEvent;
 use super::{Chrome, Layout, MenuKind, OpenMenu, dock};
 use egui::epaint::RectShape;
 
@@ -24,12 +25,18 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
         pos2(screen.left() + g, body_top),
         pos2(screen.left() + g + dock::width(), body_bottom),
     );
-    let viewport = Rect::from_min_max(
+    // The document tabs: a thin strip above the viewport, as wide as it.
+    let strip = Rect::from_min_max(
         pos2(dock_rect.right() + g, body_top),
+        pos2(screen.right() - g, body_top + size::TAB_HEIGHT),
+    );
+    let viewport = Rect::from_min_max(
+        pos2(dock_rect.right() + g, strip.bottom() + size::TAB_GAP),
         pos2(screen.right() - g, body_bottom),
     );
 
     top_bar(chrome, ctx, top);
+    tabs(chrome, ctx, strip);
     dock::show(chrome, ctx, dock_rect);
 
     // The viewport: a sunken well showing the renderer's picture, with the
@@ -187,6 +194,99 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
 #[derive(Clone, Copy)]
 pub(super) struct BarTitle {
     pub rect: Rect,
+}
+
+/// The open documents (brief 11): a compact row of tabs under the menu
+/// bar, as wide as the viewport (the owner's choice). Each tab shows the
+/// file's name, a dot while unsaved, and a close button; "+" makes a new
+/// document.
+fn tabs(chrome: &mut Chrome, ctx: &Context, strip: Rect) {
+    Area::new(Id::unique("document-tabs"))
+        .order(Order::Background)
+        .fixed_pos(strip.min)
+        .show(ctx, |ui| {
+            let (row, _) = ui.allocate_exact_size(strip.size(), Sense::hover());
+            let font = theme::small();
+            let pad = size::TAB_PAD;
+            let close_w = size::TAB_HEIGHT * 0.8;
+            let n = chrome.docs.len().max(1) as f32;
+            // Tabs share the row; each is at most TAB_MAX wide.
+            let plus_w = size::TAB_HEIGHT;
+            let each = ((row.width() - plus_w - size::TAB_GAP * n) / n).min(size::TAB_MAX);
+            let mut x = row.left();
+            for (i, (name, dirty)) in chrome.docs.clone().iter().enumerate() {
+                let r = Rect::from_min_size(pos2(x, row.top()), vec2(each, row.height()));
+                x += each + size::TAB_GAP;
+                let active = i == chrome.active_doc;
+                let id = Id::unique(("doc-tab", i));
+                let resp = ui.interact(r, id, Sense::click());
+                let fill = if active {
+                    color::SURFACE
+                } else if resp.hovered() {
+                    color::FROST.gamma_multiply(1.4)
+                } else {
+                    color::FROST
+                };
+                ui.painter().rect_filled(r, radius::BAR, fill);
+                if active {
+                    let line = Rect::from_min_max(
+                        pos2(r.left() + pad, r.bottom() - size::TAB_MARK),
+                        pos2(r.right() - pad, r.bottom()),
+                    );
+                    ui.painter().rect_filled(line, 0.0, color::ACCENT);
+                }
+                let text = format!("{name}{}", if *dirty { " •" } else { "" });
+                let clip = Rect::from_min_max(r.min, pos2(r.right() - close_w, r.bottom()));
+                ui.painter().with_clip_rect(clip).text(
+                    pos2(r.left() + pad, r.center().y),
+                    Align2::LEFT_CENTER,
+                    text,
+                    font.clone(),
+                    if active { color::INK } else { color::MUTED },
+                );
+                let x_rect = Rect::from_center_size(
+                    pos2(r.right() - close_w * 0.6, r.center().y),
+                    vec2(close_w * 0.8, close_w * 0.8),
+                );
+                let x_resp = ui.interact(x_rect, id.with("close"), Sense::click());
+                if x_resp.hovered() {
+                    ui.painter().rect_filled(x_rect, radius::BAR, color::FROST);
+                }
+                ui.painter().text(
+                    x_rect.center(),
+                    Align2::CENTER_CENTER,
+                    "×",
+                    font.clone(),
+                    if x_resp.hovered() {
+                        color::INK
+                    } else {
+                        color::MUTED
+                    },
+                );
+                if x_resp.clicked() {
+                    chrome.doc_event = Some(DocEvent::Close(i));
+                } else if resp.clicked() {
+                    chrome.doc_event = Some(DocEvent::Switch(i));
+                }
+                resp.on_hover_text(name.clone());
+            }
+            let plus = Rect::from_min_size(pos2(x, row.top()), vec2(plus_w, row.height()));
+            let resp = ui.interact(plus, Id::unique("doc-tab-new"), Sense::click());
+            if resp.hovered() {
+                ui.painter().rect_filled(plus, radius::BAR, color::FROST);
+            }
+            ui.painter().text(
+                plus.center(),
+                Align2::CENTER_CENTER,
+                "+",
+                theme::body(),
+                color::INK,
+            );
+            if resp.clicked() {
+                chrome.doc_event = Some(DocEvent::New);
+            }
+            resp.on_hover_text("New document");
+        });
 }
 
 fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {

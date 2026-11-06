@@ -43,6 +43,9 @@ add('help.scene.plate', 'Thin Plate');
 add('help.scene.large', 'Large Scene (Timing)');
 // Record a session to send when something feels wrong (brief 05).
 add('help.record', 'Record Session');
+// Document tabs (brief 11): next and previous, in the Window menu.
+add('win.nexttab', 'Next Document', 'Ctrl+Tab');
+add('win.prevtab', 'Previous Document', 'Ctrl+Shift+Tab');
 // Recent files (brief 08): ten slots, labelled at run time with the files'
 // names, in an Open Recent submenu with the prototype's "No recent files".
 const RECENT = 10;
@@ -58,6 +61,8 @@ const file = menu('File');
 file.splice(file.indexOf('file.recent'), 0, 'file.docsettings', '-');
 file.splice(file.indexOf('file.recent'), 1, ['Open Recent',
   ['file.recent', ...Array.from({ length: RECENT }, (_, i) => `file.recent${i + 1}`)]]);
+const win = menu('Window');
+win.push('-', 'win.nexttab', 'win.prevtab');
 const help = menu('Help');
 help.splice(help.indexOf('help.smartdemo'), 1);
 help.splice(help.indexOf('-'), 0, '-', 'help.debug', 'help.themedemo',

@@ -29,7 +29,12 @@ pub struct Status {
 
 impl Viewport {
     pub fn new() -> Self {
-        let mut session = Session::new(prism_tools::scenes::cube());
+        Self::with_document(prism_tools::scenes::cube())
+    }
+
+    /// A viewport on a document (a new tab).
+    pub fn with_document(doc: prism_doc::Document) -> Self {
+        let mut session = Session::new(doc);
         session.measure = Some(|| {
             web_time::Instant::now()
                 .duration_since(start())

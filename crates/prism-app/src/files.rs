@@ -5,7 +5,7 @@
 use egui::Context;
 use prism_doc::Document;
 use prism_file::{CameraData, Contents, Journal, Settings};
-use prism_math::{DisplayUnits, LengthUnit};
+use prism_math::LengthUnit;
 use prism_tools::Session;
 use prism_ui::widgets::{SoftButton, SoftDialog, SoftSelect, SoftSlider};
 use prism_view::Camera;
@@ -21,12 +21,15 @@ pub const AUTOSAVE_EVERY: f64 = 10.0;
 /// What to do once the unsaved changes are dealt with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Next {
-    New,
-    /// Open the dropped `.prism` file.
-    Dropped,
-    Open,
-    Recent(usize),
+    /// Close this tab.
     Close,
+}
+
+/// What a tab asks the app to do (brief 11): files open in tabs, which the
+/// app owns.
+pub enum Request {
+    NewTab,
+    Open(Opened),
 }
 
 /// Where the recovery journal starts from.
@@ -49,7 +52,12 @@ pub struct Files {
     settings_changed: bool,
     /// Fields a newer Prism wrote, kept for the next save.
     extra: Map<String, Value>,
-    recent: Vec<String>,
+    /// This tab's recovery slot.
+    slot: u32,
+    /// For the app: new tabs and files to open.
+    pub requests: Vec<Request>,
+    /// "Save changes?" was cancelled (stops closing the window).
+    cancelled: bool,
     /// "Save changes?" is showing, and what comes after it.
     asking: Option<Next>,
     /// A web save is running; this comes after it.
@@ -61,13 +69,10 @@ pub struct Files {
     base: Base,
     last_autosave: f64,
     /// A journal left behind by a crash, offered at start.
-    offer: Option<(Journal, Vec<u8>)>,
+    offer: Option<crate::recovery::Found>,
     title: String,
     /// Import and Export.
     transfer: crate::transfer::Transfer,
-    /// A `.prism` file dropped while there were unsaved changes, opened
-    /// once they are dealt with.
-    dropped: Option<Opened>,
 }
 
 fn contents(s: &Session, extra: &Map<String, Value>) -> Contents {
@@ -90,7 +95,7 @@ fn app_version() -> &'static str {
 }
 
 impl Files {
-    pub fn new(session: &Session) -> Self {
+    pub fn new(session: &Session, slot: u32) -> Self {
         let base = prism_file::write(&contents(session, &Map::new()), app_version());
         Self {
             name: None,
@@ -98,7 +103,9 @@ impl Files {
             saved_rev: Some(session.document().revision()),
             settings_changed: false,
             extra: Map::new(),
-            recent: doc_files::recent(),
+            slot,
+            requests: Vec::new(),
+            cancelled: false,
             asking: None,
             after_save: None,
             settings_open: false,
@@ -109,10 +116,9 @@ impl Files {
                 written: false,
             },
             last_autosave: 0.0,
-            offer: recovery::left_behind(),
+            offer: None,
             title: String::new(),
             transfer: crate::transfer::Transfer::default(),
-            dropped: None,
         }
     }
 
@@ -129,9 +135,41 @@ impl Files {
         std::mem::take(&mut self.quit)
     }
 
+    pub fn take_cancelled(&mut self) -> bool {
+        std::mem::take(&mut self.cancelled)
+    }
+
+    /// Untitled and unchanged: a file opened now can use this tab.
+    pub fn pristine(&self, s: &Session) -> bool {
+        self.name.is_none() && self.path.is_none() && !self.dirty(s)
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or("Untitled")
+    }
+
+    /// Offer work a crash left behind in this tab.
+    pub fn offer(&mut self, f: crate::recovery::Found) {
+        // The restored work keeps writing to the slot it came from.
+        self.slot = f.slot;
+        self.offer = Some(f);
+    }
+
+    /// Write the recovery journal now if there are unsaved changes (when
+    /// switching away from the tab, so nothing waits for its next turn).
+    pub fn flush(&mut self, s: &Session) {
+        // Any time counts as due; the clock restarts from zero after.
+        self.last_autosave = f64::NEG_INFINITY;
+        self.autosave(0.0, s);
+    }
+
     /// The recent files' names, for the Open Recent menu.
     pub fn recent_names(&self) -> Vec<String> {
-        self.recent
+        doc_files::recent()
             .iter()
             .map(|p| doc_files::display_name(p))
             .collect()
@@ -163,9 +201,14 @@ impl Files {
 
     /// A File menu action.
     pub fn action(&mut self, id: &str, s: &mut Session, chrome: &mut Chrome) {
+        doc_files::use_slot(self.slot);
         match id {
-            "file.new" => self.then(Next::New, s, chrome),
-            "file.open" => self.then(Next::Open, s, chrome),
+            "file.new" => self.requests.push(Request::NewTab),
+            "file.open" => match doc_files::open() {
+                Ok(Some(o)) => self.requests.push(Request::Open(o)),
+                Ok(None) => {}
+                Err(e) => chrome.status_note(format!("Could not open: {e}")),
+            },
             "file.save" => self.save(false, None, s, chrome),
             "file.saveas" => self.save(true, None, s, chrome),
             "file.docsettings" => self.settings_open = true,
@@ -175,8 +218,17 @@ impl Files {
                     .strip_prefix("file.recent")
                     .and_then(|n| n.parse::<usize>().ok())
                     && n >= 1
+                    && let Some(path) = doc_files::recent().get(n - 1).cloned()
                 {
-                    self.then(Next::Recent(n - 1), s, chrome);
+                    match doc_files::open_path(&path) {
+                        Ok(o) => self.requests.push(Request::Open(o)),
+                        Err(e) => {
+                            let mut list = doc_files::recent();
+                            list.retain(|p| *p != path);
+                            doc_files::set_recent(&list);
+                            chrome.status_note(e);
+                        }
+                    }
                 }
             }
         }
@@ -185,15 +237,16 @@ impl Files {
     /// A file dropped onto the window: a `.prism` opens (asking about
     /// unsaved changes first), anything else imports.
     pub fn dropped(&mut self, o: Opened, s: &mut Session, chrome: &mut Chrome) {
+        let _ = s;
         if o.name.to_ascii_lowercase().ends_with(".prism") {
-            self.dropped = Some(o);
-            self.then(Next::Dropped, s, chrome);
+            self.requests.push(Request::Open(o));
         } else {
             self.transfer.open(o, chrome);
         }
     }
 
-    /// The window's close button.
+    /// Close this tab (or, from the window's close button, one of the tabs
+    /// being closed in turn).
     pub fn close_requested(&mut self, s: &mut Session, chrome: &mut Chrome) {
         self.then(Next::Close, s, chrome);
     }
@@ -207,49 +260,17 @@ impl Files {
         }
     }
 
-    fn go(&mut self, next: Next, s: &mut Session, chrome: &mut Chrome) {
+    fn go(&mut self, next: Next, _s: &mut Session, _chrome: &mut Chrome) {
         match next {
-            Next::New => {
-                s.open_document(Document::new(), None);
-                s.set_units(DisplayUnits::default());
-                doc_files::forget_handle();
-                self.name = None;
-                self.path = None;
-                self.extra = Map::new();
-                self.mark_saved(s, None);
-                recovery::clear();
-            }
-            Next::Open => match doc_files::open() {
-                Ok(Some(o)) => self.load(o, s, chrome),
-                Ok(None) => {}
-                Err(e) => chrome.status_note(format!("Could not open: {e}")),
-            },
-            Next::Recent(i) => {
-                let Some(path) = self.recent.get(i).cloned() else {
-                    return;
-                };
-                match doc_files::open_path(&path) {
-                    Ok(o) => self.load(o, s, chrome),
-                    Err(e) => {
-                        self.recent.retain(|p| *p != path);
-                        doc_files::set_recent(&self.recent);
-                        chrome.status_note(e);
-                    }
-                }
-            }
-            Next::Dropped => {
-                if let Some(o) = self.dropped.take() {
-                    self.load(o, s, chrome);
-                }
-            }
             Next::Close => {
-                recovery::clear();
+                recovery::clear(self.slot);
                 self.quit = true;
             }
         }
     }
 
-    fn load(&mut self, o: Opened, s: &mut Session, chrome: &mut Chrome) {
+    /// Open a file in this tab.
+    pub(crate) fn load(&mut self, o: Opened, s: &mut Session, chrome: &mut Chrome) {
         let c = match prism_file::read(&o.bytes) {
             Ok(c) => c,
             Err(e) => {
@@ -270,15 +291,16 @@ impl Files {
             self.remember(p);
         }
         self.mark_saved(s, Some(o.bytes));
-        recovery::clear();
+        recovery::clear(self.slot);
         chrome.status_note(format!("Opened {}", o.name));
     }
 
     fn remember(&mut self, path: &str) {
-        self.recent.retain(|p| p != path);
-        self.recent.insert(0, path.to_owned());
-        self.recent.truncate(doc_files::MAX_RECENT);
-        doc_files::set_recent(&self.recent);
+        let mut list = doc_files::recent();
+        list.retain(|p| p != path);
+        list.insert(0, path.to_owned());
+        list.truncate(doc_files::MAX_RECENT);
+        doc_files::set_recent(&list);
     }
 
     /// The document as it is now counts as saved, and is the new base for
@@ -338,7 +360,7 @@ impl Files {
             self.path = Some(path);
         }
         self.mark_saved(s, Some(bytes));
-        recovery::clear();
+        recovery::clear(self.slot);
         if let Some(n) = next {
             self.go(n, s, chrome);
         }
@@ -346,9 +368,10 @@ impl Files {
 
     /// Every frame: finished web calls, autosave, and the dialogs.
     pub fn frame(&mut self, ctx: &Context, now: f64, s: &mut Session, chrome: &mut Chrome) {
+        doc_files::use_slot(self.slot);
         if let Some(r) = doc_files::take_opened() {
             match r {
-                Ok(o) => self.load(o, s, chrome),
+                Ok(o) => self.requests.push(Request::Open(o)),
                 Err(e) => chrome.status_note(format!("Could not open: {e}")),
             }
         }
@@ -362,11 +385,6 @@ impl Files {
                 Ok(None) => {}
                 Err(e) => chrome.status_note(format!("Not saved: {e}")),
             }
-        }
-        if self.offer.is_none()
-            && let Some(o) = recovery::take_found()
-        {
-            self.offer = Some(o);
         }
         if let Some(r) = crate::mesh_files::take_dropped() {
             match r {
@@ -395,7 +413,7 @@ impl Files {
         }
         self.last_autosave = now;
         if !self.base.written {
-            recovery::write_base(&self.base.bytes);
+            recovery::write_base(self.slot, &self.base.bytes);
             self.base.written = true;
         }
         let j = Journal {
@@ -407,7 +425,7 @@ impl Files {
                 .cloned()
                 .collect(),
         };
-        recovery::write_journal(&j.to_json());
+        recovery::write_journal(self.slot, &j.to_json());
     }
 
     fn dialogs(&mut self, ctx: &Context, s: &mut Session, chrome: &mut Chrome) {
@@ -437,13 +455,13 @@ impl Files {
             match c {
                 0 => self.save(false, Some(next), s, chrome),
                 1 => {
-                    recovery::clear();
+                    recovery::clear(self.slot);
                     // Don't Save: what comes next replaces the document.
                     self.saved_rev = Some(s.document().revision());
                     self.settings_changed = false;
                     self.go(next, s, chrome);
                 }
-                _ => {}
+                _ => self.cancelled = true,
             }
         }
 
@@ -465,12 +483,12 @@ impl Files {
             restore = Some(false);
         }
         if let Some(yes) = restore
-            && let Some((journal, base)) = self.offer.take()
+            && let Some(found) = self.offer.take()
         {
             if yes {
-                self.restore(&journal, base, s, chrome);
+                self.restore(&found.journal, found.base, s, chrome);
             } else {
-                recovery::clear();
+                recovery::clear(self.slot);
             }
         }
 
@@ -520,7 +538,7 @@ impl Files {
             Ok(c) => c,
             Err(e) => {
                 chrome.status_note(format!("Could not restore: {e}"));
-                recovery::clear();
+                recovery::clear(self.slot);
                 return;
             }
         };

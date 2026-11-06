@@ -16,6 +16,7 @@ pub mod platform;
 mod recovery;
 pub mod settings;
 mod storage;
+mod tabs;
 mod transfer;
 mod viewport;
 

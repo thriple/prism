@@ -114,17 +114,26 @@ mod imp {
         Ok(())
     }
 
+    /// The recent files, shared by every tab (read from disk once).
+    static RECENT_LIST: std::sync::Mutex<Option<Vec<String>>> = std::sync::Mutex::new(None);
+
     pub fn recent() -> Vec<String> {
-        crate::storage::config_dir()
-            .and_then(|d| std::fs::read_to_string(d.join(RECENT)).ok())
-            .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
-            .unwrap_or_default()
-            .into_iter()
-            .take(MAX_RECENT)
-            .collect()
+        let mut cache = RECENT_LIST.lock().unwrap_or_else(|e| e.into_inner());
+        cache
+            .get_or_insert_with(|| {
+                crate::storage::config_dir()
+                    .and_then(|d| std::fs::read_to_string(d.join(RECENT)).ok())
+                    .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .take(MAX_RECENT)
+                    .collect()
+            })
+            .clone()
     }
 
     pub fn set_recent(list: &[String]) {
+        *RECENT_LIST.lock().unwrap_or_else(|e| e.into_inner()) = Some(list.to_vec());
         let Some(dir) = crate::storage::config_dir() else {
             return;
         };
@@ -206,9 +215,12 @@ mod imp {
     thread_local! {
         static OPENED: RefCell<Option<Result<Opened, String>>> = const { RefCell::new(None) };
         static SAVED: RefCell<Option<super::SaveResult>> = const { RefCell::new(None) };
-        /// The file the document came from or was saved to, where the
-        /// browser lets us write to it again.
-        static HANDLE: RefCell<Option<JsValue>> = const { RefCell::new(None) };
+        /// Each tab's file (by recovery slot), where the browser lets us
+        /// write to it again.
+        static HANDLES: RefCell<std::collections::BTreeMap<u32, JsValue>> =
+            const { RefCell::new(std::collections::BTreeMap::new()) };
+        /// The tab doing file work now.
+        static CURRENT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
         static UNSAVED: RefCell<bool> = const { RefCell::new(false) };
         static WARNS: RefCell<bool> = const { RefCell::new(false) };
     }
@@ -278,6 +290,7 @@ mod imp {
 
     /// Ask for a file; it is read in the background ([`take_opened`]).
     pub fn open() -> Result<Option<Opened>, String> {
+        let slot = CURRENT.with(|c| c.get());
         if let Some(show) = picker("showOpenFilePicker") {
             let w = window().ok_or("no window")?;
             let p: Promise = show
@@ -300,7 +313,7 @@ mod imp {
                         let name = file.name();
                         match read_file(file).await {
                             Ok(bytes) => {
-                                HANDLE.with(|h| *h.borrow_mut() = Some(handle));
+                                HANDLES.with(|h| h.borrow_mut().insert(slot, handle));
                                 Some(Ok(Opened {
                                     name,
                                     path: None,
@@ -340,7 +353,7 @@ mod imp {
                     path: None,
                     bytes,
                 });
-                HANDLE.with(|h| *h.borrow_mut() = None);
+                HANDLES.with(|h| h.borrow_mut().remove(&slot));
                 OPENED.with(|o| *o.borrow_mut() = Some(r));
             });
         });
@@ -359,7 +372,10 @@ mod imp {
     /// web: `Some` means "save again where it was".
     pub fn save(path: Option<&str>, suggested: &str, bytes: &[u8]) -> super::SaveResult {
         let again = path.is_some();
-        let handle = HANDLE.with(|h| h.borrow().clone()).filter(|_| again);
+        let slot = CURRENT.with(|c| c.get());
+        let handle = HANDLES
+            .with(|h| h.borrow().get(&slot).cloned())
+            .filter(|_| again);
         let show = picker("showSaveFilePicker");
         if handle.is_none() && show.is_none() {
             download(suggested, bytes)?;
@@ -396,7 +412,7 @@ mod imp {
             .await;
             let result = match r {
                 Ok((h, name)) => {
-                    HANDLE.with(|x| *x.borrow_mut() = Some(h));
+                    HANDLES.with(|x| x.borrow_mut().insert(slot, h));
                     Ok(Some((name, String::new())))
                 }
                 Err(e) if cancelled(&e) => Ok(None),
@@ -444,9 +460,9 @@ mod imp {
         SAVED.with(|s| s.borrow_mut().take())
     }
 
-    /// Forget the file handle (File > New).
-    pub fn forget_handle() {
-        HANDLE.with(|h| *h.borrow_mut() = None);
+    /// Which tab's file handle the next open or save uses.
+    pub fn use_slot(slot: u32) {
+        CURRENT.with(|c| c.set(slot));
     }
 
     /// The browser warns before the tab closes while there are unsaved
@@ -473,5 +489,6 @@ mod imp {
 #[cfg(not(target_arch = "wasm32"))]
 pub const PENDING: &str = "pending";
 
+/// Natively files are reached by path; only the web keeps handles.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn forget_handle() {}
+pub fn use_slot(_slot: u32) {}

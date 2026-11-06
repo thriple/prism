@@ -1337,6 +1337,20 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "win.nexttab",
+        name: "Next Document",
+        key: "Ctrl+Tab",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "win.prevtab",
+        name: "Previous Document",
+        key: "Ctrl+Shift+Tab",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "file.recent1",
         name: "Recent File 1",
         key: "",
@@ -1735,6 +1749,9 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Separator,
             Item::Action("win.prefs"),
             Item::Action("win.hotkeys"),
+            Item::Separator,
+            Item::Action("win.nexttab"),
+            Item::Action("win.prevtab"),
         ],
     ),
     (

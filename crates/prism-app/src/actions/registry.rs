@@ -131,6 +131,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "exp.gltf"
         || id == "isect.model"
         || id == "isect.sel"
+        || id == "win.nexttab"
+        || id == "win.prevtab"
     {
         // The file actions (brief 08) are handled by the app.
         // Test scenes for the viewport (brief 04), handled by the app.

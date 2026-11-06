@@ -1,47 +1,87 @@
-//! The recovery store (brief 08): the base model (`.prism` bytes) and the
-//! journal of commands since. Natively two files in the config folder's
-//! `recovery` folder; on the web, IndexedDB (every browser has it).
+//! The recovery store (briefs 08 and 11): for each tab, the base model
+//! (`.prism` bytes) and the journal of commands since. Natively a folder
+//! per tab in the config folder's `recovery` folder; on the web, IndexedDB
+//! keys per tab (every browser has it).
 
 use prism_file::Journal;
 
 pub use imp::{clear, left_behind, take_found, write_base, write_journal};
 
+/// What a closed or crashed Prism left behind for one tab.
+pub struct Found {
+    pub slot: u32,
+    pub journal: Journal,
+    pub base: Vec<u8>,
+}
+
 /// A journal and base read back, if both are there and the journal reads.
-fn found(journal: Option<String>, base: Option<Vec<u8>>) -> Option<(Journal, Vec<u8>)> {
-    let j = Journal::from_json(&journal?).ok()?;
+fn found(slot: u32, journal: Option<String>, base: Option<Vec<u8>>) -> Option<Found> {
+    let journal = Journal::from_json(&journal?).ok()?;
     let base = base?;
     // An empty journal brings nothing back.
-    (!j.commands.is_empty()).then_some((j, base))
+    (!journal.commands.is_empty()).then_some(Found {
+        slot,
+        journal,
+        base,
+    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use std::path::{Path, PathBuf};
 
-    use prism_file::Journal;
+    use super::Found;
 
     const BASE: &str = "base.prism";
     const JOURNAL: &str = "journal.json";
 
-    fn dir() -> Option<PathBuf> {
+    fn root() -> Option<PathBuf> {
         crate::storage::config_dir().map(|d| d.join("recovery"))
     }
 
-    /// What a crash left behind.
-    pub fn left_behind() -> Option<(Journal, Vec<u8>)> {
-        left_behind_in(&dir()?)
+    fn dir(slot: u32) -> Option<PathBuf> {
+        root().map(|r| r.join(slot.to_string()))
     }
 
-    pub fn left_behind_in(d: &Path) -> Option<(Journal, Vec<u8>)> {
-        super::found(
-            std::fs::read_to_string(d.join(JOURNAL)).ok(),
-            std::fs::read(d.join(BASE)).ok(),
-        )
+    /// Every tab's work a crash left behind.
+    pub fn left_behind() -> Vec<Found> {
+        root().map_or_else(Vec::new, |r| left_behind_in(&r))
+    }
+
+    pub fn left_behind_in(root: &Path) -> Vec<Found> {
+        let mut out = Vec::new();
+        // Part 1 kept one journal at the top of the folder: slot 0.
+        if let Some(f) = super::found(
+            0,
+            std::fs::read_to_string(root.join(JOURNAL)).ok(),
+            std::fs::read(root.join(BASE)).ok(),
+        ) {
+            out.push(f);
+        }
+        let mut slots: Vec<u32> = std::fs::read_dir(root)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.file_name().to_str()?.parse().ok())
+            .collect();
+        slots.sort_unstable();
+        for slot in slots {
+            let d = root.join(slot.to_string());
+            if let Some(f) = super::found(
+                slot,
+                std::fs::read_to_string(d.join(JOURNAL)).ok(),
+                std::fs::read(d.join(BASE)).ok(),
+            ) && !out.iter().any(|o| o.slot == slot)
+            {
+                out.push(f);
+            }
+        }
+        out
     }
 
     /// Web only (the web reads the store in the background).
-    pub fn take_found() -> Option<(Journal, Vec<u8>)> {
-        None
+    pub fn take_found() -> Vec<Found> {
+        Vec::new()
     }
 
     fn write(d: &Path, name: &str, bytes: &[u8]) {
@@ -52,8 +92,8 @@ mod imp {
         }
     }
 
-    pub fn write_base(bytes: &[u8]) {
-        if let Some(d) = dir() {
+    pub fn write_base(slot: u32, bytes: &[u8]) {
+        if let Some(d) = dir(slot) {
             write_base_in(&d, bytes);
         }
     }
@@ -64,8 +104,8 @@ mod imp {
         let _ = std::fs::remove_file(d.join(JOURNAL));
     }
 
-    pub fn write_journal(json: &str) {
-        if let Some(d) = dir() {
+    pub fn write_journal(slot: u32, json: &str) {
+        if let Some(d) = dir(slot) {
             write_journal_in(&d, json);
         }
     }
@@ -74,9 +114,15 @@ mod imp {
         write(d, JOURNAL, json.as_bytes());
     }
 
-    pub fn clear() {
-        if let Some(d) = dir() {
+    pub fn clear(slot: u32) {
+        if let Some(d) = dir(slot) {
             clear_in(&d);
+            let _ = std::fs::remove_dir(&d);
+        }
+        if slot == 0
+            && let Some(r) = root()
+        {
+            clear_in(&r);
         }
     }
 
@@ -100,9 +146,17 @@ mod imp {
             d
         }
 
+        fn journal_for(doc: &Document) -> String {
+            Journal {
+                path: None,
+                commands: doc.log().cloned().collect(),
+            }
+            .to_json()
+        }
+
         #[test]
-        fn a_journal_left_behind_restores_the_same_model() {
-            let d = scratch("recovery");
+        fn journals_left_behind_restore_one_tab_each() {
+            let root = scratch("recovery");
             let base = prism_tools::scenes::cube();
             let bytes = prism_file::write(
                 &Contents {
@@ -111,42 +165,48 @@ mod imp {
                 },
                 "test",
             );
-            let mut doc = Document::with_model(base.model().clone());
-            doc.run(Command::Rect {
+            let mut a = Document::with_model(base.model().clone());
+            a.run(Command::Rect {
                 x0: 2.0,
                 y0: 2.0,
                 x1: 3.0,
                 y1: 4.0,
                 z: 0.0,
             });
-            doc.run(Command::Segment {
+            let mut b = Document::with_model(base.model().clone());
+            b.run(Command::Segment {
                 p: DVec3::new(2.0, 3.0, 0.0),
                 q: DVec3::new(3.0, 3.0, 0.0),
             });
-            write_base_in(&d, &bytes);
-            let j = Journal {
-                path: None,
-                commands: doc.log().cloned().collect(),
-            };
-            write_journal_in(&d, &j.to_json());
-            // A new start of the app finds it.
-            let (back, base_bytes) = left_behind_in(&d).expect("left behind");
-            let model = prism_file::read(&base_bytes).expect("base").model;
-            assert_eq!(back.restore(model).model().to_json(), doc.model().to_json());
-            clear_in(&d);
-            assert!(left_behind_in(&d).is_none(), "cleared");
-            let _ = std::fs::remove_dir_all(&d);
+            for (slot, doc) in [(3u32, &a), (7, &b)] {
+                let d = root.join(slot.to_string());
+                write_base_in(&d, &bytes);
+                write_journal_in(&d, &journal_for(doc));
+            }
+            let found = left_behind_in(&root);
+            assert_eq!(found.iter().map(|f| f.slot).collect::<Vec<_>>(), [3, 7]);
+            for (f, doc) in found.iter().zip([&a, &b]) {
+                let model = prism_file::read(&f.base).expect("base").model;
+                assert_eq!(
+                    f.journal.restore(model).model().to_json(),
+                    doc.model().to_json()
+                );
+            }
+            clear_in(&root.join("3"));
+            assert_eq!(left_behind_in(&root).len(), 1, "one cleared");
+            let _ = std::fs::remove_dir_all(&root);
         }
 
         #[test]
         fn an_empty_or_damaged_journal_offers_nothing() {
-            let d = scratch("recovery-empty");
+            let root = scratch("recovery-empty");
+            let d = root.join("1");
             write_base_in(&d, b"not a model");
             write_journal_in(&d, &Journal::default().to_json());
-            assert!(left_behind_in(&d).is_none());
+            assert!(left_behind_in(&root).is_empty());
             write_journal_in(&d, "{oops");
-            assert!(left_behind_in(&d).is_none());
-            let _ = std::fs::remove_dir_all(&d);
+            assert!(left_behind_in(&root).is_empty());
+            let _ = std::fs::remove_dir_all(&root);
         }
     }
 }
@@ -155,11 +215,12 @@ mod imp {
 mod imp {
     use std::cell::RefCell;
 
-    use js_sys::Uint8Array;
-    use prism_file::Journal;
+    use js_sys::{Array, Uint8Array};
     use wasm_bindgen::closure::Closure;
     use wasm_bindgen::{JsCast, JsValue};
     use web_sys::{IdbDatabase, IdbTransactionMode};
+
+    use super::Found;
 
     const DB: &str = "prism";
     const STORE: &str = "recovery";
@@ -168,7 +229,7 @@ mod imp {
         static DATABASE: RefCell<Option<IdbDatabase>> = const { RefCell::new(None) };
         /// Writes asked for before the database was open.
         static WAITING: RefCell<Vec<(String, Option<JsValue>)>> = const { RefCell::new(Vec::new()) };
-        static FOUND: RefCell<Option<(Journal, Vec<u8>)>> = const { RefCell::new(None) };
+        static FOUND: RefCell<Vec<Found>> = const { RefCell::new(Vec::new()) };
         static STARTED: RefCell<bool> = const { RefCell::new(false) };
     }
 
@@ -197,7 +258,7 @@ mod imp {
         }
     }
 
-    /// Open the database, read what a closed tab left behind, then do any
+    /// Open the database, read what closed tabs left behind, then do any
     /// writes that were waiting.
     fn start() {
         if STARTED.with(|s| std::mem::replace(&mut *s.borrow_mut(), true)) {
@@ -233,54 +294,85 @@ mod imp {
         on_success.forget();
     }
 
+    /// Every slot with a journal: read its journal and base.
     fn read_back(db: &IdbDatabase) {
         let Some(s) = store(db, IdbTransactionMode::Readonly) else {
             return;
         };
-        let (Ok(jr), Ok(br)) = (s.get(&"journal".into()), s.get(&"base".into())) else {
-            return;
-        };
-        let br2 = br.clone();
-        let on_done = Closure::<dyn FnMut()>::new(move || {
-            let journal = jr.result().ok().and_then(|v| v.as_string());
-            let base = br2
-                .result()
-                .ok()
-                .filter(|v| !v.is_undefined())
-                .map(|v| Uint8Array::new(&v).to_vec());
-            if let Some(f) = super::found(journal, base) {
-                FOUND.with(|x| *x.borrow_mut() = Some(f));
+        let Ok(keys) = s.get_all_keys() else { return };
+        let s2 = s.clone();
+        let k2 = keys.clone();
+        let on_keys = Closure::<dyn FnMut()>::new(move || {
+            let Ok(list) = k2.result() else { return };
+            for key in Array::from(&list).iter() {
+                let Some(name) = key.as_string() else {
+                    continue;
+                };
+                // Part 1 used "journal" and "base": slot 0.
+                let slot: Option<u32> = match name.as_str() {
+                    "journal" => Some(0),
+                    n => n.strip_prefix("journal-").and_then(|n| n.parse().ok()),
+                };
+                let Some(slot) = slot else { continue };
+                let base_key = if name == "journal" {
+                    "base".to_owned()
+                } else {
+                    format!("base-{slot}")
+                };
+                let (Ok(jr), Ok(br)) = (s2.get(&key), s2.get(&JsValue::from_str(&base_key))) else {
+                    continue;
+                };
+                let br2 = br.clone();
+                let on_done = Closure::<dyn FnMut()>::new(move || {
+                    let journal = jr.result().ok().and_then(|v| v.as_string());
+                    let base = br2
+                        .result()
+                        .ok()
+                        .filter(|v| !v.is_undefined())
+                        .map(|v| Uint8Array::new(&v).to_vec());
+                    if let Some(f) = super::found(slot, journal, base) {
+                        FOUND.with(|x| x.borrow_mut().push(f));
+                    }
+                });
+                br.set_onsuccess(Some(on_done.as_ref().unchecked_ref()));
+                on_done.forget();
             }
         });
-        // The base is read after the journal in the same transaction.
-        br.set_onsuccess(Some(on_done.as_ref().unchecked_ref()));
-        on_done.forget();
+        keys.set_onsuccess(Some(on_keys.as_ref().unchecked_ref()));
+        on_keys.forget();
     }
 
     /// The web reads the store in the background: see [`take_found`].
-    pub fn left_behind() -> Option<(Journal, Vec<u8>)> {
+    pub fn left_behind() -> Vec<Found> {
         start();
-        None
+        Vec::new()
     }
 
-    pub fn take_found() -> Option<(Journal, Vec<u8>)> {
-        FOUND.with(|f| f.borrow_mut().take())
+    pub fn take_found() -> Vec<Found> {
+        FOUND.with(|f| std::mem::take(&mut *f.borrow_mut()))
     }
 
-    pub fn write_base(bytes: &[u8]) {
+    pub fn write_base(slot: u32, bytes: &[u8]) {
         start();
-        set("base", Some(Uint8Array::from(bytes).buffer().into()));
-        set("journal", None);
+        set(
+            &format!("base-{slot}"),
+            Some(Uint8Array::from(bytes).buffer().into()),
+        );
+        set(&format!("journal-{slot}"), None);
     }
 
-    pub fn write_journal(json: &str) {
+    pub fn write_journal(slot: u32, json: &str) {
         start();
-        set("journal", Some(JsValue::from_str(json)));
+        set(&format!("journal-{slot}"), Some(JsValue::from_str(json)));
     }
 
-    pub fn clear() {
+    pub fn clear(slot: u32) {
         start();
-        set("base", None);
-        set("journal", None);
+        set(&format!("base-{slot}"), None);
+        set(&format!("journal-{slot}"), None);
+        if slot == 0 {
+            set("base", None);
+            set("journal", None);
+        }
     }
 }

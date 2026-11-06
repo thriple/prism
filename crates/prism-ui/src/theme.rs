@@ -157,6 +157,14 @@ pub mod size {
     /// Space around and between the top bar, dock, viewport and status bar.
     pub const GAP: f32 = 16.0;
     pub const TOP_BAR_HEIGHT: f32 = 52.0;
+    /// Document tabs under the menu bar: compact, so the viewport keeps
+    /// its room (the owner's request).
+    pub const TAB_HEIGHT: f32 = 22.0;
+    pub const TAB_GAP: f32 = 4.0;
+    pub const TAB_PAD: f32 = 10.0;
+    pub const TAB_MAX: f32 = 200.0;
+    /// The active tab's underline.
+    pub const TAB_MARK: f32 = 2.0;
     pub const TOP_BAR_PAD: f32 = 14.0;
     pub const STATUS_HEIGHT: f32 = 36.0;
     /// The measurement box in the status bar (prototype `.vcbwell`).
