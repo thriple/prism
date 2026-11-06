@@ -75,6 +75,8 @@ Things noticed while building that are outside the current chunk, defaults that 
 
 ## For the next Claude Code session (written 2026-11-05)
 
+**Start here (2026-11-06):** read `docs/HANDOFF.md`: where the project is, what comes next, and how the owner works.
+
 **Research for the next chunks (2026-11-06):** read `docs/research/files-and-formats.md` (the next chunk) and `docs/research/groups-and-components.md` (the one after). The first has one fix to make before saving is built: turn on serde_json's `float_roundtrip`, or about 11% of coordinates come back from JSON one bit off.
 
 The browser prototype was updated while the Soft Theme chunk was being built. Use the latest `docs/prototype/Main.dc.html`, and read `docs/prototype/README.md` for where things are.
