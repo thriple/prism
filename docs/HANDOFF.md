@@ -9,7 +9,8 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - **Files & Formats part 1:** `.prism` files, autosave and recovery, units.
 - **Last commits:** Files & Formats part 1 (`fde4e6f`), then a fix for the one CI failure it had.
   - Windows CI found that a command which changed nothing could still flip a 0.0 to -0.0, so redo did not match. `Document::run` now puts the model back exactly.
-  - Check that CI is green on `main`; if it is red, fixing it is the first job.
+  - Windows CI also found that zip marked Windows-written entries as DOS, so `.prism` bytes differed by platform; they are always marked Unix now.
+  - CI was green on `main` at 491fc51 and after (2026-11-06, 1:11 pm Guam), and the web page was updated.
 - **Next chunk by the plan's order:** Files & Formats **part 2**:
   - STL, OBJ, 3MF, glTF and PLY import and export;
   - drag and drop;
