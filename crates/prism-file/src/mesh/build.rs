@@ -103,7 +103,12 @@ fn weld(pts: &[DVec3], tol: &Tol) -> (Vec<DVec3>, Vec<usize>) {
         'look: for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
-                    for &k in grid.get(&(x + dx, y + dy, z + dz)).into_iter().flatten() {
+                    let cell = (
+                        x.saturating_add(dx),
+                        y.saturating_add(dy),
+                        z.saturating_add(dz),
+                    );
+                    for &k in grid.get(&cell).into_iter().flatten() {
                         if kept[k].distance(*p) < tol.dist {
                             found = Some(k);
                             break 'look;
