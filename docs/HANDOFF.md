@@ -57,4 +57,4 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - "Save changes?" when closing the window;
   - recovery after killing the app;
   - saving in place in Chrome.
-- **Open decision:** #24 (double-click to open: the packaging step).
+- **Decided after the handoff was first written:** #24 and #27. Double-click opens in the running Prism, in a new tab; tabs come as Files & Formats part 3, after part 2.

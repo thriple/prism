@@ -30,6 +30,13 @@ PLAN 6.0 "Suggested order" puts Files & Formats after Edit Tools, then Groups & 
    - We have no WASM threads, so the worker-only sync file API is out.
 6. **3MF:** the `threemf` crate is 0BSD. That is more permissive than BSD, but it is not on our licence list (CLAUDE.md). A 3MF file is a zip with one XML model file, so writing it with `zip` and `quick-xml` (MIT) is small. DECISIONS #25 (decided): write our own 3MF.
 
+## Tabs and one running Prism (part 3, DECISIONS #24 and #27)
+- The app holds a list of documents; each is today's `Session` plus its `Files` state (name, path, saved revision, recovery base). The tab bar sits under the menu bar in the Motion Kit look.
+- Recovery keeps one journal per tab (a folder or IndexedDB key per tab id), and at start offers each one left behind.
+- **macOS:** a file double-clicked while Prism runs arrives as an Apple event (`application:openURLs:`). winit does not pass it on, so add the method to the app delegate (see the sources below). It is the same handler for a cold start.
+- **Windows:** the second start must find the running Prism, hand it the path and quit. Use a named pipe or a local socket in the user's session (the `interprocess` crate, or `windows-sys` directly, which we already use). Check licences before adding a crate. Registering the file type still needs an installer.
+- **Web:** tabs work the same in the page. A second browser tab is a separate Prism; nothing to do there.
+
 ## Crates checked (crates.io, 2026-11-06)
 
 All are pure Rust. A scratch project with all of them built natively and for `wasm32-unknown-unknown` with no C code.
