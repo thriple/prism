@@ -18,7 +18,7 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
 - **Read before part 2:**
   - `docs/research/files-and-formats.md`: crates and licences already checked.
   - `NOTES.md` "Files & Formats (part 1)": what is built, and what the owner has not tried by hand yet.
-  - DECISIONS #24 and #25: open, with defaults. #25 means writing 3MF ourselves with `zip` and `quick-xml`, because `threemf` is 0BSD.
+  - DECISIONS #24 and #25: open, with defaults. #25 is decided: write 3MF ourselves with `zip` and `quick-xml` (the owner chose this over adding 0BSD).
 
 ## How the owner works
 - **Times:** the owner is in Guam (UTC+10). Give times in Guam time.
@@ -57,4 +57,4 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - "Save changes?" when closing the window;
   - recovery after killing the app;
   - saving in place in Chrome.
-- **Open decisions:** #24 (double-click to open: the packaging step) and #25 (0BSD).
+- **Open decision:** #24 (double-click to open: the packaging step).
