@@ -60,3 +60,4 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 | flate2 | 1.1 | prism-file | MIT OR Apache-2.0 | Yes (`rust_backend`: miniz_oxide, pure Rust) | Deflate for the zip |
 | postcard | 1.1 | prism-file | MIT OR Apache-2.0 | Yes | The geometry entry: compact, f64 stored as raw bits |
 | rfd | 0.17 | prism-app (native only) | MIT | Not used on the web (the browser's pickers are) | Open and save dialogs. On Linux the `xdg-portal` backend, pure Rust |
+| quick-xml | 0.42 | prism-file | MIT | Yes | Reading 3MF's XML (we write 3MF ourselves, DECISIONS #25) |

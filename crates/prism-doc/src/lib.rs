@@ -74,6 +74,10 @@ pub enum Command {
     AddGuide {
         guide: Guide,
     },
+    /// Add imported geometry beside the model (not joined to it).
+    Import {
+        model: Model,
+    },
 }
 
 /// How a copy is placed.
@@ -107,6 +111,7 @@ impl Command {
             Command::Copy { .. } => "Copy",
             Command::Offset { .. } => "Offset",
             Command::AddGuide { .. } => "Guide",
+            Command::Import { .. } => "Import",
         }
     }
 
@@ -171,6 +176,9 @@ impl Command {
             }
             Command::AddGuide { guide } => {
                 m.add_guide(*guide);
+            }
+            Command::Import { model } => {
+                m.append(model);
             }
         }
     }

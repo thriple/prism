@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 mod geometry;
+pub mod mesh;
 mod migrate;
 
 #[doc(hidden)]

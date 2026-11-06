@@ -203,6 +203,25 @@ impl Model {
         Some(id)
     }
 
+    /// Join two vertices with a new straight edge, without looking for an
+    /// existing one (that scan is slow for big imports). The caller makes
+    /// sure the edge is not there yet and `a` and `b` differ.
+    pub fn add_new_edge(&mut self, a: VertexId, b: VertexId) -> EdgeId {
+        debug_assert!(a != b);
+        let (a, b) = if a < b { (a, b) } else { (b, a) };
+        let id = EdgeId(self.next_edge);
+        self.next_edge += 1;
+        self.edges.insert(
+            id,
+            Edge {
+                a,
+                b,
+                curve: Curve::Line,
+            },
+        );
+        id
+    }
+
     pub fn edge(&self, id: EdgeId) -> Option<&Edge> {
         self.edges.get(&id)
     }
@@ -356,6 +375,39 @@ impl Model {
         self.next_edge = self.next_edge.max(c.edge);
         self.next_face = self.next_face.max(c.face);
         self.next_guide = self.next_guide.max(c.guide);
+    }
+
+    /// Add everything in `other` beside what is here, with new ids (an
+    /// import). Nothing is joined to what was here. Returns the new faces.
+    pub fn append(&mut self, other: &Model) -> Vec<FaceId> {
+        let mut vmap: BTreeMap<VertexId, VertexId> = BTreeMap::new();
+        for (id, p) in other.vertices() {
+            vmap.insert(id, self.add_vertex(p));
+        }
+        for (_, e) in other.edges() {
+            // The vertices are all new, so the edges cannot be here yet.
+            if let (Some(a), Some(b)) = (vmap.get(&e.a), vmap.get(&e.b))
+                && a != b
+            {
+                let id = self.add_new_edge(*a, *b);
+                if let Some(ne) = self.edges.get_mut(&id) {
+                    ne.curve = e.curve;
+                }
+            }
+        }
+        let map = |l: &[VertexId]| l.iter().filter_map(|v| vmap.get(v).copied()).collect();
+        let mut faces = Vec::new();
+        for (_, f) in other.faces() {
+            faces.push(self.add_face(Face {
+                outer: map(&f.outer),
+                holes: f.holes.iter().map(|h| map(h)).collect(),
+                surface: f.surface,
+            }));
+        }
+        for (_, g) in other.guides() {
+            self.add_guide(*g);
+        }
+        faces
     }
 
     /// Everything in the model, with its ids and counters (for files).

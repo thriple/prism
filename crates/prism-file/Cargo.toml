@@ -17,6 +17,8 @@ serde_json.workspace = true
 zip.workspace = true
 flate2.workspace = true
 postcard.workspace = true
+prism-view.workspace = true
+quick-xml.workspace = true
 
 [dev-dependencies]
 prism-ops.workspace = true
