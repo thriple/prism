@@ -43,3 +43,34 @@ fn inference_on_the_large_scene() {
         doc.model().edge_count()
     );
 }
+
+/// How long a Move preview of the whole Large Scene takes: rebuilding the
+/// model and scene (the old way) against moving the drawn scene.
+#[test]
+#[ignore = "prints timings"]
+fn move_preview_on_the_large_scene() {
+    use prism_math::DVec3;
+    let doc = prism_tools::scenes::large(50);
+    let m = doc.model().clone();
+    let all: std::collections::BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
+    let scene = prism_view::Scene::build(&m);
+    let t = std::time::Instant::now();
+    let mut moved = m.clone();
+    prism_doc::Command::Translate {
+        vertices: all.clone(),
+        by: DVec3::new(0.1, 0.0, 0.0),
+    }
+    .apply(&mut moved);
+    let _ = prism_view::Scene::build(&moved);
+    let slow = t.elapsed();
+    let t = std::time::Instant::now();
+    let d = DVec3::new(0.1, 0.0, 0.0);
+    let _ = scene.rigidly_moved(&all, |p| p + d, |n| n).expect("rigid");
+    let fast = t.elapsed();
+    println!(
+        "{} faces: rebuild {:.1} ms, rigid move {:.1} ms per mouse move",
+        m.face_count(),
+        slow.as_secs_f64() * 1e3,
+        fast.as_secs_f64() * 1e3
+    );
+}

@@ -5,7 +5,7 @@
 //! "hidden must be free") hidden objects are left out here and nothing else
 //! has to know about them.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use prism_math::predicates::{Inside, point_in_polygon};
@@ -135,6 +135,8 @@ pub struct Scene {
     /// The guides, if they are shown (hidden guides are left out, so they
     /// cost nothing: PLAN 1.14).
     pub guides: Vec<(GuideId, Guide)>,
+    /// The model vertex of each mesh corner (for cheap rigid previews).
+    pub mesh_vertex_ids: Vec<VertexId>,
 }
 
 impl Scene {
@@ -153,6 +155,7 @@ impl Scene {
             mesh: Mesh::default(),
             bounds: model.bbox(),
             tol: model.tol(),
+            mesh_vertex_ids: Vec::new(),
             guides: if show_guides {
                 model.guides().map(|(id, g)| (id, *g)).collect()
             } else {
@@ -200,6 +203,7 @@ impl Scene {
             let start = s.mesh.indices.len() as u32;
             let base = s.mesh.positions.len() as u32;
             s.mesh.positions.extend_from_slice(&pts);
+            s.mesh_vertex_ids.extend(f.loops().flatten().copied());
             s.mesh
                 .normals
                 .extend(std::iter::repeat_n(plane.normal, pts.len()));
@@ -230,6 +234,91 @@ impl Scene {
         }
         s.vertices = model.vertices().collect();
         s
+    }
+
+    /// The scene with the vertices `moving` sent through a rigid motion
+    /// (`f` for points, `nf` for directions), without rebuilding or
+    /// triangulating anything. None unless every face and edge moves whole
+    /// or not at all; then the caller rebuilds. This makes Move and Rotate
+    /// previews of whole bodies cheap on big models.
+    pub fn rigidly_moved(
+        &self,
+        moving: &BTreeSet<VertexId>,
+        f: impl Fn(DVec3) -> DVec3,
+        nf: impl Fn(DVec3) -> DVec3,
+    ) -> Option<Scene> {
+        let mut s = self.clone();
+        // Edges: whole or not at all.
+        for e in &mut s.edges {
+            match (moving.contains(&e.va), moving.contains(&e.vb)) {
+                (true, true) => {
+                    e.a = f(e.a);
+                    e.b = f(e.b);
+                    for n in e.normals.iter_mut().flatten() {
+                        *n = nf(*n);
+                    }
+                }
+                (false, false) => {}
+                _ => return None,
+            }
+        }
+        // Faces: a face moves if its edges did; check its vertices.
+        let mut moved_face = vec![false; s.faces.len()];
+        for (k, face) in s.faces.iter_mut().enumerate() {
+            let r = face.tris.clone();
+            let first = s.mesh.indices.get(r.start as usize).copied();
+            let Some(first) = first else { continue };
+            let on = moving.contains(&self.mesh_vertex_id(first)?);
+            // Every corner of the face must agree.
+            for &i in &s.mesh.indices[r.start as usize..r.end as usize] {
+                if moving.contains(&self.mesh_vertex_id(i)?) != on {
+                    return None;
+                }
+            }
+            if on {
+                moved_face[k] = true;
+                face.origin = f(face.origin);
+                face.u = nf(face.u);
+                face.v = nf(face.v);
+                face.normal = nf(face.normal);
+            }
+        }
+        for i in 0..s.mesh.positions.len() {
+            if moved_face[s.mesh.faces[i] as usize] {
+                s.mesh.positions[i] = f(s.mesh.positions[i]);
+                s.mesh.normals[i] = nf(s.mesh.normals[i]);
+            }
+        }
+        // Each moved face's box, from its corners.
+        let mut boxes: Vec<Option<(DVec3, DVec3)>> = vec![None; s.faces.len()];
+        for (i, p) in s.mesh.positions.iter().enumerate() {
+            let k = s.mesh.faces[i] as usize;
+            if moved_face[k] {
+                let b = boxes[k].get_or_insert((*p, *p));
+                *b = (b.0.min(*p), b.1.max(*p));
+            }
+        }
+        for (k, b) in boxes.into_iter().enumerate() {
+            if let Some((lo, hi)) = b {
+                s.faces[k].lo = lo;
+                s.faces[k].hi = hi;
+            }
+        }
+        for (id, p) in &mut s.vertices {
+            if moving.contains(id) {
+                *p = f(*p);
+            }
+        }
+        let mut it = s.vertices.iter().map(|(_, p)| *p);
+        s.bounds = it
+            .next()
+            .map(|first| it.fold((first, first), |(lo, hi), p| (lo.min(p), hi.max(p))));
+        Some(s)
+    }
+
+    /// The model vertex a mesh corner came from.
+    fn mesh_vertex_id(&self, i: u32) -> Option<VertexId> {
+        self.mesh_vertex_ids.get(i as usize).copied()
     }
 
     pub fn face(&self, id: FaceId) -> Option<&SceneFace> {

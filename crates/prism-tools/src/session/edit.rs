@@ -401,6 +401,14 @@ impl Session {
 
     /// Show the step in progress on a copy of the model.
     pub(super) fn update_preview(&mut self) {
+        // A whole body moved or turned rigidly: move what is drawn instead
+        // of rebuilding the model (big imported meshes stay smooth).
+        if let Some(scene) = self.rigid_preview() {
+            self.set_preview_scene(Some(scene));
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
         let base = self.doc.model();
         let preview: Option<Model> = match &self.edit {
             Some(EditOp::Push {
@@ -431,6 +439,38 @@ impl Session {
         self.set_preview(preview);
         self.overlay_dirty = true;
         self.dirty = true;
+    }
+
+    /// The preview of a move or rotation that moves whole faces and edges
+    /// only, made by moving the drawn scene. None if it changes any face's
+    /// shape (then the model is rebuilt), or is a copy.
+    fn rigid_preview(&self) -> Option<prism_view::Scene> {
+        match &self.edit {
+            Some(EditOp::Move {
+                verts,
+                delta,
+                copy: false,
+                ..
+            }) => {
+                let d = *delta;
+                self.scene.rigidly_moved(verts, |p| p + d, |n| n)
+            }
+            Some(EditOp::Rotate {
+                verts,
+                centre,
+                normal,
+                angle,
+                copy: false,
+                u0: Some(_),
+                ..
+            }) => {
+                let q = DQuat::from_axis_angle(normal.normalize(), *angle);
+                let c = *centre;
+                self.scene
+                    .rigidly_moved(verts, |p| c + q * (p - c), |n| q * n)
+            }
+            _ => None,
+        }
     }
 
     /// The command a move, rotation or scale in progress would commit.

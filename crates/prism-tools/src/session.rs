@@ -372,8 +372,14 @@ impl Session {
     }
 
     fn set_preview(&mut self, m: Option<Model>) {
+        let scene = m.map(|m| Scene::build_with(&m, self.show_guides));
+        self.set_preview_scene(scene);
+    }
+
+    /// Show a scene made another way (a rigid move of the drawn scene).
+    fn set_preview_scene(&mut self, scene: Option<Scene>) {
         let had = self.preview.is_some();
-        self.preview = m.map(|m| Scene::build_with(&m, self.show_guides));
+        self.preview = scene;
         if had || self.preview.is_some() {
             self.version += 1;
             self.highlight_dirty = true;

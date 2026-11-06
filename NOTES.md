@@ -477,3 +477,15 @@ Snapping only checks the face under the cursor against the others, with a boundi
 - Intersect within a group (Intersect Faces > With Context stays greyed until Groups).
 - Model Health's crossing-faces list, which will reuse `all_crossings`.
 - Intersect Faces checks every pair of faces with a bounding-box test, O(n²). That is fine for now; the spatial index (risks item 11) will speed it up.
+
+**Owner feedback: Move was sluggish on a 26,000-triangle STL (macOS build).**
+- **Cause:** every mouse move during Move or Rotate copied the model, applied the transform, and rebuilt and re-triangulated the whole scene for the preview. On the Large Scene that took 334 ms per move.
+- **Fix:** when the moving geometry is whole faces and edges (a whole body, as the owner moved), the preview moves the drawn scene instead (`Scene::rigidly_moved`): 12 ms per move, 28 times faster.
+- **Still slow:**
+  - copies, scaling, and moves that reshape faces still rebuild;
+  - the GPU gets the whole mesh again each move.
+- **Next steps:**
+  - draw the moving part with a transform on the GPU, so nothing is re-uploaded;
+  - make rebuilds incremental, with the spatial index (`docs/research/risks.md` item 11).
+- The owner notes that exact NURBS files should be much lighter than 20,000-triangle meshes. That is the plan's point: an exact face is one face, not thousands of triangles.
+

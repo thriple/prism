@@ -364,3 +364,35 @@ fn single_double_and_triple_click_select_as_in_the_feel_test() {
     assert_eq!(click_select(&m, Some(Hit::Edge(e)), 2).edges.len(), 1);
     assert!(click_select(&m, None, 1).is_empty());
 }
+
+/// A rigid move of the drawn scene matches rebuilding it from the moved
+/// model (the fast Move and Rotate preview).
+#[test]
+fn a_rigidly_moved_scene_matches_a_rebuilt_one() {
+    use prism_math::{DQuat, DVec3};
+    let m = golden::cube(1.0);
+    let all: std::collections::BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
+    let q = DQuat::from_axis_angle(DVec3::new(1.0, 2.0, 3.0).normalize(), 0.7);
+    let c = DVec3::new(0.3, -0.2, 1.0);
+    let f = |p: DVec3| c + q * (p - c) + DVec3::new(5.0, 0.0, 0.0);
+    let fast = Scene::build(&m)
+        .rigidly_moved(&all, f, |n| q * n)
+        .expect("the whole model moves rigidly");
+    let mut moved = m.clone();
+    let axis = DVec3::new(1.0, 2.0, 3.0).normalize();
+    prism_ops::transform::rotate(&mut moved, &all, c, axis, 0.7);
+    prism_ops::transform::translate(&mut moved, &all, DVec3::new(5.0, 0.0, 0.0));
+    let slow = Scene::build(&moved);
+    assert_eq!(fast.faces.len(), slow.faces.len());
+    assert_eq!(fast.mesh.indices.len(), slow.mesh.indices.len());
+    for (a, b) in fast.mesh.positions.iter().zip(&slow.mesh.positions) {
+        assert!(a.distance(*b) < 1e-9);
+    }
+    for (a, b) in fast.faces.iter().zip(&slow.faces) {
+        assert!((a.normal - b.normal).length() < 1e-9);
+        assert!(a.lo.distance(b.lo) < 1e-9 && a.hi.distance(b.hi) < 1e-9);
+    }
+    // Moving only part of a face cannot be done this way.
+    let one: std::collections::BTreeSet<_> = all.iter().take(1).copied().collect();
+    assert!(Scene::build(&m).rigidly_moved(&one, f, |n| q * n).is_none());
+}
