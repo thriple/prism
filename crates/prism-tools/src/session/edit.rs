@@ -152,8 +152,8 @@ impl Session {
         )
     }
 
-    /// The selection a tool works on: the selection, or else (Move) the item
-    /// under the cursor, or (Rotate, Scale) what is connected to it.
+    /// The selection a tool works on: the selection, or else (Move, Rotate)
+    /// the item under the cursor, or (Scale) what is connected to it.
     fn working_selection(&self, s: DVec2, connected: bool) -> Selection {
         if !self.selection.is_empty() {
             return self.selection.clone();
@@ -636,7 +636,10 @@ impl Session {
     fn rotate_press(&mut self, s: DVec2) {
         match &mut self.edit {
             None => {
-                let selection = self.working_selection(s, true);
+                // The selection, or with nothing selected the item under
+                // the cursor alone, as in SketchUp (DECISIONS #26): a
+                // hovered face twists, and the faces attached to it fold.
+                let selection = self.working_selection(s, false);
                 if selection.is_empty() {
                     return;
                 }

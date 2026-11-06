@@ -367,7 +367,12 @@ impl Files {
         }
         let j = Journal {
             path: self.path.clone().or_else(|| self.name.clone()),
-            commands: s.document().log().skip(self.base.log_len).cloned().collect(),
+            commands: s
+                .document()
+                .log()
+                .skip(self.base.log_len)
+                .cloned()
+                .collect(),
         };
         recovery::write_journal(&j.to_json());
     }

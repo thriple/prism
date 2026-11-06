@@ -256,7 +256,7 @@ A pocket cut into a box (a face with a hole, pushed down) showed the near inner 
   - **Up** locks the protractor to the face under it (DECISIONS #18), and it can then be moved anywhere; "Plane locked" shows by it. **Right** and **Left** lock red and green, and **Down** releases.
   - Angles snap softly to 15°, or to 45° steps while **Shift** is held.
   - **Ctrl** copies. Type degrees and press Enter. Typing right after a rotation changes it.
-  - With nothing selected, it rotates everything connected to the item under the cursor.
+  - With nothing selected, it rotates the item under the cursor alone, as in SketchUp (DECISIONS #26, changed after the owner tested). A hovered face twists, and the faces attached to it fold into flat pieces.
 - **Scale (S):** uniform, about the selection's box centre, from where you click. The factor is clamped between 0.05 and 20 and snaps to 1 within 2%. Type a factor and press Enter.
 - **Eraser (E):** click, or press and drag over edges. They show red, and are erased with the faces they bound on release (DECISIONS #15).
 - **Previews:** each step previews on a copy of the model, drawn instead of the document until it is finished; Esc cancels it and the tool stays.

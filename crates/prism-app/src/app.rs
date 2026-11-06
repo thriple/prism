@@ -414,7 +414,7 @@ impl ApplicationHandler<Gpu> for App {
         }
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         if let WindowEvent::CursorMoved { position, .. } = &event {
             self.cursor = Some((position.x, position.y));
         }

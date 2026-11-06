@@ -28,7 +28,7 @@
   - The angle snaps softly to 15°. **Shift** held gives 45° steps.
   - **Ctrl** toggles copy.
   - Type degrees and press Enter. Typing right after a rotation changes it.
-  - With nothing selected, it rotates what is connected to the item under the cursor.
+  - With nothing selected, it rotates the item under the cursor alone, as in SketchUp (DECISIONS #26). Faces attached to a rotated face fold into flat pieces.
 - **Scale (S).**
   - Scales uniformly about the selection's box centre, by how far the cursor is from it compared with where you clicked. The factor is clamped between 0.05 and 20, and snaps to 1 within 2%.
   - Type a factor and press Enter. Typing right after a scale changes it.

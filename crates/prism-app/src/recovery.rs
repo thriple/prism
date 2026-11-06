@@ -16,7 +16,7 @@ fn found(journal: Option<String>, base: Option<Vec<u8>>) -> Option<(Journal, Vec
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use prism_file::Journal;
 
@@ -29,7 +29,10 @@ mod imp {
 
     /// What a crash left behind.
     pub fn left_behind() -> Option<(Journal, Vec<u8>)> {
-        let d = dir()?;
+        left_behind_in(&dir()?)
+    }
+
+    pub fn left_behind_in(d: &Path) -> Option<(Journal, Vec<u8>)> {
         super::found(
             std::fs::read_to_string(d.join(JOURNAL)).ok(),
             std::fs::read(d.join(BASE)).ok(),
@@ -41,9 +44,8 @@ mod imp {
         None
     }
 
-    fn write(name: &str, bytes: &[u8]) {
-        let Some(d) = dir() else { return };
-        if std::fs::create_dir_all(&d).is_ok()
+    fn write(d: &Path, name: &str, bytes: &[u8]) {
+        if std::fs::create_dir_all(d).is_ok()
             && let Err(e) = crate::doc_files::save_atomic(&d.join(name), bytes)
         {
             log::warn!("autosave: {e}");
@@ -51,22 +53,100 @@ mod imp {
     }
 
     pub fn write_base(bytes: &[u8]) {
-        write(BASE, bytes);
-        // A new base starts a new journal.
         if let Some(d) = dir() {
-            let _ = std::fs::remove_file(d.join(JOURNAL));
+            write_base_in(&d, bytes);
         }
     }
 
+    pub fn write_base_in(d: &Path, bytes: &[u8]) {
+        write(d, BASE, bytes);
+        // A new base starts a new journal.
+        let _ = std::fs::remove_file(d.join(JOURNAL));
+    }
+
     pub fn write_journal(json: &str) {
-        write(JOURNAL, json.as_bytes());
+        if let Some(d) = dir() {
+            write_journal_in(&d, json);
+        }
+    }
+
+    pub fn write_journal_in(d: &Path, json: &str) {
+        write(d, JOURNAL, json.as_bytes());
     }
 
     pub fn clear() {
         if let Some(d) = dir() {
-            for f in [BASE, JOURNAL, "base.prism.bak", "journal.json.bak"] {
-                let _ = std::fs::remove_file(d.join(f));
-            }
+            clear_in(&d);
+        }
+    }
+
+    pub fn clear_in(d: &Path) {
+        for f in [BASE, JOURNAL, "base.prism.bak", "journal.json.bak"] {
+            let _ = std::fs::remove_file(d.join(f));
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use prism_doc::{Command, Document};
+        use prism_file::{Contents, Journal};
+        use prism_math::DVec3;
+
+        use super::*;
+
+        fn scratch(name: &str) -> PathBuf {
+            let d = std::env::temp_dir().join(format!("prism-test-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            d
+        }
+
+        #[test]
+        fn a_journal_left_behind_restores_the_same_model() {
+            let d = scratch("recovery");
+            let base = prism_tools::scenes::cube();
+            let bytes = prism_file::write(
+                &Contents {
+                    model: base.model().clone(),
+                    ..Contents::default()
+                },
+                "test",
+            );
+            let mut doc = Document::with_model(base.model().clone());
+            doc.run(Command::Rect {
+                x0: 2.0,
+                y0: 2.0,
+                x1: 3.0,
+                y1: 4.0,
+                z: 0.0,
+            });
+            doc.run(Command::Segment {
+                p: DVec3::new(2.0, 3.0, 0.0),
+                q: DVec3::new(3.0, 3.0, 0.0),
+            });
+            write_base_in(&d, &bytes);
+            let j = Journal {
+                path: None,
+                commands: doc.log().cloned().collect(),
+            };
+            write_journal_in(&d, &j.to_json());
+            // A new start of the app finds it.
+            let (back, base_bytes) = left_behind_in(&d).expect("left behind");
+            let model = prism_file::read(&base_bytes).expect("base").model;
+            assert_eq!(back.restore(model).model().to_json(), doc.model().to_json());
+            clear_in(&d);
+            assert!(left_behind_in(&d).is_none(), "cleared");
+            let _ = std::fs::remove_dir_all(&d);
+        }
+
+        #[test]
+        fn an_empty_or_damaged_journal_offers_nothing() {
+            let d = scratch("recovery-empty");
+            write_base_in(&d, b"not a model");
+            write_journal_in(&d, &Journal::default().to_json());
+            assert!(left_behind_in(&d).is_none());
+            write_journal_in(&d, "{oops");
+            assert!(left_behind_in(&d).is_none());
+            let _ = std::fs::remove_dir_all(&d);
         }
     }
 }

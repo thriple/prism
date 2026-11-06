@@ -100,7 +100,10 @@ mod imp {
             // Replaces an older backup (rename replaces files on Windows too).
             if let Err(e) = std::fs::rename(path, &bak) {
                 let _ = std::fs::remove_file(&tmp);
-                return Err(format!("could not keep a backup of {}: {e}", path.display()));
+                return Err(format!(
+                    "could not keep a backup of {}: {e}",
+                    path.display()
+                ));
             }
         }
         if let Err(e) = std::fs::rename(&tmp, path) {
@@ -129,6 +132,48 @@ mod imp {
         let _ = std::fs::create_dir_all(&dir);
         if let Ok(json) = serde_json::to_string_pretty(list) {
             let _ = save_atomic(&dir.join(RECENT), json.as_bytes());
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn scratch(name: &str) -> PathBuf {
+            let d = std::env::temp_dir().join(format!("prism-test-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).expect("scratch folder");
+            d
+        }
+
+        #[test]
+        fn an_atomic_save_keeps_a_backup_and_no_temporary_file() {
+            let d = scratch("save");
+            let f = d.join("house.prism");
+            save_atomic(&f, b"first").expect("saves");
+            assert!(
+                !d.join("house.prism.bak").exists(),
+                "nothing to back up yet"
+            );
+            save_atomic(&f, b"second").expect("saves again");
+            assert_eq!(std::fs::read(&f).unwrap(), b"second");
+            assert_eq!(std::fs::read(d.join("house.prism.bak")).unwrap(), b"first");
+            assert!(!d.join("house.prism.tmp").exists());
+            let _ = std::fs::remove_dir_all(&d);
+        }
+
+        #[test]
+        fn a_failed_save_leaves_the_old_file() {
+            let d = scratch("save-fail");
+            let f = d.join("house.prism");
+            save_atomic(&f, b"kept").expect("saves");
+            // A folder where the temporary file would go: writing it fails.
+            std::fs::create_dir(d.join("house.prism.tmp")).unwrap();
+            assert!(save_atomic(&f, b"lost").is_err());
+            assert_eq!(std::fs::read(&f).unwrap(), b"kept");
+            // A folder that does not exist.
+            assert!(save_atomic(&d.join("missing/house.prism"), b"x").is_err());
+            let _ = std::fs::remove_dir_all(&d);
         }
     }
 
@@ -200,7 +245,11 @@ mod imp {
         opts
     }
 
-    async fn call_promise(target: &JsValue, method: &str, args: &Array) -> Result<JsValue, JsValue> {
+    async fn call_promise(
+        target: &JsValue,
+        method: &str,
+        args: &Array,
+    ) -> Result<JsValue, JsValue> {
         let f: js_sys::Function = Reflect::get(target, &JsValue::from_str(method))?.dyn_into()?;
         let p: Promise = Reflect::apply(&f, target, args)?.dyn_into()?;
         JsFuture::from(p).await
@@ -241,8 +290,9 @@ mod imp {
                 let r = async {
                     let handles = JsFuture::from(p).await?;
                     let handle = Array::from(&handles).get(0);
-                    let file: web_sys::File =
-                        call_promise(&handle, "getFile", &Array::new()).await?.dyn_into()?;
+                    let file: web_sys::File = call_promise(&handle, "getFile", &Array::new())
+                        .await?
+                        .dyn_into()?;
                     Ok::<_, JsValue>((handle, file))
                 }
                 .await;
@@ -370,8 +420,8 @@ mod imp {
         let parts = Array::of1(&Uint8Array::from(bytes));
         let opts = web_sys::BlobPropertyBag::new();
         opts.set_type("application/x-prism");
-        let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &opts)
-            .map_err(err)?;
+        let blob =
+            web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &opts).map_err(err)?;
         let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(err)?;
         let a: web_sys::HtmlAnchorElement = doc
             .create_element("a")

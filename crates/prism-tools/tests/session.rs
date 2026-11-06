@@ -666,6 +666,11 @@ fn drag_from_the_centre_sets_the_start_arm() {
 #[test]
 fn up_locks_the_protractor_to_a_face_then_it_can_move() {
     let mut d = Driver::new(prism_tools::scenes::cube());
+    // The whole cube turns (with nothing selected, only the hovered face
+    // would, DECISIONS #26).
+    d.send(Input::Action {
+        id: "edit.selall".into(),
+    });
     d.tool(ROTATE);
     // Over the front face (normal -y): Up locks the protractor to it.
     d.hover(DVec3::new(0.2, -1.0, 2.0));
@@ -1143,4 +1148,36 @@ fn model_a_window_from_guides() {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/acceptance/sessions");
         std::fs::write(dir.join("window-from-guides.json"), &json).expect("write");
     }
+}
+
+/// DECISIONS #26: with nothing selected, Rotate turns the hovered face
+/// alone, and the faces attached to it fold.
+#[test]
+fn rotate_twists_a_hovered_face_and_folds_its_neighbours() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    assert_eq!(d.faces(), 6);
+    let bottom =
+        d.s.model()
+            .vertices()
+            .filter(|(_, p)| p.z.abs() < 1e-9)
+            .count();
+    d.tool(ROTATE);
+    assert!(d.s.selection().is_empty());
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    d.hover(DVec3::new(2.0, 1.0, 2.0));
+    d.click(DVec3::new(2.0, 1.0, 2.0));
+    d.typed("30");
+    // The base stays where it was; the walls fold.
+    let still =
+        d.s.model()
+            .vertices()
+            .filter(|(_, p)| p.z.abs() < 1e-9)
+            .count();
+    assert_eq!(still, bottom, "the bottom did not turn");
+    assert!(d.faces() > 6, "the side walls folded: {}", d.faces());
+    valid(&d);
 }
