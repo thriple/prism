@@ -17,6 +17,7 @@ What is in this folder, and how to use it with Claude Code.
 | `docs/briefs/08-files-and-formats.md` | Chunk 7: `.prism` save and open, autosave and recovery, units |
 | `docs/briefs/09-files-and-formats-2.md` | Chunk 7, part 2: mesh import and export, drag and drop |
 | `docs/briefs/10-edit-tools-3.md` | Chunk 6, part 3: Intersect Faces and snapping to where faces cross |
+| `docs/briefs/11-files-and-formats-3.md` | Chunk 7, part 3: tabs, and double-click opens in the running Prism |
 | `docs/acceptance/golden-cases.json` | 19 test cases from the prototype, for Core Model |
 | `docs/acceptance/core-model-acceptance.md` | The same cases in words, plus the rules every model must satisfy |
 | `docs/prototype/` | The prototype's code and a guide to reading it |
