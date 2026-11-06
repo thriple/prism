@@ -206,3 +206,29 @@ fn erasing_an_edge_between_faces_at_an_angle_takes_both() {
     prism_ops::remove(&mut m, &Selection::edge(e));
     assert_eq!(m.face_count(), before - 2);
 }
+
+/// The owner's case: two rectangles sharing an edge, lined up on one side,
+/// both pulled up. Erasing the vertical edge on the lined-up side merges the
+/// two side faces into one, as in SketchUp.
+#[test]
+fn erasing_a_vertical_edge_between_two_lined_up_walls_merges_them() {
+    for k in [1e-3, 1.0, 1e3] {
+        let mut m = Model::new();
+        prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0 * k, 4.0 * k, 0.0);
+        prism_ops::add_rect(&mut m, 4.0 * k, 0.0, 7.0 * k, 2.0 * k, 0.0);
+        for p in [DVec3::new(2.0, 2.0, 0.0), DVec3::new(5.5, 1.0, 0.0)] {
+            let f = prism_ops::face_at(&m, p * k).expect("face");
+            prism_ops::push_pull(&mut m, f, 3.0 * k, false);
+        }
+        let a = prism_ops::vertex_at(&m, DVec3::new(4.0, 0.0, 0.0) * k).unwrap();
+        let b = prism_ops::vertex_at(&m, DVec3::new(4.0, 0.0, 3.0) * k).unwrap();
+        let e = m.edge_between(a, b).expect("the vertical edge");
+        prism_ops::remove(&mut m, &Selection::edge(e));
+        let front = prism_ops::face_at(&m, DVec3::new(3.5, 0.0, 1.5) * k).expect("a wall is left");
+        assert!(
+            (m.face_area(front) - 21.0 * k * k).abs() < 1e-9 * k * k,
+            "one merged wall"
+        );
+        assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    }
+}

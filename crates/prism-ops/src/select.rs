@@ -112,35 +112,56 @@ fn merge_across(model: &mut Model, sel: &mut Selection) {
     let edge_faces = model.edge_faces();
     let mut planes: Vec<prism_math::Plane> = Vec::new();
     let mut merged = Vec::new();
+    let mut others = Vec::new();
     for e in sel.edges.clone() {
         let Some(fs) = edge_faces.get(&e) else {
             continue;
         };
-        let (Some(a), Some(b)) = (
-            fs.first().and_then(|f| model.face(*f)),
-            fs.get(1).and_then(|f| model.face(*f)),
-        ) else {
-            continue;
-        };
-        // Exactly two faces, on one plane, facing the same way, and the
-        // ends of the edge are not being erased.
-        let (pa, pb) = (*a.plane(), *b.plane());
         let ends_kept = model
             .edge(e)
             .is_some_and(|ed| !sel.vertices.contains(&ed.a) && !sel.vertices.contains(&ed.b));
-        if fs.len() == 2
-            && ends_kept
-            && pa.same_surface(&pb, &tol)
-            && pa.normal.dot(pb.normal) > 0.0
-        {
-            merged.push(e);
-            if !planes.iter().any(|p| p.same_surface(&pa, &tol)) {
-                planes.push(pa);
+        if !ends_kept {
+            continue;
+        }
+        // Exactly two of the edge's faces on one plane, facing the same way
+        // (with two boxes side by side, a wall between them can share the
+        // edge too: it goes, as erasing an edge always takes its faces).
+        let flat: Vec<(FaceId, prism_math::Plane)> = fs
+            .iter()
+            .filter_map(|f| model.face(*f).map(|x| (*f, *x.plane())))
+            .collect();
+        let mut pair = None;
+        for i in 0..flat.len() {
+            for j in i + 1..flat.len() {
+                let (pa, pb) = (flat[i].1, flat[j].1);
+                if pa.same_surface(&pb, &tol) && pa.normal.dot(pb.normal) > 0.0 {
+                    pair = Some(if pair.is_none() {
+                        (i, j)
+                    } else {
+                        (usize::MAX, 0)
+                    });
+                }
             }
+        }
+        let Some((i, j)) = pair.filter(|p| p.0 != usize::MAX) else {
+            continue;
+        };
+        let pa = flat[i].1;
+        for (k, (f, _)) in flat.iter().enumerate() {
+            if k != i && k != j {
+                others.push(*f);
+            }
+        }
+        merged.push(e);
+        if !planes.iter().any(|p| p.same_surface(&pa, &tol)) {
+            planes.push(pa);
         }
     }
     if merged.is_empty() {
         return;
+    }
+    for f in others {
+        model.remove_face(f);
     }
     for e in &merged {
         sel.edges.remove(e);

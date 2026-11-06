@@ -536,3 +536,12 @@ Brief: `docs/briefs/11-files-and-formats-3.md` (DECISIONS #24, #27).
 - Copy and paste between tabs (no clipboard yet).
 - The Windows installer and file-type registration.
 - A double-click while the Mac app is starting: the handler is added once the event loop exists, which should be before macOS sends the file, but it is untested.
+
+### Erase merge with two pulled boxes (owner feedback)
+
+Two rectangles sharing an edge, both pulled up, then erasing the vertical
+edge where their fronts line up deleted both fronts. Two causes, both fixed:
+Push/Pull made new points on top of existing ones (now `weld_new` reuses
+them, checking only the new points), and the merge needed the edge to have
+exactly two faces (now: exactly two of its faces on one plane merge, and
+others on that edge, such as the wall between the boxes, go with it).

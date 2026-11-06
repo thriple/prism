@@ -149,6 +149,27 @@ pub fn weld(model: &mut Model, tol: &Tol) {
             }
         }
     }
+    apply_weld(model, &into);
+}
+
+/// Merge each of `new` onto an older vertex at the same point, if there is
+/// one (Push/Pull landing on existing geometry). Only the new vertices are
+/// checked, so this stays quick on big models.
+pub fn weld_new(model: &mut Model, new: &BTreeSet<VertexId>, tol: &Tol) {
+    let mut into: BTreeMap<VertexId, VertexId> = BTreeMap::new();
+    for v in new {
+        let p = model.vertex(*v);
+        if let Some((old, _)) = model
+            .vertices()
+            .find(|(o, q)| !new.contains(o) && tol.same_point(p, *q))
+        {
+            into.insert(*v, old);
+        }
+    }
+    apply_weld(model, &into);
+}
+
+fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
     if into.is_empty() {
         return;
     }

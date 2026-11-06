@@ -136,5 +136,10 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             model.add_face(original(false));
         }
     }
+    // Where the pull lands on existing points (a box pulled up beside
+    // another), use them, so the two share edges.
+    let new: BTreeSet<VertexId> = moved.values().copied().collect();
+    transform::weld_new(model, &new, &tol);
+    walls.retain(|w| model.face(*w).is_some());
     Pulled::Extruded { walls }
 }
