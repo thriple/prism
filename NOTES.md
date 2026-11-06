@@ -545,3 +545,15 @@ Push/Pull made new points on top of existing ones (now `weld_new` reuses
 them, checking only the new points), and the merge needed the edge to have
 exactly two faces (now: exactly two of its faces on one plane merge, and
 others on that edge, such as the wall between the boxes, go with it).
+
+### Push/Pull snaps to parallel faces, and drag-release (owner feedback)
+
+- While pulling, hovering a face parallel to the pulled one pulls level
+  with it ("On Face"), e.g. a lower stair step up to the next.
+- Press, drag and release commits on release; click, move, click still works.
+- Left over: two boxes of different heights sharing a wall leave two
+  overlapping wall faces (the check reports it). The owner asked for one
+  rule for coplanar faces everywhere: after any edit, faces on one plane
+  that touch or overlap are rebuilt as one set of regions (as the Eraser
+  merge and drawing already do). Do this with Groups & Components, or
+  before it.

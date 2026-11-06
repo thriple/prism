@@ -50,6 +50,9 @@ pub(super) enum EditOp {
         d: f64,
         new_loop: bool,
         snap: Option<(String, DVec3)>,
+        /// Where the press was, while the button is down: releasing after
+        /// a drag commits (click-move-click works too).
+        pressed: Option<DVec2>,
     },
     Move {
         from: DVec3,
@@ -297,9 +300,18 @@ impl Session {
     }
 
     fn push_drag(&mut self, s: DVec2, view: &View) {
-        let Some(EditOp::Push { p0, n, d, snap, .. }) = &mut self.edit else {
+        let Some(EditOp::Push {
+            face,
+            p0,
+            n,
+            d,
+            snap,
+            ..
+        }) = &mut self.edit
+        else {
             return;
         };
+        let face = *face;
         let (o, dir) = view.ray(s);
         let mut t = along_line(o, dir, *p0, *n).unwrap_or(*d);
         *snap = None;
@@ -314,6 +326,17 @@ impl Session {
                     *snap = Some(("Match Endpoint".to_owned(), p));
                 }
             }
+        }
+        // Over a face parallel to the pushed one: pull level with it
+        // (a lower stair step up to the next).
+        if snap.is_none()
+            && let Some((g, tg)) = self.scene.ray_face(o, dir).filter(|(g, _)| *g != face)
+            && let Some(gf) = self.scene.face(g)
+            && self.scene.tol.parallel(gf.normal, *n)
+        {
+            let q = o + dir * tg;
+            t = (q - *p0).dot(*n);
+            *snap = Some(("On Face".to_owned(), q));
         }
         if snap.is_none() && n.z.abs() > 0.3 {
             let tg = -p0.z / n.z;
@@ -575,6 +598,12 @@ impl Session {
                 }
                 self.overlay_dirty = true;
             }
+            Some(EditOp::Push { pressed, .. }) => {
+                // Pressed, dragged and released: the pull is done.
+                if pressed.take().is_some_and(|p| p.distance(s) >= DRAG_MIN) {
+                    self.finish_edit();
+                }
+            }
             Some(
                 EditOp::Rotate {
                     pressed,
@@ -634,6 +663,7 @@ impl Session {
             d: 0.0,
             new_loop: self.alt_loop,
             snap: None,
+            pressed: Some(s),
         });
         self.last_op = None;
         self.overlay_dirty = true;

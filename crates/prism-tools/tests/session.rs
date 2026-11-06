@@ -1211,3 +1211,52 @@ fn intersect_faces_with_the_model_is_one_step() {
     undo(&mut d);
     assert_eq!(d.s.model().geometry_json(), before, "one undo puts it back");
 }
+
+/// The owner's stairs: press on the lower step's top, drag over the higher
+/// step's top and release. The lower step rises level with it, committed
+/// on release. Erasing the line between the two tops then leaves one face.
+#[test]
+fn dragging_a_pull_over_a_parallel_face_lifts_it_level() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    rect_on_ground(&mut d, 2.0, 0.0, 4.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("0.5");
+    d.click(DVec3::new(3.0, 1.0, 0.0));
+    d.typed("1");
+    let low = d.screen(DVec3::new(1.0, 1.0, 0.5));
+    let high = d.screen(DVec3::new(3.0, 1.0, 1.0));
+    d.send(Input::Move { x: low.x, y: low.y });
+    let before = d.s.model().clone();
+    d.send(Input::Press {
+        button: Button::Left,
+        x: low.x,
+        y: low.y,
+        shift: false,
+        ctrl: false,
+    });
+    d.send(Input::Move {
+        x: high.x,
+        y: high.y,
+    });
+    assert_eq!(&before, d.s.model(), "nothing committed while held");
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    let top = prism_ops::face_at(d.s.model(), DVec3::new(1.0, 1.0, 1.0));
+    assert!(top.is_some(), "the lower step rose to 1 m");
+    valid(&d);
+    // The line between the two tops: erase it, one top face is left.
+    let a = prism_ops::vertex_at(d.s.model(), DVec3::new(2.0, 0.0, 1.0)).unwrap();
+    let b = prism_ops::vertex_at(d.s.model(), DVec3::new(2.0, 2.0, 1.0)).unwrap();
+    let e =
+        d.s.model()
+            .edge_between(a, b)
+            .expect("the line between the tops");
+    let mut m = d.s.model().clone();
+    prism_ops::remove(&mut m, &prism_ops::select::Selection::edge(e));
+    let one = prism_ops::face_at(&m, DVec3::new(2.0, 1.0, 1.0)).expect("one top");
+    assert!((m.face_area(one) - 8.0).abs() < 1e-9);
+    assert!(prism_ops::check::problems(&m).is_empty());
+}
