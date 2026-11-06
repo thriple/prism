@@ -281,6 +281,11 @@ impl App {
         egui_state.handle_platform_output(window, output.platform_output);
         if let Some(t) = self.files.new_title(&self.viewport.session) {
             window.set_title(&t);
+            // winit does not set the page's title on the web.
+            #[cfg(target_arch = "wasm32")]
+            if let Some(d) = web_sys::window().and_then(|w| w.document()) {
+                d.set_title(&t);
+            }
         }
         let jobs = self
             .egui_ctx

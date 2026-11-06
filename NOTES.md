@@ -342,3 +342,58 @@ Brief: `docs/briefs/07-edit-tools-2.md`. Built: Offset, Tape Measure, Protractor
 - Tape Measure's "type a length to resize the model" is not built.
 - Screenshot (web build, WebGL2): `docs/screenshots/edit-tools-2-web.png`, with the cube's top offset, a vertical tape guide and a guide point.
 - A guide line is drawn 60 times the scene's size each way, not to infinity. This is far enough to look endless, but a guide could end on screen when zoomed far out from a tiny model.
+
+## Files & Formats (part 1)
+
+Brief: `docs/briefs/08-files-and-formats.md`. Research: `docs/research/files-and-formats.md`.
+
+**What to try**
+- **File > New, Open…, Save, Save As…** (Ctrl+N, O, S, Shift+S).
+  - The title shows the file's name, with a dot while there are unsaved changes.
+  - New, Open and closing the window ask "Save changes?" first. On the web, the browser warns before the tab closes.
+- **Saving natively** is atomic: a temporary file, then a rename. The previous file is kept as `name.prism.bak`.
+- **Saving on the web:**
+  - Chrome and Edge save in place, through the File System Access API.
+  - Other browsers download a copy.
+- **File > Open Recent** lists the last 10 files (native only).
+- **Autosave:** every 10 seconds while there are unsaved changes, Prism writes a recovery journal. The journal is the model at the last save plus the commands since. Natively it goes in the config folder's `recovery` folder; on the web, in IndexedDB. Start Prism after a crash, or after killing it, and it offers "Restore your work?".
+- **File > Document Settings…:** the display unit (mm, cm, m, inches, feet and inches) and decimals. Typing still accepts any unit, including `2' 6 1/2"`.
+- **Command line:** `prism model.prism` opens a file. The Mac app declares the `.prism` type, but double-clicking in Finder needs an Apple event handler, which waits for packaging (DECISIONS #24).
+- **Rotate (owner's change):** with nothing selected, Rotate turns the item under the cursor alone, as in SketchUp (DECISIONS #26). A hovered face twists, and the faces attached to it fold.
+
+**Tests**
+- `prism-file` (8 tests):
+  - exact round trips of every test scene, the Large Scene and a rotated model with guides;
+  - the same document gives the same bytes;
+  - f64 values come back from JSON bit for bit;
+  - unknown fields survive;
+  - a newer schema is refused, and a made-up schema 0 migrates;
+  - empty, cut-short and damaged files are refused, including a property test that flips random bytes;
+  - the recovery journal replays.
+- Golden files: `docs/acceptance/files/` (3 files). CI opens each, checks it, saves it again and compares the bytes.
+- `prism-app`: the atomic save keeps a `.bak` and no `.tmp`; a failed save leaves the old file; a journal left behind restores the same model; an empty or damaged journal offers nothing.
+- Units: every unit shows and reads back; fractions of an inch.
+- The web build was tried in headless Chrome: the File menu shows, and the title gets its dot after an edit.
+
+**Decisions and defaults used**
+- `.prism`:
+  - a zip, deflate only;
+  - `manifest.json` and `document.json` (pretty JSON);
+  - `geometry/model.bin` (postcard, in its own versioned layout);
+  - every zip entry has a fixed timestamp, so the bytes are reproducible.
+- Unknown fields are kept only in `document.json`, because postcard has no field names.
+- Undoing past the last save starts a new recovery base from the model as it is, so the journal never needs commands that were undone.
+- "Don't Save" clears the recovery journal.
+- The web build has no recent-files list: a browser cannot reopen a file by path.
+
+**Not tried by hand yet** (please check):
+- native save and open dialogs on Windows and macOS;
+- "Save changes?" when closing the window;
+- recovery after killing the app;
+- Save in place in Chrome (headless Chrome cannot show the picker).
+
+**Leftovers**
+- Part 2: STL, OBJ, 3MF, glTF and PLY import and export; drag and drop (the web needs its own canvas listeners); Model Health after import.
+- A thumbnail in the file.
+- Windows file-type registration and the Mac Apple event handler (packaging).
+- Recent files on the web would need stored file handles in IndexedDB.

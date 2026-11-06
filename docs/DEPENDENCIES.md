@@ -59,3 +59,4 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 | zip | 9.4 | prism-file | MIT | Yes (default features off: deflate only, no C) | The `.prism` container (PLAN 1.13) |
 | flate2 | 1.1 | prism-file | MIT OR Apache-2.0 | Yes (`rust_backend`: miniz_oxide, pure Rust) | Deflate for the zip |
 | postcard | 1.1 | prism-file | MIT OR Apache-2.0 | Yes | The geometry entry: compact, f64 stored as raw bits |
+| rfd | 0.17 | prism-app (native only) | MIT | Not used on the web (the browser's pickers are) | Open and save dialogs. On Linux the `xdg-portal` backend, pure Rust |

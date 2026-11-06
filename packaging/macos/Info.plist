@@ -11,5 +11,26 @@
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- .prism files (brief 08). Double-click to open also needs an Apple
+       event handler, which waits for a packaging step (DECISIONS #24). -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Prism model</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Owner</string>
+      <key>LSItemContentTypes</key><array><string>io.github.thriple.prism.model</string></array>
+    </dict>
+  </array>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>io.github.thriple.prism.model</string>
+      <key>UTTypeDescription</key><string>Prism model</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string><string>public.zip-archive</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict><key>public.filename-extension</key><array><string>prism</string></array></dict>
+    </dict>
+  </array>
 </dict>
 </plist>

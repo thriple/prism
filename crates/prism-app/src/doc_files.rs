@@ -14,6 +14,9 @@ pub struct Opened {
     pub bytes: Vec<u8>,
 }
 
+/// How a save ended: `Ok(Some((name, path)))`, `Ok(None)` if cancelled.
+pub type SaveResult = Result<Option<(String, String)>, String>;
+
 /// The file name shown for a path: "house.prism" from "C:\models\house.prism".
 pub fn display_name(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned()
@@ -54,11 +57,7 @@ mod imp {
 
     /// Save to `path`, or ask where first (Save As, or a new document).
     /// Returns where it went, or `Ok(None)` if the user cancelled.
-    pub fn save(
-        path: Option<&str>,
-        suggested: &str,
-        bytes: &[u8],
-    ) -> Result<Option<(String, String)>, String> {
+    pub fn save(path: Option<&str>, suggested: &str, bytes: &[u8]) -> super::SaveResult {
         let path = match path {
             Some(p) => PathBuf::from(p),
             None => {
@@ -135,6 +134,19 @@ mod imp {
         }
     }
 
+    /// Web only.
+    pub fn take_opened() -> Option<Result<Opened, String>> {
+        None
+    }
+
+    /// Web only.
+    pub fn take_saved() -> Option<super::SaveResult> {
+        None
+    }
+
+    /// Web only: the browser warns before closing the tab.
+    pub fn set_unsaved(_unsaved: bool) {}
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -176,19 +188,6 @@ mod imp {
             let _ = std::fs::remove_dir_all(&d);
         }
     }
-
-    /// Web only.
-    pub fn take_opened() -> Option<Result<Opened, String>> {
-        None
-    }
-
-    /// Web only.
-    pub fn take_saved() -> Option<Result<Option<(String, String)>, String>> {
-        None
-    }
-
-    /// Web only: the browser warns before closing the tab.
-    pub fn set_unsaved(_unsaved: bool) {}
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -206,7 +205,7 @@ mod imp {
 
     thread_local! {
         static OPENED: RefCell<Option<Result<Opened, String>>> = const { RefCell::new(None) };
-        static SAVED: RefCell<Option<Result<Option<(String, String)>, String>>> = const { RefCell::new(None) };
+        static SAVED: RefCell<Option<super::SaveResult>> = const { RefCell::new(None) };
         /// The file the document came from or was saved to, where the
         /// browser lets us write to it again.
         static HANDLE: RefCell<Option<JsValue>> = const { RefCell::new(None) };
@@ -358,11 +357,7 @@ mod imp {
     /// Save: in place where the browser allows (finishes later, see
     /// [`take_saved`]); else a download, at once. `path` is unused on the
     /// web: `Some` means "save again where it was".
-    pub fn save(
-        path: Option<&str>,
-        suggested: &str,
-        bytes: &[u8],
-    ) -> Result<Option<(String, String)>, String> {
+    pub fn save(path: Option<&str>, suggested: &str, bytes: &[u8]) -> super::SaveResult {
         let again = path.is_some();
         let handle = HANDLE.with(|h| h.borrow().clone()).filter(|_| again);
         let show = picker("showSaveFilePicker");
@@ -445,7 +440,7 @@ mod imp {
         OPENED.with(|o| o.borrow_mut().take())
     }
 
-    pub fn take_saved() -> Option<Result<Option<(String, String)>, String>> {
+    pub fn take_saved() -> Option<super::SaveResult> {
         SAVED.with(|s| s.borrow_mut().take())
     }
 
