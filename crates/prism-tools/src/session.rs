@@ -6,6 +6,8 @@
 //! reads back what to draw. The same events replay to the same model, which
 //! is how recorded sessions become tests (PLAN 5).
 
+use std::collections::BTreeSet;
+
 use prism_doc::{Command, Document};
 use prism_infer::{self as infer, AXES, Context, Inference, Kind, Lock, Memory, Settings};
 use prism_math::{DVec2, DVec3};
@@ -920,6 +922,16 @@ impl Session {
             }
             "file.new" => self.load(Document::new()),
             "view.shadow" => self.dirty = true,
+            // Edit > Intersect Faces (DECISIONS #29).
+            "isect.model" | "isect.sel" => {
+                let faces = (id == "isect.sel").then(|| self.selection.faces.clone());
+                if faces.as_ref().is_some_and(BTreeSet::is_empty) {
+                    return;
+                }
+                self.cancel();
+                self.run(Command::IntersectFaces { faces });
+                self.refresh();
+            }
             "view.guides" => {
                 self.show_guides = !self.show_guides;
                 self.model_changed();
@@ -1513,6 +1525,7 @@ impl Session {
                 b: end,
                 color: match g.source {
                     infer::GuideSource::Stored(_) => fb.guide,
+                    infer::GuideSource::Crossing(..) => fb.guide_cross,
                     _ => g.axis.map_or(fb.parallel, axis_color),
                 },
                 width: fb.guide_width,

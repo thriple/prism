@@ -437,3 +437,63 @@ fn hidden_guides_cost_nothing_and_do_not_snap() {
     );
     assert_ne!(i.kind, Kind::GuidePoint);
 }
+
+/// DECISIONS #29: over a face another box passes through, where they cross
+/// is a guide, and its corner is a snap.
+#[test]
+fn crossings_of_the_hovered_face_snap() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
+    let f = prism_ops::face_at(&m, DVec3::new(2.0, 2.0, 0.0)).unwrap();
+    let up = m.face(f).unwrap().plane().normal.z > 0.0;
+    prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
+    for (a, b) in [
+        (DVec3::new(1.0, 0.0, 0.5), DVec3::new(3.0, 0.0, 0.5)),
+        (DVec3::new(3.0, 0.0, 0.5), DVec3::new(3.0, 0.0, 1.5)),
+        (DVec3::new(3.0, 0.0, 1.5), DVec3::new(1.0, 0.0, 1.5)),
+        (DVec3::new(1.0, 0.0, 1.5), DVec3::new(1.0, 0.0, 0.5)),
+    ] {
+        prism_ops::add_segment(&mut m, a, b);
+    }
+    let win = prism_ops::face_at(&m, DVec3::new(2.0, 0.0, 1.0)).unwrap();
+    let out = m.face(win).unwrap().plane().normal.y < 0.0;
+    prism_ops::push_pull(&mut m, win, if out { -6.0 } else { 6.0 }, false);
+    // Look at the back face (y = 4) from behind and below the tube, so the
+    // cursor is over the back face itself.
+    let cam = Camera {
+        eye: DVec3::new(2.5, 12.0, -1.5),
+        target: DVec3::new(2.0, 4.0, 1.0),
+    };
+    let scene = Scene::build(&m);
+    let view = View::new(&cam, W, H);
+    let at = |p: DVec3, nudge: DVec2| {
+        let s = view.to_screen(p).expect("in front").0 + nudge;
+        infer(
+            &scene,
+            &view,
+            s,
+            &Context::default(),
+            Lock::None,
+            &Memory::default(),
+            &Settings::default(),
+        )
+    };
+    let i = at(DVec3::new(2.0, 4.0, 0.5), DVec2::new(0.0, 2.0));
+    assert_eq!(i.label, "Face Intersection");
+    assert!(
+        (i.point.z - 0.5).abs() < 1e-9 && (i.point.y - 4.0).abs() < 1e-9,
+        "{:?}",
+        i.point
+    );
+    let c = at(DVec3::new(1.0, 4.0, 0.5), DVec2::new(3.0, 3.0));
+    assert!(
+        matches!(c.kind, Kind::GuideCross | Kind::Intersection),
+        "{:?}",
+        c.kind
+    );
+    assert!(
+        c.point.distance(DVec3::new(1.0, 4.0, 0.5)) < 1e-9,
+        "{:?}",
+        c.point
+    );
+}

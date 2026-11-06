@@ -16,7 +16,7 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - drag and drop;
   - Model Health after import, as far as PLAN 1.13 asks.
   Its brief is not written yet. Write `docs/briefs/09-files-and-formats-2.md` first (as `docs/research/files-and-formats.md` suggests), push it, then build. After that comes Groups & Components; its research is in `docs/research/groups-and-components.md`.
-- **Files & Formats part 2 is built** (mesh import and export, drag and drop, 2026-11-06). The next part to build is Edit Tools part 3. Its brief is not written yet.
+- **Files & Formats part 2 and Edit Tools part 3 are built** (2026-11-06). Next: Files & Formats part 3, tabs and double-click to open (DECISIONS #24, #27). Its brief is not written yet; the design is in `docs/research/files-and-formats.md`.
 - **Order after part 2:** Edit Tools part 3 (Intersect Faces and snapping to where faces cross, connected or not, DECISIONS #29, asked for by the owner after testing), then Files & Formats part 3 (tabs), then Groups & Components.
 - **Risks ahead:** `docs/research/risks.md` (checked 2026-11-06).
 - **Read before part 2:**

@@ -78,6 +78,11 @@ pub enum Command {
     Import {
         model: Model,
     },
+    /// Turn where faces cross into edges (all faces, or those crossings
+    /// that involve a face in `faces`).
+    IntersectFaces {
+        faces: Option<BTreeSet<FaceId>>,
+    },
 }
 
 /// How a copy is placed.
@@ -112,6 +117,7 @@ impl Command {
             Command::Offset { .. } => "Offset",
             Command::AddGuide { .. } => "Guide",
             Command::Import { .. } => "Import",
+            Command::IntersectFaces { .. } => "Intersect Faces",
         }
     }
 
@@ -179,6 +185,9 @@ impl Command {
             }
             Command::Import { model } => {
                 m.append(model);
+            }
+            Command::IntersectFaces { faces } => {
+                prism_ops::intersect::intersect_faces(m, faces.as_ref());
             }
         }
     }

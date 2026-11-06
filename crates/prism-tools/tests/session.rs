@@ -1183,3 +1183,31 @@ fn rotate_twists_a_hovered_face_and_folds_its_neighbours() {
     assert!(d.faces() > 6, "the side walls folded: {}", d.faces());
     valid(&d);
 }
+
+/// Edit > Intersect Faces (DECISIONS #29), as one undo step.
+#[test]
+fn intersect_faces_with_the_model_is_one_step() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    // An upright rectangle standing through the square.
+    d.send(Input::Action { id: "noop".into() });
+    let mut doc = Document::with_model(d.s.model().clone());
+    doc.run(prism_doc::Command::Loop {
+        points: vec![
+            DVec3::new(1.0, 2.0, -1.0),
+            DVec3::new(3.0, 2.0, -1.0),
+            DVec3::new(3.0, 2.0, 1.0),
+            DVec3::new(1.0, 2.0, 1.0),
+        ],
+    });
+    let mut d = Driver::new(Document::with_model(doc.model().clone()));
+    let before = d.s.model().geometry_json();
+    let faces = d.faces();
+    d.send(Input::Action {
+        id: "isect.model".into(),
+    });
+    assert!(d.faces() > faces, "the crossing split the faces");
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.s.model().geometry_json(), before, "one undo puts it back");
+}

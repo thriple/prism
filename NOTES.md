@@ -443,3 +443,37 @@ Brief: `docs/briefs/09-files-and-formats-2.md`.
 - Recovering exact curves from meshes, and softening edges.
 - A progress bar for big imports.
 - Exports are triangles even where the format could keep holes.
+
+## Edit Tools (part 3)
+
+Brief: `docs/briefs/10-edit-tools-3.md` (DECISIONS #29).
+
+**What to try**
+- **Snapping to crossings:** hover a face that another shape passes through. The lines where they cross show as purple dashed guides, labelled "Face Intersection", and can be snapped along within their length. Their corners, and where they meet edges, snap as Guide Cross or Intersection. This works for connected and unconnected pieces, as the owner asked. Trace one shape's outline onto another with Line or Rectangle.
+- **Edit > Intersect Faces > With Model:** every crossing becomes an edge, and the faces split along it. **With Selection:** only crossings that involve a selected face (greyed when nothing is selected). One undo step.
+  - For the owner's tunnel: push a shape through a box, run Intersect Faces, then erase the faces inside to open it.
+
+**How:** `prism_ops::intersect`:
+1. Intersect the two planes.
+2. Clip the line to each face in its own 2D frame, holes included.
+3. Keep where both clips overlap, but drop parts on both outlines (their shared edge).
+
+Snapping only checks the face under the cursor against the others, with a bounding-box test first.
+
+**Tests**
+- `prism-ops/tests/intersect.rs`:
+  - crossing squares, at three scales;
+  - a box (no crossings);
+  - a face with a hole (two crossings);
+  - a wall standing on a floor;
+  - the owner's case: a box pushed out through the back of another. Intersect Faces makes the 2 × 1 opening a face of its own, and leaves nothing more to cut.
+- `prism-infer`: the crossing guide and its corner, on the same model.
+- `prism-doc`: undo of Intersect Faces (18 command kinds).
+- A session test runs the menu action as one undo step.
+- **Large Scene:** 12.3 ms per inference with crossings (it was 14.6 ms before this chunk), under the 16 ms budget.
+
+**Leftovers**
+- Curved faces.
+- Intersect within a group (Intersect Faces > With Context stays greyed until Groups).
+- Model Health's crossing-faces list, which will reuse `all_crossings`.
+- Intersect Faces checks every pair of faces with a bounding-box test, O(n²). That is fine for now; the spatial index (risks item 11) will speed it up.

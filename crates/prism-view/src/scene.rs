@@ -34,6 +34,20 @@ pub struct SceneFace {
 }
 
 impl SceneFace {
+    /// The face for crossing tests (`prism_ops::intersect`).
+    pub fn flat(&self) -> prism_ops::intersect::Flat {
+        prism_ops::intersect::Flat {
+            origin: self.origin,
+            u: self.u,
+            v: self.v,
+            normal: self.normal,
+            outer: self.outer.clone(),
+            holes: self.holes.clone(),
+            lo: self.lo,
+            hi: self.hi,
+        }
+    }
+
     fn to_2d(&self, p: DVec3) -> DVec2 {
         let d = p - self.origin;
         DVec2::new(d.dot(self.u), d.dot(self.v))

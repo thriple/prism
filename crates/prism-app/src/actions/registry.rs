@@ -129,6 +129,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id.starts_with("file.")
         || id == "exp.3mf"
         || id == "exp.gltf"
+        || id == "isect.model"
+        || id == "isect.sel"
     {
         // The file actions (brief 08) are handled by the app.
         // Test scenes for the viewport (brief 04), handled by the app.
@@ -200,6 +202,7 @@ impl Registry {
                     when: match r.id.strip_prefix("file.recent") {
                         Some("") => When::Never,
                         Some(n) => n.parse().map_or(When::Always, When::Recent),
+                        None if r.id == "isect.sel" => When::HasSelection,
                         None => when_of(r.when),
                     },
                     check: if run == Run::Tool {

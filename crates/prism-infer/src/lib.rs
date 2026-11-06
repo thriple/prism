@@ -129,6 +129,9 @@ pub enum GuideSource {
     Parallel(u32),
     /// A guide line stored in the model (by its id).
     Stored(u32),
+    /// Where the hovered face crosses another (faces, and which piece):
+    /// DECISIONS #29. Only snaps along its own length.
+    Crossing(u32, u32, u8),
 }
 
 /// A guide line: infinite, through `origin` along unit `dir`.
@@ -148,6 +151,7 @@ impl Guide {
             GuideSource::Woken(_, a) => format!("{} from Point", AXIS_NAMES[a as usize]),
             GuideSource::Parallel(_) => "Parallel to Edge".to_owned(),
             GuideSource::Stored(_) => "On Guide".to_owned(),
+            GuideSource::Crossing(..) => "Face Intersection".to_owned(),
         }
     }
 
@@ -155,7 +159,10 @@ impl Guide {
     /// guide cross with each other).
     fn owner(&self) -> Option<u32> {
         match self.source {
-            GuideSource::Start(_) | GuideSource::Parallel(_) | GuideSource::Stored(_) => None,
+            GuideSource::Start(_)
+            | GuideSource::Parallel(_)
+            | GuideSource::Stored(_)
+            | GuideSource::Crossing(..) => None,
             GuideSource::Woken(n, _) => Some(n),
         }
     }
@@ -488,11 +495,48 @@ pub fn infer(
             }
         }
     }
+    // Where the face under the cursor crosses other faces (DECISIONS #29).
+    let mut spans: Vec<(GuideSource, f64)> = Vec::new();
+    if let Some((hid, _)) = scene.ray_face(o, dir)
+        && let Some(hf) = scene.face(hid)
+    {
+        let pad = DVec3::splat(tol);
+        let hflat = hf.flat();
+        for of in &scene.faces {
+            if of.id == hid || (hf.hi + pad).cmplt(of.lo).any() || (of.hi + pad).cmplt(hf.lo).any()
+            {
+                continue;
+            }
+            for (k, (a, b)) in prism_ops::intersect::crossings(&hflat, &of.flat(), &scene.tol)
+                .into_iter()
+                .enumerate()
+                .take(255)
+            {
+                let source = GuideSource::Crossing(hid.0, of.id.0, k as u8);
+                gl.push(Guide {
+                    source,
+                    origin: a,
+                    dir: (b - a).normalize(),
+                    axis: None,
+                });
+                spans.push((source, a.distance(b)));
+            }
+        }
+    }
+    // A crossing guide only reaches along its own length.
+    let within = |g: &Guide, t: f64| {
+        spans
+            .iter()
+            .find(|(s, _)| *s == g.source)
+            .is_none_or(|(_, len)| t >= -tol && t <= len + tol)
+    };
     for g in &gl {
         if let Some((s, t, _)) = closest(o, dir, g.origin, g.dir)
             && s > 0.0
-            && (t.abs() > tol || matches!(g.source, GuideSource::Stored(_)))
+            && (t.abs() > tol
+                || matches!(g.source, GuideSource::Stored(_) | GuideSource::Crossing(..)))
             && t.abs() < reach
+            && within(g, t)
         {
             let mut c = blank(Kind::Guide, Key::Guide(g.source));
             c.guides = vec![*g];
@@ -516,6 +560,8 @@ pub fn infer(
             }
             if let Some((s, t, d)) = closest(a.origin, a.dir, b.origin, b.dir)
                 && d < meet
+                && within(a, s)
+                && within(b, t)
             {
                 let p = (a.origin + a.dir * s).lerp(b.origin + b.dir * t, 0.5);
                 let key = Key::Cross(a.source, b.source);
@@ -536,6 +582,7 @@ pub fn infer(
                 && t > 0.0
                 && t < 1.0
                 && s.abs() < reach
+                && within(g, s)
             {
                 let key = Key::Intersection(g.source, e.id);
                 let mut c = blank(Kind::Intersection, key);
