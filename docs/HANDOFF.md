@@ -16,6 +16,7 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - drag and drop;
   - Model Health after import, as far as PLAN 1.13 asks.
   Its brief is not written yet. Write `docs/briefs/09-files-and-formats-2.md` first (as `docs/research/files-and-formats.md` suggests), push it, then build. After that comes Groups & Components; its research is in `docs/research/groups-and-components.md`.
+- **Risks ahead:** `docs/research/risks.md` (checked 2026-11-06).
 - **Read before part 2:**
   - `docs/research/files-and-formats.md`: crates and licences already checked.
   - `NOTES.md` "Files & Formats (part 1)": what is built, and what the owner has not tried by hand yet.

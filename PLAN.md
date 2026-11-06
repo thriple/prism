@@ -1056,6 +1056,13 @@ Every chunk is built in **parts**. A part is one brief, sized so that one sessio
 
 ## 7. Risks
 
+**Checked 2026-11-06:** `docs/research/risks.md` lists the hiccups found ahead, with what to do for each. The main ones:
+- the path tracer needs WebGPU, because WebGL2 has no compute shaders;
+- threads on GitHub Pages need a service worker;
+- the Blender bridge must stay out of process, because Blender is GPL;
+- the pure-Rust NURBS kernels have few users;
+- code signing costs money (DECISIONS #28).
+
 - **NURBS robustness** is the biggest technical risk. Mitigations: the kernel is behind a trait, the M5 spike comes before any commitment, and exact predicates handle the planar cases.
 - **Feel cannot be specified, only tuned.** Mitigations: every aperture, dwell time and hysteresis value is a setting from day one, there is a debug overlay that shows candidates and scores, and you test the web build often.
 - **Testing GPU code headlessly.** Logic stays pure and is unit-tested. Rendering is checked with wgpu's software adapter (lavapipe or SwiftShader) for screenshot tests. WebGPU in headless Chromium needs flags and may be limited.
