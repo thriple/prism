@@ -170,3 +170,39 @@ fn a_line_drawn_up_a_cube_side_splits_that_side() {
     assert_eq!(m.face_count(), 7);
     assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
 }
+
+/// DECISIONS #15 (changed after the owner tried it): erasing the edge
+/// between two faces on one plane leaves one face, as in SketchUp.
+#[test]
+fn erasing_the_edge_between_two_flat_faces_merges_them() {
+    for k in [1e-3, 1.0, 1e3] {
+        let mut m = Model::new();
+        // The owner's L: a square and a smaller rectangle beside it.
+        prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0 * k, 4.0 * k, 0.0);
+        prism_ops::add_rect(&mut m, 4.0 * k, 0.0, 7.0 * k, 2.0 * k, 0.0);
+        assert_eq!(m.face_count(), 2);
+        let a = prism_ops::vertex_at(&m, DVec3::new(4.0, 0.0, 0.0) * k).unwrap();
+        let b = prism_ops::vertex_at(&m, DVec3::new(4.0, 2.0, 0.0) * k).unwrap();
+        let shared = m.edge_between(a, b).expect("the shared edge");
+        prism_ops::remove(&mut m, &Selection::edge(shared));
+        assert_eq!(m.face_count(), 1, "one face is left");
+        let (id, _) = m.faces().next().unwrap();
+        assert!((m.face_area(id) - 22.0 * k * k).abs() < 1e-9 * k * k);
+        assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+        // The merged face can be offset, as the owner wanted.
+        assert!(prism_ops::offset::offset(&mut m, id, 0.5 * k).is_some());
+        assert!(check::problems(&m).is_empty());
+    }
+}
+
+/// Faces that meet at an angle are both erased with their edge.
+#[test]
+fn erasing_an_edge_between_faces_at_an_angle_takes_both() {
+    let mut m = boxed(1.0);
+    let before = m.face_count();
+    let a = prism_ops::vertex_at(&m, DVec3::new(0.0, 0.0, 0.0)).unwrap();
+    let b = prism_ops::vertex_at(&m, DVec3::new(4.0, 0.0, 0.0)).unwrap();
+    let e = m.edge_between(a, b).expect("a bottom edge");
+    prism_ops::remove(&mut m, &Selection::edge(e));
+    assert_eq!(m.face_count(), before - 2);
+}

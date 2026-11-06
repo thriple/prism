@@ -400,3 +400,4 @@ Brief: `docs/briefs/08-files-and-formats.md`. Research: `docs/research/files-and
 - Windows file-type registration and the Mac Apple event handler (packaging).
 - Recent files on the web would need stored file handles in IndexedDB.
 - **Fixed after the owner tested the web build:** the mouse wheel panned instead of zooming. Browsers report a wheel in points, as they do a trackpad. Now a vertical step of 40 points or more with no sideways part counts as a wheel notch (100 points) and zooms. Smaller or sideways steps still pan, as DECISIONS #4 says trackpads do. Natively the wheel already zoomed.
+- **Changed after the owner tested (DECISIONS #15):** erasing the edge between two faces on one plane now merges them into one face, as in SketchUp, so the merged face can be offset or pulled. Where faces meet at an angle, erasing their edge still takes both. In `prism_ops::remove`, such an edge is removed on its own and the plane's faces are rebuilt.

@@ -736,7 +736,7 @@ fn scale_by_a_typed_factor() {
 }
 
 #[test]
-fn the_eraser_drags_over_edges_and_takes_both_faces() {
+fn the_eraser_drags_over_an_edge_and_merges_the_faces() {
     let mut d = Driver::empty();
     rect_on_ground(&mut d, 0.0, 0.0, 4.0, 2.0);
     d.tool(LINE);
@@ -762,10 +762,12 @@ fn the_eraser_drags_over_edges_and_takes_both_faces() {
     });
     assert_eq!(
         d.faces(),
-        0,
-        "both faces beside the erased edge go (DECISIONS #15)"
+        1,
+        "the two flat faces beside the erased edge merge (DECISIONS #15)"
     );
     assert_eq!(d.s.model().edge_count(), 6);
+    let (id, _) = d.s.model().faces().next().unwrap();
+    assert!((d.s.model().face_area(id) - 8.0).abs() < 1e-9);
     valid(&d);
 }
 

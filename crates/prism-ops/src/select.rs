@@ -56,6 +56,9 @@ pub fn remove(model: &mut Model, sel: &Selection) {
     for g in &sel.guides {
         model.remove_guide(*g);
     }
+    let mut sel = sel.clone();
+    merge_across(model, &mut sel);
+    let sel = &sel;
     let mut gone_edges = sel.edges.clone();
     for v in &sel.vertices {
         gone_edges.extend(model.edges().filter(|(_, e)| e.has(*v)).map(|(id, _)| id));
@@ -94,6 +97,57 @@ pub fn remove(model: &mut Model, sel: &Selection) {
         .collect();
     for v in unused {
         model.remove_vertex(v);
+    }
+}
+
+/// Erasing an edge between two faces on one plane merges them into one
+/// face, as in SketchUp (DECISIONS #15): the edge goes, and the plane's
+/// faces are rebuilt, so the two become one. Those edges are taken out of
+/// `sel`; erasing the rest works as before.
+fn merge_across(model: &mut Model, sel: &mut Selection) {
+    if sel.edges.is_empty() {
+        return;
+    }
+    let tol = model.tol();
+    let edge_faces = model.edge_faces();
+    let mut planes: Vec<prism_math::Plane> = Vec::new();
+    let mut merged = Vec::new();
+    for e in sel.edges.clone() {
+        let Some(fs) = edge_faces.get(&e) else {
+            continue;
+        };
+        let (Some(a), Some(b)) = (
+            fs.first().and_then(|f| model.face(*f)),
+            fs.get(1).and_then(|f| model.face(*f)),
+        ) else {
+            continue;
+        };
+        // Exactly two faces, on one plane, facing the same way, and the
+        // ends of the edge are not being erased.
+        let (pa, pb) = (*a.plane(), *b.plane());
+        let ends_kept = model
+            .edge(e)
+            .is_some_and(|ed| !sel.vertices.contains(&ed.a) && !sel.vertices.contains(&ed.b));
+        if fs.len() == 2
+            && ends_kept
+            && pa.same_surface(&pb, &tol)
+            && pa.normal.dot(pb.normal) > 0.0
+        {
+            merged.push(e);
+            if !planes.iter().any(|p| p.same_surface(&pa, &tol)) {
+                planes.push(pa);
+            }
+        }
+    }
+    if merged.is_empty() {
+        return;
+    }
+    for e in &merged {
+        sel.edges.remove(e);
+        model.remove_edge(*e);
+    }
+    for p in planes {
+        crate::regions::rebuild_plane(model, &p, &BTreeSet::new(), &tol);
     }
 }
 
