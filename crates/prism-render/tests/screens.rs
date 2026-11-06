@@ -10,8 +10,14 @@ use common::Gpu;
 use prism_render::gpu::Highlight;
 use prism_render::{Camera, Style};
 
-fn gpu() -> Option<Gpu> {
-    let g = Gpu::new();
+/// The GPU, one test at a time: Mesa's software renderer in CI crashed
+/// (SIGSEGV) once with several devices made at the same time. Keep the
+/// returned guard alive for the whole test.
+fn gpu() -> Option<(std::sync::MutexGuard<'static, ()>, Gpu)> {
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // A test that failed while holding the lock must not stop the rest.
+    let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let g = Gpu::new().map(|gpu| (turn, gpu));
     if g.is_none() {
         eprintln!("no GPU adapter: skipping the screenshot test");
         assert!(
@@ -24,7 +30,7 @@ fn gpu() -> Option<Gpu> {
 
 #[test]
 fn cube_draws() {
-    let Some(mut g) = gpu() else { return };
+    let Some((_turn, mut g)) = gpu() else { return };
     let style = Style::default();
     let m = golden::cube(1.0);
     let img = g.shot(
@@ -147,7 +153,7 @@ fn pocket_box(ratio: f64, depth: f64) -> Model {
 /// back of a face from outside.
 #[test]
 fn a_pocket_never_shows_a_back_face_from_outside() {
-    let Some(mut g) = gpu() else { return };
+    let Some((_turn, mut g)) = gpu() else { return };
     let style = tell_tale();
     let mut shots = 0;
     for ratio in [0.3, 0.6, 0.9] {
@@ -191,7 +197,7 @@ fn a_pocket_never_shows_a_back_face_from_outside() {
 /// its own edges stay drawn.
 #[test]
 fn nothing_shows_through_a_thin_plate_far_away() {
-    let Some(mut g) = gpu() else { return };
+    let Some((_turn, mut g)) = gpu() else { return };
     let style = tell_tale();
     for dist in [5.0, 100.0, 1000.0] {
         let s = dist * 0.3;
@@ -296,7 +302,7 @@ fn nothing_shows_through_a_thin_plate_far_away() {
 /// A 1.5 point edge is 1.5 points wide at 1x and 2x.
 #[test]
 fn lines_keep_their_width_on_any_screen() {
-    let Some(mut g) = gpu() else { return };
+    let Some((_turn, mut g)) = gpu() else { return };
     let style = Style::default();
     // One loose edge across the view, seen from above.
     let mut m = Model::new();
@@ -339,7 +345,7 @@ fn lines_keep_their_width_on_any_screen() {
 #[ignore = "prints timings"]
 fn timing_large_scene() {
     use prism_math::DVec2;
-    let Some(mut g) = gpu() else { return };
+    let Some((_turn, mut g)) = gpu() else { return };
     let n = 50;
     let m = prism_render_large(n);
     let t = std::time::Instant::now();
@@ -417,7 +423,7 @@ fn prism_render_large(n: i32) -> Model {
 #[test]
 fn tool_feedback_draws() {
     use prism_view::overlay::{Line, Mark, Overlay, Shape, Tri};
-    let Some(mut g) = gpu() else { return };
+    let Some((_turn, mut g)) = gpu() else { return };
     let style = Style::default();
     let fb = style.feedback;
     let m = golden::cube(1.0);
@@ -474,7 +480,7 @@ fn tool_feedback_draws() {
 #[test]
 fn faces_hide_guides() {
     use prism_view::overlay::{Line, Overlay};
-    let Some(mut g) = gpu() else { return };
+    let Some((_turn, mut g)) = gpu() else { return };
     let style = Style::default();
     let m = golden::cube(1.0);
     let scene = prism_render::Scene::build(&m);
