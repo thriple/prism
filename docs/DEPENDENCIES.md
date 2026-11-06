@@ -61,3 +61,5 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 | postcard | 1.1 | prism-file | MIT OR Apache-2.0 | Yes | The geometry entry: compact, f64 stored as raw bits |
 | rfd | 0.17 | prism-app (native only) | MIT | Not used on the web (the browser's pickers are) | Open and save dialogs. On Linux the `xdg-portal` backend, pure Rust |
 | quick-xml | 0.42 | prism-file | MIT | Yes | Reading 3MF's XML (we write 3MF ourselves, DECISIONS #25) |
+| interprocess | 2.4 | prism-app (Windows and Linux) | 0BSD OR Apache-2.0 (used under Apache-2.0) | Not used on the web | A later start hands its files to the running Prism (brief 11) |
+| objc2, objc2-foundation | 0.6, 0.3 | prism-app (macOS only) | MIT | Not used on the web | The Apple event for double-clicked files (winit does not pass it on) |

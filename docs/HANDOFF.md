@@ -16,7 +16,9 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - drag and drop;
   - Model Health after import, as far as PLAN 1.13 asks.
   Its brief is not written yet. Write `docs/briefs/09-files-and-formats-2.md` first (as `docs/research/files-and-formats.md` suggests), push it, then build. After that comes Groups & Components; its research is in `docs/research/groups-and-components.md`.
-- **Files & Formats part 2 and Edit Tools part 3 are built** (2026-11-06). Next: Files & Formats part 3, tabs and double-click to open (DECISIONS #24, #27). Its brief is not written yet; the design is in `docs/research/files-and-formats.md`.
+- **Built on 2026-11-06:** Files & Formats parts 2 and 3 (mesh import and export, drag and drop, tabs, one running Prism), Edit Tools part 3 (Intersect Faces), the Eraser merging flat faces (DECISIONS #15), and fast Move and Rotate previews of whole bodies. **Next: Groups & Components.** Its brief is not written yet; read `docs/research/groups-and-components.md` and DECISIONS #22 and #23 first, and split it into parts (PLAN 6.0a).
+- **Platform code can be checked here:** `cargo clippy -p prism-app --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` both run in this container, without a Mac or a Windows machine.
+- **Waiting on the owner (part 3):** try double-clicking a `.prism` file on the Mac, and "Open With > Prism" on Windows, while Prism runs.
 - **Order after part 2:** Edit Tools part 3 (Intersect Faces and snapping to where faces cross, connected or not, DECISIONS #29, asked for by the owner after testing), then Files & Formats part 3 (tabs), then Groups & Components.
 - **Risks ahead:** `docs/research/risks.md` (checked 2026-11-06).
 - **Read before part 2:**
