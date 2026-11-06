@@ -433,6 +433,14 @@ impl Session {
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
+
+    /// Draw everything again: the picture, the highlight and the tool
+    /// feedback (after switching to this document's tab).
+    pub fn mark_all_dirty(&mut self) {
+        self.dirty = true;
+        self.highlight_dirty = true;
+        self.overlay_dirty = true;
+    }
     /// Whether the camera is still easing (keep drawing frames).
     pub fn animating(&self) -> bool {
         self.motion.is_some()

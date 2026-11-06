@@ -489,3 +489,50 @@ Snapping only checks the face under the cursor against the others, with a boundi
   - make rebuilds incremental, with the spatial index (`docs/research/risks.md` item 11).
 - The owner notes that exact NURBS files should be much lighter than 20,000-triangle meshes. That is the plan's point: an exact face is one face, not thousands of triangles.
 
+
+## Files & Formats (part 3)
+
+Brief: `docs/briefs/11-files-and-formats-3.md` (DECISIONS #24, #27).
+
+**What to try**
+- **Tabs:** a compact strip (22 points) under the menu bar, as wide as the viewport, as the owner asked, after a floating row and a dropdown were turned down.
+  - Each tab shows the file's name, a dot while unsaved, and ×. "+" makes a new document.
+  - Each tab has its own document, undo, selection, camera, tool step, file and autosave journal.
+  - Window > Next Document and Previous Document are Ctrl+Tab and Ctrl+Shift+Tab. The browser keeps those keys for itself on the web, and they can be remapped.
+- **What opens where:**
+  - File > New, Open, Open Recent and a dropped `.prism` make a new tab.
+  - The untitled, unchanged tab Prism starts with is reused.
+  - A file that is already open switches to its tab.
+- **Closing:**
+  - × on a tab asks "Save changes?" for that document only.
+  - Closing the window asks each tab with changes in turn; Cancel stops.
+  - Closing the last tab leaves one empty tab.
+- **Recovery:** one journal per tab (`recovery/<slot>/`, or IndexedDB keys `journal-<slot>`). After a crash, each comes back in its own tab, asking Restore or Discard. Part 1's single journal is read as slot 0.
+- **One running Prism:**
+  - **Windows and Linux:** a second start hands its files to the first through a local socket (a named pipe on Windows; the `interprocess` crate) and quits. The files open in tabs, and the window comes forward.
+  - **macOS:** `application:openURLs:` is added to winit's `WinitApplicationDelegate` at start (`objc2`), so a file double-clicked in Finder or dropped on the Dock icon opens in a tab.
+  - Windows still needs "Open With > Prism" until an installer registers `.prism` (packaging).
+- Screenshot: `docs/screenshots/tabs-web.png`, two tabs on the web build.
+
+**Tests**
+- `tabs.rs` (5):
+  - an untitled tab is reused, then new tabs are made;
+  - opening an open file switches to it;
+  - each tab keeps its own document and undo;
+  - closing asks only that tab, and the last tab stays;
+  - closing the window closes unchanged tabs and stops to ask an edited one;
+  - two journals left behind become two tabs.
+- `recovery.rs`: journals in two slots restore one tab each.
+- `instance.rs`: a second start's files reach the listening first (a real local socket, in one process).
+- Built and linted for macOS and Windows from this container (`cargo clippy --target aarch64-apple-darwin` and `x86_64-pc-windows-msvc`). The double-click itself needs the owner's hands.
+- Tried on the web build: "+" makes an empty tab, a rectangle drawn there leaves the first tab's cube alone, and switching back redraws everything.
+
+**Decisions and defaults used**
+- On the web, the "save in place" file handle is kept per tab, so saving one tab never writes another's file.
+- A tab writes its recovery journal when you switch away from it, so a parked tab never waits ten seconds.
+
+**Leftovers**
+- Reordering tabs by dragging; more than one window.
+- Copy and paste between tabs (no clipboard yet).
+- The Windows installer and file-type registration.
+- A double-click while the Mac app is starting: the handler is added once the event loop exists, which should be before macOS sends the file, but it is untested.

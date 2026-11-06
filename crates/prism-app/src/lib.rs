@@ -10,6 +10,9 @@ mod files;
 pub mod frame_stats;
 mod gpu;
 pub mod input_log;
+// The web build has one page per Prism; only some of this is used there.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+mod instance;
 mod mesh_files;
 mod overlay;
 pub mod platform;

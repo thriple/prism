@@ -34,6 +34,11 @@ pollster = "1.0.1"
 # Open and save dialogs. On Linux (CI) the xdg-portal backend is pure Rust.
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 
+# One running Prism: later starts hand their files over (brief 11).
+# "0BSD OR Apache-2.0": we use it under Apache-2.0.
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "macos")))'.dependencies]
+interprocess = "2.4.7"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0"
@@ -47,3 +52,6 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Wind
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSWorkspace"] }
+# Double-clicked files arrive as an Apple event winit does not pass on.
+objc2 = "0.6.5"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSURL", "NSString"] }

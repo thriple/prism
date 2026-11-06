@@ -22,9 +22,21 @@ const LOG_CAPACITY: usize = 14;
 /// Start the app. Natively this blocks until the window closes. On the web it
 /// returns once the event loop is handed to the browser.
 pub fn run() {
-    let event_loop = EventLoop::<Gpu>::with_user_event()
+    let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
         .expect("could not create the event loop");
+    // One running Prism (brief 11): a later start hands its files to the
+    // first and quits; macOS sends double-clicked files as Apple events.
+    if crate::instance::claim(&start_files()) {
+        return;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let proxy = event_loop.create_proxy();
+        crate::instance::set_wake(move || {
+            let _ = proxy.send_event(UserEvent::Files);
+        });
+    }
     let app = App::new(&event_loop);
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -39,9 +51,41 @@ pub fn run() {
     }
 }
 
+/// Files named on the command line, as full paths (`prism model.prism`,
+/// how Windows passes a double-clicked file). macOS adds a -psn_ argument
+/// when Finder starts an app.
+fn start_files() -> Vec<String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::args()
+            .skip(1)
+            .filter(|a| !a.starts_with("-psn"))
+            .map(|a| {
+                std::fs::canonicalize(&a)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or(a)
+            })
+            .collect()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        Vec::new()
+    }
+}
+
+/// What other threads and the browser tell the event loop.
+pub enum UserEvent {
+    /// The GPU is ready (the web sets it up in the background).
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    Gpu(Box<Gpu>),
+    /// Files arrived from another start or from the system (native only).
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Files,
+}
+
 struct App {
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    proxy: winit::event_loop::EventLoopProxy<Gpu>,
+    proxy: winit::event_loop::EventLoopProxy<UserEvent>,
     window: Option<Arc<Window>>,
     gpu: Option<Gpu>,
     egui_ctx: egui::Context,
@@ -79,7 +123,7 @@ struct App {
 }
 
 impl App {
-    fn new(event_loop: &EventLoop<Gpu>) -> Self {
+    fn new(event_loop: &EventLoop<UserEvent>) -> Self {
         let egui_ctx = egui::Context::default();
         prism_ui::theme::install(&egui_ctx);
         let mut viewport = Viewport::new();
@@ -90,10 +134,7 @@ impl App {
         tabs.offer(crate::recovery::left_behind(), &mut viewport, &mut files);
         // `prism model.prism` (how Windows passes a double-clicked file).
         // macOS adds a -psn_ argument when Finder starts an app.
-        #[cfg(not(target_arch = "wasm32"))]
-        let start_file = std::env::args().skip(1).find(|a| !a.starts_with("-psn"));
-        #[cfg(target_arch = "wasm32")]
-        let start_file = None;
+        let start_file = start_files().into_iter().next();
         Self {
             proxy: event_loop.create_proxy(),
             window: None,
@@ -207,7 +248,7 @@ impl App {
                 chrome.active_tool = id;
                 self.last_tool = id;
             }
-            vp.session.mark_dirty();
+            vp.session.mark_all_dirty();
         }
         changed
     }
@@ -403,7 +444,7 @@ fn button_name(button: MouseButton) -> String {
     }
 }
 
-impl ApplicationHandler<Gpu> for App {
+impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -451,14 +492,44 @@ impl ApplicationHandler<Gpu> for App {
             let proxy = self.proxy.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let gpu = Gpu::new(window).await;
-                if proxy.send_event(gpu).is_err() {
+                if proxy.send_event(UserEvent::Gpu(Box::new(gpu))).is_err() {
                     log::error!("event loop closed before the GPU was ready");
                 }
             });
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, gpu: Gpu) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
+        let gpu = match event {
+            UserEvent::Gpu(gpu) => *gpu,
+            UserEvent::Files => {
+                // Each opens in a tab (or switches to it); the window comes
+                // forward.
+                for p in crate::instance::take() {
+                    if p.is_empty() {
+                        continue;
+                    }
+                    match crate::doc_files::open_path(&p) {
+                        Ok(o) => {
+                            self.tabs.open(
+                                o,
+                                &mut self.viewport,
+                                &mut self.files,
+                                &mut self.chrome,
+                            );
+                        }
+                        Err(e) => self.chrome.status_note(e),
+                    }
+                }
+                self.uploaded = None;
+                self.viewport.session.mark_all_dirty();
+                if let Some(w) = &self.window {
+                    w.focus_window();
+                    w.request_redraw();
+                }
+                return;
+            }
+        };
         self.gpu = Some(gpu);
         if let Some(window) = &self.window {
             if let Some(gpu) = &mut self.gpu {
