@@ -176,6 +176,9 @@ pub(crate) fn zip_files(files: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .last_modified_time(zip::DateTime::default())
+        // The same "made by" system everywhere (zip marks Windows files as
+        // DOS otherwise), so the bytes do not depend on the platform.
+        .system(zip::System::Unix)
         .unix_permissions(0o644);
     for (name, data) in files {
         // Writing to memory cannot fail.
