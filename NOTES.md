@@ -399,3 +399,4 @@ Brief: `docs/briefs/08-files-and-formats.md`. Research: `docs/research/files-and
 - A thumbnail in the file.
 - Windows file-type registration and the Mac Apple event handler (packaging).
 - Recent files on the web would need stored file handles in IndexedDB.
+- **Fixed after the owner tested the web build:** the mouse wheel panned instead of zooming. Browsers report a wheel in points, as they do a trackpad. Now a vertical step of 40 points or more with no sideways part counts as a wheel notch (100 points) and zooms. Smaller or sideways steps still pan, as DECISIONS #4 says trackpads do. Natively the wheel already zoomed.

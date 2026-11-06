@@ -245,6 +245,14 @@ impl Viewport {
                                 factor: (dy * 0.01).exp(),
                             }
                         }
+                        // Browsers report a mouse wheel in points too: big
+                        // vertical steps zoom (DECISIONS #4, the wheel only
+                        // zooms); small or sideways ones are a trackpad, which pans.
+                        egui::MouseWheelUnit::Point if is_mouse_wheel(dx, dy) => Input::Wheel {
+                            x,
+                            y,
+                            notches: dy / WHEEL_POINTS_PER_NOTCH,
+                        },
                         egui::MouseWheelUnit::Point => Input::Scroll { x, y, dx, dy },
                         _ => Input::Wheel { x, y, notches: dy },
                     };
@@ -283,9 +291,38 @@ impl Default for Viewport {
     }
 }
 
+/// Points a browser reports for one notch of a mouse wheel (100 in
+/// Chrome, Edge and Firefox).
+const WHEEL_POINTS_PER_NOTCH: f64 = 100.0;
+/// A vertical step at least this big, with no sideways part, is a wheel
+/// notch; trackpads send many small steps.
+const WHEEL_MIN_STEP: f64 = 40.0;
+
+/// Whether a scroll reported in points comes from a mouse wheel.
+fn is_mouse_wheel(dx: f64, dy: f64) -> bool {
+    dx == 0.0 && dy.abs() >= WHEEL_MIN_STEP
+}
+
 /// A fixed start for timings (the session only measures differences).
 fn start() -> web_time::Instant {
     use std::sync::OnceLock;
     static START: OnceLock<web_time::Instant> = OnceLock::new();
     *START.get_or_init(web_time::Instant::now)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_mouse_wheel;
+
+    #[test]
+    fn wheel_notches_zoom_and_trackpad_scrolls_pan() {
+        assert!(is_mouse_wheel(0.0, 100.0));
+        assert!(is_mouse_wheel(0.0, -120.0));
+        assert!(is_mouse_wheel(0.0, 53.0));
+        assert!(!is_mouse_wheel(0.0, 6.0), "a small trackpad step");
+        assert!(
+            !is_mouse_wheel(3.0, 80.0),
+            "a trackpad swipe with some sideways"
+        );
+    }
 }
