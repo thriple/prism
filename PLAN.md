@@ -934,6 +934,37 @@ The milestones below are broken into chunks that can be built and tried one at a
 
 **Suggested order:** Skeleton, Core Model and Actions & Keys can start together, then Viewport, Inference & Drawing, Edit Tools and Files & Formats. Groups & Components and Model Health come next. NURBS Spike is a short spike that can run at any time after Core Model, and it should run before the scope past Exact Curves is committed. Everything from Freeform NURBS on is ordered by what you decide to build, not by dependency alone.
 
+### 6.0a Building chunks in parts
+
+Every chunk is built in **parts**. A part is one brief, sized so that one session can build it, test it, push it and see CI green before the chat's context is compacted.
+- Each part ends with something the owner can try. NOTES says what was built, and `docs/HANDOFF.md` is updated if the session ends there.
+- **Sizes in the table above:** S and M chunks take one or two parts, L takes two or three, and XL takes four to seven.
+- **Writing the briefs:** a part's brief is written just before it is built, not all at once. The split below is a starting point, and each brief may move work between parts.
+- **In a session:** commit and push after each step of a part, so a compaction or a restarted worker loses nothing. Untested app code goes on the session branch, not `main`, because every push to `main` makes a release.
+
+**Done so far:**
+- Edit Tools: 2 parts.
+- Files & Formats: 3 parts.
+  1. `.prism`, autosave, units (built).
+  2. Mesh import and export, drag and drop.
+  3. Tabs and double-click to open in the running Prism.
+
+**Proposed splits for the XL chunks:**
+
+| Chunk | Parts |
+|---|---|
+| Freeform NURBS | 1. NURBS curves: the control-point curve tool, display and inference on curves. 2. Surfaces in the model, adaptive tessellation and display. 3. Cage editing with Move, Rotate and Scale. 4. Loft and revolve. 5. Sweep and patch. 6. Curvature display (zebra and curvature combs). |
+| Solids & CAD | 1. Solids: validation and healing. 2. Exact planar booleans and their UI. 3. Booleans on curved faces through the kernel picked by the NURBS Spike. 4. Shell. 5. NURBS fillets. 6. STEP import and export. 7. 3DM, DXF and SVG. |
+| Rendering | 1. Physically based materials and the render view. 2. The path tracer core (WebGPU compute) on meshes. 3. Lights and HDRI. 4. The denoiser. 5. The rest of the settings in 1.16. 6. The Blender bridge. |
+| Animation | 1. Keyframes and the timeline. 2. The graph editor. 3. Camera paths and cuts. 4. Constraints. 5. Video export. |
+| Simulation | 1. Particles. 2. Cloth. 3. Water. 4. Baking. |
+
+**L chunks:** split when their first brief is written. Usually:
+- the data and core first;
+- then the tools and UI;
+- then the remaining tools.
+
+
 
 ### Tier 1: modeling and rendering
 

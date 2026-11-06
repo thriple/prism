@@ -22,6 +22,7 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
 
 ## How the owner works
 - **Times:** the owner is in Guam (UTC+10). Give times in Guam time.
+- **Parts:** every chunk is built in parts that each fit one session (PLAN 6.0a, which has the proposed splits for the XL chunks).
 - **Order of work:** brief, then build, then tests, then NOTES and PLAN 6.0, then push to `main`, then check CI and tell the owner.
   - Large chunks are split into parts, each with its own brief.
   - Unless the owner says otherwise, follow the order in PLAN 6.0 ("Suggested order").
