@@ -190,3 +190,27 @@ proptest! {
         prop_assert_eq!(d.model().to_json(), end);
     }
 }
+
+/// Found by CI on Windows: a command that changes nothing must leave the
+/// model exactly as it was (a 0.0 turned to -0.0 compares equal).
+#[test]
+fn undo_all_then_redo_all_regression_signed_zero() {
+    let mut d = setup();
+    let mut ran = 0;
+    for p in [11usize, 0, 5] {
+        let options = every_kind(&d);
+        if let Some(c) = options.get(p % options.len())
+            && d.run(c.clone())
+        {
+            ran += 1;
+        }
+    }
+    let end = d.model().to_json();
+    for _ in 0..ran {
+        d.undo();
+    }
+    for _ in 0..ran {
+        d.redo();
+    }
+    assert_eq!(d.model().to_json(), end);
+}

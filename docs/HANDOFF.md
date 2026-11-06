@@ -7,9 +7,9 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - Skeleton, Soft Theme, Actions & Keys, Core Model, Viewport, Inference & Drawing.
   - Edit Tools: part 1 (Push/Pull, Move, Rotate, Scale, Eraser) and part 2 (Offset, Tape Measure, Protractor, guides).
   - **Files & Formats part 1:** `.prism` files, autosave and recovery, units.
-- **Last commit:** `fde4e6f` on `main`.
-  - It passed fmt, clippy (native and web), all tests and `trunk build` in the session.
-  - CI on GitHub had not finished when this was written. If it is red, fixing it is the first job.
+- **Last commits:** Files & Formats part 1 (`fde4e6f`), then a fix for the one CI failure it had.
+  - Windows CI found that a command which changed nothing could still flip a 0.0 to -0.0, so redo did not match. `Document::run` now puts the model back exactly.
+  - Check that CI is green on `main`; if it is red, fixing it is the first job.
 - **Next chunk by the plan's order:** Files & Formats **part 2**:
   - STL, OBJ, 3MF, glTF and PLY import and export;
   - drag and drop;

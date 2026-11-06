@@ -219,6 +219,10 @@ impl Document {
         let before = self.model.clone();
         command.apply(&mut self.model);
         if self.model == before {
+            // Put it back exactly: a command can change a value without
+            // changing it (0.0 to -0.0 compare equal), and the model must
+            // stay what the history says it is.
+            self.model = before;
             return false;
         }
         self.done.push(Step {
