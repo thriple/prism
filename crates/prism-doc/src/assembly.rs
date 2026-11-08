@@ -44,6 +44,16 @@ pub struct Definition {
     pub model: Model,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instances: BTreeMap<InstanceId, Instance>,
+    /// A component's name; a group has none. Copies of a component's
+    /// instance share the definition; copies of a group get their own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl Definition {
+    pub fn is_component(&self) -> bool {
+        self.name.is_some()
+    }
 }
 
 /// An instance as placed in the world, for drawing and picking.
@@ -79,6 +89,7 @@ impl Assembly {
                 Arc::new(Definition {
                     model,
                     instances: BTreeMap::new(),
+                    name: None,
                 }),
             )]
             .into(),
@@ -271,7 +282,12 @@ impl Assembly {
         let d = self.def(id)?.clone();
         let mut instances = BTreeMap::new();
         for inst in d.instances.values() {
-            let def = self.copy_def(inst.def)?;
+            // A component inside stays the same component.
+            let def = if self.def(inst.def)?.is_component() {
+                inst.def
+            } else {
+                self.copy_def(inst.def)?
+            };
             let new = self.new_instance();
             instances.insert(
                 new,
@@ -284,7 +300,98 @@ impl Assembly {
         Some(self.new_def(Definition {
             model: d.model,
             instances,
+            name: d.name,
         }))
+    }
+
+    /// The first free component name from `base` ("Box", "Box#2", ...).
+    pub fn free_name(&self, base: &str) -> String {
+        let base = base.split('#').next().unwrap_or(base).trim();
+        let base = if base.is_empty() { "Component" } else { base };
+        let taken = |n: &str| self.defs().any(|(_, d)| d.name.as_deref() == Some(n));
+        if !taken(base) {
+            return base.to_owned();
+        }
+        (2..)
+            .map(|k| format!("{base}#{k}"))
+            .find(|n| !taken(n))
+            .unwrap_or_default()
+    }
+
+    /// The components, by name.
+    pub fn components(&self) -> Vec<(DefId, &str)> {
+        let mut out: Vec<(DefId, &str)> = self
+            .defs()
+            .filter_map(|(id, d)| d.name.as_deref().map(|n| (id, n)))
+            .collect();
+        out.sort_by(|a, b| a.1.cmp(b.1));
+        out
+    }
+
+    /// How many instances place a definition, in the whole document.
+    pub fn uses(&self, def: DefId) -> usize {
+        self.placed().iter().filter(|p| p.def == def).count()
+    }
+
+    /// Make Component: as Make Group, but the definition is a component
+    /// named `base` (or the next free name).
+    pub fn make_component(
+        &mut self,
+        ctx: DefId,
+        sel: &Selection,
+        instances: &BTreeSet<InstanceId>,
+        base: &str,
+    ) -> Option<InstanceId> {
+        let id = self.make_group(ctx, sel, instances)?;
+        let name = self.free_name(base);
+        let def = self.def(ctx)?.instances.get(&id)?.def;
+        self.def_mut(def)?.name = Some(name);
+        Some(id)
+    }
+
+    /// Make Unique: each instance gets its own copy of its definition, as
+    /// a component with a new name.
+    pub fn make_unique(&mut self, ctx: DefId, instances: &BTreeSet<InstanceId>) {
+        for i in instances {
+            let Some(inst) = self.def(ctx).and_then(|d| d.instances.get(i)).copied() else {
+                continue;
+            };
+            let Some(old) = self.def(inst.def).cloned() else {
+                continue;
+            };
+            if old.name.is_none() || self.uses(inst.def) < 2 {
+                continue;
+            }
+            let Some(new) = self.copy_def(inst.def) else {
+                continue;
+            };
+            let name = self.free_name(old.name.as_deref().unwrap_or("Component"));
+            if let Some(d) = self.def_mut(new) {
+                d.name = Some(name);
+            }
+            if let Some(slot) = self.def_mut(ctx).and_then(|d| d.instances.get_mut(i)) {
+                slot.def = new;
+            }
+        }
+    }
+
+    /// Rename a component (refused if the name is empty or taken).
+    pub fn rename(&mut self, def: DefId, name: &str) -> bool {
+        let name = name.trim();
+        if name.is_empty()
+            || self
+                .defs()
+                .any(|(id, d)| id != def && d.name.as_deref() == Some(name))
+        {
+            return false;
+        }
+        match self.def_mut(def) {
+            Some(d) if d.name.is_some() => {
+                d.name = Some(name.to_owned());
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Drop definitions no instance reaches.
@@ -350,6 +457,7 @@ impl Assembly {
         let def = self.new_def(Definition {
             model: geo,
             instances: inner,
+            name: None,
         });
         let id = self.new_instance();
         self.def_mut(ctx)?.instances.insert(
@@ -437,7 +545,13 @@ impl Assembly {
             .unwrap_or_default();
         for m in steps {
             for inst in &originals {
-                let Some(def) = self.copy_def(inst.def) else {
+                // A component's copies share it; a group's copies do not.
+                let shared = self.def(inst.def).is_some_and(Definition::is_component);
+                let Some(def) = (if shared {
+                    Some(inst.def)
+                } else {
+                    self.copy_def(inst.def)
+                }) else {
                     continue;
                 };
                 let id = self.new_instance();

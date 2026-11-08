@@ -353,3 +353,139 @@ fn the_flattened_model_has_every_group_placed() {
     let (_, hi) = m.bbox().expect("box");
     assert!((hi.x - 7.0).abs() < 1e-9, "the last copy is placed: {hi:?}");
 }
+
+// ---------- components (part 2) ----------
+
+fn component_all(d: &mut Document, name: &str) -> InstanceId {
+    let id = d.assembly().next_instance();
+    let sel = everything(d.model());
+    assert!(d.run(Command::MakeComponent {
+        selection: sel,
+        instances: BTreeSet::new(),
+        name: name.into(),
+    }));
+    id
+}
+
+#[test]
+fn copies_of_a_component_share_it_and_change_together() {
+    let mut d = Document::new();
+    boxed(&mut d, v(0.0, 0.0, 0.0), 2.0, 2.0);
+    let a = component_all(&mut d, "Box");
+    let b = d.assembly().next_instance();
+    d.run(Command::CopyInstances {
+        instances: [a].into(),
+        step: Change::Translate {
+            by: v(4.0, 0.0, 0.0),
+        },
+        count: 2,
+    });
+    let da = d.assembly().context_def(&[a]).unwrap();
+    assert_eq!(
+        d.assembly().context_def(&[b]),
+        Some(da),
+        "the copy shares it"
+    );
+    assert_eq!(d.assembly().uses(da), 3);
+    d.run_in(
+        &[b],
+        Command::Segment {
+            p: v(0.0, 1.0, 2.0),
+            q: v(2.0, 1.0, 2.0),
+        },
+    );
+    assert_eq!(
+        d.assembly().def(da).unwrap().model.face_count(),
+        7,
+        "every instance changed"
+    );
+    assert_eq!(d.assembly().components(), vec![(da, "Box")]);
+}
+
+#[test]
+fn make_unique_splits_one_off_with_a_new_name() {
+    let mut d = Document::new();
+    boxed(&mut d, v(0.0, 0.0, 0.0), 2.0, 2.0);
+    let a = component_all(&mut d, "Box");
+    let b = d.assembly().next_instance();
+    d.run(Command::CopyInstances {
+        instances: [a].into(),
+        step: Change::Translate {
+            by: v(4.0, 0.0, 0.0),
+        },
+        count: 1,
+    });
+    d.run(Command::MakeUnique {
+        instances: [b].into(),
+    });
+    let (da, db) = (
+        d.assembly().context_def(&[a]).unwrap(),
+        d.assembly().context_def(&[b]).unwrap(),
+    );
+    assert_ne!(da, db);
+    assert_eq!(d.assembly().def(db).unwrap().name.as_deref(), Some("Box#2"));
+    d.run_in(
+        &[b],
+        Command::Segment {
+            p: v(0.0, 1.0, 2.0),
+            q: v(2.0, 1.0, 2.0),
+        },
+    );
+    assert_eq!(
+        d.assembly().def(da).unwrap().model.face_count(),
+        6,
+        "the other is untouched"
+    );
+    // Renaming: a taken name is refused.
+    assert!(!d.run(Command::Rename {
+        def: db,
+        name: "Box".into()
+    }));
+    assert!(d.run(Command::Rename {
+        def: db,
+        name: "Crate".into()
+    }));
+}
+
+#[test]
+fn exploding_one_instance_keeps_the_component_for_the_others() {
+    let mut d = Document::new();
+    boxed(&mut d, v(0.0, 0.0, 0.0), 2.0, 2.0);
+    let a = component_all(&mut d, "Box");
+    let b = d.assembly().next_instance();
+    d.run(Command::CopyInstances {
+        instances: [a].into(),
+        step: Change::Translate {
+            by: v(4.0, 0.0, 0.0),
+        },
+        count: 1,
+    });
+    d.run(Command::Explode { instance: a });
+    assert_eq!(d.model().face_count(), 6);
+    assert!(
+        d.assembly().context_def(&[b]).is_some(),
+        "the other instance still has it"
+    );
+    assert_eq!(d.assembly().components().len(), 1);
+}
+
+#[test]
+fn a_mirrored_instance_explodes_into_a_valid_model() {
+    let mut d = Document::new();
+    // An L-shaped block, so mirroring shows.
+    boxed(&mut d, v(0.0, 0.0, 0.0), 2.0, 1.0);
+    let a = component_all(&mut d, "Block");
+    d.run(Command::Place {
+        instances: [a].into(),
+        change: Change::Scale {
+            centre: v(1.0, 1.0, 0.5),
+            factor: v(-1.0, 1.0, 1.0),
+        },
+    });
+    d.run(Command::Explode { instance: a });
+    let m = d.model();
+    assert!(check::problems(m).is_empty(), "{:?}", check::problems(m));
+    // Faces still face out: the top's normal is up.
+    let top = prism_ops::face_at(m, v(1.0, 1.0, 1.0)).expect("top");
+    assert!(m.face(top).unwrap().plane().normal.z > 0.9);
+}

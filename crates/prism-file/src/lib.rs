@@ -107,6 +107,9 @@ struct GroupsV1 {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct DefV1 {
     id: u32,
+    /// A component's name; groups have none (part 1 files never do).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     #[serde(default)]
     instances: Vec<InstanceV1>,
 }
@@ -199,6 +202,7 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                 .defs()
                 .map(|(id, d)| DefV1 {
                     id: id.0,
+                    name: d.name.clone(),
                     instances: d
                         .instances
                         .iter()
@@ -295,7 +299,14 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
             })
             .collect();
         if defs
-            .insert(DefId(d.id), Definition { model, instances })
+            .insert(
+                DefId(d.id),
+                Definition {
+                    model,
+                    instances,
+                    name: d.name,
+                },
+            )
             .is_some()
         {
             return Err(FileError::Damaged(format!(

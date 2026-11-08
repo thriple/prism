@@ -414,6 +414,107 @@ impl Scene {
         }
     }
 
+    /// This scene placed by `m` (a group's instance), without rebuilding:
+    /// for moves, turns, mirrors and even scales only. None for a stretch
+    /// along some axes (then the caller builds the scene again).
+    pub fn placed(&self, m: &prism_math::DAffine3) -> Option<Scene> {
+        let lin = m.matrix3;
+        let det = lin.determinant();
+        let k = det.abs().cbrt();
+        if !k.is_finite() || k <= 0.0 {
+            return None;
+        }
+        // An even scale: the columns are perpendicular and of length k.
+        let g = lin.transpose() * lin;
+        let tol = 1e-9 * k * k;
+        let even = (g.x_axis.x - k * k).abs() < tol
+            && (g.y_axis.y - k * k).abs() < tol
+            && (g.z_axis.z - k * k).abs() < tol
+            && g.x_axis.y.abs() < tol
+            && g.x_axis.z.abs() < tol
+            && g.y_axis.z.abs() < tol;
+        if !even {
+            return None;
+        }
+        let mirror = det < 0.0;
+        let p = |v: DVec3| m.transform_point3(v);
+        let dir = |v: DVec3| (lin * v) / k;
+        let mut s = self.clone();
+        for f in &mut s.faces {
+            f.origin = p(f.origin);
+            f.normal = dir(f.normal);
+            let (u, v) = (dir(f.u), dir(f.v));
+            let scale2 = |q: &DVec2| -> DVec2 {
+                if mirror {
+                    // Swap the axes so u x v stays along the normal.
+                    DVec2::new(q.y, q.x) * k
+                } else {
+                    *q * k
+                }
+            };
+            if mirror {
+                f.u = v;
+                f.v = u;
+            } else {
+                f.u = u;
+                f.v = v;
+            }
+            f.outer = f.outer.iter().map(scale2).collect();
+            f.holes = f
+                .holes
+                .iter()
+                .map(|h| h.iter().map(scale2).collect())
+                .collect();
+            let (a, b) = (p(f.lo), p(f.hi));
+            f.lo = a.min(b);
+            f.hi = a.max(b);
+        }
+        for e in &mut s.edges {
+            e.a = p(e.a);
+            e.b = p(e.b);
+            for n in e.normals.iter_mut().flatten() {
+                *n = dir(*n);
+            }
+        }
+        for (_, v) in &mut s.vertices {
+            *v = p(*v);
+        }
+        for q in &mut s.mesh.positions {
+            *q = p(*q);
+        }
+        for n in &mut s.mesh.normals {
+            *n = dir(*n);
+        }
+        if mirror {
+            // A mirror turns every triangle round; turn them back so the
+            // front still faces out.
+            for t in s.mesh.indices.as_chunks_mut::<3>().0 {
+                t.swap(1, 2);
+            }
+        }
+        // Each face's true box, from its corners (a turn changes it).
+        let mut boxes: Vec<Option<(DVec3, DVec3)>> = vec![None; s.faces.len()];
+        for (i, q) in s.mesh.positions.iter().enumerate() {
+            let b = boxes[s.mesh.faces[i] as usize].get_or_insert((*q, *q));
+            *b = (b.0.min(*q), b.1.max(*q));
+        }
+        for (f, b) in s.faces.iter_mut().zip(boxes) {
+            if let Some((lo, hi)) = b {
+                f.lo = lo;
+                f.hi = hi;
+            }
+        }
+        let mut it = s.vertices.iter().map(|(_, q)| *q);
+        s.bounds = it
+            .next()
+            .map(|first| it.fold((first, first), |(lo, hi), q| (lo.min(q), hi.max(q))));
+        if let Some((lo, hi)) = s.bounds {
+            s.tol = Tol::for_points(&[lo, hi]);
+        }
+        s.guides.clear();
+        Some(s)
+    }
+
     /// Who owns what a pick hit, if it came from another model ([`Scene::merge`]).
     pub fn owner_of(&self, hit: crate::Hit) -> Option<u32> {
         match hit {

@@ -54,7 +54,53 @@ fn cases() -> Vec<(&'static str, Contents)> {
                 settings: Settings::default(),
             },
         ),
+        (
+            "components.prism",
+            Contents {
+                assembly: components().assembly().clone(),
+                settings: Settings::default(),
+            },
+        ),
     ]
+}
+
+/// A box made into a component "Box", with two linked copies, one made
+/// unique, and one mirrored.
+fn components() -> prism_doc::Document {
+    use prism_doc::{Change, Command};
+    let mut d = prism_tools::scenes::cube();
+    let a = d.assembly().next_instance();
+    let m = d.model();
+    let sel = prism_ops::Selection {
+        vertices: m.vertices().map(|(id, _)| id).collect(),
+        edges: m.edges().map(|(id, _)| id).collect(),
+        faces: m.faces().map(|(id, _)| id).collect(),
+        guides: Default::default(),
+    };
+    d.run(Command::MakeComponent {
+        selection: sel,
+        instances: Default::default(),
+        name: "Box".into(),
+    });
+    let b = d.assembly().next_instance();
+    d.run(Command::CopyInstances {
+        instances: [a].into(),
+        step: Change::Translate {
+            by: prism_math::DVec3::new(5.0, 0.0, 0.0),
+        },
+        count: 2,
+    });
+    d.run(Command::MakeUnique {
+        instances: [b].into(),
+    });
+    d.run(Command::Place {
+        instances: [a].into(),
+        change: Change::Scale {
+            centre: prism_math::DVec3::ZERO,
+            factor: prism_math::DVec3::new(-1.0, 1.0, 1.0),
+        },
+    });
+    d
 }
 
 /// A box made into a group, copied twice, with a group nested in a copy

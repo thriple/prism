@@ -2,6 +2,7 @@
 //! registry: top bar with menus, tool dock, right-click menu, status bar,
 //! command search, the hotkeys window and the Planned Features window.
 
+mod components;
 mod dock;
 mod features;
 mod frame;
@@ -21,6 +22,7 @@ use crate::actions::keymap::{KeyPress, Keymap, Platform, Preset};
 use crate::actions::registry::{Check, Entry, Run, Selection};
 use crate::actions::{self, Registry};
 use crate::storage;
+pub use components::{ComponentOp, ComponentRow};
 
 pub use hotkeys::HotkeysWindow;
 
@@ -95,6 +97,12 @@ pub struct Chrome {
     pub(crate) palette: Option<palette::Palette>,
     pub(crate) features_open: bool,
     pub(crate) hotkeys: Option<HotkeysWindow>,
+    /// Window > Components, when open.
+    pub(crate) components: Option<components::ComponentsWindow>,
+    /// The document's components (set by the app each frame).
+    pub component_rows: Vec<components::ComponentRow>,
+    /// What the Components window asked for, for the app to pass on.
+    pub component_ops: Vec<components::ComponentOp>,
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
@@ -159,6 +167,9 @@ impl Chrome {
             menu_serial: 0,
             palette: None,
             features_open: false,
+            components: None,
+            component_rows: Vec::new(),
+            component_ops: Vec::new(),
             hotkeys: None,
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
@@ -288,6 +299,9 @@ impl Chrome {
             Run::Command => {
                 match id {
                     "help.features" => self.features_open = true,
+                    "win.components" => {
+                        self.components.get_or_insert_with(Default::default);
+                    }
                     "help.search" => self.palette = Some(palette::Palette::default()),
                     "help.keys" | "win.hotkeys" => {
                         self.hotkeys.get_or_insert_with(HotkeysWindow::default);
@@ -310,6 +324,7 @@ impl Chrome {
             || self.palette.is_some()
             || self.features_open
             || self.hotkeys.is_some()
+            || self.components.is_some()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -322,6 +337,8 @@ impl Chrome {
             if !h.cancel_pending() {
                 self.hotkeys = None;
             }
+        } else if self.components.is_some() {
+            self.components = None;
         } else {
             self.features_open = false;
         }
@@ -402,6 +419,7 @@ impl Chrome {
         palette::show(self, ctx);
         features::show(self, ctx);
         hotkeys::show(self, ctx);
+        components::show(self, ctx);
         layout
     }
 }

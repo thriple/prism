@@ -310,6 +310,32 @@ impl App {
                 has_groups: viewport.counts().groups > 0,
                 recent: chrome.recent.len(),
             };
+            chrome.component_rows = viewport
+                .session
+                .component_rows()
+                .into_iter()
+                .map(|(def, name, uses)| crate::chrome::ComponentRow {
+                    def: def.0,
+                    name,
+                    uses,
+                })
+                .collect();
+            for op in std::mem::take(&mut chrome.component_ops) {
+                match op {
+                    crate::chrome::ComponentOp::Select(d) => {
+                        viewport.session.select_component(prism_doc::DefId(d));
+                    }
+                    crate::chrome::ComponentOp::Rename(d, name) => {
+                        if !viewport
+                            .session
+                            .rename_component(prism_doc::DefId(d), &name)
+                        {
+                            chrome.status_note("That name is empty or taken".into());
+                        }
+                    }
+                }
+                viewport.session.mark_all_dirty();
+            }
             let status = viewport.status();
             chrome.set_hint(status.hint);
             chrome.measure = status.measure;

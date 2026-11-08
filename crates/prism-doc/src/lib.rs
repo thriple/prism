@@ -106,6 +106,22 @@ pub enum Command {
     Explode {
         instance: InstanceId,
     },
+    /// Make Component from a selection and selected groups.
+    MakeComponent {
+        selection: Selection,
+        #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+        instances: BTreeSet<InstanceId>,
+        name: String,
+    },
+    /// Give each instance its own copy of its component.
+    MakeUnique {
+        instances: BTreeSet<InstanceId>,
+    },
+    /// Rename a component.
+    Rename {
+        def: DefId,
+        name: String,
+    },
     /// Move, rotate or scale whole groups.
     Place {
         instances: BTreeSet<InstanceId>,
@@ -239,6 +255,9 @@ impl Command {
             Command::Batch { commands } => commands.first().map_or("Edit", |c| c.name()),
             Command::MakeGroup { .. } => "Make Group",
             Command::Explode { .. } => "Explode",
+            Command::MakeComponent { .. } => "Make Component",
+            Command::MakeUnique { .. } => "Make Unique",
+            Command::Rename { .. } => "Rename",
             Command::Place { change, .. } => match change {
                 Change::Translate { .. } => "Move",
                 Change::Rotate { .. } => "Rotate",
@@ -394,6 +413,17 @@ impl Command {
             Command::Explode { instance } => {
                 asm.explode(ctx, *instance);
             }
+            Command::MakeComponent {
+                selection,
+                instances,
+                name,
+            } => {
+                asm.make_component(ctx, selection, instances, name);
+            }
+            Command::MakeUnique { instances } => asm.make_unique(ctx, instances),
+            Command::Rename { def, name } => {
+                asm.rename(*def, name);
+            }
             Command::Place { instances, change } => {
                 asm.place(ctx, instances, &change.affine(1.0));
             }
@@ -500,6 +530,9 @@ impl Command {
             | Command::Batch { .. }
             | Command::MakeGroup { .. }
             | Command::Explode { .. }
+            | Command::MakeComponent { .. }
+            | Command::MakeUnique { .. }
+            | Command::Rename { .. }
             | Command::Place { .. }
             | Command::CopyInstances { .. }
             | Command::EraseInstances { .. } => {}

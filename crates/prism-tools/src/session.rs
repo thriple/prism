@@ -947,6 +947,11 @@ impl Session {
             }
             "edit.delete" => self.delete(),
             "edit.group" => self.make_group(),
+            "edit.comp" => self.make_component(),
+            "edit.unique" => self.make_unique(),
+            "flip.x" => self.flip(0),
+            "flip.y" => self.flip(1),
+            "flip.z" => self.flip(2),
             "edit.explode" => self.explode(),
             "edit.undo" => {
                 self.cancel();

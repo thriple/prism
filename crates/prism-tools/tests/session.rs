@@ -1444,3 +1444,64 @@ fn box_select_takes_groups_inside_the_window() {
         [g]
     );
 }
+
+#[test]
+fn editing_one_component_instance_changes_the_other() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "edit.comp");
+    let a = *d.s.selected_groups().iter().next().expect("the component");
+    // A linked copy with Move and Ctrl.
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(1.0, 0.0, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("4");
+    let asm = d.s.document().assembly();
+    let def = asm.context_def(&[a]).unwrap();
+    assert_eq!(asm.uses(def), 2, "a linked copy");
+    let b = *asm
+        .root()
+        .instances
+        .keys()
+        .find(|i| **i != a)
+        .expect("the copy");
+    // Edit the copy: the original changes too.
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    double_click(&mut d, DVec3::new(5.0, 0.0, 1.0));
+    assert_eq!(d.s.open_path(), [b]);
+    d.tool(LINE);
+    d.click(DVec3::new(4.0, 1.0, 2.0));
+    d.click(DVec3::new(6.0, 1.0, 2.0));
+    key(&mut d, Key::Escape);
+    let asm = d.s.document().assembly();
+    assert_eq!(asm.def(def).unwrap().model.face_count(), 7);
+    assert_eq!(asm.context_def(&[a]), Some(def), "the same definition");
+    // The other instance is drawn normally while the copy is open.
+    assert!(
+        d.s.scene()
+            .faces
+            .iter()
+            .any(|f| !f.faded && d.s.scene().face_owner.contains_key(&f.id)),
+        "the original shows the edit, not faded"
+    );
+    d.tool(SELECT);
+    key(&mut d, Key::Escape);
+    // Make Unique, then the copy no longer follows the original.
+    act(&mut d, "edit.unique");
+    let asm = d.s.document().assembly();
+    assert_ne!(asm.context_def(&[b]), asm.context_def(&[a]));
+    // Flip the copy along red: still valid when exploded.
+    act(&mut d, "flip.x");
+    act(&mut d, "edit.explode");
+    valid(&d);
+    // The exploded copy's own component went with it.
+    assert_eq!(d.s.component_rows().len(), 1);
+}

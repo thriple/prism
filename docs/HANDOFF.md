@@ -19,10 +19,10 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
 - **Built on 2026-11-06:** Files & Formats parts 2 and 3 (mesh import and export, drag and drop, tabs, one running Prism), Edit Tools part 3 (Intersect Faces), the Eraser merging flat faces (DECISIONS #15), and fast Move and Rotate previews of whole bodies. **Next: Groups & Components.** Its brief is not written yet; read `docs/research/groups-and-components.md` and DECISIONS #22 and #23 first, and split it into parts (PLAN 6.0a).
 - **Built on 2026-11-08:** Push/Pull edge by edge, the coplanar rule
   (#30) and the solid rule (#31) after owner feedback; Offset snapping;
-  **Groups & Components part 1 (groups)**. **Next: part 2, components**
-  (brief to write: linked instances, Make Unique, Flip Along on an
-  instance, GPU instancing, the Components window). Read NOTES "Groups &
-  Components (part 1)" and "The solid rule" first.
+  **Groups & Components parts 1 (groups) and 2 (components)**. **Next:
+  part 3**: Outliner, Entity Info, tags and hiding ("hidden must be
+  free", PLAN 1.14). Its brief is not written yet. Read NOTES "Groups &
+  Components (part 1)", "(part 2)" and "The solid rule" first.
 - **GPU tests here:** install Mesa's software Vulkan driver first
   (`apt-get install -y mesa-vulkan-drivers`), then run with
   `PRISM_REQUIRE_GPU=1`; without it they skip silently.

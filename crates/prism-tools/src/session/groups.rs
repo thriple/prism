@@ -113,11 +113,16 @@ impl Session {
                 faded: true,
             });
         }
+        // Each definition's scene is built once, in its own coordinates,
+        // and placed for each instance (rebuilt only for a stretch).
+        let mut local: std::collections::BTreeMap<prism_doc::DefId, Scene> = Default::default();
         for placed in asm.placed() {
             if placed.path == self.ctx {
                 continue;
             }
             let inside = placed.path.len() > self.ctx.len() && placed.path.starts_with(&self.ctx);
+            // Other instances of the open component show the edit live.
+            let sibling = !self.ctx.is_empty() && placed.def == def;
             let owner = if inside {
                 Owner::Child(placed.path[self.ctx.len()])
             } else {
@@ -133,12 +138,18 @@ impl Session {
             if d.model.face_count() == 0 && d.model.edge_count() == 0 {
                 continue;
             }
-            let mut m = d.model.clone();
-            prism_ops::transform::affine(&mut m, &placed.world);
+            let base = local
+                .entry(placed.def)
+                .or_insert_with(|| Scene::build_with(&d.model, false));
+            let scene = base.placed(&placed.world).unwrap_or_else(|| {
+                let mut m = d.model.clone();
+                prism_ops::transform::affine(&mut m, &placed.world);
+                Scene::build_with(&m, false)
+            });
             pieces.push(Piece {
-                scene: Scene::build_with(&m, false),
+                scene,
                 owner: k as u32,
-                faded: !inside,
+                faded: !inside && !sibling,
             });
         }
         let mut scene =
@@ -239,6 +250,94 @@ impl Session {
             self.selection = Selection::default();
             self.set_groups([id].into());
         }
+    }
+
+    /// Edit > Make Component: as Make Group, as a named component.
+    pub(super) fn make_component(&mut self) {
+        if self.selection.is_empty() && self.groups.is_empty() {
+            return;
+        }
+        self.cancel();
+        let id = self.doc.assembly().next_instance();
+        let c = Command::MakeComponent {
+            selection: self.selection.clone(),
+            instances: self.groups.clone(),
+            name: "Component".into(),
+        };
+        if self.run(c) {
+            self.selection = Selection::default();
+            self.set_groups([id].into());
+        }
+    }
+
+    /// The components (Window > Components): id, name and how many
+    /// instances place each in the whole model.
+    pub fn component_rows(&self) -> Vec<(prism_doc::DefId, String, usize)> {
+        let asm = self.doc.assembly();
+        asm.components()
+            .into_iter()
+            .map(|(id, name)| (id, name.to_owned(), asm.uses(id)))
+            .collect()
+    }
+
+    /// Select every instance of a component in the open group.
+    pub fn select_component(&mut self, def: prism_doc::DefId) {
+        let asm = self.doc.assembly();
+        let here = asm
+            .context_def(&self.ctx)
+            .and_then(|d| asm.def(d))
+            .map(|d| {
+                d.instances
+                    .iter()
+                    .filter(|(_, i)| i.def == def)
+                    .map(|(id, _)| *id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.set_selection(Selection::default());
+        self.set_groups(here);
+    }
+
+    /// Rename a component. Returns false if the name is empty or taken.
+    pub fn rename_component(&mut self, def: prism_doc::DefId, name: &str) -> bool {
+        self.run(Command::Rename {
+            def,
+            name: name.to_owned(),
+        })
+    }
+
+    /// Edit > Make Unique: the selected instances get their own copies.
+    pub(super) fn make_unique(&mut self) {
+        if !self.groups.is_empty() {
+            self.cancel();
+            self.run(Command::MakeUnique {
+                instances: self.groups.clone(),
+            });
+        }
+    }
+
+    /// Edit > Flip Along: mirror each selected group about its own centre
+    /// along a world axis (0 red, 1 green, 2 blue).
+    pub(super) fn flip(&mut self, axis: usize) {
+        if self.groups.is_empty() {
+            return;
+        }
+        self.cancel();
+        let mut factor = DVec3::ONE;
+        factor[axis] = -1.0;
+        let commands = self
+            .groups
+            .iter()
+            .filter_map(|g| {
+                let c = self.group_box(*g)?;
+                let centre = c.iter().copied().sum::<DVec3>() / 8.0;
+                Some(Command::Place {
+                    instances: [*g].into(),
+                    change: Change::Scale { centre, factor },
+                })
+            })
+            .collect();
+        self.run(Command::Batch { commands });
     }
 
     /// Edit > Explode: the selected groups join the open one.

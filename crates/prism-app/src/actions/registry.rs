@@ -95,7 +95,8 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 6] = [
+const COMMANDS: [&str; 7] = [
+    "win.components",
     "help.features",
     "help.search",
     "help.keys",
@@ -138,6 +139,10 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Groups & Components part 1: handled by the session.
         || id == "edit.group"
         || id == "edit.explode"
+        // Part 2: components and mirroring.
+        || id == "edit.comp"
+        || id == "edit.unique"
+        || id.starts_with("flip.")
         || id == "win.nexttab"
         || id == "win.prevtab"
     {
@@ -211,8 +216,15 @@ impl Registry {
                     when: match r.id.strip_prefix("file.recent") {
                         Some("") => When::Never,
                         Some(n) => n.parse().map_or(When::Always, When::Recent),
-                        None if r.id == "isect.sel" || r.id == "edit.group" => When::HasSelection,
-                        None if r.id == "edit.explode" => When::HasGroups,
+                        None if matches!(r.id, "isect.sel" | "edit.group" | "edit.comp") => {
+                            When::HasSelection
+                        }
+                        None if r.id == "edit.explode"
+                            || r.id == "edit.unique"
+                            || r.id.starts_with("flip.") =>
+                        {
+                            When::HasGroups
+                        }
                         None => when_of(r.when),
                     },
                     check: if run == Run::Tool {
@@ -449,7 +461,8 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 16] = [
+const BUILT_BEHAVIOURS: [&str; 17] = [
+    "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
     "Hover-wake anchors and guide intersections",

@@ -98,3 +98,44 @@ fn push_pull_on_the_large_scene() {
         t.elapsed().as_secs_f64() * 1e3 / f64::from(n)
     );
 }
+
+/// How long the scene takes with many instances of one component (each
+/// instance's scene is built from its model today).
+#[test]
+#[ignore = "prints timings"]
+fn many_instances_of_one_component() {
+    use prism_doc::{Change, Command};
+    let mut doc = prism_tools::scenes::large(5);
+    let m = doc.model();
+    let sel = prism_ops::Selection {
+        vertices: m.vertices().map(|(id, _)| id).collect(),
+        edges: m.edges().map(|(id, _)| id).collect(),
+        faces: m.faces().map(|(id, _)| id).collect(),
+        guides: Default::default(),
+    };
+    let faces = m.face_count();
+    let a = doc.assembly().next_instance();
+    doc.run(Command::MakeComponent {
+        selection: sel,
+        instances: Default::default(),
+        name: "Block".into(),
+    });
+    for n in [1u32, 10, 100] {
+        let mut d = doc.clone();
+        if n > 1 {
+            d.run(Command::CopyInstances {
+                instances: [a].into(),
+                step: Change::Translate {
+                    by: DVec3::new(0.0, 0.0, 50.0),
+                },
+                count: n - 1,
+            });
+        }
+        let t = std::time::Instant::now();
+        let _ = prism_tools::Session::new(d);
+        println!(
+            "{n} instances of {faces} faces: scene {:.1} ms",
+            t.elapsed().as_secs_f64() * 1e3
+        );
+    }
+}

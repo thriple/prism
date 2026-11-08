@@ -726,3 +726,45 @@ and a screenshot of an open group (`an_open_group_fades_the_rest`).
   does).
 - Not tried by hand: the native app and the web page with groups. The
   logic is covered by session tests and the screenshot test.
+
+## Groups & Components (part 2: components)
+
+Brief: `docs/briefs/13-groups-and-components-2.md`.
+
+**What was built**
+- A definition with a name is a component; without, a group. Copies of a
+  component's instance (Move with Ctrl, Rotate copies, `CopyInstances`)
+  share its definition, so editing one changes all; a component nested in
+  a copied group stays the same component.
+- Make Component (Edit menu): as Make Group, named "Component" (or
+  "Component#2", ...). Make Unique gives each selected instance its own
+  copy as "Name#2". Rename refuses empty or taken names.
+- Flip Along red, green or blue mirrors selected groups and instances
+  about their own centre (their placement; the geometry is not changed).
+  Exploding a mirrored instance turns its loops round, so faces face out.
+- While an instance is open, the other instances of the same definition
+  are drawn normally, so the edit shows on all of them.
+- Window > Components lists the components with their instance counts,
+  selects all instances of one in the open group, and renames.
+- Each definition's scene is built once and placed for each instance
+  (`Scene::placed`, for moves, turns, mirrors and even scales; a stretch
+  is rebuilt). 100 instances of a 150-face component: 33 ms (74 ms when
+  each was rebuilt). Most of what is left is merging the copies into one
+  scene; GPU instancing would remove that.
+- Files: `groups.json` records a component's name; part 1 files open as
+  groups. Golden `components.prism`.
+- Planned Features: "Groups and components, open and exit" is ticked.
+
+**Tests:** components share and change together, Make Unique, Rename,
+Explode of one instance keeps the component, a mirrored instance explodes
+into a valid model (prism-doc); a session scenario (copy, open, draw, see
+the other change, Make Unique, Flip, Explode); `Scene::placed` against
+building from the moved model; the golden file.
+
+**Leftovers**
+- GPU instancing (one draw per definition) is not built; see the timing
+  above.
+- A component's own axes and insertion point (the Axes tool), and the
+  library browser, are later.
+- The Components window cannot place a new instance yet (copy an
+  existing one).
