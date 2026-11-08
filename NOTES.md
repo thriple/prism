@@ -768,3 +768,38 @@ building from the moved model; the golden file.
   library browser, are later.
 - The Components window cannot place a new instance yet (copy an
   existing one).
+
+## Groups & Components (part 3: hiding, tags and panels)
+
+Brief: `docs/briefs/14-groups-and-components-3.md`.
+
+**What was built**
+- Instances can be hidden, named and put on a tag; the document has tags,
+  each shown or hidden. These live in the assembly by instance id (ids are
+  unique in the document), are cleaned up when instances go, and copies
+  keep their original's name and tag. All are commands, so undo works.
+- Hide Selected, Unhide All (in the open group), Unhide Last and Isolate
+  in the Edit menu.
+- Hidden must be free: hidden instances and those on hidden tags are not
+  built into the scene, so they are not drawn, picked, snapped to,
+  box-selected or taken by Select All, and mesh export leaves them out.
+  100 groups with 90 hidden build in 9.3 ms; a model of the 10 visible
+  alone takes 5.9 ms (the rest is walking the tree and the root model).
+- Window > Outliner: the tree of instances, an eye per row, a click
+  selects (opening the parent group if needed), a double-click opens.
+- Window > Entity Info: the selected group's name (editable), what it is,
+  its tag and a Hide/Show button; for loose geometry, counts and area.
+- Window > Tags: show or hide, rename, add, and put the selection on a tag.
+- Files: `groups.json` keeps names, tags and hidden flags; older files
+  open with none.
+
+**Tests:** hiding, tags, names with copies and erasing (prism-doc); a
+file round trip; session scenarios (a hidden group is not picked, snapped
+to or selected; Unhide Last; Isolate; the Outliner selecting inside a
+nested group; Entity Info naming); the 90%-hidden timing (`timing.rs`,
+run by hand).
+
+**Leftovers**
+- Hiding loose faces and edges, Show Hidden (ghosted), Lock.
+- The Outliner cannot drag rows to regroup, search or filter yet.
+- Not tried by hand: the three windows in the native app and on the web.

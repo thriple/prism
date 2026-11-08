@@ -27,6 +27,17 @@ pub struct DefId(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct InstanceId(pub u32);
 
+/// A tag's id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct TagId(pub u32);
+
+/// A tag: a name, and whether what is on it is shown.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tag {
+    pub name: String,
+    pub visible: bool,
+}
+
 /// The root definition: the model outside every group.
 pub const ROOT: DefId = DefId(0);
 
@@ -72,6 +83,27 @@ pub struct Assembly {
     defs: BTreeMap<DefId, Arc<Definition>>,
     next_def: u32,
     next_instance: u32,
+    /// Instances hidden on purpose (PLAN 1.14).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    hidden: BTreeSet<InstanceId>,
+    /// Instances' own names.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    names: BTreeMap<InstanceId, String>,
+    /// Which tag each instance is on.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    on_tag: BTreeMap<InstanceId, TagId>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    tags: BTreeMap<TagId, Tag>,
+    #[serde(default)]
+    next_tag: u32,
+}
+
+/// An instance's name, tag and whether it is hidden (for files).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Attributes {
+    pub hidden: bool,
+    pub name: Option<String>,
+    pub tag: Option<TagId>,
 }
 
 impl Default for Assembly {
@@ -95,6 +127,11 @@ impl Assembly {
             .into(),
             next_def: 1,
             next_instance: 0,
+            hidden: BTreeSet::new(),
+            names: BTreeMap::new(),
+            on_tag: BTreeMap::new(),
+            tags: BTreeMap::new(),
+            next_tag: 0,
         }
     }
 
@@ -157,7 +194,175 @@ impl Assembly {
             defs: defs.into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
             next_def,
             next_instance,
+            hidden: BTreeSet::new(),
+            names: BTreeMap::new(),
+            on_tag: BTreeMap::new(),
+            tags: BTreeMap::new(),
+            next_tag: 0,
         })
+    }
+
+    /// Set the tags and each instance's name, tag and hidden flag (a file).
+    /// Entries for instances or tags that do not exist are dropped.
+    pub fn with_attributes(
+        mut self,
+        tags: BTreeMap<TagId, Tag>,
+        next_tag: u32,
+        attrs: BTreeMap<InstanceId, Attributes>,
+    ) -> Assembly {
+        self.next_tag = next_tag.max(tags.keys().next_back().map_or(0, |t| t.0 + 1));
+        self.tags = tags;
+        for (i, a) in attrs {
+            if a.hidden {
+                self.hidden.insert(i);
+            }
+            if let Some(n) = a.name {
+                self.names.insert(i, n);
+            }
+            if let Some(t) = a.tag.filter(|t| self.tags.contains_key(t)) {
+                self.on_tag.insert(i, t);
+            }
+        }
+        self.prune();
+        self
+    }
+
+    /// Each instance's name, tag and hidden flag, where any is set.
+    pub fn attributes(&self) -> BTreeMap<InstanceId, Attributes> {
+        let mut out: BTreeMap<InstanceId, Attributes> = BTreeMap::new();
+        for i in &self.hidden {
+            out.entry(*i).or_default().hidden = true;
+        }
+        for (i, n) in &self.names {
+            out.entry(*i).or_default().name = Some(n.clone());
+        }
+        for (i, t) in &self.on_tag {
+            out.entry(*i).or_default().tag = Some(*t);
+        }
+        out
+    }
+
+    /// The tags, and the counter for new ones (for files).
+    pub fn tags(&self) -> (&BTreeMap<TagId, Tag>, u32) {
+        (&self.tags, self.next_tag)
+    }
+
+    // ---------- hiding, names and tags (part 3) ----------
+
+    /// Whether an instance is hidden on purpose.
+    pub fn is_hidden(&self, i: InstanceId) -> bool {
+        self.hidden.contains(&i)
+    }
+
+    /// Whether an instance is shown: not hidden, and not on a hidden tag.
+    pub fn is_shown(&self, i: InstanceId) -> bool {
+        !self.hidden.contains(&i)
+            && self
+                .on_tag
+                .get(&i)
+                .is_none_or(|t| self.tags.get(t).is_none_or(|t| t.visible))
+    }
+
+    pub fn name_of(&self, i: InstanceId) -> Option<&str> {
+        self.names.get(&i).map(String::as_str)
+    }
+
+    pub fn tag_of(&self, i: InstanceId) -> Option<TagId> {
+        self.on_tag.get(&i).copied()
+    }
+
+    pub fn tag(&self, t: TagId) -> Option<&Tag> {
+        self.tags.get(&t)
+    }
+
+    /// Hide or show instances.
+    pub fn set_hidden(&mut self, instances: &BTreeSet<InstanceId>, hidden: bool) {
+        for i in instances {
+            if hidden {
+                self.hidden.insert(*i);
+            } else {
+                self.hidden.remove(i);
+            }
+        }
+        self.prune();
+    }
+
+    /// Name an instance (an empty name clears it).
+    pub fn set_name(&mut self, i: InstanceId, name: &str) {
+        let name = name.trim();
+        if name.is_empty() {
+            self.names.remove(&i);
+        } else {
+            self.names.insert(i, name.to_owned());
+        }
+        self.prune();
+    }
+
+    /// A new, shown tag with a free name. Returns it.
+    pub fn add_tag(&mut self, name: &str) -> TagId {
+        let base = name.trim();
+        let base = if base.is_empty() { "Tag" } else { base };
+        let taken = |n: &str| self.tags.values().any(|t| t.name == n);
+        let name = if taken(base) {
+            (2..)
+                .map(|k| format!("{base} {k}"))
+                .find(|n| !taken(n))
+                .unwrap_or_default()
+        } else {
+            base.to_owned()
+        };
+        let id = TagId(self.next_tag);
+        self.next_tag += 1;
+        self.tags.insert(
+            id,
+            Tag {
+                name,
+                visible: true,
+            },
+        );
+        id
+    }
+
+    /// Rename a tag (refused if empty or taken).
+    pub fn rename_tag(&mut self, t: TagId, name: &str) -> bool {
+        let name = name.trim();
+        if name.is_empty() || self.tags.iter().any(|(id, x)| *id != t && x.name == name) {
+            return false;
+        }
+        match self.tags.get_mut(&t) {
+            Some(x) => {
+                x.name = name.to_owned();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Show or hide a tag.
+    pub fn set_tag_visible(&mut self, t: TagId, visible: bool) {
+        if let Some(x) = self.tags.get_mut(&t) {
+            x.visible = visible;
+        }
+    }
+
+    /// Put instances on a tag (None: on no tag).
+    pub fn set_tag(&mut self, instances: &BTreeSet<InstanceId>, tag: Option<TagId>) {
+        for i in instances {
+            match tag.filter(|t| self.tags.contains_key(t)) {
+                Some(t) => {
+                    self.on_tag.insert(*i, t);
+                }
+                None => {
+                    self.on_tag.remove(i);
+                }
+            }
+        }
+        self.prune();
+    }
+
+    /// How many instances are on a tag.
+    pub fn on_tag_count(&self, t: TagId) -> usize {
+        self.on_tag.values().filter(|x| **x == t).count()
     }
 
     pub fn root(&self) -> &Definition {
@@ -208,11 +413,23 @@ impl Assembly {
 
     /// Every instance in the world, parents before children.
     pub fn placed(&self) -> Vec<Placed> {
+        self.placed_where(|_| true)
+    }
+
+    /// The shown instances (a hidden instance hides what is inside it).
+    pub fn placed_visible(&self) -> Vec<Placed> {
+        self.placed_where(|i| self.is_shown(i))
+    }
+
+    fn placed_where(&self, keep: impl Fn(InstanceId) -> bool) -> Vec<Placed> {
         let mut out = Vec::new();
         let mut stack = vec![(Vec::new(), ROOT, DAffine3::IDENTITY)];
         while let Some((path, def, world)) = stack.pop() {
             let Some(d) = self.def(def) else { continue };
             for (id, inst) in d.instances.iter().rev() {
+                if !keep(*id) {
+                    continue;
+                }
                 let mut p = path.clone();
                 p.push(*id);
                 stack.push((p, inst.def, world * inst.transform));
@@ -229,6 +446,19 @@ impl Assembly {
     pub fn flattened(&self) -> Model {
         let mut out = self.root().model.clone();
         for p in self.placed() {
+            if let Some(d) = self.def(p.def) {
+                let mut m = d.model.clone();
+                transform::affine(&mut m, &p.world);
+                out.append(&m);
+            }
+        }
+        out
+    }
+
+    /// What is shown as one model in world coordinates (mesh export).
+    pub fn flattened_visible(&self) -> Model {
+        let mut out = self.root().model.clone();
+        for p in self.placed_visible() {
             if let Some(d) = self.def(p.def) {
                 let mut m = d.model.clone();
                 transform::affine(&mut m, &p.world);
@@ -408,6 +638,14 @@ impl Assembly {
             }
         }
         self.defs.retain(|id, _| reached.contains(id));
+        let alive: BTreeSet<InstanceId> = self
+            .defs
+            .values()
+            .flat_map(|d| d.instances.keys().copied())
+            .collect();
+        self.hidden.retain(|i| alive.contains(i));
+        self.names.retain(|i, _| alive.contains(i));
+        self.on_tag.retain(|i, _| alive.contains(i));
     }
 
     /// Make Group: the selection (and the selected groups) in `ctx` move
@@ -534,17 +772,17 @@ impl Assembly {
     /// Copies of instances in `ctx`, each `steps[k]` from the original.
     /// Each copy of a group is a group of its own (DECISIONS #22).
     pub fn copy(&mut self, ctx: DefId, instances: &BTreeSet<InstanceId>, steps: &[DAffine3]) {
-        let originals: Vec<Instance> = self
+        let originals: Vec<(InstanceId, Instance)> = self
             .def(ctx)
             .map(|d| {
                 instances
                     .iter()
-                    .filter_map(|i| d.instances.get(i).copied())
+                    .filter_map(|i| d.instances.get(i).map(|x| (*i, *x)))
                     .collect()
             })
             .unwrap_or_default();
         for m in steps {
-            for inst in &originals {
+            for (from, inst) in &originals {
                 // A component's copies share it; a group's copies do not.
                 let shared = self.def(inst.def).is_some_and(Definition::is_component);
                 let Some(def) = (if shared {
@@ -563,6 +801,13 @@ impl Assembly {
                             transform: *m * inst.transform,
                         },
                     );
+                }
+                // A copy keeps its original's name and tag.
+                if let Some(n) = self.names.get(from).cloned() {
+                    self.names.insert(id, n);
+                }
+                if let Some(t) = self.on_tag.get(from).copied() {
+                    self.on_tag.insert(id, t);
                 }
             }
         }

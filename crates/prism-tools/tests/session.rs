@@ -1505,3 +1505,73 @@ fn editing_one_component_instance_changes_the_other() {
     // The exploded copy's own component went with it.
     assert_eq!(d.s.component_rows().len(), 1);
 }
+
+#[test]
+fn a_hidden_group_is_not_picked_snapped_to_or_selected() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.hide");
+    assert!(d.s.document().assembly().is_hidden(g));
+    assert!(d.s.scene().faces.is_empty(), "nothing is built for it");
+    // Not picked.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    assert!(d.s.selected_groups().is_empty());
+    // Not snapped to.
+    d.tool(LINE);
+    d.hover(DVec3::new(2.0, 0.0, 2.0));
+    assert_ne!(d.s.inference().map(|i| i.kind), Some(Kind::Endpoint));
+    key(&mut d, Key::Escape);
+    // Not taken by Select All.
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    assert!(d.s.selected_groups().is_empty());
+    // Unhide Last brings it back.
+    act(&mut d, "edit.unhidelast");
+    assert!(!d.s.document().assembly().is_hidden(g));
+    assert!(!d.s.scene().faces.is_empty());
+}
+
+#[test]
+fn isolate_hides_the_others_and_the_outliner_selects_inside_groups() {
+    let mut d = Driver::empty();
+    let a = grouped_box(&mut d);
+    // A copy, and a group made of the copy (nested).
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(1.0, 0.0, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("4");
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(5.0, 0.0, 1.0));
+    let b = *d.s.selected_groups().iter().next().expect("the copy");
+    act(&mut d, "edit.group");
+    let outer =
+        *d.s.selected_groups()
+            .iter()
+            .next()
+            .expect("the outer group");
+    // Isolate the outer group: the first box is hidden.
+    act(&mut d, "edit.isolate");
+    assert!(d.s.document().assembly().is_hidden(a));
+    act(&mut d, "edit.unhideall");
+    assert!(!d.s.document().assembly().is_hidden(a));
+    // The Outliner lists all three, nested, and selects inside a group.
+    let rows = d.s.outline();
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().any(|r| r.path == [outer, b] && r.depth == 1));
+    d.s.select_path(&[outer, b]);
+    assert_eq!(d.s.open_path(), [outer], "its parent is opened");
+    assert_eq!(
+        d.s.selected_groups().iter().copied().collect::<Vec<_>>(),
+        [b]
+    );
+    // Entity Info names it.
+    d.s.name_instance(b, "Shed");
+    match d.s.entity_info() {
+        prism_tools::EntityInfo::Instance { name, .. } => assert_eq!(name, "Shed"),
+        other => panic!("{other:?}"),
+    }
+}

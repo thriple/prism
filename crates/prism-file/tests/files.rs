@@ -222,3 +222,54 @@ mod fuzz {
         }
     }
 }
+
+#[test]
+fn names_tags_and_hidden_flags_round_trip() {
+    use prism_doc::{Command, Document};
+    let mut d = Document::new();
+    d.run(Command::Rect {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 1.0,
+        y1: 1.0,
+        z: 0.0,
+    });
+    let m = d.model();
+    let sel = prism_ops::Selection {
+        edges: m.edges().map(|(id, _)| id).collect(),
+        faces: m.faces().map(|(id, _)| id).collect(),
+        ..Default::default()
+    };
+    let g = d.assembly().next_instance();
+    d.run(Command::MakeGroup {
+        selection: sel,
+        instances: Default::default(),
+    });
+    d.run(Command::NameInstance {
+        instance: g,
+        name: "Plate".into(),
+    });
+    d.run(Command::AddTag {
+        name: "Parts".into(),
+    });
+    d.run(Command::SetTag {
+        instances: [g].into(),
+        tag: Some(prism_doc::TagId(0)),
+    });
+    d.run(Command::SetTagVisible {
+        tag: prism_doc::TagId(0),
+        visible: false,
+    });
+    d.run(Command::SetHidden {
+        instances: [g].into(),
+        hidden: true,
+    });
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = prism_file::write(&c, "test");
+    let back = prism_file::read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    assert_eq!(prism_file::write(&back, "test"), bytes);
+}

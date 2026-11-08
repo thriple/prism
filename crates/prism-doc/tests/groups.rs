@@ -489,3 +489,89 @@ fn a_mirrored_instance_explodes_into_a_valid_model() {
     let top = prism_ops::face_at(m, v(1.0, 1.0, 1.0)).expect("top");
     assert!(m.face(top).unwrap().plane().normal.z > 0.9);
 }
+
+// ---------- hiding, names and tags (part 3) ----------
+
+#[test]
+fn hidden_instances_and_hidden_tags_are_left_out_of_what_is_shown() {
+    let mut d = Document::new();
+    boxed(&mut d, v(0.0, 0.0, 0.0), 1.0, 1.0);
+    let a = group_all(&mut d);
+    let b = d.assembly().next_instance();
+    d.run(Command::CopyInstances {
+        instances: [a].into(),
+        step: Change::Translate {
+            by: v(2.0, 0.0, 0.0),
+        },
+        count: 2,
+    });
+    let c = prism_doc::InstanceId(b.0 + 1);
+    assert_eq!(d.assembly().placed_visible().len(), 3);
+    d.run(Command::SetHidden {
+        instances: [a].into(),
+        hidden: true,
+    });
+    assert_eq!(d.assembly().placed_visible().len(), 2);
+    d.run(Command::AddTag {
+        name: "Walls".into(),
+    });
+    let walls = prism_doc::TagId(0);
+    d.run(Command::SetTag {
+        instances: [b].into(),
+        tag: Some(walls),
+    });
+    d.run(Command::SetTagVisible {
+        tag: walls,
+        visible: false,
+    });
+    let shown: Vec<_> = d
+        .assembly()
+        .placed_visible()
+        .iter()
+        .map(|p| p.path[0])
+        .collect();
+    assert_eq!(shown, vec![c], "only the third is shown");
+    assert_eq!(
+        d.assembly().flattened_visible().face_count(),
+        6,
+        "export writes what is shown"
+    );
+    // Undo each step back to all shown.
+    for _ in 0..4 {
+        d.undo();
+    }
+    assert_eq!(d.assembly().placed_visible().len(), 3);
+}
+
+#[test]
+fn names_and_tags_stay_with_copies_and_go_with_erased_instances() {
+    let mut d = Document::new();
+    boxed(&mut d, v(0.0, 0.0, 0.0), 1.0, 1.0);
+    let a = group_all(&mut d);
+    d.run(Command::NameInstance {
+        instance: a,
+        name: "Shed".into(),
+    });
+    d.run(Command::AddTag { name: "Out".into() });
+    d.run(Command::SetTag {
+        instances: [a].into(),
+        tag: Some(prism_doc::TagId(0)),
+    });
+    let b = d.assembly().next_instance();
+    d.run(Command::CopyInstances {
+        instances: [a].into(),
+        step: Change::Translate {
+            by: v(2.0, 0.0, 0.0),
+        },
+        count: 1,
+    });
+    assert_eq!(d.assembly().name_of(b), Some("Shed"));
+    assert_eq!(d.assembly().tag_of(b), Some(prism_doc::TagId(0)));
+    d.run(Command::EraseInstances {
+        instances: [b].into(),
+    });
+    assert!(
+        !d.assembly().attributes().contains_key(&b),
+        "nothing left for the erased one"
+    );
+}

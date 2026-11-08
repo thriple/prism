@@ -95,8 +95,11 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 7] = [
+const COMMANDS: [&str; 10] = [
     "win.components",
+    "win.outliner",
+    "win.info",
+    "win.tags",
     "help.features",
     "help.search",
     "help.keys",
@@ -142,6 +145,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Part 2: components and mirroring.
         || id == "edit.comp"
         || id == "edit.unique"
+        // Part 3: hiding.
+        || matches!(id, "edit.hide" | "edit.unhideall" | "edit.unhidelast" | "edit.isolate")
         || id.starts_with("flip.")
         || id == "win.nexttab"
         || id == "win.prevtab"
@@ -221,6 +226,8 @@ impl Registry {
                         }
                         None if r.id == "edit.explode"
                             || r.id == "edit.unique"
+                            || r.id == "edit.hide"
+                            || r.id == "edit.isolate"
                             || r.id.starts_with("flip.") =>
                         {
                             When::HasGroups

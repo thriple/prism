@@ -245,10 +245,10 @@ impl Transfer {
                 y_up: e.y_up,
             };
             let faces = (e.selection_only && has_selection).then(|| s.selection().faces.clone());
-            // With groups, the whole model is exported, groups placed
+            // With groups, what is shown is exported, groups placed
             // (selection-only export works on loose geometry at the root).
             let bytes = if faces.is_none() && s.document().assembly().has_instances() {
-                mesh::export(&s.document().assembly().flattened(), None, &o)
+                mesh::export(&s.document().assembly().flattened_visible(), None, &o)
             } else {
                 mesh::export(s.model(), faces.as_ref(), &o)
             };

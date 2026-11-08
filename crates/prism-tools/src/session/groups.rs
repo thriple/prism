@@ -116,7 +116,10 @@ impl Session {
         // Each definition's scene is built once, in its own coordinates,
         // and placed for each instance (rebuilt only for a stretch).
         let mut local: std::collections::BTreeMap<prism_doc::DefId, Scene> = Default::default();
-        for placed in asm.placed() {
+        // Hidden must be free (PLAN 1.14): hidden instances, and those on
+        // hidden tags, are not built, so nothing draws, picks or snaps to
+        // them.
+        for placed in asm.placed_visible() {
             if placed.path == self.ctx {
                 continue;
             }
@@ -289,7 +292,7 @@ impl Session {
             .map(|d| {
                 d.instances
                     .iter()
-                    .filter(|(_, i)| i.def == def)
+                    .filter(|(id, i)| i.def == def && asm.is_shown(**id))
                     .map(|(id, _)| *id)
                     .collect()
             })
@@ -304,6 +307,140 @@ impl Session {
             def,
             name: name.to_owned(),
         })
+    }
+
+    // ---------- panels (part 3) ----------
+
+    /// The Outliner's rows: every instance, depth first.
+    pub fn outline(&self) -> Vec<OutlineRow> {
+        let asm = self.doc.assembly();
+        let mut out = Vec::new();
+        let mut stack: Vec<(Vec<InstanceId>, prism_doc::DefId)> = vec![(Vec::new(), ROOT)];
+        while let Some((path, def)) = stack.pop() {
+            let Some(d) = asm.def(def) else { continue };
+            for (id, inst) in d.instances.iter().rev() {
+                let mut p = path.clone();
+                p.push(*id);
+                stack.push((p, inst.def));
+            }
+            if let Some(last) = path.last() {
+                let kind = asm.def(def).and_then(|d| d.name.clone());
+                out.push(OutlineRow {
+                    label: asm
+                        .name_of(*last)
+                        .map(str::to_owned)
+                        .or(kind.clone())
+                        .unwrap_or_else(|| "Group".to_owned()),
+                    kind: kind.unwrap_or_else(|| "Group".to_owned()),
+                    depth: path.len() - 1,
+                    shown: path.iter().all(|i| asm.is_shown(*i)),
+                    hidden: asm.is_hidden(*last),
+                    selected: path.len() == self.ctx.len() + 1
+                        && path.starts_with(&self.ctx)
+                        && self.groups.contains(last),
+                    open: self.ctx == path,
+                    path,
+                });
+            }
+        }
+        out
+    }
+
+    /// Select an instance anywhere in the tree (the Outliner): its parent
+    /// group is opened if needed.
+    pub fn select_path(&mut self, path: &[InstanceId]) {
+        let Some((last, parent)) = path.split_last() else {
+            return;
+        };
+        if self.doc.assembly().context_def(path).is_none() {
+            return;
+        }
+        if self.ctx != parent {
+            self.cancel();
+            self.ctx = parent.to_vec();
+            self.selection = Selection::default();
+            self.model_changed();
+        }
+        self.set_selection(Selection::default());
+        self.set_groups([*last].into());
+    }
+
+    /// Open an instance anywhere in the tree (the Outliner's double-click).
+    pub fn open_path_to(&mut self, path: &[InstanceId]) {
+        if let Some((last, parent)) = path.split_last() {
+            self.select_path(path);
+            if self.ctx == parent {
+                self.open_group(*last);
+            }
+        }
+    }
+
+    /// Hide or show one instance (the Outliner's eye).
+    pub fn set_hidden(&mut self, id: InstanceId, hidden: bool) {
+        self.run(Command::SetHidden {
+            instances: [id].into(),
+            hidden,
+        });
+    }
+
+    /// What Entity Info shows: the one selected group, else the geometry.
+    pub fn entity_info(&self) -> EntityInfo {
+        let asm = self.doc.assembly();
+        if self.groups.len() == 1 && self.selection.is_empty() {
+            let id = *self.groups.iter().next().expect("one");
+            let mut path = self.ctx.clone();
+            path.push(id);
+            let def = asm.context_def(&path).and_then(|d| asm.def(d));
+            return EntityInfo::Instance {
+                id,
+                name: asm.name_of(id).unwrap_or_default().to_owned(),
+                kind: def
+                    .and_then(|d| d.name.clone())
+                    .map_or("Group".to_owned(), |n| format!("Component \"{n}\"")),
+                tag: asm.tag_of(id),
+                hidden: asm.is_hidden(id),
+            };
+        }
+        let m = self.work_model();
+        EntityInfo::Geometry {
+            groups: self.groups.len(),
+            faces: self.selection.faces.len(),
+            edges: self.selection.edges.len(),
+            points: self.selection.vertices.len(),
+            area: self.selection.faces.iter().map(|f| m.face_area(*f)).sum(),
+        }
+    }
+
+    /// Name an instance (Entity Info, the Outliner).
+    pub fn name_instance(&mut self, id: InstanceId, name: &str) {
+        self.run(Command::NameInstance {
+            instance: id,
+            name: name.to_owned(),
+        });
+    }
+
+    /// The tags: id, name, shown, and how many instances are on each.
+    pub fn tag_rows(&self) -> Vec<(prism_doc::TagId, String, bool, usize)> {
+        let asm = self.doc.assembly();
+        asm.tags()
+            .0
+            .iter()
+            .map(|(id, t)| (*id, t.name.clone(), t.visible, asm.on_tag_count(*id)))
+            .collect()
+    }
+
+    /// Run a tag command from the Tags window or Entity Info.
+    pub fn tag_command(&mut self, c: TagOp) {
+        let cmd = match c {
+            TagOp::Add => Command::AddTag { name: "Tag".into() },
+            TagOp::Rename(tag, name) => Command::RenameTag { tag, name },
+            TagOp::Show(tag, visible) => Command::SetTagVisible { tag, visible },
+            TagOp::PutSelected(tag) => Command::SetTag {
+                instances: self.groups.clone(),
+                tag,
+            },
+        };
+        self.run(cmd);
     }
 
     /// Edit > Make Unique: the selected instances get their own copies.
@@ -372,13 +509,89 @@ impl Session {
         }
     }
 
-    /// The groups in the open one, all of them (Select All).
+    /// The shown groups in the open one (Select All).
     pub(super) fn all_groups(&self) -> BTreeSet<InstanceId> {
+        self.groups_here(true)
+    }
+
+    /// The groups in the open one: all, or only the shown ones.
+    fn groups_here(&self, shown_only: bool) -> BTreeSet<InstanceId> {
         let asm = self.doc.assembly();
         asm.context_def(&self.ctx)
             .and_then(|d| asm.def(d))
-            .map(|d| d.instances.keys().copied().collect())
+            .map(|d| {
+                d.instances
+                    .keys()
+                    .copied()
+                    .filter(|i| !shown_only || asm.is_shown(*i))
+                    .collect()
+            })
             .unwrap_or_default()
+    }
+
+    /// Edit > Hide: the selected groups.
+    pub(super) fn hide(&mut self) {
+        if self.groups.is_empty() {
+            return;
+        }
+        self.cancel();
+        let g = std::mem::take(&mut self.groups);
+        if self.run(Command::SetHidden {
+            instances: g.clone(),
+            hidden: true,
+        }) {
+            self.last_hidden = g;
+        }
+    }
+
+    /// Edit > Unhide All: every hidden group in the open one.
+    pub(super) fn unhide_all(&mut self) {
+        let asm = self.doc.assembly();
+        let hidden: BTreeSet<InstanceId> = self
+            .groups_here(false)
+            .into_iter()
+            .filter(|i| asm.is_hidden(*i))
+            .collect();
+        if !hidden.is_empty() {
+            self.cancel();
+            self.run(Command::SetHidden {
+                instances: hidden,
+                hidden: false,
+            });
+        }
+    }
+
+    /// Edit > Unhide Last: what the last Hide hid.
+    pub(super) fn unhide_last(&mut self) {
+        let last = std::mem::take(&mut self.last_hidden);
+        if !last.is_empty() {
+            self.cancel();
+            self.run(Command::SetHidden {
+                instances: last,
+                hidden: false,
+            });
+        }
+    }
+
+    /// Edit > Isolate: hide every other group in the open one.
+    pub(super) fn isolate(&mut self) {
+        if self.groups.is_empty() {
+            return;
+        }
+        let others: BTreeSet<InstanceId> = self
+            .all_groups()
+            .into_iter()
+            .filter(|i| !self.groups.contains(i))
+            .collect();
+        if !others.is_empty() {
+            self.cancel();
+            if self.run(Command::SetHidden {
+                instances: others.clone(),
+                hidden: true,
+            }) {
+                self.last_hidden = others;
+            }
+        }
     }
 
     /// A group's box in the world: its corners, for the blue box (PLAN 1.2).
@@ -537,6 +750,54 @@ impl Session {
             .flatten()
             .collect()
     }
+}
+
+/// One row of the Outliner.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutlineRow {
+    /// The instances from the root down to this one.
+    pub path: Vec<InstanceId>,
+    pub depth: usize,
+    /// Its own name, or its component's name, or "Group".
+    pub label: String,
+    /// "Group" or the component's name.
+    pub kind: String,
+    /// Shown: neither it nor a parent is hidden (tags included).
+    pub shown: bool,
+    /// Hidden on purpose (its eye is closed).
+    pub hidden: bool,
+    pub selected: bool,
+    /// It is the open group.
+    pub open: bool,
+}
+
+/// What Entity Info shows.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EntityInfo {
+    Instance {
+        id: InstanceId,
+        name: String,
+        kind: String,
+        tag: Option<prism_doc::TagId>,
+        hidden: bool,
+    },
+    Geometry {
+        groups: usize,
+        faces: usize,
+        edges: usize,
+        points: usize,
+        area: f64,
+    },
+}
+
+/// A change from the Tags window or Entity Info.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TagOp {
+    Add,
+    Rename(prism_doc::TagId, String),
+    Show(prism_doc::TagId, bool),
+    /// Put the selected groups on a tag (None: on no tag).
+    PutSelected(Option<prism_doc::TagId>),
 }
 
 /// The box of a definition's geometry and everything nested in it.

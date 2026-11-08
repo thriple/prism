@@ -139,3 +139,47 @@ fn many_instances_of_one_component() {
         );
     }
 }
+
+/// Hidden must be free (PLAN 1.14): with 90% of the groups hidden, the
+/// scene builds in about the time of a model holding only the visible 10%.
+#[test]
+#[ignore = "prints timings"]
+fn ninety_percent_hidden() {
+    use prism_doc::{Change, Command};
+    let build = |hide: bool, count: u32| {
+        let mut doc = prism_tools::scenes::large(5);
+        let m = doc.model();
+        let sel = prism_ops::Selection {
+            vertices: m.vertices().map(|(id, _)| id).collect(),
+            edges: m.edges().map(|(id, _)| id).collect(),
+            faces: m.faces().map(|(id, _)| id).collect(),
+            guides: Default::default(),
+        };
+        let a = doc.assembly().next_instance();
+        doc.run(Command::MakeGroup {
+            selection: sel,
+            instances: Default::default(),
+        });
+        doc.run(Command::CopyInstances {
+            instances: [a].into(),
+            step: Change::Translate {
+                by: DVec3::new(0.0, 0.0, 50.0),
+            },
+            count: count - 1,
+        });
+        if hide {
+            let all: Vec<_> = doc.assembly().root().instances.keys().copied().collect();
+            let hidden = all[..all.len() * 9 / 10].iter().copied().collect();
+            doc.run(Command::SetHidden {
+                instances: hidden,
+                hidden: true,
+            });
+        }
+        let t = std::time::Instant::now();
+        let _ = prism_tools::Session::new(doc);
+        t.elapsed().as_secs_f64() * 1e3
+    };
+    let hidden = build(true, 100);
+    let small = build(false, 10);
+    println!("100 groups, 90 hidden: scene {hidden:.1} ms; 10 groups: {small:.1} ms");
+}

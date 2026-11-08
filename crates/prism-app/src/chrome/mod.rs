@@ -3,6 +3,8 @@
 //! command search, the hotkeys window and the Planned Features window.
 
 mod components;
+mod panels;
+pub use panels::{PanelData, PanelOp};
 mod dock;
 mod features;
 mod frame;
@@ -103,6 +105,11 @@ pub struct Chrome {
     pub component_rows: Vec<components::ComponentRow>,
     /// What the Components window asked for, for the app to pass on.
     pub component_ops: Vec<components::ComponentOp>,
+    /// Outliner, Entity Info and Tags: which are open, their data, and
+    /// what they asked for.
+    pub(crate) panels: panels::Panels,
+    pub panel_data: PanelData,
+    pub panel_ops: Vec<PanelOp>,
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
@@ -170,6 +177,9 @@ impl Chrome {
             components: None,
             component_rows: Vec::new(),
             component_ops: Vec::new(),
+            panels: Default::default(),
+            panel_data: Default::default(),
+            panel_ops: Vec::new(),
             hotkeys: None,
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
@@ -215,6 +225,12 @@ impl Chrome {
     }
 
     /// Whether a menu, the search or a window has the keys.
+    /// Whether the Outliner, Entity Info or Tags is open (their data is
+    /// only gathered then).
+    pub fn panels_open(&self) -> bool {
+        self.panels.any_open()
+    }
+
     pub fn ui_open_pub(&self) -> bool {
         self.ui_open()
     }
@@ -302,6 +318,9 @@ impl Chrome {
                     "win.components" => {
                         self.components.get_or_insert_with(Default::default);
                     }
+                    "win.outliner" => self.panels.outliner = true,
+                    "win.info" => self.panels.info = true,
+                    "win.tags" => self.panels.tags = true,
                     "help.search" => self.palette = Some(palette::Palette::default()),
                     "help.keys" | "win.hotkeys" => {
                         self.hotkeys.get_or_insert_with(HotkeysWindow::default);
@@ -325,6 +344,7 @@ impl Chrome {
             || self.features_open
             || self.hotkeys.is_some()
             || self.components.is_some()
+            || self.panels.any_open()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -339,6 +359,8 @@ impl Chrome {
             }
         } else if self.components.is_some() {
             self.components = None;
+        } else if self.panels.any_open() {
+            self.panels.close_one();
         } else {
             self.features_open = false;
         }
@@ -420,6 +442,7 @@ impl Chrome {
         features::show(self, ctx);
         hotkeys::show(self, ctx);
         components::show(self, ctx);
+        panels::show(self, ctx);
         layout
     }
 }

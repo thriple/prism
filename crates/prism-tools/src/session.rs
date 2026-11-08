@@ -32,7 +32,7 @@ use crate::units::NumberFormat;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
-pub use groups::Owner;
+pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -301,6 +301,8 @@ pub struct Session {
     /// The open group (empty at the root), and the selected groups in it.
     ctx: Vec<prism_doc::InstanceId>,
     groups: BTreeSet<prism_doc::InstanceId>,
+    /// What the last Hide hid (Unhide Last).
+    last_hidden: BTreeSet<prism_doc::InstanceId>,
     /// Owners of the pieces merged into the scene, and the pieces.
     owners: Vec<groups::Owner>,
     pieces: Vec<groups::Piece>,
@@ -327,6 +329,7 @@ impl Session {
             hover_guide: None,
             ctx: Vec::new(),
             groups: BTreeSet::new(),
+            last_hidden: BTreeSet::new(),
             owners: Vec::new(),
             pieces: Vec::new(),
             work: None,
@@ -948,6 +951,10 @@ impl Session {
             "edit.delete" => self.delete(),
             "edit.group" => self.make_group(),
             "edit.comp" => self.make_component(),
+            "edit.hide" => self.hide(),
+            "edit.unhideall" => self.unhide_all(),
+            "edit.unhidelast" => self.unhide_last(),
+            "edit.isolate" => self.isolate(),
             "edit.unique" => self.make_unique(),
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),

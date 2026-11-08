@@ -7,4 +7,6 @@ pub mod select;
 pub mod session;
 pub mod units;
 
-pub use session::{Button, Event, Input, Key, Recording, Response, Session};
+pub use session::{
+    Button, EntityInfo, Event, Input, Key, OutlineRow, Recording, Response, Session, TagOp,
+};

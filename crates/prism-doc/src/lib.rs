@@ -10,7 +10,9 @@ use std::collections::BTreeSet;
 
 pub mod assembly;
 
-pub use assembly::{Assembly, DefId, Definition, Instance, InstanceId, Placed, ROOT};
+pub use assembly::{
+    Assembly, Attributes, DefId, Definition, Instance, InstanceId, Placed, ROOT, Tag, TagId,
+};
 use prism_math::{DAffine3, DQuat, DVec3};
 use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
@@ -121,6 +123,34 @@ pub enum Command {
     Rename {
         def: DefId,
         name: String,
+    },
+    /// Hide or show instances (anywhere: instance ids are unique).
+    SetHidden {
+        instances: BTreeSet<InstanceId>,
+        hidden: bool,
+    },
+    /// Name an instance (empty clears it).
+    NameInstance {
+        instance: InstanceId,
+        name: String,
+    },
+    /// Add a tag.
+    AddTag {
+        name: String,
+    },
+    RenameTag {
+        tag: TagId,
+        name: String,
+    },
+    /// Show or hide everything on a tag.
+    SetTagVisible {
+        tag: TagId,
+        visible: bool,
+    },
+    /// Put instances on a tag (None: on no tag).
+    SetTag {
+        instances: BTreeSet<InstanceId>,
+        tag: Option<TagId>,
     },
     /// Move, rotate or scale whole groups.
     Place {
@@ -257,7 +287,13 @@ impl Command {
             Command::Explode { .. } => "Explode",
             Command::MakeComponent { .. } => "Make Component",
             Command::MakeUnique { .. } => "Make Unique",
-            Command::Rename { .. } => "Rename",
+            Command::Rename { .. } | Command::RenameTag { .. } => "Rename",
+            Command::SetHidden { hidden: true, .. } => "Hide",
+            Command::SetHidden { .. } => "Unhide",
+            Command::NameInstance { .. } => "Name",
+            Command::AddTag { .. } => "Add Tag",
+            Command::SetTagVisible { .. } => "Tag Visibility",
+            Command::SetTag { .. } => "Tag",
             Command::Place { change, .. } => match change {
                 Change::Translate { .. } => "Move",
                 Change::Rotate { .. } => "Rotate",
@@ -424,6 +460,16 @@ impl Command {
             Command::Rename { def, name } => {
                 asm.rename(*def, name);
             }
+            Command::SetHidden { instances, hidden } => asm.set_hidden(instances, *hidden),
+            Command::NameInstance { instance, name } => asm.set_name(*instance, name),
+            Command::AddTag { name } => {
+                asm.add_tag(name);
+            }
+            Command::RenameTag { tag, name } => {
+                asm.rename_tag(*tag, name);
+            }
+            Command::SetTagVisible { tag, visible } => asm.set_tag_visible(*tag, *visible),
+            Command::SetTag { instances, tag } => asm.set_tag(instances, *tag),
             Command::Place { instances, change } => {
                 asm.place(ctx, instances, &change.affine(1.0));
             }
@@ -533,6 +579,12 @@ impl Command {
             | Command::MakeComponent { .. }
             | Command::MakeUnique { .. }
             | Command::Rename { .. }
+            | Command::SetHidden { .. }
+            | Command::NameInstance { .. }
+            | Command::AddTag { .. }
+            | Command::RenameTag { .. }
+            | Command::SetTagVisible { .. }
+            | Command::SetTag { .. }
             | Command::Place { .. }
             | Command::CopyInstances { .. }
             | Command::EraseInstances { .. } => {}

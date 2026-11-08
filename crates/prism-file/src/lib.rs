@@ -102,6 +102,26 @@ struct GroupsV1 {
     next_instance: u32,
     /// Every definition, the root (0) included, with what it places.
     defs: Vec<DefV1>,
+    /// Tags (part 3; older files have none).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<TagV1>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    next_tag: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct TagV1 {
+    id: u32,
+    name: String,
+    visible: bool,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -120,6 +140,12 @@ struct InstanceV1 {
     def: u32,
     /// The placement: the three columns of the matrix, then the move.
     transform: [f64; 12],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tag: Option<u32>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    hidden: bool,
 }
 
 /// Why a file could not be opened.
@@ -193,8 +219,10 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         (MODEL.to_owned(), geometry::encode(c.model())),
     ];
     let asm = &c.assembly;
-    if asm.defs().count() > 1 || asm.has_instances() {
+    let (tags, next_tag) = asm.tags();
+    if asm.defs().count() > 1 || asm.has_instances() || !tags.is_empty() {
         let (next_def, next_instance) = asm.counters();
+        let attrs = asm.attributes();
         let groups = GroupsV1 {
             next_def,
             next_instance,
@@ -206,14 +234,29 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                     instances: d
                         .instances
                         .iter()
-                        .map(|(i, inst)| InstanceV1 {
-                            id: i.0,
-                            def: inst.def.0,
-                            transform: inst.transform.to_cols_array(),
+                        .map(|(i, inst)| {
+                            let a = attrs.get(i).cloned().unwrap_or_default();
+                            InstanceV1 {
+                                id: i.0,
+                                def: inst.def.0,
+                                transform: inst.transform.to_cols_array(),
+                                name: a.name,
+                                tag: a.tag.map(|t| t.0),
+                                hidden: a.hidden,
+                            }
                         })
                         .collect(),
                 })
                 .collect(),
+            tags: tags
+                .iter()
+                .map(|(id, t)| TagV1 {
+                    id: id.0,
+                    name: t.name.clone(),
+                    visible: t.visible,
+                })
+                .collect(),
+            next_tag,
         };
         files.push((GROUPS.to_owned(), pretty(&groups)));
         manifest.entries.push(Entry {
@@ -268,6 +311,7 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
     let g: GroupsV1 =
         serde_json::from_slice(json).map_err(|e| FileError::Damaged(format!("{GROUPS}: {e}")))?;
     let mut defs = BTreeMap::new();
+    let mut attrs = BTreeMap::new();
     let mut root = Some(root);
     for d in g.defs {
         let model = if d.id == ROOT.0 {
@@ -285,6 +329,16 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
                 .ok_or_else(|| FileError::Damaged(format!("no {path}")))?;
             geometry::decode(bin, version)?
         };
+        for i in &d.instances {
+            attrs.insert(
+                InstanceId(i.id),
+                prism_doc::Attributes {
+                    hidden: i.hidden,
+                    name: i.name.clone(),
+                    tag: i.tag.map(prism_doc::TagId),
+                },
+            );
+        }
         let instances = d
             .instances
             .iter()
@@ -315,7 +369,22 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
             )));
         }
     }
-    Assembly::from_parts(defs, g.next_def, g.next_instance).map_err(FileError::Damaged)
+    let tags = g
+        .tags
+        .into_iter()
+        .map(|t| {
+            (
+                prism_doc::TagId(t.id),
+                prism_doc::Tag {
+                    name: t.name,
+                    visible: t.visible,
+                },
+            )
+        })
+        .collect();
+    Ok(Assembly::from_parts(defs, g.next_def, g.next_instance)
+        .map_err(FileError::Damaged)?
+        .with_attributes(tags, g.next_tag, attrs))
 }
 
 fn pretty<T: Serialize>(v: &T) -> Vec<u8> {

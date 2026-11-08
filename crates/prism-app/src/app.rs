@@ -336,6 +336,25 @@ impl App {
                 }
                 viewport.session.mark_all_dirty();
             }
+            if chrome.panels_open() {
+                let s = &viewport.session;
+                chrome.panel_data = crate::chrome::PanelData {
+                    outline: s.outline(),
+                    info: Some(s.entity_info()),
+                    tags: s.tag_rows(),
+                };
+            }
+            for op in std::mem::take(&mut chrome.panel_ops) {
+                let s = &mut viewport.session;
+                match op {
+                    crate::chrome::PanelOp::Select(path) => s.select_path(&path),
+                    crate::chrome::PanelOp::Open(path) => s.open_path_to(&path),
+                    crate::chrome::PanelOp::Hide(id, hidden) => s.set_hidden(id, hidden),
+                    crate::chrome::PanelOp::Name(id, name) => s.name_instance(id, &name),
+                    crate::chrome::PanelOp::Tag(t) => s.tag_command(t),
+                }
+                s.mark_all_dirty();
+            }
             let status = viewport.status();
             chrome.set_hint(status.hint);
             chrome.measure = status.measure;
