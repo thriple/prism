@@ -32,7 +32,7 @@ fn rich() -> Model {
 
 fn contents(model: Model) -> Contents {
     Contents {
-        model,
+        assembly: prism_doc::Assembly::with_model(model),
         settings: Settings {
             units: DisplayUnits {
                 length: LengthUnit::FeetInches,
@@ -64,8 +64,8 @@ fn round_trips_are_exact() {
         let c = contents(m);
         let back = read(&write(&c, "test")).expect("opens");
         // Bit for bit: the JSON form writes every f64 exactly.
-        assert_eq!(back.model.to_json(), c.model.to_json());
-        assert_eq!(back.model.counters(), c.model.counters());
+        assert_eq!(back.model().to_json(), c.model().to_json());
+        assert_eq!(back.model().counters(), c.model().counters());
         assert_eq!(back, c);
     }
 }
@@ -118,9 +118,9 @@ fn a_newer_file_is_refused_and_an_older_one_migrates() {
             schema: prism_file::SCHEMA + 1
         })
     );
-    let old = prism_file::schema_0_for_tests(&c.model);
+    let old = prism_file::schema_0_for_tests(&c.model());
     let back = read(&old).expect("migrates");
-    assert_eq!(back.model.to_json(), c.model.to_json());
+    assert_eq!(back.model().to_json(), c.model().to_json());
     assert_eq!(back.settings, Settings::default());
 }
 
@@ -171,7 +171,12 @@ fn the_recovery_journal_replays() {
     };
     let back = Journal::from_json(&j.to_json()).expect("reads");
     assert_eq!(back, j);
-    assert_eq!(back.restore(base).model().to_json(), d.model().to_json());
+    assert_eq!(
+        back.restore(prism_doc::Assembly::with_model(base))
+            .model()
+            .to_json(),
+        d.model().to_json()
+    );
 }
 
 fn zip_entries(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {

@@ -44,6 +44,8 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
     while schema < SCHEMA {
         raw = match schema {
             0 => from_0(raw)?,
+            // Schema 2 adds groups; a schema 1 file has none.
+            1 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

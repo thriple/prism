@@ -159,10 +159,7 @@ mod imp {
             let root = scratch("recovery");
             let base = prism_tools::scenes::cube();
             let bytes = prism_file::write(
-                &Contents {
-                    model: base.model().clone(),
-                    ..Contents::default()
-                },
+                &Contents::with_model(base.model().clone(), Default::default()),
                 "test",
             );
             let mut a = Document::with_model(base.model().clone());
@@ -186,7 +183,7 @@ mod imp {
             let found = left_behind_in(&root);
             assert_eq!(found.iter().map(|f| f.slot).collect::<Vec<_>>(), [3, 7]);
             for (f, doc) in found.iter().zip([&a, &b]) {
-                let model = prism_file::read(&f.base).expect("base").model;
+                let model = prism_file::read(&f.base).expect("base").assembly;
                 assert_eq!(
                     f.journal.restore(model).model().to_json(),
                     doc.model().to_json()

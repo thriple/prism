@@ -22,32 +22,73 @@ fn cases() -> Vec<(&'static str, Contents)> {
     vec![
         (
             "cube.prism",
-            Contents {
-                model: prism_tools::scenes::cube().model().clone(),
-                settings: Settings::default(),
-            },
+            Contents::with_model(
+                prism_tools::scenes::cube().model().clone(),
+                Settings::default(),
+            ),
         ),
         (
             "pocket-with-guide.prism",
-            Contents {
-                model: pocket.model().clone(),
-                settings: Settings {
+            Contents::with_model(
+                pocket.model().clone(),
+                Settings {
                     units: DisplayUnits {
                         length: LengthUnit::Millimetres,
                         decimals: 0,
                     },
                     ..Settings::default()
                 },
-            },
+            ),
         ),
         (
             "plate.prism",
+            Contents::with_model(
+                prism_tools::scenes::plate().model().clone(),
+                Settings::default(),
+            ),
+        ),
+        (
+            "groups.prism",
             Contents {
-                model: prism_tools::scenes::plate().model().clone(),
+                assembly: groups().assembly().clone(),
                 settings: Settings::default(),
             },
         ),
     ]
+}
+
+/// A box made into a group, copied twice, with a group nested in a copy
+/// and a line drawn inside one.
+fn groups() -> prism_doc::Document {
+    use prism_doc::{Change, Command};
+    let mut d = prism_tools::scenes::cube();
+    let g = d.assembly().next_instance();
+    let m = d.model();
+    let sel = prism_ops::Selection {
+        vertices: m.vertices().map(|(id, _)| id).collect(),
+        edges: m.edges().map(|(id, _)| id).collect(),
+        faces: m.faces().map(|(id, _)| id).collect(),
+        guides: Default::default(),
+    };
+    d.run(Command::MakeGroup {
+        selection: sel,
+        instances: Default::default(),
+    });
+    let copy = d.assembly().next_instance();
+    d.run(Command::CopyInstances {
+        instances: [g].into(),
+        step: Change::Rotate {
+            centre: prism_math::DVec3::new(3.0, 0.0, 0.0),
+            axis: prism_math::DVec3::Z,
+            angle: 0.5,
+        },
+        count: 2,
+    });
+    d.run(Command::MakeGroup {
+        selection: Default::default(),
+        instances: [g, copy].into(),
+    });
+    d
 }
 
 #[test]
@@ -65,10 +106,25 @@ fn golden_files_open_and_save_the_same() {
         }
         let bytes = std::fs::read(&path).expect("read");
         let c = read(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        let problems = prism_ops::check::problems(&c.model);
+        let problems = prism_ops::check::problems(c.model());
         assert!(problems.is_empty(), "{}: {problems:?}", path.display());
         assert_eq!(write(&c, APP), bytes, "{} saves the same", path.display());
         seen += 1;
     }
     assert!(seen >= 3, "the golden files are there");
+}
+
+/// Files saved before groups (schema 1) still open, as they were.
+#[test]
+fn schema_1_files_still_open() {
+    let mut seen = 0;
+    for e in std::fs::read_dir(dir().join("schema-1")).expect("docs/acceptance/files/schema-1") {
+        let path = e.expect("entry").path();
+        let bytes = std::fs::read(&path).expect("read");
+        let c = read(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert!(c.model().face_count() > 0, "{}", path.display());
+        assert!(!c.assembly.has_instances());
+        seen += 1;
+    }
+    assert!(seen >= 3);
 }

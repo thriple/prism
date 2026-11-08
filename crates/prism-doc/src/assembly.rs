@@ -87,6 +87,68 @@ impl Assembly {
         }
     }
 
+    /// The counters for new definitions and instances (for files).
+    pub fn counters(&self) -> (u32, u32) {
+        (self.next_def, self.next_instance)
+    }
+
+    /// An assembly from its parts (a file). Refused if they do not fit: no
+    /// root, an instance of a missing definition, a definition inside
+    /// itself, an id at or above its counter, or an instance id used twice.
+    pub fn from_parts(
+        defs: BTreeMap<DefId, Definition>,
+        next_def: u32,
+        next_instance: u32,
+    ) -> Result<Assembly, String> {
+        if !defs.contains_key(&ROOT) {
+            return Err("no root definition".into());
+        }
+        let mut seen: BTreeSet<InstanceId> = BTreeSet::new();
+        for (id, d) in &defs {
+            if id.0 >= next_def {
+                return Err(format!("definition {} is not below its counter", id.0));
+            }
+            for (i, inst) in &d.instances {
+                if i.0 >= next_instance || !seen.insert(*i) {
+                    return Err(format!(
+                        "instance {} is repeated or not below its counter",
+                        i.0
+                    ));
+                }
+                if !defs.contains_key(&inst.def) || inst.def == ROOT {
+                    return Err(format!("instance {} places a missing definition", i.0));
+                }
+                if !inst.transform.is_finite() {
+                    return Err(format!("instance {} has no finite placement", i.0));
+                }
+            }
+        }
+        // No definition may contain itself, however deep.
+        fn reaches(
+            defs: &BTreeMap<DefId, Definition>,
+            from: DefId,
+            to: DefId,
+            depth: usize,
+        ) -> bool {
+            if depth > defs.len() {
+                return true;
+            }
+            defs.get(&from).is_some_and(|d| {
+                d.instances
+                    .values()
+                    .any(|i| i.def == to || reaches(defs, i.def, to, depth + 1))
+            })
+        }
+        if let Some(id) = defs.keys().find(|id| reaches(&defs, **id, **id, 0)) {
+            return Err(format!("definition {} contains itself", id.0));
+        }
+        Ok(Assembly {
+            defs: defs.into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
+            next_def,
+            next_instance,
+        })
+    }
+
     pub fn root(&self) -> &Definition {
         &self.defs[&ROOT]
     }

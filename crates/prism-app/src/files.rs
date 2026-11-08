@@ -78,7 +78,7 @@ pub struct Files {
 fn contents(s: &Session, extra: &Map<String, Value>) -> Contents {
     let c = s.camera();
     Contents {
-        model: s.model().clone(),
+        assembly: s.document().assembly().clone(),
         settings: Settings {
             units: s.number.units,
             camera: Some(CameraData {
@@ -282,7 +282,7 @@ impl Files {
             eye: prism_math::DVec3::from_array(c.eye),
             target: prism_math::DVec3::from_array(c.target),
         });
-        s.open_document(Document::with_model(c.model), camera);
+        s.open_document(Document::with_assembly(c.assembly), camera);
         s.set_units(c.settings.units);
         self.extra = c.settings.extra;
         self.name = Some(o.name.clone());
@@ -546,7 +546,7 @@ impl Files {
             eye: prism_math::DVec3::from_array(c.eye),
             target: prism_math::DVec3::from_array(c.target),
         });
-        let doc = j.restore(c.model);
+        let doc = j.restore(c.assembly);
         s.open_document(doc, camera);
         s.set_units(c.settings.units);
         self.extra = c.settings.extra;

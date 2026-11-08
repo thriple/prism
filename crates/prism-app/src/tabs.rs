@@ -261,10 +261,10 @@ mod tests {
 
     fn opened(name: &str, path: &str) -> Opened {
         let bytes = prism_file::write(
-            &prism_file::Contents {
-                model: prism_tools::scenes::cube().model().clone(),
-                ..Default::default()
-            },
+            &prism_file::Contents::with_model(
+                prism_tools::scenes::cube().model().clone(),
+                Default::default(),
+            ),
             "test",
         );
         Opened {
