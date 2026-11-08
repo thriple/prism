@@ -231,6 +231,11 @@ impl Chrome {
         self.panels.any_open()
     }
 
+    /// Whether Model Health is open (its checks run only then).
+    pub fn health_open(&self) -> bool {
+        self.panels.health
+    }
+
     pub fn ui_open_pub(&self) -> bool {
         self.ui_open()
     }
@@ -321,6 +326,7 @@ impl Chrome {
                     "win.outliner" => self.panels.outliner = true,
                     "win.info" => self.panels.info = true,
                     "win.tags" => self.panels.tags = true,
+                    "win.health" => self.panels.health = true,
                     "help.search" => self.palette = Some(palette::Palette::default()),
                     "help.keys" | "win.hotkeys" => {
                         self.hotkeys.get_or_insert_with(HotkeysWindow::default);

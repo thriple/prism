@@ -89,6 +89,21 @@ pub enum Command {
     IntersectFaces {
         faces: Option<BTreeSet<FaceId>>,
     },
+    /// Model Health (PLAN 1.10): turn faces round so each shell agrees and
+    /// faces out (all, or only these).
+    OrientFaces {
+        faces: Option<BTreeSet<FaceId>>,
+    },
+    /// Turn these faces round.
+    ReverseFaces {
+        faces: BTreeSet<FaceId>,
+    },
+    /// Remove interior faces (all, or only these).
+    CleanEnvelope {
+        faces: Option<BTreeSet<FaceId>>,
+    },
+    /// Remove edges in no face, and points left on nothing.
+    RemoveStray,
     /// A command run inside an open group (the path of instances to it).
     In {
         context: Vec<InstanceId>,
@@ -282,6 +297,10 @@ impl Command {
             Command::Import { .. } => "Import",
             Command::IntersectFaces { .. } => "Intersect Faces",
             Command::In { command, .. } => command.name(),
+            Command::OrientFaces { .. } => "Orient Faces",
+            Command::ReverseFaces { .. } => "Reverse Faces",
+            Command::CleanEnvelope { .. } => "Clean Envelope",
+            Command::RemoveStray => "Remove Stray Edges",
             Command::Batch { commands } => commands.first().map_or("Edit", |c| c.name()),
             Command::MakeGroup { .. } => "Make Group",
             Command::Explode { .. } => "Explode",
@@ -570,6 +589,16 @@ impl Command {
             }
             Command::IntersectFaces { faces } => {
                 prism_ops::intersect::intersect_faces(m, faces.as_ref());
+            }
+            Command::OrientFaces { faces } => {
+                prism_ops::health::orient(m, faces.as_ref());
+            }
+            Command::ReverseFaces { faces } => prism_ops::health::reverse(m, faces),
+            Command::CleanEnvelope { faces } => {
+                prism_ops::health::clean_envelope(m, faces.as_ref());
+            }
+            Command::RemoveStray => {
+                prism_ops::health::remove_stray(m);
             }
             // These change groups: run them with `apply_in`.
             Command::In { .. }

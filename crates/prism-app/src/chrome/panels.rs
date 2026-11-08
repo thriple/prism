@@ -18,6 +18,9 @@ pub enum PanelOp {
     Hide(InstanceId, bool),
     Name(InstanceId, String),
     Tag(prism_tools::TagOp),
+    /// Model Health: select a row's items, or run its fix.
+    HealthSelect(&'static str),
+    HealthFix(&'static str),
 }
 
 /// The panels' data, set by the app each frame.
@@ -27,6 +30,8 @@ pub struct PanelData {
     pub info: Option<EntityInfo>,
     /// Tag id, name, shown, instances on it.
     pub tags: Vec<(TagId, String, bool, usize)>,
+    /// Model Health's rows (computed when the model changes while open).
+    pub health: Vec<prism_tools::HealthRow>,
 }
 
 /// Which panels are open, and text being edited.
@@ -35,6 +40,7 @@ pub struct Panels {
     pub outliner: bool,
     pub info: bool,
     pub tags: bool,
+    pub health: bool,
     /// The name field in Entity Info, and which instance it is for.
     pub name_edit: Option<(InstanceId, String)>,
     /// A tag being renamed.
@@ -43,12 +49,14 @@ pub struct Panels {
 
 impl Panels {
     pub fn any_open(&self) -> bool {
-        self.outliner || self.info || self.tags
+        self.outliner || self.info || self.tags || self.health
     }
 
     /// Close the last opened (Esc).
     pub fn close_one(&mut self) {
-        if self.tags {
+        if self.health {
+            self.health = false;
+        } else if self.tags {
             self.tags = false;
         } else if self.info {
             self.info = false;
@@ -65,6 +73,7 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
     outliner(ctx, &mut p, &data, &mut ops);
     info(ctx, &mut p, &data, &mut ops);
     tags(ctx, &mut p, &data, &mut ops);
+    health(ctx, &mut p, &data, &mut ops);
     chrome.panels = p;
     chrome.panel_ops.extend(ops);
 }
@@ -260,5 +269,58 @@ fn tags(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>)
         });
     if r.close {
         p.tags = false;
+    }
+}
+
+fn health(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+    let problems: usize = data
+        .health
+        .iter()
+        .filter(|r| r.key != "nesting")
+        .map(|r| r.count)
+        .sum();
+    let r = SoftDialog::new("Model Health")
+        .subtitle(if problems == 0 {
+            "Nothing found".to_owned()
+        } else {
+            format!("{problems} things to look at")
+        })
+        .show(ctx, p.health, |ui| {
+            for row in &data.health {
+                ui.horizontal(|ui| {
+                    let colour = if row.count == 0 {
+                        color::MUTED
+                    } else {
+                        color::INK
+                    };
+                    let name = ui.add(
+                        egui::Label::new(RichText::new(row.label).color(colour))
+                            .sense(egui::Sense::click()),
+                    );
+                    if name.clicked() && row.count > 0 {
+                        ops.push(PanelOp::HealthSelect(row.key));
+                    }
+                    if row.key != "nesting" {
+                        ui.label(
+                            RichText::new(row.count.to_string())
+                                .font(theme::mono())
+                                .color(colour),
+                        );
+                    }
+                    if !row.detail.is_empty() {
+                        ui.label(RichText::new(&row.detail).color(color::MUTED));
+                    }
+                    if let Some(fix) = row.fix
+                        && ui.add(SoftButton::new(fix).small()).clicked()
+                    {
+                        ops.push(PanelOp::HealthFix(row.key));
+                    }
+                });
+            }
+            ui.add_space(size::MENU_PAD);
+            ui.label(RichText::new("Click a row to select and zoom to it.").color(color::MUTED));
+        });
+    if r.close {
+        p.health = false;
     }
 }

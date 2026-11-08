@@ -1575,3 +1575,42 @@ fn isolate_hides_the_others_and_the_outliner_selects_inside_groups() {
         other => panic!("{other:?}"),
     }
 }
+
+// ---------- Model Health ----------
+
+#[test]
+fn model_health_finds_a_flipped_face_and_orient_fixes_it_with_undo() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    let count = |d: &Driver, key: &str| {
+        d.s.health_rows()
+            .into_iter()
+            .find(|r| r.key == key)
+            .map(|r| r.count)
+            .expect("row")
+    };
+    assert_eq!(count(&d, "reversed"), 0);
+    // Flip the top with Reverse Faces.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    act(&mut d, "edit.revface");
+    assert_eq!(count(&d, "reversed"), 1);
+    // The row selects it.
+    act(&mut d, "edit.desel");
+    d.s.select_health("reversed");
+    assert_eq!(d.s.selection().faces.len(), 1);
+    // Orient Faces fixes it, as one step that undo takes back.
+    d.s.health_fix("reversed");
+    assert_eq!(count(&d, "reversed"), 0);
+    undo(&mut d);
+    assert_eq!(count(&d, "reversed"), 1);
+    let rows = d.s.health_rows();
+    assert!(rows.iter().any(|r| r.key == "nesting"));
+    assert!(
+        rows.iter()
+            .any(|r| r.key == "open" && r.detail.contains("1 watertight"))
+    );
+}

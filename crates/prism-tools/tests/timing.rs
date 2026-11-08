@@ -183,3 +183,19 @@ fn ninety_percent_hidden() {
     let small = build(false, 10);
     println!("100 groups, 90 hidden: scene {hidden:.1} ms; 10 groups: {small:.1} ms");
 }
+
+/// How long every Model Health check takes on the Large Scene.
+#[test]
+#[ignore = "prints timings"]
+fn health_on_the_large_scene() {
+    let doc = prism_tools::scenes::large(50);
+    let t = std::time::Instant::now();
+    let r = prism_ops::health::check(doc.model());
+    println!(
+        "{} faces: health {:.0} ms ({} interior, {} crossing)",
+        doc.model().face_count(),
+        t.elapsed().as_secs_f64() * 1e3,
+        r.interior.count(),
+        r.crossing.count()
+    );
+}

@@ -28,11 +28,13 @@ use crate::select::box_select;
 mod construct;
 mod edit;
 mod groups;
+mod health;
 use crate::units::NumberFormat;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
+pub use health::HealthRow;
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -951,6 +953,20 @@ impl Session {
             "edit.delete" => self.delete(),
             "edit.group" => self.make_group(),
             "edit.comp" => self.make_component(),
+            // Edit > Reverse Faces and Orient Faces (Model Health).
+            "edit.revface" => {
+                if !self.selection.faces.is_empty() {
+                    let faces = self.selection.faces.clone();
+                    self.cancel();
+                    self.run(Command::ReverseFaces { faces });
+                }
+            }
+            "edit.orient" => {
+                let faces =
+                    (!self.selection.faces.is_empty()).then(|| self.selection.faces.clone());
+                self.cancel();
+                self.run(Command::OrientFaces { faces });
+            }
             "edit.hide" => self.hide(),
             "edit.unhideall" => self.unhide_all(),
             "edit.unhidelast" => self.unhide_last(),

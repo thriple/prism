@@ -911,7 +911,7 @@ The milestones below are broken into chunks that can be built and tried one at a
 | **View Settings** | Show faces, lines and points, line and outline thickness, styles, X-ray, hidden geometry, hide and unhide, default lighting and sun with shadows, the hierarchy tree (1.14) | M1–M3 | Viewport, Groups & Components | M | Not started | The model can be shown as hidden line, X-ray or with a sun, and the tree matches the viewport |
 | **Inspector & Features** | The schema-driven panel, editable booleans, chamfer and fillet, shell, hole, array and mirror, pick-in-viewport references, named parameters later (1.17) | M3–M6 | Edit Tools, Groups & Components | L | Not started | A chamfer's distance changes after the fact and the model updates |
 | **Fit & Mechanisms** | Tolerance modifier and profiles, Fit Helper, hinge, slide and fixed joints, motion sweep (1.15) | M3–M6 | Groups & Components, Inspector & Features | L | Not started | A hinged lid is checked through its range and a tab fits its slot |
-| **Model Health** | The checks and Clean envelope (1.10), validate before export | — | Core Model, Groups & Components | M | Not started | Reversed faces, holes and interior faces are listed and fixable |
+| **Model Health** | The checks and Clean envelope (1.10), validate before export | — | Core Model, Groups & Components | M | Part 1 built: the checks, Window > Model Health (counts, select and zoom), Orient Faces, Reverse Faces, Clean Envelope, Remove Stray Edges. Part 2 (problems drawn in the viewport, live checks, check before export) next | Reversed faces, holes and interior faces are listed and fixable |
 | **Exact Curves** | Arc tools, circle, polygon, tangent inference, Follow Me, fillet and chamfer on planar edges, soften and smooth | M4 | Edit Tools | L | Not started | Round shapes stay exact |
 | **NURBS Spike** | Kernel choice (monstertruck or arris vs OCCT or SMLib) decided by robustness tests, including the surface-surface intersection that curved overlap splits need | M5 | Core Model | S | Not started | A written decision, with test results |
 | **Freeform NURBS** | Control-point curves, cage editing with the normal tools, loft, sweep, revolve, patch, adaptive tessellation, curvature display | M5 | Exact Curves, NURBS Spike | XL | Not started (6 parts, PLAN 6.0a) | A loft you can pull into shape |
@@ -944,6 +944,7 @@ Every chunk is built in **parts**. A part is one brief, sized so that one sessio
 - **In a session:** commit and push after each step of a part, so a compaction or a restarted worker loses nothing. Untested app code goes on the session branch, not `main`, because every push to `main` makes a release.
 
 **Done so far:**
+- Model Health: part 1 of 2 (checks, panel and fixes). 2. Problems drawn in the viewport, live checks, check before export.
 - Groups & Components: 3 parts. 1. Groups. 2. Components. 3. Hiding, tags, Outliner and Entity Info.
 - Edit Tools: 2 parts.
 - Files & Formats: 3 parts.

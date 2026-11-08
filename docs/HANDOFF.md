@@ -20,8 +20,9 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
 - **Built on 2026-11-08:** Push/Pull edge by edge, the coplanar rule
   (#30) and the solid rule (#31) after owner feedback; Offset snapping;
   **Groups & Components, all 3 parts** (groups; components; hiding,
-  tags, Outliner and Entity Info). **Next by PLAN 6.0's order: Model
-  Health** (PLAN 1.10; brief to write). Read NOTES "Groups & Components"
+  tags, Outliner and Entity Info). Then **Model Health part 1** (checks,
+  panel, fixes). **Next: Model Health part 2** (problems drawn in the
+  viewport, live checks, check before export; brief to write). Read NOTES "Groups & Components"
   parts 1 to 3 and "The solid rule" first. The owner has not tried groups
   by hand yet.
 - **GPU tests here:** install Mesa's software Vulkan driver first

@@ -329,7 +329,7 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
 }
 
 /// Closed shells: faces joined by edges, with no open edge.
-fn closed_shells(model: &Model) -> Vec<Vec<FaceId>> {
+pub(crate) fn closed_shells(model: &Model) -> Vec<Vec<FaceId>> {
     let edge_faces: BTreeMap<EdgeId, Vec<FaceId>> = model.edge_faces();
     // Join faces that share an edge (union-find over face ids).
     let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
@@ -365,14 +365,14 @@ fn closed_shells(model: &Model) -> Vec<Vec<FaceId>> {
 }
 
 /// The faces of closed shells, all together.
-fn closed_faces(model: &Model) -> Vec<FaceId> {
+pub(crate) fn closed_faces(model: &Model) -> Vec<FaceId> {
     closed_shells(model).into_iter().flatten().collect()
 }
 
 /// How many closed shells `p` is inside: count the faces a ray from `p`
 /// crosses, +1 leaving through a face and -1 entering. None if every ray
 /// grazes an edge or runs along a face.
-fn winding(faces: &[Flat], p: DVec3, tol: &Tol) -> Option<i32> {
+pub(crate) fn winding(faces: &[Flat], p: DVec3, tol: &Tol) -> Option<i32> {
     'ray: for d in RAYS {
         let d = d.normalize();
         let mut w = 0;

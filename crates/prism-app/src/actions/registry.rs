@@ -95,7 +95,8 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 10] = [
+const COMMANDS: [&str; 11] = [
+    "win.health",
     "win.components",
     "win.outliner",
     "win.info",
@@ -145,6 +146,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Part 2: components and mirroring.
         || id == "edit.comp"
         || id == "edit.unique"
+        // Model Health.
+        || id == "edit.revface"
+        || id == "edit.orient"
         // Part 3: hiding.
         || matches!(id, "edit.hide" | "edit.unhideall" | "edit.unhidelast" | "edit.isolate")
         || id.starts_with("flip.")
@@ -221,7 +225,11 @@ impl Registry {
                     when: match r.id.strip_prefix("file.recent") {
                         Some("") => When::Never,
                         Some(n) => n.parse().map_or(When::Always, When::Recent),
-                        None if matches!(r.id, "isect.sel" | "edit.group" | "edit.comp") => {
+                        None if matches!(
+                            r.id,
+                            "isect.sel" | "edit.group" | "edit.comp" | "edit.revface"
+                        ) =>
+                        {
                             When::HasSelection
                         }
                         None if r.id == "edit.explode"

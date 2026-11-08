@@ -8,5 +8,6 @@ pub mod session;
 pub mod units;
 
 pub use session::{
-    Button, EntityInfo, Event, Input, Key, OutlineRow, Recording, Response, Session, TagOp,
+    Button, EntityInfo, Event, HealthRow, Input, Key, OutlineRow, Recording, Response, Session,
+    TagOp,
 };

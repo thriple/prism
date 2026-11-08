@@ -120,6 +120,8 @@ struct App {
     tab_actions: Vec<isize>,
     /// A file named on the command line, opened on the first frame.
     start_file: Option<String>,
+    /// The model version Model Health last checked.
+    health_version: Option<u64>,
 }
 
 impl App {
@@ -160,6 +162,7 @@ impl App {
             tabs,
             tab_actions: Vec::new(),
             start_file,
+            health_version: None,
         }
     }
 
@@ -289,6 +292,7 @@ impl App {
         );
         let start_file = self.start_file.take();
         let mut tab_actions: Vec<isize> = Vec::new();
+        let mut health_version = self.health_version;
         chrome.viewport_texture = gpu.viewport_texture();
         viewport.session.reduce_motion = motion.reduce_motion;
         let mut viewport_px = [1u32, 1u32];
@@ -338,10 +342,24 @@ impl App {
             }
             if chrome.panels_open() {
                 let s = &viewport.session;
+                // The checks take a while on big models: rerun them only
+                // when the model (or the open group) changed.
+                let health = if !chrome.health_open() {
+                    Vec::new()
+                } else if health_version == Some(s.version()) {
+                    std::mem::take(&mut chrome.panel_data.health)
+                } else {
+                    health_version = Some(s.version());
+                    s.health_rows()
+                };
+                if !chrome.health_open() {
+                    health_version = None;
+                }
                 chrome.panel_data = crate::chrome::PanelData {
                     outline: s.outline(),
                     info: Some(s.entity_info()),
                     tags: s.tag_rows(),
+                    health,
                 };
             }
             for op in std::mem::take(&mut chrome.panel_ops) {
@@ -352,6 +370,8 @@ impl App {
                     crate::chrome::PanelOp::Hide(id, hidden) => s.set_hidden(id, hidden),
                     crate::chrome::PanelOp::Name(id, name) => s.name_instance(id, &name),
                     crate::chrome::PanelOp::Tag(t) => s.tag_command(t),
+                    crate::chrome::PanelOp::HealthSelect(k) => s.select_health(k),
+                    crate::chrome::PanelOp::HealthFix(k) => s.health_fix(k),
                 }
                 s.mark_all_dirty();
             }
@@ -415,6 +435,7 @@ impl App {
         });
         egui_state.handle_platform_output(window, output.platform_output);
         self.tab_actions = tab_actions;
+        self.health_version = health_version;
         if let Some(t) = self.files.new_title(&self.viewport.session) {
             window.set_title(&t);
             // winit does not set the page's title on the web.

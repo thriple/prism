@@ -803,3 +803,37 @@ run by hand).
 - Hiding loose faces and edges, Show Hidden (ghosted), Lock.
 - The Outliner cannot drag rows to regroup, search or filter yet.
 - Not tried by hand: the three windows in the native app and on the web.
+
+## Model Health (part 1: checks, panel and fixes)
+
+Brief: `docs/briefs/15-model-health.md`.
+
+**What was built**
+- `prism-ops::health`: duplicates and near misses, reversed faces, open
+  edges (and watertight shells), edges with 3 or more faces, interior
+  faces, degenerate faces and edges, stray edges, crossing faces, tiny
+  pieces, and far from the origin. Pure, on the open group's model.
+- Reversed: in each connected piece the faces that disagree with most of
+  their neighbours; for a closed shell facing into its own solid, the rest.
+- Interior: a point on the face, with the face left out, is inside the
+  closed shells around it along every ray. (A first try, "every ray from
+  either side hits something", flagged 980 box sides facing a close
+  neighbour in the Large Scene; counting crossings with the face itself
+  in was fooled by the interior faces it looks for.)
+- Fixes, each one undo step: Orient Faces, Reverse Faces (Edit menu),
+  Clean Envelope (the selection, or everything), Remove Stray Edges,
+  Intersect Faces (the existing command).
+- Window > Model Health: a row per check with its count; a click selects
+  the items and zooms to them; fix buttons; nesting and scale as
+  information. The checks rerun only when the model changes while it is
+  open.
+- Speed: every check on the Large Scene (15,000 faces) takes 179 ms (the
+  tiny-pieces check first took 12.8 s; it is now one union-find pass).
+
+**Tests:** `prism-ops/tests/health.rs` (each problem on a small case, a
+clean box with none, Orient on a flipped face and an inside-out box,
+Clean Envelope, Remove Stray), a session scenario (a row selects, the fix
+works and undoes).
+
+**Leftovers (part 2):** problems drawn in the viewport, checks running in
+the background while the window is closed, checks before export.
