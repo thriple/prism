@@ -304,3 +304,32 @@ fn pushing_a_window_out_through_the_back_cuts_a_tunnel() {
         "the tunnel's wall faces in"
     );
 }
+
+/// A plate far thinner than it is wide (the renderer's thin-plate test:
+/// 0.5 mm by 30 m) keeps all six faces: the solid rule's test points stay
+/// inside the plate.
+#[test]
+fn a_very_thin_plate_keeps_its_faces() {
+    for s in [1.5, 30.0, 300.0] {
+        let mut m = Model::new();
+        let t = 0.0005;
+        prism_ops::add_rect(&mut m, -s / 2.0, 0.0, s / 2.0, t, 0.0);
+        let f = prism_ops::face_at(&m, v(0.0, t / 2.0, 0.0)).expect("base");
+        let up = m.face(f).unwrap().plane().normal.z > 0.0;
+        prism_ops::push_pull(&mut m, f, if up { s } else { -s }, false);
+        // And a box behind it, pulled up as a solid of its own.
+        prism_ops::add_rect(
+            &mut m,
+            -s * 0.2,
+            t + 0.01,
+            s * 0.2,
+            t + 0.01 + s * 0.2,
+            s * 0.3,
+        );
+        let g = prism_ops::face_at(&m, v(0.0, t + 0.01 + s * 0.1, s * 0.3)).expect("detail");
+        let up = m.face(g).unwrap().plane().normal.z > 0.0;
+        prism_ops::push_pull(&mut m, g, if up { s * 0.4 } else { -s * 0.4 }, false);
+        assert_eq!(m.face_count(), 12, "size {s}");
+        closed(&m);
+    }
+}

@@ -32,9 +32,13 @@ const RAYS: [DVec3; 4] = [
     DVec3::new(-0.152_8, -0.433_6, -0.888_1),
 ];
 
-/// The distance from a face at which its two sides are tested.
+/// The distance from a face at which its two sides are tested: just past
+/// the tolerance, so the test points stay inside the thinnest wall the
+/// model can keep (a 0.5 mm plate 300 m wide is about 2 tolerances thick).
+/// Points within one tolerance of a face or an edge count as unsure, and a
+/// face whose sides are unsure is kept.
 pub(crate) fn step(tol: &Tol) -> f64 {
-    (tol.dist * 100.0).max(f64::MIN_POSITIVE)
+    (tol.dist * 1.2).max(f64::MIN_POSITIVE)
 }
 
 /// A Push/Pull on a face of a solid, as a boolean: pulling out adds the
@@ -127,7 +131,7 @@ impl Swept {
             return Some(false);
         }
         let q = DVec2::new((x - f.origin).dot(f.u), (x - f.origin).dot(f.v));
-        if near_outline(f, q, t * 10.0) {
+        if near_outline(f, q, t) {
             return None;
         }
         let over = point_in_polygon(q, &f.outer) == Inside::Inside
@@ -389,7 +393,7 @@ fn winding(faces: &[Flat], p: DVec3, tol: &Tol) -> Option<i32> {
                 // The point is on this face's plane: on the face itself, no
                 // ray can tell which side it is on.
                 let q = DVec2::new((hit - f.origin).dot(f.u), (hit - f.origin).dot(f.v));
-                if near_outline(f, q, tol.dist * 10.0)
+                if near_outline(f, q, tol.dist)
                     || point_in_polygon(q, &f.outer) != Inside::Outside
                         && f.holes
                             .iter()
@@ -405,7 +409,7 @@ fn winding(faces: &[Flat], p: DVec3, tol: &Tol) -> Option<i32> {
             }
             let q = DVec2::new((hit - f.origin).dot(f.u), (hit - f.origin).dot(f.v));
             // Too close to an edge to count reliably: try another ray.
-            if near_outline(f, q, tol.dist * 10.0) {
+            if near_outline(f, q, tol.dist) {
                 continue 'ray;
             }
             let mut inside = match point_in_polygon(q, &f.outer) {

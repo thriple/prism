@@ -631,8 +631,13 @@ any duplicates, and drop edges and points left without a face.
   every edge in the model per lookup (the Large Scene's ground plane was
   2,500 x 2,500).
 
+**The test points** sit 1.2 tolerances off each face (CI's thin-plate
+screenshot test, a 0.5 mm plate 300 m wide, failed at 100 tolerances:
+both points landed outside the plate and its faces went). Points within
+one tolerance of a face or edge count as unsure, and unsure faces stay.
+
 **Tests:** the owner's cases, a block pulled into another, a block
-swallowed, a tunnel pushed through, open geometry untouched, and a property
+swallowed, a very thin plate, a tunnel pushed through, open geometry untouched, and a property
 test (`tests/solids.rs`) of random pulls and notches on a box that must
 stay a valid closed solid. CI runs it with a fixed seed.
 
@@ -642,8 +647,8 @@ at every face's flat form once per pull; a cache or spatial index would
 bring it down. Small models are instant.
 
 **Left over:**
-- Random sequences still find rare failures: about 1 seed in 3 at 2,000
-  cases. Two known kinds: a face whose outline touches itself at one
+- Random sequences still find rare failures: about half the seeds find
+  one in 2,000 cases. Two known kinds: a face whose outline touches itself at one
   corner (a "pinched" loop, an older region-tracing limit), and a push
   deeper than a neighbouring wall reaches, which slides that wall past
   its own end. Run more with `PROPTEST_RNG_SEED=<n> PROPTEST_CASES=2000
