@@ -247,14 +247,23 @@ impl Transfer {
             let faces = (e.selection_only && has_selection).then(|| s.selection().faces.clone());
             // With groups, what is shown is exported, groups placed
             // (selection-only export works on loose geometry at the root).
-            let bytes = if faces.is_none() && s.document().assembly().has_instances() {
-                mesh::export(&s.document().assembly().flattened_visible(), None, &o)
-            } else {
-                mesh::export(s.model(), faces.as_ref(), &o)
+            let whole = (faces.is_none() && s.document().assembly().has_instances())
+                .then(|| s.document().assembly().flattened_visible());
+            let bytes = match &whole {
+                Some(m) => mesh::export(m, None, &o),
+                None => mesh::export(s.model(), faces.as_ref(), &o),
             };
+            // Check what was written (PLAN 1.3): printing formats must be
+            // watertight. The export still happens.
+            let printing = matches!(f.extension(), "stl" | "3mf");
+            let note =
+                prism_ops::health::export_note(whole.as_ref().unwrap_or(s.model()), printing);
             let name = format!("Prism model.{}", f.extension());
             match crate::mesh_files::save(&name, f.extension(), &bytes) {
-                Ok(Some(to)) => chrome.status_note(format!("Exported to {to}")),
+                Ok(Some(to)) => chrome.status_note(match note {
+                    Some(n) => format!("Exported to {to}. {n}"),
+                    None => format!("Exported to {to}"),
+                }),
                 Ok(None) => {}
                 Err(err) => chrome.status_note(format!("Not exported: {err}")),
             }

@@ -154,3 +154,71 @@ impl Session {
         self.refresh();
     }
 }
+
+impl Session {
+    /// Draw Model Health's problems in the model (while its window is open
+    /// and its switch is on).
+    pub fn set_health_view(&mut self, on: bool) {
+        if on != self.health_view {
+            self.health_view = on;
+            self.refresh_health();
+        }
+    }
+
+    /// Recheck after a change, if the problems are being drawn.
+    pub(super) fn refresh_health(&mut self) {
+        self.health_report = self.health_view.then(|| check(self.work_model()));
+        self.overlay_dirty = true;
+        self.dirty = true;
+    }
+
+    /// The problems, as lines and tinted triangles (PLAN 1.10).
+    pub(super) fn health_marks(&self, o: &mut prism_view::overlay::Overlay) {
+        use prism_view::overlay::{Line, Tri};
+        let Some(r) = &self.health_report else { return };
+        let m = self.work_model();
+        let w = self.style.highlight_width;
+        let mut edge_lines = |found: &Found, color| {
+            for e in &found.edges {
+                if let Some(ed) = m.edge(*e) {
+                    o.lines.push(Line {
+                        a: m.vertex(ed.a),
+                        b: m.vertex(ed.b),
+                        color,
+                        width: w,
+                        dash: [0.0, 0.0],
+                    });
+                }
+            }
+        };
+        edge_lines(&r.open_edges, self.style.health_open);
+        edge_lines(&r.non_manifold, self.style.health_many);
+        edge_lines(&r.stray, self.style.health_stray);
+        for f in r.interior.faces.iter().chain(&r.crossing.faces) {
+            if let Some(face) = m.face(*f) {
+                for l in face.loops() {
+                    for i in 0..l.len() {
+                        o.tested.push(Line {
+                            a: m.vertex(l[i]),
+                            b: m.vertex(l[(i + 1) % l.len()]),
+                            color: self.style.health_outline,
+                            width: w,
+                            dash: [4.0, 3.0],
+                        });
+                    }
+                }
+            }
+        }
+        for f in &r.reversed.faces {
+            if let Some(sf) = self.scene.face(*f) {
+                let idx = &self.scene.mesh.indices[sf.tris.start as usize..sf.tris.end as usize];
+                for t in idx.as_chunks::<3>().0 {
+                    o.tris.push(Tri {
+                        p: t.map(|i| self.scene.mesh.positions[i as usize]),
+                        color: self.style.health_reversed,
+                    });
+                }
+            }
+        }
+    }
+}

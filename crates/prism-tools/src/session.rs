@@ -303,6 +303,9 @@ pub struct Session {
     /// The open group (empty at the root), and the selected groups in it.
     ctx: Vec<prism_doc::InstanceId>,
     groups: BTreeSet<prism_doc::InstanceId>,
+    /// Model Health drawn in the model, and its last check.
+    health_view: bool,
+    health_report: Option<prism_ops::health::Report>,
     /// What the last Hide hid (Unhide Last).
     last_hidden: BTreeSet<prism_doc::InstanceId>,
     /// Owners of the pieces merged into the scene, and the pieces.
@@ -332,6 +335,8 @@ impl Session {
             ctx: Vec::new(),
             groups: BTreeSet::new(),
             last_hidden: BTreeSet::new(),
+            health_view: false,
+            health_report: None,
             owners: Vec::new(),
             pieces: Vec::new(),
             work: None,
@@ -850,6 +855,9 @@ impl Session {
         self.version += 1;
         let t0 = self.measure.map(|f| f());
         self.build_scene();
+        if self.health_view {
+            self.refresh_health();
+        }
         if let (Some(f), Some(t0)) = (self.measure, t0) {
             self.timings.scene_ms = (f() - t0) * 1e3;
         }
@@ -1617,6 +1625,7 @@ impl Session {
     pub fn overlay(&self) -> Overlay {
         let mut o = Overlay::default();
         self.group_boxes(&mut o);
+        self.health_marks(&mut o);
         let fb = &self.style.feedback;
         let view = self.view();
         if let Some(b) = &self.boxing

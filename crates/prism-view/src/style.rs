@@ -65,6 +65,14 @@ pub struct Style {
     /// The box around the open group: colour, width and dash (points).
     pub open_box: Rgba,
     pub open_box_dash: [f32; 2],
+    /// Model Health in the model: open edges, edges with 3 or more faces,
+    /// stray edges, the tint on reversed faces, and the outline of interior
+    /// and crossing faces.
+    pub health_open: Rgba,
+    pub health_many: Rgba,
+    pub health_stray: Rgba,
+    pub health_reversed: Rgba,
+    pub health_outline: Rgba,
     /// 0 turns the profile (silhouette) lines off.
     pub profile_width: f32,
     pub hover: Rgba,
@@ -215,6 +223,11 @@ impl Default for Style {
             faded_alpha: 70,
             open_box: Rgba::rgb(0x55, 0x5b, 0x66),
             open_box_dash: [5.0, 4.0],
+            health_open: Rgba::rgb(0xe0, 0x2f, 0x2f),
+            health_many: Rgba::rgb(0xf0, 0x8c, 0x1a),
+            health_stray: Rgba::rgb(0x8a, 0x8f, 0x99),
+            health_reversed: Rgba([0xd0, 0x3c, 0xc8, 0x70]),
+            health_outline: Rgba::rgb(0x9b, 0x4d, 0xf0),
             profile_width: 0.0,
             hover: Rgba::rgb(0xff, 0x8a, 0x00),
             hover_face_alpha: 0.24,

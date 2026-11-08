@@ -236,6 +236,11 @@ impl Chrome {
         self.panels.health
     }
 
+    /// Whether Model Health's problems are drawn in the model.
+    pub fn health_marks(&self) -> bool {
+        self.panels.health && !self.panels.health_marks_off
+    }
+
     pub fn ui_open_pub(&self) -> bool {
         self.ui_open()
     }

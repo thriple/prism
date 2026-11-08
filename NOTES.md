@@ -837,3 +837,21 @@ works and undoes).
 
 **Leftovers (part 2):** problems drawn in the viewport, checks running in
 the background while the window is closed, checks before export.
+
+## Model Health (part 2: in the model, and on export)
+
+Brief: `docs/briefs/16-model-health-2.md`.
+
+- While the Model Health window is open (and its "Show in the model"
+  switch is on), open edges are drawn red, edges with 3 or more faces
+  orange, stray edges grey, reversed faces tinted, and interior and
+  crossing faces outlined. The marks follow each edit.
+- Exporting a mesh checks what was written; the status says what it
+  found ("4 open edges: the model is not watertight; see Model Health").
+  STL and 3MF mention watertight; the export still happens.
+- Not built (a decision in the brief): checks while the window is closed.
+  They cost up to 180 ms per edit on big models and the web build has no
+  threads; the panel and the export check cover the need.
+
+**Tests:** marks for an open box, a flipped face and a clean box (session),
+the export note (prism-ops).

@@ -41,6 +41,8 @@ pub struct Panels {
     pub info: bool,
     pub tags: bool,
     pub health: bool,
+    /// Model Health's problems not drawn in the model (its switch off).
+    pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
     pub name_edit: Option<(InstanceId, String)>,
     /// A tag being renamed.
@@ -318,6 +320,12 @@ fn health(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp
                 });
             }
             ui.add_space(size::MENU_PAD);
+            let mut show = !p.health_marks_off;
+            ui.add(prism_ui::widgets::SoftToggle::new(
+                &mut show,
+                "Show in the model",
+            ));
+            p.health_marks_off = !show;
             ui.label(RichText::new("Click a row to select and zoom to it.").color(color::MUTED));
         });
     if r.close {

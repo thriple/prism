@@ -120,3 +120,22 @@ fn stray_edges_degenerate_tiny_and_crossing() {
     m.append(&t);
     assert!(!check(&m).tiny.is_empty());
 }
+
+#[test]
+fn the_export_note_says_when_a_model_is_not_watertight() {
+    let closed = cube(v(0.0, 0.0, 0.0), 2.0);
+    assert_eq!(health::export_note(&closed, true), None);
+    let mut open = closed.clone();
+    let top = prism_ops::face_at(&open, v(1.0, 1.0, 2.0)).unwrap();
+    open.remove_face(top);
+    let note = health::export_note(&open, true).expect("a note");
+    assert!(
+        note.starts_with("4 open edges: the model is not watertight"),
+        "{note}"
+    );
+    assert!(
+        !health::export_note(&open, false)
+            .unwrap()
+            .contains("watertight")
+    );
+}

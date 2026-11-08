@@ -340,6 +340,7 @@ impl App {
                 }
                 viewport.session.mark_all_dirty();
             }
+            viewport.session.set_health_view(chrome.health_marks());
             if chrome.panels_open() {
                 let s = &viewport.session;
                 // The checks take a while on big models: rerun them only

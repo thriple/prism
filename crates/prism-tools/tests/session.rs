@@ -1614,3 +1614,39 @@ fn model_health_finds_a_flipped_face_and_orient_fixes_it_with_undo() {
             .any(|r| r.key == "open" && r.detail.contains("1 watertight"))
     );
 }
+
+#[test]
+fn model_health_draws_open_edges_and_reversed_faces_in_the_model() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    d.s.set_health_view(true);
+    let style = prism_view::Style::default();
+    let red = |d: &Driver| {
+        d.s.overlay()
+            .lines
+            .iter()
+            .filter(|l| l.color == style.health_open)
+            .count()
+    };
+    assert_eq!(red(&d), 0, "a closed box has none");
+    assert!(d.s.overlay().tris.is_empty());
+    // Flip the top: it is tinted.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    act(&mut d, "edit.revface");
+    assert!(
+        d.s.overlay()
+            .tris
+            .iter()
+            .any(|t| t.color == style.health_reversed),
+        "the reversed face is tinted"
+    );
+    // Erase the top: four red edges, following the edit.
+    act(&mut d, "edit.delete");
+    assert_eq!(red(&d), 4);
+    d.s.set_health_view(false);
+    assert_eq!(red(&d), 0, "off when the panel closes");
+}

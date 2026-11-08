@@ -582,3 +582,32 @@ fn remove_lonely_points(model: &mut Model) {
         model.remove_vertex(v);
     }
 }
+
+/// What an export should say about the model it wrote, if anything: open
+/// edges, reversed faces and crossing faces. `printing` (STL, 3MF) says
+/// when the model is not watertight.
+pub fn export_note(model: &Model, printing: bool) -> Option<String> {
+    let r = check(model);
+    let mut parts = Vec::new();
+    let n = |k: usize, one: &str, many: &str| {
+        if k == 1 {
+            format!("1 {one}")
+        } else {
+            format!("{k} {many}")
+        }
+    };
+    if !r.open_edges.is_empty() {
+        let mut s = n(r.open_edges.count(), "open edge", "open edges");
+        if printing {
+            s.push_str(": the model is not watertight");
+        }
+        parts.push(s);
+    }
+    if !r.reversed.is_empty() {
+        parts.push(n(r.reversed.count(), "reversed face", "reversed faces"));
+    }
+    if !r.crossing.is_empty() {
+        parts.push(n(r.crossing.count(), "crossing face", "crossing faces"));
+    }
+    (!parts.is_empty()).then(|| format!("{}; see Model Health", parts.join(", ")))
+}
