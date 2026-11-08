@@ -77,10 +77,24 @@ pub(crate) fn rebuild_plane(
         let Some(sample) = interior_point(&loops) else {
             continue;
         };
-        let parent = old
+        let covers: Vec<FaceId> = old
             .iter()
             .copied()
-            .find(|f| face_contains_2d(model, *f, &frame, sample));
+            .filter(|f| face_contains_2d(model, *f, &frame, sample))
+            .collect();
+        let parent = covers.first().copied();
+        // After an edit, faces covering a region back to back (a face pulled
+        // flush against another) are inside one solid now: both go.
+        if fill == Fill::Closing {
+            let facing = |f: &FaceId| {
+                model
+                    .face(*f)
+                    .is_some_and(|g| g.plane().normal.dot(frame.normal) > 0.0)
+            };
+            if covers.iter().any(facing) && !covers.iter().all(facing) {
+                continue;
+            }
+        }
         let closes = loop_pairs(&r.outer)
             .any(|(a, b)| edge_of(a, b).is_some_and(|e| new_edges.contains(&e)));
         if parent.is_none() && (fill == Fill::Closing || !closes) {

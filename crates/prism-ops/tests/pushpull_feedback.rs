@@ -137,7 +137,7 @@ fn pushing_a_ring_all_the_way_back_leaves_no_slivers() {
 }
 
 #[test]
-fn two_boxes_of_different_heights_share_one_wall() {
+fn two_boxes_of_different_heights_join() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
     prism_ops::add_rect(&mut m, 2.0, 0.0, 4.0, 2.0, 0.0);
@@ -146,8 +146,48 @@ fn two_boxes_of_different_heights_share_one_wall() {
     let b = prism_ops::face_at(&m, v(3.0, 1.0, 0.0)).expect("b");
     prism_ops::push_pull(&mut m, b, 1.0, false);
     assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
-    // One face between the boxes below the lower top, and the taller box's
-    // wall above it.
-    assert!(prism_ops::face_at(&m, v(2.0, 1.0, 0.5)).is_some());
+    // (Not checked as closed: a rectangle sharing an edge gets no base when
+    // pulled, which is older behaviour.)
+    // The boxes join: no face between them below the lower top, and the
+    // taller box's wall above it.
+    assert!(prism_ops::face_at(&m, v(2.0, 1.0, 0.5)).is_none());
     assert_eq!(normal_at(&m, v(2.0, 1.0, 2.0)), v(1.0, 0.0, 0.0));
+}
+
+fn block(m: &mut Model, x0: f64, y0: f64, x1: f64, y1: f64, h: f64) {
+    prism_ops::add_rect(m, x0, y0, x1, y1, 0.0);
+    let f = prism_ops::face_at(m, v((x0 + x1) / 2.0, (y0 + y1) / 2.0, 0.0)).expect("base");
+    prism_ops::push_pull(m, f, h, false);
+}
+
+/// The owner's three blocks: B's side pulled until it meets A, then B's
+/// front pushed in. Where faces meet back to back they go, as in SketchUp,
+/// so nothing is left inside to show up later as a trench.
+#[test]
+fn pulling_a_face_flush_against_another_joins_the_blocks() {
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 2.0, 2.0, 2.0); // A
+    block(&mut m, 3.0, 0.5, 5.0, 2.5, 1.5); // B, a gap and an offset away
+    let side = prism_ops::face_at(&m, v(3.0, 1.5, 0.75)).expect("B's side");
+    prism_ops::push_pull(&mut m, side, 1.0, false);
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    closed(&m);
+    // Where B meets A there is no face; A's side stays above and beside B.
+    assert!(
+        prism_ops::face_at(&m, v(2.0, 1.0, 0.75)).is_none(),
+        "no face between A and B"
+    );
+    assert_eq!(normal_at(&m, v(2.0, 1.0, 1.75)), v(1.0, 0.0, 0.0));
+    assert_eq!(normal_at(&m, v(2.0, 0.25, 0.75)), v(1.0, 0.0, 0.0));
+
+    // Push B's front in: A's side is uncovered there, and nothing else.
+    let front = prism_ops::face_at(&m, v(4.0, 0.5, 0.75)).expect("B's front");
+    prism_ops::push_pull(&mut m, front, -1.0, false);
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    closed(&m);
+    assert_eq!(normal_at(&m, v(2.0, 1.0, 0.75)), v(1.0, 0.0, 0.0));
+    assert!(
+        prism_ops::face_at(&m, v(2.0, 2.0, 0.75)).is_none(),
+        "nothing left inside"
+    );
 }

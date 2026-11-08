@@ -593,3 +593,13 @@ others on that edge, such as the wall between the boxes, go with it).
   usual glyph and label. With no snap, the cursor on the face's plane sets
   it, as before. The distance is still measured from where you clicked, so
   click on the face's edge to offset exactly to a snapped point.
+
+### Faces pulled flush join the solids (owner feedback, 2026-11-08)
+
+- Pulling a block's side until it meets another block left both faces
+  where they touched, back to back inside one solid; pushing the front in
+  later uncovered them (reversed blue faces, a trench). Now, after an edit,
+  a region covered by faces facing opposite ways gets no face, as in
+  SketchUp, so the blocks join. Two boxes pulled side by side join too.
+- Left over (older behaviour): a rectangle that shares an edge with another
+  rectangle gets no base when pulled up, so the box is open underneath.
