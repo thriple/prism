@@ -3,30 +3,33 @@
 Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
 ## Where the project is
-- **Built, in order:**
-  - Skeleton, Soft Theme, Actions & Keys, Core Model, Viewport, Inference & Drawing.
-  - Edit Tools: part 1 (Push/Pull, Move, Rotate, Scale, Eraser) and part 2 (Offset, Tape Measure, Protractor, guides).
-  - **Files & Formats part 1:** `.prism` files, autosave and recovery, units.
-- **Last commits:** Files & Formats part 1 (`fde4e6f`), then a fix for the one CI failure it had.
-  - Windows CI found that a command which changed nothing could still flip a 0.0 to -0.0, so redo did not match. `Document::run` now puts the model back exactly.
-  - Windows CI also found that zip marked Windows-written entries as DOS, so `.prism` bytes differed by platform; they are always marked Unix now.
-  - CI was green on `main` at 491fc51 and after (2026-11-06, 1:11 pm Guam), and the web page was updated.
-- **Next chunk by the plan's order:** Files & Formats **part 2**:
-  - STL, OBJ, 3MF, glTF and PLY import and export;
-  - drag and drop;
-  - Model Health after import, as far as PLAN 1.13 asks.
-  Its brief is not written yet. Write `docs/briefs/09-files-and-formats-2.md` first (as `docs/research/files-and-formats.md` suggests), push it, then build. After that comes Groups & Components; its research is in `docs/research/groups-and-components.md`.
-- **Built on 2026-11-06:** Files & Formats parts 2 and 3 (mesh import and export, drag and drop, tabs, one running Prism), Edit Tools part 3 (Intersect Faces), the Eraser merging flat faces (DECISIONS #15), and fast Move and Rotate previews of whole bodies. **Next: Groups & Components.** Its brief is not written yet; read `docs/research/groups-and-components.md` and DECISIONS #22 and #23 first, and split it into parts (PLAN 6.0a).
-- **Built on 2026-11-08:** Push/Pull edge by edge, the coplanar rule
-  (#30) and the solid rule (#31) after owner feedback; Offset snapping;
-  **Groups & Components, all 3 parts** (groups; components; hiding,
-  tags, Outliner and Entity Info). Then **Model Health** (both parts).
-  **Next: the owner's choice.** PLAN 6.0's order is least firm after
-  Model Health. The candidates are View Settings, Exact Curves, Basic
-  Materials, Annotation & Sections, Shapes & Placement, Inspector &
-  Features, and the NURBS Spike. Ask before starting one. Read NOTES "Groups & Components"
-  parts 1 to 3 and "The solid rule" first. The owner has not tried groups
-  by hand yet.
+Updated 2026-11-09 (Guam), before a context compaction.
+- **Built, in order:** Skeleton, Soft Theme, Actions & Keys, Core Model,
+  Viewport, Inference & Drawing, Edit Tools (3 parts), Files & Formats
+  (3 parts), Groups & Components (3 parts), Model Health (2 parts). PLAN
+  6.0 has the details; NOTES has a section per part.
+- **This session (2026-11-08), in order:**
+  - Owner feedback on Push/Pull: edge by edge (an edge slides when its
+    other faces run along the push behind the face), the coplanar rule
+    after edits (DECISIONS #30), and the solid rule (DECISIONS #31: Push/
+    Pull on a closed solid is a boolean with the swept block). NOTES "The
+    solid rule" lists the rare random cases that still fail (pinched
+    loops; a push deeper than a neighbouring wall reaches).
+  - Offset snaps like Move.
+  - Groups & Components: briefs 12, 13, 14. Model Health: briefs 15, 16.
+- **State:** `main` = session branch = `16a4648`, CI green, web page
+  updated. Nothing uncommitted.
+- **Next: the owner's choice.** PLAN 6.0's order is least firm after
+  Model Health. Candidates: View Settings, Exact Curves, Basic Materials,
+  Annotation & Sections, Shapes & Placement, Inspector & Features, the
+  NURBS Spike. Ask before starting one.
+- **Waiting on the owner to try by hand:** groups and components (make,
+  select, open, close, explode, copy), the Components, Outliner, Entity
+  Info, Tags and Model Health windows, and the Push/Pull cases they
+  reported. None has been clicked through in the real app.
+- **Owner's standing instructions this session:** push tested work to
+  `main` (everyone on one branch); breaking chunks into parts is welcome;
+  "full auto" was on until Model Health was done.
 - **GPU tests here:** install Mesa's software Vulkan driver first
   (`apt-get install -y mesa-vulkan-drivers`), then run with
   `PRISM_REQUIRE_GPU=1`; without it they skip silently.
