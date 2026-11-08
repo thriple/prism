@@ -152,7 +152,7 @@ impl Session {
         matches!(
             self.tool.as_str(),
             MOVE | ROTATE | SCALE | TAPE | PROTRACTOR
-        )
+        ) || (self.tool == OFFSET && matches!(self.edit, Some(EditOp::Offset { .. })))
     }
 
     /// The selection a tool works on: the selection, or else (Move, Rotate)

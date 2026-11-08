@@ -1266,3 +1266,27 @@ fn dragging_a_pull_over_a_parallel_face_lifts_it_level() {
     assert!((m.face_area(one) - 8.0).abs() < 1e-9);
     assert!(prism_ops::check::problems(&m).is_empty());
 }
+
+/// Offset snaps like the other tools: a corner anywhere in the model, put
+/// onto the face's plane, sets the distance (owner feedback, 2026-11-08).
+#[test]
+fn offset_snaps_to_a_corner_off_its_plane() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    // A box beside it, so its top corner is above the ground.
+    rect_on_ground(&mut d, 6.0, 2.0, 7.0, 3.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(6.5, 2.5, 0.0));
+    d.typed("1");
+    d.tool(OFFSET);
+    d.click(DVec3::new(4.0, 1.0, 0.0)); // on the square's right edge
+    d.hover(DVec3::new(6.0, 2.0, 1.0));
+    let i = d.s.inference().expect("an inference while offsetting");
+    assert_eq!(i.kind, prism_infer::Kind::Endpoint);
+    let grown =
+        d.s.display_scene()
+            .vertices
+            .iter()
+            .any(|(_, p)| p.distance(DVec3::new(6.0, 6.0, 0.0)) < 1e-6);
+    assert!(grown, "offset 2 m out, to the corner's x");
+}

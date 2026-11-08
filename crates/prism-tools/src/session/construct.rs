@@ -110,7 +110,15 @@ impl Session {
             at,
         }) = &mut self.edit
         {
-            let Some(p) = plane_point(view, s, *origin, *n) else {
+            // A snap anywhere in the model (a point, an edge, a guide), put
+            // onto the face's plane, sets the distance; otherwise the cursor
+            // on the plane does.
+            let snapped = self
+                .inference
+                .as_ref()
+                .filter(|i| i.kind.is_point() || matches!(i.kind, Kind::OnEdge | Kind::Guide))
+                .map(|i| i.point - *n * (i.point - *origin).dot(*n));
+            let Some(p) = snapped.or_else(|| plane_point(view, s, *origin, *n)) else {
                 return;
             };
             let Some(now) = offset::signed_distance(self.doc.model(), *face, p) else {

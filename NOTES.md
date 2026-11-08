@@ -584,3 +584,12 @@ others on that edge, such as the wall between the boxes, go with it).
 - **Left over:** a face with an opening that the edit did not close stays
   open (an open box whose top is pushed keeps its opening). The rule does
   not yet run after Offset or Import.
+
+### Offset snaps (owner feedback, 2026-11-08)
+
+- Offset now runs the inference engine while its drag is in progress, as
+  Move does: an endpoint, midpoint, edge, intersection or guide anywhere in
+  the model is put onto the face's plane and sets the distance, with the
+  usual glyph and label. With no snap, the cursor on the face's plane sets
+  it, as before. The distance is still measured from where you clicked, so
+  click on the face's edge to offset exactly to a snapped point.
