@@ -74,6 +74,8 @@ struct FaceVertex {
     lo: [f32; 3],
     normal: [f32; 3],
     face: u32,
+    /// 1 for faces outside the open group, drawn faded (PLAN 1.2).
+    faded: u32,
 }
 
 /// One line segment: two ends, the normals of its faces, colour and shape.
@@ -397,7 +399,7 @@ impl Renderer {
         let face_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<FaceVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Uint32],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Uint32],
         };
         let line_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineInstance>() as u64,
@@ -779,6 +781,7 @@ impl Renderer {
                     lo,
                     normal: n.as_vec3().to_array(),
                     face: f + 1,
+                    faded: u32::from(scene.faces[*f as usize].faded),
                 }
             })
             .collect();
@@ -795,8 +798,13 @@ impl Renderer {
             .edges
             .iter()
             .map(|e| {
-                let mut l =
-                    LineInstance::new(e.a, e.b, style.edge, style.edge_width).flags(MODEL_EDGE);
+                // Edges outside the open group are drawn faint.
+                let color = if e.faded {
+                    style.edge.with_alpha(style.faded_alpha)
+                } else {
+                    style.edge
+                };
+                let mut l = LineInstance::new(e.a, e.b, color, style.edge_width).flags(MODEL_EDGE);
                 if let Some(n) = e.normals[0] {
                     l.n1 = n.as_vec3().to_array();
                     l.flags |= HAS_N1;

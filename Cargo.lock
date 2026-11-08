@@ -2062,6 +2062,7 @@ dependencies = [
  "prism-geom",
  "prism-math",
  "prism-ops",
+ "prism-tools",
  "prism-topo",
  "prism-view",
  "serde_json",

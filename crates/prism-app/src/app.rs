@@ -307,6 +307,7 @@ impl App {
                 can_undo: viewport.can_undo(),
                 can_redo: viewport.can_redo(),
                 has_selection: !viewport.counts().is_empty(),
+                has_groups: viewport.counts().groups > 0,
                 recent: chrome.recent.len(),
             };
             let status = viewport.status();

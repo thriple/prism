@@ -232,9 +232,11 @@ impl Session {
                 if let Some(EditOp::Push { .. }) = &self.edit {
                     self.push_drag(s, view);
                 } else {
+                    // Only the open group's own faces can be pulled.
                     let h = self
                         .scene
                         .ray_face(view.ray(s).0, view.ray(s).1)
+                        .filter(|(f, _)| !self.scene.face_owner.contains_key(f))
                         .map(|(f, t)| prism_view::Picked {
                             hit: Hit::Face(f),
                             point: view.ray(s).0 + view.ray(s).1 * t,
@@ -1418,7 +1420,13 @@ fn edge_pick(
 ) -> Option<prism_view::Picked> {
     let (o, d) = view.ray(s);
     let mut best: Option<(f64, EdgeId, DVec3)> = None;
-    for e in &scene.edges {
+    // Edges of closed groups are not erased one by one (Delete erases a
+    // group whole).
+    for e in scene
+        .edges
+        .iter()
+        .filter(|e| !scene.edge_owner.contains_key(&e.id))
+    {
         let u = e.b - e.a;
         let Some(t) = along_line(o, d, e.a, u) else {
             continue;

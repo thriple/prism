@@ -334,3 +334,22 @@ fn undo_and_redo_of_every_group_step_is_exact() {
     let again = Document::replay(steps.iter());
     assert_eq!(again.assembly(), &end, "the log replays to the same groups");
 }
+
+#[test]
+fn the_flattened_model_has_every_group_placed() {
+    let mut d = Document::new();
+    boxed(&mut d, v(0.0, 0.0, 0.0), 1.0, 1.0);
+    let g = group_all(&mut d);
+    d.run(Command::CopyInstances {
+        instances: [g].into(),
+        step: Change::Translate {
+            by: v(3.0, 0.0, 0.0),
+        },
+        count: 2,
+    });
+    boxed(&mut d, v(0.0, 4.0, 0.0), 1.0, 1.0);
+    let m = d.assembly().flattened();
+    assert_eq!(m.face_count(), 4 * 6, "three groups and a loose box");
+    let (_, hi) = m.bbox().expect("box");
+    assert!((hi.x - 7.0).abs() < 1e-9, "the last copy is placed: {hi:?}");
+}

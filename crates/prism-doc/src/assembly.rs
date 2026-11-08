@@ -213,6 +213,20 @@ impl Assembly {
         out
     }
 
+    /// Everything as one model in world coordinates, groups placed and
+    /// added beside the root's geometry, not joined (mesh export).
+    pub fn flattened(&self) -> Model {
+        let mut out = self.root().model.clone();
+        for p in self.placed() {
+            if let Some(d) = self.def(p.def) {
+                let mut m = d.model.clone();
+                transform::affine(&mut m, &p.world);
+                out.append(&m);
+            }
+        }
+        out
+    }
+
     /// Whether there are any groups.
     pub fn has_instances(&self) -> bool {
         !self.root().instances.is_empty()

@@ -135,10 +135,14 @@ impl Session {
             self.update_preview();
         } else {
             let (o, d) = view.ray(s);
-            let h = self.scene.ray_face(o, d).map(|(f, t)| prism_view::Picked {
-                hit: Hit::Face(f),
-                point: o + d * t,
-            });
+            let h = self
+                .scene
+                .ray_face(o, d)
+                .filter(|(f, _)| !self.scene.face_owner.contains_key(f))
+                .map(|(f, t)| prism_view::Picked {
+                    hit: Hit::Face(f),
+                    point: o + d * t,
+                });
             self.set_hover_pick(h);
         }
     }

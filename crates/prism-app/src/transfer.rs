@@ -245,7 +245,13 @@ impl Transfer {
                 y_up: e.y_up,
             };
             let faces = (e.selection_only && has_selection).then(|| s.selection().faces.clone());
-            let bytes = mesh::export(s.model(), faces.as_ref(), &o);
+            // With groups, the whole model is exported, groups placed
+            // (selection-only export works on loose geometry at the root).
+            let bytes = if faces.is_none() && s.document().assembly().has_instances() {
+                mesh::export(&s.document().assembly().flattened(), None, &o)
+            } else {
+                mesh::export(s.model(), faces.as_ref(), &o)
+            };
             let name = format!("Prism model.{}", f.extension());
             match crate::mesh_files::save(&name, f.extension(), &bytes) {
                 Ok(Some(to)) => chrome.status_note(format!("Exported to {to}")),

@@ -658,3 +658,71 @@ bring it down. Small models are instant.
 - Behaviour change: pushing a window out through the back of a box now
   cuts a tunnel by itself. Before, the tube stuck out and Intersect Faces
   was needed.
+
+## Groups & Components (part 1: groups)
+
+Brief: `docs/briefs/12-groups-and-components.md`.
+
+**What was built**
+- `prism-doc`: an `Assembly` of definitions, each a `Model` in its own
+  coordinates, placed by instances (`DAffine3`); the root is a definition
+  too. Definitions sit behind `Arc`, so undo steps share what they did
+  not change (tested with `Arc::ptr_eq`).
+- Commands: `MakeGroup`, `Explode`, `Place` (move, rotate, scale groups),
+  `CopyInstances` (each copy gets its own definition, DECISIONS #22),
+  `EraseInstances`, `Batch` (geometry and groups in one step), and `In`
+  (a command inside an open group). Because the context is in the
+  command, the log, autosave journals and replay need no change.
+- Explode places the group's geometry in its parent, welds what lands on
+  existing points, runs the coplanar rule (#30) and keeps one of any
+  repeated faces. The PLAN 1.9 worked example passes, with boxes, at three
+  scales and turned off the axes.
+- `.prism` schema 2: each group's model is its own entry
+  (`geometry/defs/<id>.bin`) and `groups.json` holds the instances, both
+  only when there are groups. Schema 1 files open unchanged
+  (`docs/acceptance/files/schema-1/`); new goldens include `groups.prism`.
+- Session: the open group's model is worked on in world coordinates with
+  its own ids, so every tool works inside a group unchanged, and commands
+  are put into the group's coordinates when they run (`Command::to_local`).
+  Everything else is merged into the scene with ids from 2^31 up and an
+  owner (`Scene::merge`), so inference snaps to all of it.
+- Select: a click picks a group whole; Shift and Ctrl work as for
+  geometry; box select takes groups (window: every edge inside; crossing:
+  touched). Double-click or Enter opens a group; Esc (last in its order)
+  or a click on geometry outside or on empty space closes it, one level at
+  a time, leaving it selected. Undo of an edit inside a group opens it.
+- Move, Rotate and Scale take the selected groups along (or the group
+  under the cursor), with Ctrl copies; previews show the groups moving.
+  Delete erases groups. Push/Pull, Offset and the Eraser ignore closed
+  groups.
+- Drawing: outside the open group, faces are washed out and edges faint;
+  a dashed box shows the open group and a blue box each selected group.
+- Menus: Make Group (G) and Explode are active (Explode needs a group
+  selected); the right-click heading counts groups.
+- Mesh export writes every group, placed.
+
+**Tests:** `prism-doc/tests/groups.rs` (isolation both ways, nesting,
+copies independent, the overlap case, exact undo, replay, flattening),
+session scenarios in `prism-tools/tests/session.rs`, the schema 2 goldens,
+and a screenshot of an open group (`an_open_group_fades_the_rest`).
+
+**Decisions and defaults used**
+- A group's origin is the low corner of what went in, with the parent's
+  axes, so its coordinates stay near zero.
+- Clicking empty space closes the open group on release (so a box drag
+  inside the group still works).
+- Scale inside a rotated group works along the group's own axes, as in
+  SketchUp.
+
+**Leftovers**
+- Explode does not select the exploded geometry yet.
+- Arrays typed after a copy (x3, /4) repeat only loose geometry, not
+  groups.
+- Drawing is flattened: each group's scene is rebuilt from its model on
+  every change. GPU instancing comes with components (part 2).
+- Recorded sessions store the root model only; a recording that makes
+  groups replays, but its saved result compares the root.
+- The Eraser does not erase a closed group by dragging over it (Delete
+  does).
+- Not tried by hand: the native app and the web page with groups. The
+  logic is covered by session tests and the screenshot test.

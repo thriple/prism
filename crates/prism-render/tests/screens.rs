@@ -522,3 +522,88 @@ fn faces_hide_guides() {
         "the part inside the cube is hidden: {tested} of {on_top}"
     );
 }
+
+/// An open group (PLAN 1.2): the rest of the model is drawn faded, and a
+/// dashed box shows the group.
+#[test]
+fn an_open_group_fades_the_rest() {
+    use prism_doc::{Command, Document};
+    let Some((_turn, mut g)) = gpu() else { return };
+    let style = Style::default();
+    let mut doc = Document::new();
+    for x in [0.0, 3.0] {
+        doc.run(Command::Rect {
+            x0: x,
+            y0: 0.0,
+            x1: x + 2.0,
+            y1: 2.0,
+            z: 0.0,
+        });
+        let f = prism_ops::face_at(doc.model(), DVec3::new(x + 1.0, 1.0, 0.0)).expect("base");
+        let up = doc.model().face(f).expect("f").plane().normal.z > 0.0;
+        doc.run(Command::PushPull {
+            face: f,
+            distance: if up { 2.0 } else { -2.0 },
+            new_loop: false,
+        });
+    }
+    // The left box becomes a group; the right one stays loose.
+    let left = prism_ops::Selection {
+        faces: doc
+            .model()
+            .faces()
+            .filter(|(id, _)| doc.model().face_area(*id) > 0.0)
+            .filter(|(_, f)| doc.model().points(&f.outer).iter().all(|p| p.x < 2.5))
+            .map(|(id, _)| id)
+            .collect(),
+        ..Default::default()
+    };
+    let id = doc.assembly().next_instance();
+    doc.run(Command::MakeGroup {
+        selection: left,
+        instances: Default::default(),
+    });
+    let mut s = prism_tools::Session::new(doc);
+    s.open_group(id);
+    let scene = s.display_scene().clone();
+    assert!(
+        scene.faces.iter().any(|f| f.faded),
+        "the loose box is faded"
+    );
+    let cam = Camera {
+        eye: DVec3::new(2.5, -9.0, 6.0),
+        target: DVec3::new(2.5, 1.0, 1.0),
+    };
+    g.renderer.resize(&g.device, 640, 400);
+    g.renderer.set_scene(&g.device, &scene, &style);
+    g.renderer
+        .set_highlight(&g.device, &scene, &Highlight::default(), &style);
+    g.renderer.set_overlay(&g.device, &s.overlay());
+    let img = g.draw(cam, 640, 400, 1.0, &style, scene.bounds);
+    img.save("open-group");
+    // The faded box is lighter than the open group's faces.
+    let lum = |x: u32, y: u32| {
+        let p = img.at(x, y);
+        u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2])
+    };
+    let open = (cam_px(&cam, DVec3::new(1.0, 0.0, 1.0)), "open group");
+    let faded = (cam_px(&cam, DVec3::new(4.0, 0.0, 1.0)), "faded box");
+    assert!(
+        lum(faded.0.0, faded.0.1) > lum(open.0.0, open.0.1) + 30,
+        "the box outside is faded: {} vs {}",
+        lum(faded.0.0, faded.0.1),
+        lum(open.0.0, open.0.1)
+    );
+    let o = style.open_box.0;
+    assert!(
+        img.count_near([o[0], o[1], o[2]], 12) > 40,
+        "the dashed box is drawn"
+    );
+}
+
+/// Where a point lands in a 640 x 400 picture from `cam`.
+fn cam_px(cam: &Camera, p: DVec3) -> (u32, u32) {
+    let view = prism_render::View::new(cam, 640.0, 400.0);
+    let (q, _) = view.to_screen(p).expect("in view");
+    (q.x as u32, q.y as u32)
+}

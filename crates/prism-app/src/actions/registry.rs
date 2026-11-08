@@ -26,6 +26,8 @@ pub enum When {
     CanUndo,
     CanRedo,
     HasSelection,
+    /// Groups are selected (Explode).
+    HasGroups,
     /// A recent-file slot: enabled while that many files are remembered.
     Recent(usize),
     /// A label only ("No recent files").
@@ -86,6 +88,8 @@ pub struct Context {
     pub can_undo: bool,
     pub can_redo: bool,
     pub has_selection: bool,
+    /// Groups are selected.
+    pub has_groups: bool,
     /// How many recent files are remembered.
     pub recent: usize,
 }
@@ -131,6 +135,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "exp.gltf"
         || id == "isect.model"
         || id == "isect.sel"
+        // Groups & Components part 1: handled by the session.
+        || id == "edit.group"
+        || id == "edit.explode"
         || id == "win.nexttab"
         || id == "win.prevtab"
     {
@@ -204,7 +211,8 @@ impl Registry {
                     when: match r.id.strip_prefix("file.recent") {
                         Some("") => When::Never,
                         Some(n) => n.parse().map_or(When::Always, When::Recent),
-                        None if r.id == "isect.sel" => When::HasSelection,
+                        None if r.id == "isect.sel" || r.id == "edit.group" => When::HasSelection,
+                        None if r.id == "edit.explode" => When::HasGroups,
                         None => when_of(r.when),
                     },
                     check: if run == Run::Tool {
@@ -239,6 +247,7 @@ impl Registry {
                     When::CanUndo => ctx.can_undo,
                     When::CanRedo => ctx.can_redo,
                     When::HasSelection => ctx.has_selection,
+                    When::HasGroups => ctx.has_groups,
                     When::Recent(n) => n <= ctx.recent,
                     When::Never => false,
                 }
@@ -255,6 +264,7 @@ impl Registry {
             When::CanUndo if !ctx.can_undo => Some("Nothing to undo"),
             When::CanRedo if !ctx.can_redo => Some("Nothing to redo"),
             When::HasSelection if !ctx.has_selection => Some("Select something first"),
+            When::HasGroups if !ctx.has_groups => Some("Select a group first"),
             When::Recent(n) if n > ctx.recent => Some("No file here yet"),
             When::Never => Some("Files you open or save are listed here"),
             _ => None,
@@ -318,16 +328,18 @@ pub struct Selection {
     pub faces: usize,
     pub edges: usize,
     pub points: usize,
+    pub groups: usize,
 }
 
 impl Selection {
     pub fn is_empty(&self) -> bool {
-        self.faces + self.edges + self.points == 0
+        self.faces + self.edges + self.points + self.groups == 0
     }
 
     /// The menu's heading: "Empty space", "1 face", "2 faces, 3 edges".
     pub fn label(&self) -> String {
         let parts: Vec<String> = [
+            (self.groups, "group"),
             (self.faces, "face"),
             (self.edges, "edge"),
             (self.points, "point"),
@@ -516,6 +528,7 @@ mod tests {
                 faces: 1,
                 edges: 2,
                 points: 0,
+                groups: 1,
             },
         ] {
             ids_in(&context_menu(sel), &mut ids);
@@ -593,7 +606,8 @@ mod tests {
             Selection {
                 faces: 1,
                 edges: 3,
-                points: 0
+                points: 0,
+                groups: 0,
             }
             .label(),
             "1 face, 3 edges"

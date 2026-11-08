@@ -1588,6 +1588,7 @@ impl Session {
     /// What the tools want drawn over the model.
     pub fn overlay(&self) -> Overlay {
         let mut o = Overlay::default();
+        self.group_boxes(&mut o);
         let fb = &self.style.feedback;
         let view = self.view();
         if let Some(b) = &self.boxing

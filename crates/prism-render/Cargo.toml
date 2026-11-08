@@ -21,3 +21,4 @@ pollster = "1.0.1"
 serde_json.workspace = true
 prism-geom.workspace = true
 prism-doc.workspace = true
+prism-tools.workspace = true

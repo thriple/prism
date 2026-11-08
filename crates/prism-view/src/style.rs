@@ -60,6 +60,11 @@ pub struct Style {
     pub diffuse: f32,
     pub edge: Rgba,
     pub edge_width: f32,
+    /// How opaque edges outside the open group are (0 to 255).
+    pub faded_alpha: u8,
+    /// The box around the open group: colour, width and dash (points).
+    pub open_box: Rgba,
+    pub open_box_dash: [f32; 2],
     /// 0 turns the profile (silhouette) lines off.
     pub profile_width: f32,
     pub hover: Rgba,
@@ -207,6 +212,9 @@ impl Default for Style {
             diffuse: 0.34,
             edge: Rgba::rgb(0x16, 0x18, 0x1c),
             edge_width: 1.5,
+            faded_alpha: 70,
+            open_box: Rgba::rgb(0x55, 0x5b, 0x66),
+            open_box_dash: [5.0, 4.0],
             profile_width: 0.0,
             hover: Rgba::rgb(0xff, 0x8a, 0x00),
             hover_face_alpha: 0.24,

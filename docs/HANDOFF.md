@@ -17,6 +17,15 @@ Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.m
   - Model Health after import, as far as PLAN 1.13 asks.
   Its brief is not written yet. Write `docs/briefs/09-files-and-formats-2.md` first (as `docs/research/files-and-formats.md` suggests), push it, then build. After that comes Groups & Components; its research is in `docs/research/groups-and-components.md`.
 - **Built on 2026-11-06:** Files & Formats parts 2 and 3 (mesh import and export, drag and drop, tabs, one running Prism), Edit Tools part 3 (Intersect Faces), the Eraser merging flat faces (DECISIONS #15), and fast Move and Rotate previews of whole bodies. **Next: Groups & Components.** Its brief is not written yet; read `docs/research/groups-and-components.md` and DECISIONS #22 and #23 first, and split it into parts (PLAN 6.0a).
+- **Built on 2026-11-08:** Push/Pull edge by edge, the coplanar rule
+  (#30) and the solid rule (#31) after owner feedback; Offset snapping;
+  **Groups & Components part 1 (groups)**. **Next: part 2, components**
+  (brief to write: linked instances, Make Unique, Flip Along on an
+  instance, GPU instancing, the Components window). Read NOTES "Groups &
+  Components (part 1)" and "The solid rule" first.
+- **GPU tests here:** install Mesa's software Vulkan driver first
+  (`apt-get install -y mesa-vulkan-drivers`), then run with
+  `PRISM_REQUIRE_GPU=1`; without it they skip silently.
 - **Platform code can be checked here:** `cargo clippy -p prism-app --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` both run in this container, without a Mac or a Windows machine.
 - **Waiting on the owner (part 3):** try double-clicking a `.prism` file on the Mac, and "Open With > Prism" on Windows, while Prism runs.
 - **Order after part 2:** Edit Tools part 3 (Intersect Faces and snapping to where faces cross, connected or not, DECISIONS #29, asked for by the owner after testing), then Files & Formats part 3 (tabs), then Groups & Components.

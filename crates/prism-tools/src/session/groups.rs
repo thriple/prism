@@ -191,7 +191,7 @@ impl Session {
     }
 
     /// Open a group inside the open one (double-click, Enter).
-    pub(super) fn open_group(&mut self, id: InstanceId) {
+    pub fn open_group(&mut self, id: InstanceId) {
         self.cancel();
         self.ctx.push(id);
         self.groups.clear();
@@ -349,6 +349,43 @@ impl Session {
             }
         }
         out
+    }
+
+    /// The blue box of each selected group, and the dashed box of the open
+    /// group (PLAN 1.2). Faces in front hide them, as they hide edges.
+    pub(super) fn group_boxes(&self, o: &mut prism_view::overlay::Overlay) {
+        let box_lines = |c: [DVec3; 8], color, width, dash| {
+            (0..8usize).flat_map(move |i| {
+                [1usize, 2, 4]
+                    .into_iter()
+                    .filter(move |b| i & b == 0)
+                    .map(move |b| prism_view::overlay::Line {
+                        a: c[i],
+                        b: c[i | b],
+                        color,
+                        width,
+                        dash,
+                    })
+            })
+        };
+        if let Some(c) = self.open_box() {
+            o.tested.extend(box_lines(
+                c,
+                self.style.open_box,
+                self.style.edge_width,
+                self.style.open_box_dash,
+            ));
+        }
+        for g in &self.groups {
+            if let Some(c) = self.group_box(*g) {
+                o.tested.extend(box_lines(
+                    c,
+                    self.style.selected,
+                    self.style.highlight_width,
+                    [0.0, 0.0],
+                ));
+            }
+        }
     }
 
     /// With nothing selected, Move, Rotate and Scale take the group under

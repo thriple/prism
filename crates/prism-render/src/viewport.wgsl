@@ -94,6 +94,7 @@ struct FaceIn {
     @location(1) lo: vec3<f32>,
     @location(2) normal: vec3<f32>,
     @location(3) face: u32,
+    @location(4) faded: u32,
 };
 
 struct FaceOut {
@@ -101,6 +102,7 @@ struct FaceOut {
     @builtin(position) @invariant pos: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) @interpolate(flat) face: u32,
+    @location(2) @interpolate(flat) faded: u32,
 };
 
 @vertex
@@ -109,6 +111,7 @@ fn face_vs(v: FaceIn) -> FaceOut {
     o.pos = g.view_proj * vec4<f32>(rel(v.hi, v.lo), 1.0);
     o.normal = v.normal;
     o.face = v.face;
+    o.faded = v.faded;
     return o;
 }
 
@@ -121,7 +124,13 @@ fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         base = g.back;
     }
     let sh = g.light.w + g.params.x * max(0.0, dot(n, g.light.xyz));
-    return vec4<f32>(base.rgb * sh, 1.0);
+    var c = base.rgb * sh;
+    // Outside the open group: washed out toward white, so the group stands
+    // out (PLAN 1.2).
+    if (in.faded != 0u) {
+        c = mix(c, vec3<f32>(1.0, 1.0, 1.0), 0.6);
+    }
+    return vec4<f32>(c, 1.0);
 }
 
 // A second pass over the faces, with the depth test "equal", writes which

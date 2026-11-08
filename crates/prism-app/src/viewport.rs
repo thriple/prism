@@ -65,6 +65,7 @@ impl Viewport {
             faces: s.faces.len(),
             edges: s.edges.len(),
             points: s.vertices.len(),
+            groups: self.session.selected_groups().len(),
         }
     }
 
