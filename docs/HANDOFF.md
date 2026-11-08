@@ -1,6 +1,6 @@
 # Handoff for the next Claude Code session
 
-Written 2026-11-06 (Guam). The owner returns in about three days. Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
+Written 2026-11-06, updated 2026-11-09 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
 ## Where the project is
 Updated 2026-11-09 (Guam), before a context compaction.
@@ -34,13 +34,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   (`apt-get install -y mesa-vulkan-drivers`), then run with
   `PRISM_REQUIRE_GPU=1`; without it they skip silently.
 - **Platform code can be checked here:** `cargo clippy -p prism-app --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` both run in this container, without a Mac or a Windows machine.
-- **Waiting on the owner (part 3):** try double-clicking a `.prism` file on the Mac, and "Open With > Prism" on Windows, while Prism runs.
-- **Order after part 2:** Edit Tools part 3 (Intersect Faces and snapping to where faces cross, connected or not, DECISIONS #29, asked for by the owner after testing), then Files & Formats part 3 (tabs), then Groups & Components.
 - **Risks ahead:** `docs/research/risks.md` (checked 2026-11-06).
-- **Read before part 2:**
-  - `docs/research/files-and-formats.md`: crates and licences already checked.
-  - `NOTES.md` "Files & Formats (part 1)": what is built, and what the owner has not tried by hand yet.
-  - DECISIONS #24 and #25: open, with defaults. #25 is decided: write 3MF ourselves with `zip` and `quick-xml` (the owner chose this over adding 0BSD).
 
 ## How the owner works
 - **Times:** the owner is in Guam (UTC+10). Give times in Guam time.
@@ -75,9 +69,11 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **GPU tests:** they run with Mesa's software renderer in CI (`PRISM_REQUIRE_GPU=1`), and locally too.
 
 ## Waiting on the owner
-- **Try by hand:**
+- **Try by hand (older):**
   - native Save, Open and Save As dialogs on Windows and macOS;
   - "Save changes?" when closing the window;
   - recovery after killing the app;
-  - saving in place in Chrome.
-- **Decided after the handoff was first written:** #24 and #27. Double-click opens in the running Prism, in a new tab; tabs come as Files & Formats part 3, after part 2.
+  - saving in place in Chrome;
+  - double-clicking a `.prism` file on the Mac, and "Open With > Prism" on
+    Windows, while Prism runs.
+- **Try by hand (2026-11-08):** see "Where the project is" above.
