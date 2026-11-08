@@ -232,3 +232,76 @@ fn erasing_a_vertical_edge_between_two_lined_up_walls_merges_them() {
         assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
     }
 }
+
+/// A small box set flat against a tall one is one shape with it: moving
+/// its top still reshapes the shared wall cleanly, and the tall box's
+/// outer corner stays where it was.
+#[test]
+fn moving_the_top_of_a_box_set_against_a_wall() {
+    let mut m = Model::new();
+    let pull = |m: &mut Model, at: DVec3, h: f64| {
+        let f = prism_ops::face_at(m, at).expect("base");
+        let up = m.face(f).expect("f").plane().normal.z > 0.0;
+        prism_ops::push_pull(m, f, if up { h } else { -h }, false);
+    };
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+    pull(&mut m, DVec3::new(1.0, 1.0, 0.0), 3.0);
+    prism_ops::add_rect(&mut m, 2.0, 0.0, 3.0, 1.0, 0.0);
+    pull(&mut m, DVec3::new(2.5, 0.5, 0.0), 1.0);
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    let top: BTreeSet<VertexId> = m
+        .vertices()
+        .filter(|(_, p)| (p.z - 1.0).abs() < 1e-9 && p.x > 1.5)
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(top.len(), 4);
+    transform::translate(&mut m, &top, DVec3::new(0.0, -0.2, 0.0));
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    // The tall box's wall at x = 2 still has its straight corner edge: no
+    // face there reaches out to y = -0.2.
+    for (_, f) in m.faces() {
+        let pts = m.points(&f.outer);
+        if f.plane().normal.x.abs() > 0.99 && pts.iter().any(|p| p.z > 2.0) {
+            assert!(
+                pts.iter().all(|p| p.y > -1e-9),
+                "the tall wall bent: {pts:?}"
+            );
+        }
+    }
+}
+
+/// A box touching a tall one only along a corner line: moving its top
+/// leaves the tall box's corner edge straight, as its corner only split
+/// that edge (owner feedback, 2026-11-09: the edge bent and left slivers
+/// and a reversed triangle).
+#[test]
+fn moving_a_box_top_leaves_a_corner_neighbours_edge_straight() {
+    let mut m = Model::new();
+    let pull = |m: &mut Model, at: DVec3, h: f64| {
+        let f = prism_ops::face_at(m, at).expect("base");
+        let up = m.face(f).expect("f").plane().normal.z > 0.0;
+        prism_ops::push_pull(m, f, if up { h } else { -h }, false);
+    };
+    prism_ops::add_rect(&mut m, 3.0, 1.0, 4.0, 2.0, 0.0);
+    pull(&mut m, DVec3::new(3.5, 1.5, 0.0), 3.0);
+    prism_ops::add_rect(&mut m, 2.0, 0.0, 3.0, 1.0, 0.0);
+    pull(&mut m, DVec3::new(2.5, 0.5, 0.0), 1.0);
+    let top: BTreeSet<VertexId> = m
+        .vertices()
+        .filter(|(_, p)| (p.z - 1.0).abs() < 1e-9 && p.x < 3.0 + 1e-9 && p.y < 1.0 + 1e-9)
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(top.len(), 4);
+    transform::translate(&mut m, &top, DVec3::new(-0.2, 0.0, 0.0));
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    // Every face of the tall box stays within its own footprint.
+    for (_, f) in m.faces() {
+        let pts = m.points(&f.outer);
+        if pts.iter().any(|p| p.z > 2.0) {
+            assert!(
+                pts.iter().all(|p| p.x > 3.0 - 1e-9 && p.y > 1.0 - 1e-9),
+                "the tall box bent: {pts:?}"
+            );
+        }
+    }
+}

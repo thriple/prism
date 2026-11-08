@@ -90,6 +90,7 @@ pub(crate) fn translate_few(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3
 }
 
 fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, f: impl Fn(DVec3) -> DVec3) {
+    keep_straight(model, vs);
     for v in vs {
         let p = model.vertex(*v);
         model.set_vertex(*v, f(p));
@@ -363,4 +364,100 @@ pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
             f.surface = Surface::Plane(plane);
         }
     }
+}
+
+/// A moving point that only splits a straight edge of a face that stays
+/// put leaves that edge straight: the face keeps a copy of the point where
+/// it was, and only faces that turn a corner at the point follow it (owner
+/// feedback, 2026-11-09: moving the top of a box set in a corner bent the
+/// neighbours' corner edges). A point that is straight in every face it
+/// is in (a point picked on an edge) still bends the edge, as before, and
+/// so does one where the turning faces use both halves of the edge.
+fn keep_straight(model: &mut Model, vs: &BTreeSet<VertexId>) {
+    let tol = model.tol();
+    // Faces running straight through each moving point (with the points on
+    // either side), and the points next to it in faces that turn there.
+    let mut straight: BTreeMap<VertexId, Vec<(FaceId, VertexId, VertexId)>> = BTreeMap::new();
+    let mut corner: BTreeMap<VertexId, BTreeSet<VertexId>> = BTreeMap::new();
+    for (id, face) in model.faces() {
+        for l in face.loops() {
+            let n = l.len();
+            for i in 0..n {
+                let v = l[i];
+                if !vs.contains(&v) {
+                    continue;
+                }
+                let (a, b) = (l[(i + n - 1) % n], l[(i + 1) % n]);
+                let through = !vs.contains(&a)
+                    && !vs.contains(&b)
+                    && crate::sticky::on_segment_inside(
+                        model.vertex(v),
+                        model.vertex(a),
+                        model.vertex(b),
+                        &tol,
+                    )
+                    .is_some();
+                if through {
+                    straight.entry(v).or_default().push((id, a, b));
+                } else {
+                    corner.entry(v).or_default().extend([a, b]);
+                }
+            }
+        }
+    }
+    for (v, faces) in straight {
+        // Only where the turning faces use at most one half of the straight
+        // edge: if they use both, the edge is part of what moves.
+        let Some(turning) = corner.get(&v) else {
+            continue;
+        };
+        if faces
+            .iter()
+            .any(|(_, a, b)| turning.contains(a) && turning.contains(b))
+        {
+            continue;
+        }
+        let faces: Vec<FaceId> = faces.iter().map(|f| f.0).collect();
+        let w = model.add_vertex(model.vertex(v));
+        let mut pairs = Vec::new();
+        for id in faces {
+            let Some(face) = model.face_mut(id) else {
+                continue;
+            };
+            for l in std::iter::once(&mut face.outer).chain(face.holes.iter_mut()) {
+                let n = l.len();
+                for i in 0..n {
+                    if l[i] == v {
+                        l[i] = w;
+                        pairs.push((l[(i + n - 1) % n], l[(i + 1) % n]));
+                    }
+                }
+            }
+        }
+        for (a, b) in pairs {
+            for x in [a, b] {
+                model.add_edge(x, w);
+                // The old edge goes unless a face that follows still runs
+                // along it.
+                if let Some(e) = model.edge_between(x, v)
+                    && !runs_along(model, x, v)
+                {
+                    model.remove_edge(e);
+                }
+            }
+        }
+    }
+}
+
+/// Whether some face's loop has `a` and `b` next to each other.
+fn runs_along(model: &Model, a: VertexId, b: VertexId) -> bool {
+    model.faces().any(|(_, f)| {
+        f.loops().any(|l| {
+            let n = l.len();
+            (0..n).any(|i| {
+                let (p, q) = (l[i], l[(i + 1) % n]);
+                (p, q) == (a, b) || (p, q) == (b, a)
+            })
+        })
+    })
 }

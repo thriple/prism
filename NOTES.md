@@ -896,3 +896,21 @@ the export note (prism-ops).
   `Command::Duplicate` (a copy in place, never used by the app) left
   coincident points, and the next Offset multiplied faces until memory ran
   out. The command is removed; Copy welds its copies and covers the need.
+
+## Owner feedback, 2026-11-09 (recorded session: corner tangents)
+- **Moving the top of a box bent a neighbour's corner edge.** In the
+  recorded session a small box touched two taller blocks only along their
+  vertical corner lines ("corner tangents"). Its top corners split those
+  corner edges, so Move took the split points along and bent the taller
+  blocks' edges: a sliver, a reversed triangle and two overlapping faces.
+  Rule now (`transform::keep_straight`, used by Move, Rotate, Scale and
+  Copy): a moving point that only splits a straight edge of a face that
+  stays put leaves that edge straight; the face keeps a copy of the point,
+  and only faces that turn a corner there follow it. A point that is
+  straight in every face (a point picked on an edge) still bends the edge,
+  and so does a point where the following faces use both halves of the
+  edge (a box set flat against a wall is one shape with it).
+- The rest of the session replays clean: no point sits inside an edge it
+  does not split, and Model Health finds nothing at any step before the
+  Move. "Corner lines not redrawn" did not show in the model, so it may be
+  a drawing or preview problem; it needs the step it happened on.
