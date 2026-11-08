@@ -914,3 +914,17 @@ the export note (prism-ops).
   does not split, and Model Health finds nothing at any step before the
   Move. "Corner lines not redrawn" did not show in the model, so it may be
   a drawing or preview problem; it needs the step it happened on.
+
+## Owner feedback, 2026-11-09 (corner line, profiles)
+- **Shared corner line z-fought:** two boxes touching along a corner line
+  share one edge with four faces (two walls of each). The scene kept only
+  an edge's first two faces, and the renderer lets an edge show through
+  only its own faces, so the other two walls hid it in dashes on the
+  owner's GPU (not on Mesa here, where the depths come out exact). Edges
+  now keep up to four faces (`scene::EDGE_FACES`). The geometry was
+  already right: one shared line, split where one box rises above the
+  other (tests in `prism-view/tests/corner.rs`). Left over: an edge with
+  five or more faces can still be hidden by the extra ones.
+- **Profile lines** are now spelled out in PLAN 1.14 and named in the View
+  Settings chunk (next). They already work in the renderer, off by default
+  (Help > debug panel, "Profile lines").

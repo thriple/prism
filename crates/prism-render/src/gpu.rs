@@ -92,7 +92,7 @@ pub struct LineInstance {
     /// Width, dash and gap, in points.
     shape: [f32; 3],
     flags: u32,
-    faces: [u32; 2],
+    faces: [u32; prism_view::scene::EDGE_FACES],
 }
 
 const HAS_N1: u32 = 1;
@@ -124,7 +124,7 @@ impl LineInstance {
             color: color.0,
             shape: [width, 0.0, 0.0],
             flags: 0,
-            faces: [0, 0],
+            faces: [0; prism_view::scene::EDGE_FACES],
         }
     }
 
@@ -189,7 +189,7 @@ pub fn view_proj(view: &View, near: f64) -> glam::DMat4 {
     proj * look
 }
 
-fn face_numbers(scene: &Scene, faces: [Option<prism_topo::FaceId>; 2]) -> [u32; 2] {
+fn face_numbers<const N: usize>(scene: &Scene, faces: [Option<prism_topo::FaceId>; N]) -> [u32; N] {
     faces.map(|f| {
         f.and_then(|f| scene.face_index.get(&f))
             .map_or(0, |i| *i as u32 + 1)
@@ -407,7 +407,7 @@ impl Renderer {
             attributes: &wgpu::vertex_attr_array![
                 0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3,
                 4 => Float32x3, 5 => Float32x3, 6 => Unorm8x4, 7 => Float32x3, 8 => Uint32,
-                9 => Uint32x2
+                9 => Uint32x4
             ],
         };
         let tri_layout = wgpu::VertexBufferLayout {

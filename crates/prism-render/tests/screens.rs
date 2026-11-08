@@ -607,3 +607,57 @@ fn cam_px(cam: &Camera, p: DVec3) -> (u32, u32) {
     let (q, _) = view.to_screen(p).expect("in view");
     (q.x as u32, q.y as u32)
 }
+
+/// Two boxes touching along a corner line share one edge with four faces.
+/// None of them hides it, so it is drawn whole, not in dashes (owner
+/// feedback, 2026-11-09: the shared corner line z-fought).
+#[test]
+fn an_edge_shared_by_two_touching_boxes_is_drawn_whole() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let style = Style::default();
+    let mut m = Model::new();
+    for (x, y) in [(0.0, 0.0), (2.0, 2.0)] {
+        prism_ops::add_rect(&mut m, x, y, x + 2.0, y + 2.0, 0.0);
+        let f = prism_ops::face_at(&m, DVec3::new(x + 1.0, y + 1.0, 0.0)).expect("base");
+        let up = m.face(f).expect("f").plane().normal.z > 0.0;
+        prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
+    }
+    let corner = m
+        .edges()
+        .filter(|(_, e)| {
+            let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+            a.truncate().distance(DVec3::new(2.0, 2.0, 0.0).truncate()) < 1e-9
+                && b.truncate().distance(a.truncate()) < 1e-9
+        })
+        .count();
+    assert_eq!(corner, 1, "one shared corner edge");
+    // From both open sides: each sees a different pair of the four walls.
+    for (k, eye) in [DVec3::new(6.0, -2.0, 3.0), DVec3::new(-2.0, 6.0, 3.0)]
+        .into_iter()
+        .enumerate()
+    {
+        let cam = Camera {
+            eye,
+            target: DVec3::new(2.0, 2.0, 1.0),
+        };
+        let img = g.shot(&m, cam, 640, 400, 1.0, &style, &Highlight::default());
+        img.save(&format!("corner-edge-{k}"));
+        let line = style.edge.0;
+        let mut missing = Vec::new();
+        for k in 1..20 {
+            let z = 2.0 * f64::from(k) / 20.0;
+            let (x, y) = cam_px(&cam, DVec3::new(2.0, 2.0, z));
+            let drawn = (x.saturating_sub(1)..=x + 1)
+                .flat_map(|x| (y.saturating_sub(1)..=y + 1).map(move |y| (x, y)))
+                // Anti-aliased: well darker than the walls on either side.
+                .any(|(x, y)| img.at(x, y)[0] < line[0].saturating_add(80));
+            if !drawn {
+                missing.push(z);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "from {eye}: the corner edge is missing at z = {missing:?}"
+        );
+    }
+}

@@ -193,7 +193,7 @@ struct LineIn {
     @location(7) shape: vec3<f32>,
     @location(8) flags: u32,
     // The faces this edge belongs to (numbered from 1; 0 for none).
-    @location(9) faces: vec2<u32>,
+    @location(9) faces: vec4<u32>,
 };
 
 // Flags.
@@ -218,7 +218,7 @@ struct LineOut {
     @location(1) geo: vec4<f32>,
     // dash px, gap px
     @location(2) dash: vec2<f32>,
-    @location(3) @interpolate(flat) faces: vec2<u32>,
+    @location(3) @interpolate(flat) faces: vec4<u32>,
     @location(4) @interpolate(flat) flags: u32,
     // Depth at each end.
     @location(5) @interpolate(flat) ends: vec2<f32>,
@@ -379,7 +379,7 @@ fn line_visible(in: LineOut) -> bool {
     let k = vec2<i32>(floor(pc));
     let t = face_at(k);
     let face = t.x;
-    if (face == 0u || face == in.faces.x || face == in.faces.y) {
+    if (face == 0u || any(vec4<u32>(face) == in.faces)) {
         return true;
     }
     if ((in.flags & POINT) != 0u) {
