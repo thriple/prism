@@ -27,10 +27,12 @@ use crate::select::box_select;
 
 mod construct;
 mod edit;
+mod groups;
 use crate::units::NumberFormat;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
+pub use groups::Owner;
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -191,13 +193,17 @@ impl RectOp {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct BoxOp {
     down: DVec2,
     now: DVec2,
     pre: usize,
     shift: bool,
     ctrl: bool,
+    /// Pressed on empty space: a click (not a drag) closes the open group.
+    empty: bool,
+    /// The selected groups when the press began.
+    groups: BTreeSet<prism_doc::InstanceId>,
 }
 
 /// The last operation, which typing can still change (Appendix A ★).
@@ -292,12 +298,21 @@ pub struct Session {
     show_guides: bool,
     /// The guide under the Eraser.
     hover_guide: Option<prism_topo::GuideId>,
+    /// The open group (empty at the root), and the selected groups in it.
+    ctx: Vec<prism_doc::InstanceId>,
+    groups: BTreeSet<prism_doc::InstanceId>,
+    /// Owners of the pieces merged into the scene, and the pieces.
+    owners: Vec<groups::Owner>,
+    pieces: Vec<groups::Piece>,
+    /// The open group's model in world coordinates (None at the root).
+    work: Option<Model>,
+    to_world: prism_math::DAffine3,
 }
 
 impl Session {
     pub fn new(doc: Document) -> Self {
         let scene = Scene::build(doc.model());
-        Self {
+        let mut s = Self {
             edit: None,
             preview: None,
             rot_lock: None,
@@ -310,6 +325,12 @@ impl Session {
             measure_only: false,
             show_guides: true,
             hover_guide: None,
+            ctx: Vec::new(),
+            groups: BTreeSet::new(),
+            owners: Vec::new(),
+            pieces: Vec::new(),
+            work: None,
+            to_world: prism_math::DAffine3::IDENTITY,
             doc,
             version: 1,
             scene,
@@ -352,7 +373,11 @@ impl Session {
                 scene_ms: 0.0,
             },
             measure: None,
+        };
+        if s.doc.assembly().has_instances() {
+            s.build_scene();
         }
+        s
     }
 
     // ---------- reading ----------
@@ -372,7 +397,7 @@ impl Session {
     }
 
     fn set_preview(&mut self, m: Option<Model>) {
-        let scene = m.map(|m| Scene::build_with(&m, self.show_guides));
+        let scene = m.map(|m| self.compose(Scene::build_with(&m, self.show_guides)));
         self.set_preview_scene(scene);
     }
 
@@ -734,7 +759,7 @@ impl Session {
                     self.mem.clear();
                     self.overlay_dirty = true;
                     self.refresh();
-                } else {
+                } else if !self.close_group() {
                     resp.used_escape = false;
                 }
             }
@@ -808,7 +833,7 @@ impl Session {
     // ---------- the model ----------
 
     fn run(&mut self, c: Command) -> bool {
-        if self.doc.run(c) {
+        if self.run_here(c) {
             self.model_changed();
             true
         } else {
@@ -819,11 +844,11 @@ impl Session {
     fn model_changed(&mut self) {
         self.version += 1;
         let t0 = self.measure.map(|f| f());
-        self.scene = Scene::build_with(self.doc.model(), self.show_guides);
+        self.build_scene();
         if let (Some(f), Some(t0)) = (self.measure, t0) {
             self.timings.scene_ms = (f() - t0) * 1e3;
         }
-        let m = self.doc.model();
+        let m = self.work.as_ref().unwrap_or_else(|| self.doc.model());
         self.selection.vertices.retain(|v| m.has_vertex(*v));
         self.selection.edges.retain(|e| m.edge(*e).is_some());
         self.selection.faces.retain(|f| m.face(*f).is_some());
@@ -875,12 +900,14 @@ impl Session {
 
     fn load(&mut self, doc: Document) {
         self.doc = doc;
+        self.ctx.clear();
+        self.groups.clear();
         self.selection = Selection::default();
         self.cancel();
         self.last_op = None;
         self.mem.clear();
         self.model_changed();
-        if let Some((lo, hi)) = self.doc.model().bbox() {
+        if let Some((lo, hi)) = self.scene.bounds {
             let goal = Camera::home().extents(lo, hi, self.view().aspect());
             self.motion = None;
             self.camera = goal;
@@ -904,7 +931,7 @@ impl Session {
                 }
             }
             "edit.selall" => {
-                let m = self.doc.model();
+                let m = self.work_model();
                 let s = Selection {
                     vertices: Default::default(),
                     edges: m.edges().map(|(id, _)| id).collect(),
@@ -912,24 +939,30 @@ impl Session {
                     ..Default::default()
                 };
                 self.set_selection(s);
+                self.set_groups(self.all_groups());
             }
-            "edit.desel" => self.set_selection(Selection::default()),
-            "edit.delete" => {
-                if !self.selection.is_empty() {
-                    let selection = std::mem::take(&mut self.selection);
-                    self.run(Command::Erase { selection });
-                }
+            "edit.desel" => {
+                self.set_selection(Selection::default());
+                self.set_groups(BTreeSet::new());
             }
+            "edit.delete" => self.delete(),
+            "edit.group" => self.make_group(),
+            "edit.explode" => self.explode(),
             "edit.undo" => {
                 self.cancel();
+                // Undo of an edit inside a group opens that group again.
+                let ctx = self.doc.undo_context();
                 if self.doc.undo() {
+                    self.ctx = ctx;
                     self.last_op = None;
                     self.model_changed();
                 }
             }
             "edit.redo" => {
                 self.cancel();
+                let ctx = self.doc.redo_context();
                 if self.doc.redo() {
+                    self.ctx = ctx;
                     self.last_op = None;
                     self.model_changed();
                 }
@@ -1168,8 +1201,19 @@ impl Session {
                         Hit::Edge(e) => self.selection.edges.contains(&e),
                         Hit::Face(f) => self.selection.faces.contains(&f),
                     };
-                    if !has {
-                        self.set_selection(click_select(self.doc.model(), Some(h.hit), 1));
+                    match self.owner(h.hit) {
+                        Some(Owner::Child(g)) => {
+                            if !self.groups.contains(&g) {
+                                self.set_selection(Selection::default());
+                                self.set_groups([g].into());
+                            }
+                        }
+                        Some(Owner::Outside) => {}
+                        None if !has => {
+                            self.set_groups(BTreeSet::new());
+                            self.set_selection(click_select(self.work_model(), Some(h.hit), 1));
+                        }
+                        None => {}
                     }
                 }
                 resp.context_menu = Some(s);
@@ -1183,10 +1227,16 @@ impl Session {
                 let b = self.boxing.take().expect("box");
                 let pre = self.saved.pop().unwrap_or_default();
                 let _ = b.pre;
-                if (b.now - b.down).abs().max_element() >= BOX_MIN {
+                let dragged = (b.now - b.down).abs().max_element() >= BOX_MIN;
+                if !dragged && b.empty && !b.shift && !b.ctrl {
+                    self.close_group();
+                }
+                if dragged {
                     let crossing = b.now.x < b.down.x;
                     let (lo, hi) = (b.down.min(b.now), b.down.max(b.now));
-                    let hits = box_select(&self.scene, &self.view(), lo, hi, crossing);
+                    let mut hits = box_select(&self.scene, &self.view(), lo, hi, crossing);
+                    let groups = self.box_groups(&mut hits, crossing, &b);
+                    self.set_groups(groups);
                     let mut sel = if b.shift || b.ctrl {
                         pre
                     } else {
@@ -1231,6 +1281,52 @@ impl Session {
     fn select_press(&mut self, s: DVec2, shift: bool, ctrl: bool) {
         let n = self.clicks.press(self.time, s);
         let hit = pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit);
+        let groups_before = self.groups.clone();
+        // A group is picked whole; a double-click opens it. Geometry
+        // outside the open group closes it (PLAN 1.2).
+        match hit.and_then(|h| self.owner(h)) {
+            Some(Owner::Outside) => {
+                self.close_group();
+                return;
+            }
+            Some(Owner::Child(g)) => {
+                if n >= 2 && !shift && !ctrl {
+                    self.open_group(g);
+                    return;
+                }
+                let mut gs = if shift || ctrl {
+                    groups_before.clone()
+                } else {
+                    BTreeSet::new()
+                };
+                if shift && gs.contains(&g) {
+                    gs.remove(&g);
+                } else {
+                    gs.insert(g);
+                }
+                if !shift && !ctrl {
+                    self.set_selection(Selection::default());
+                }
+                self.set_groups(gs);
+                if n == 1 {
+                    self.saved.push(self.selection.clone());
+                    self.boxing = Some(BoxOp {
+                        down: s,
+                        now: s,
+                        pre: self.saved.len(),
+                        shift,
+                        ctrl,
+                        empty: false,
+                        groups: groups_before,
+                    });
+                }
+                return;
+            }
+            None => {}
+        }
+        if !shift && !ctrl {
+            self.set_groups(BTreeSet::new());
+        }
         let pre = self.selection.clone();
         if n == 1 {
             self.series_pre = pre.clone();
@@ -1267,6 +1363,8 @@ impl Session {
                 pre: self.saved.len(),
                 shift,
                 ctrl,
+                empty: hit.is_none(),
+                groups: groups_before,
             });
         }
     }
@@ -1296,7 +1394,7 @@ impl Session {
     }
 
     fn commit_line(&mut self, start: DVec3, end: DVec3) {
-        let faces = self.doc.model().face_count();
+        let faces = self.work_model().face_count();
         let made = self.run(Command::Segment { p: start, q: end });
         self.typed.clear();
         self.lock = Lock::None;
@@ -1311,10 +1409,10 @@ impl Session {
             });
         }
         // The line chains on from its end, unless it just closed a face.
-        let end_at = prism_ops::vertex_at(self.doc.model(), end)
-            .map(|v| self.doc.model().vertex(v))
+        let end_at = prism_ops::vertex_at(self.work_model(), end)
+            .map(|v| self.work_model().vertex(v))
             .unwrap_or(end);
-        self.line_start = (self.doc.model().face_count() <= faces).then_some(end_at);
+        self.line_start = (self.work_model().face_count() <= faces).then_some(end_at);
         self.overlay_dirty = true;
     }
 
@@ -1398,6 +1496,16 @@ impl Session {
     fn enter(&mut self) {
         let text = std::mem::take(&mut self.typed);
         self.overlay_dirty = true;
+        if text.is_empty()
+            && self.edit.is_none()
+            && self.tool == SELECT
+            && self.selection.is_empty()
+            && self.groups.len() == 1
+        {
+            let g = *self.groups.iter().next().expect("one group");
+            self.open_group(g);
+            return;
+        }
         if self.edit.is_some() {
             self.edit_enter(&text);
             return;

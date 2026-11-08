@@ -1290,3 +1290,157 @@ fn offset_snaps_to_a_corner_off_its_plane() {
             .any(|(_, p)| p.distance(DVec3::new(6.0, 6.0, 0.0)) < 1e-6);
     assert!(grown, "offset 2 m out, to the corner's x");
 }
+
+// ---------- groups (Groups & Components part 1) ----------
+
+fn act(d: &mut Driver, id: &str) {
+    d.send(Input::Action { id: id.into() });
+}
+
+fn key(d: &mut Driver, k: Key) {
+    d.send(Input::Key { key: k });
+}
+
+/// A 2 m box at the origin, made into a group. Returns the group.
+fn grouped_box(d: &mut Driver) -> prism_doc::InstanceId {
+    rect_on_ground(d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    d.tool(SELECT);
+    act(d, "edit.selall");
+    act(d, "edit.group");
+    assert_eq!(d.faces(), 0, "the box went into the group");
+    *d.s.selected_groups()
+        .iter()
+        .next()
+        .expect("the new group is selected")
+}
+
+#[test]
+fn a_group_is_clicked_moved_opened_and_closed() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    // A click on its face selects the whole group.
+    act(&mut d, "edit.desel");
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    assert_eq!(
+        d.s.selected_groups().iter().copied().collect::<Vec<_>>(),
+        [g]
+    );
+    assert!(d.s.selection().is_empty());
+
+    // Move moves the group's placement only.
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.hover(DVec3::new(1.0, 0.0, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("3");
+    let w = d.s.document().assembly().world_of(&[g]).expect("group");
+    assert!(
+        (w.translation - DVec3::new(3.0, 0.0, 0.0)).length() < 1e-9,
+        "{w:?}"
+    );
+    assert_eq!(d.faces(), 0);
+
+    // A double-click opens it; a line across its top lands inside.
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    double_click(&mut d, DVec3::new(4.0, 1.0, 2.0));
+    assert_eq!(d.s.open_path(), [g]);
+    d.tool(LINE);
+    d.click(DVec3::new(3.0, 1.0, 2.0));
+    d.click(DVec3::new(5.0, 1.0, 2.0));
+    key(&mut d, Key::Escape);
+    let def = d.s.document().assembly().context_def(&[g]).unwrap();
+    let inside = &d.s.document().assembly().def(def).unwrap().model;
+    assert_eq!(inside.face_count(), 7, "the top is split inside the group");
+    assert!(prism_ops::check::problems(inside).is_empty());
+    assert_eq!(d.faces(), 0, "nothing at the root");
+
+    // Esc closes it (after the line tool's own Esc), and selects it.
+    d.tool(SELECT);
+    key(&mut d, Key::Escape);
+    assert!(d.s.open_path().is_empty());
+    assert_eq!(d.s.selected_groups().len(), 1);
+
+    // Undo of the line opens the group again.
+    undo(&mut d);
+    assert_eq!(d.s.open_path(), [g]);
+}
+
+#[test]
+fn drawing_inside_a_group_snaps_to_geometry_outside_it() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    // A square at the root beside the group.
+    rect_on_ground(&mut d, 4.0, 0.0, 5.0, 1.0);
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    double_click(&mut d, DVec3::new(1.0, 0.0, 1.0));
+    assert_eq!(d.s.open_path(), [g]);
+    d.tool(LINE);
+    d.hover(DVec3::new(4.0, 1.0, 0.0));
+    let i = d.s.inference().expect("inference");
+    assert_eq!(
+        i.kind,
+        Kind::Endpoint,
+        "snaps to the square's corner outside"
+    );
+    assert!(i.point.distance(DVec3::new(4.0, 1.0, 0.0)) < 1e-9);
+}
+
+#[test]
+fn a_click_on_geometry_outside_closes_the_group() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    rect_on_ground(&mut d, 4.0, 0.0, 6.0, 2.0);
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    double_click(&mut d, DVec3::new(1.0, 0.0, 1.0));
+    assert_eq!(d.s.open_path(), [g]);
+    d.click(DVec3::new(5.0, 1.0, 0.0));
+    assert!(d.s.open_path().is_empty());
+}
+
+#[test]
+fn explode_puts_the_box_back_and_undo_restores_the_group() {
+    let mut d = Driver::empty();
+    let _g = grouped_box(&mut d);
+    act(&mut d, "edit.explode");
+    assert_eq!(d.faces(), 6);
+    assert!(!d.s.document().assembly().has_instances());
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 0);
+    assert!(d.s.document().assembly().has_instances());
+}
+
+#[test]
+fn box_select_takes_groups_inside_the_window() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.desel");
+    d.tool(SELECT);
+    // A window from far left to far right around everything.
+    let a = d.screen(DVec3::new(-3.0, -3.0, 0.0));
+    let b = d.screen(DVec3::new(5.0, 5.0, 3.0));
+    let (lo, hi) = (a.min(b) - DVec2::splat(40.0), a.max(b) + DVec2::splat(40.0));
+    d.send(Input::Move { x: lo.x, y: lo.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: lo.x,
+        y: lo.y,
+        shift: false,
+        ctrl: false,
+    });
+    d.send(Input::Move { x: hi.x, y: hi.y });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(
+        d.s.selected_groups().iter().copied().collect::<Vec<_>>(),
+        [g]
+    );
+}

@@ -121,7 +121,8 @@ impl Session {
             let Some(p) = snapped.or_else(|| plane_point(view, s, *origin, *n)) else {
                 return;
             };
-            let Some(now) = offset::signed_distance(self.doc.model(), *face, p) else {
+            let work = self.work.as_ref().unwrap_or_else(|| self.doc.model());
+            let Some(now) = offset::signed_distance(work, *face, p) else {
                 return;
             };
             let mut dd = now - *d0;
@@ -172,7 +173,7 @@ impl Session {
         let Some(p) = plane_point(&view, s, origin, n) else {
             return;
         };
-        let Some(d0) = offset::signed_distance(self.doc.model(), face, p) else {
+        let Some(d0) = offset::signed_distance(self.work_model(), face, p) else {
             return;
         };
         self.edit = Some(EditOp::Offset {

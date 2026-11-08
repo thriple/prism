@@ -31,6 +31,8 @@ pub struct SceneFace {
     pub hi: DVec3,
     /// Its triangles in the mesh, as a range of `Mesh::indices`.
     pub tris: Range<u32>,
+    /// Drawn faded: outside the open group (PLAN 1.2).
+    pub faded: bool,
 }
 
 impl SceneFace {
@@ -109,6 +111,8 @@ pub struct SceneEdge {
     pub normals: [Option<DVec3>; 2],
     /// The first two faces that use it.
     pub faces: [Option<FaceId>; 2],
+    /// Drawn faded: outside the open group.
+    pub faded: bool,
 }
 
 /// The display triangles of all faces: one vertex per face corner, so every
@@ -137,7 +141,16 @@ pub struct Scene {
     pub guides: Vec<(GuideId, Guide)>,
     /// The model vertex of each mesh corner (for cheap rigid previews).
     pub mesh_vertex_ids: Vec<VertexId>,
+    /// Who owns the faces, edges and points merged in from other models
+    /// (groups): their ids are at or above [`FOREIGN`], and the owner is a
+    /// number the caller chose. The model's own ids are not listed.
+    pub face_owner: BTreeMap<FaceId, u32>,
+    pub edge_owner: BTreeMap<EdgeId, u32>,
+    pub vertex_owner: BTreeMap<VertexId, u32>,
 }
+
+/// Ids merged in from other models start here, clear of a model's own.
+pub const FOREIGN: u32 = 1 << 31;
 
 impl Scene {
     pub fn build(model: &Model) -> Scene {
@@ -156,6 +169,9 @@ impl Scene {
             bounds: model.bbox(),
             tol: model.tol(),
             mesh_vertex_ids: Vec::new(),
+            face_owner: BTreeMap::new(),
+            edge_owner: BTreeMap::new(),
+            vertex_owner: BTreeMap::new(),
             guides: if show_guides {
                 model.guides().map(|(id, g)| (id, *g)).collect()
             } else {
@@ -189,6 +205,7 @@ impl Scene {
                 lo,
                 hi,
                 tris: 0..0,
+                faded: false,
             };
             face.outer = f
                 .outer
@@ -230,6 +247,7 @@ impl Scene {
                 b: model.vertex(e.b),
                 normals: [n(0), n(1)],
                 faces: [fid(0), fid(1)],
+                faded: false,
             });
         }
         s.vertices = model.vertices().collect();
@@ -314,6 +332,95 @@ impl Scene {
             .next()
             .map(|first| it.fold((first, first), |(lo, hi), p| (lo.min(p), hi.max(p))));
         Some(s)
+    }
+
+    /// Merge another model's scene in (a group's geometry, already in
+    /// world coordinates), with new ids at or above [`FOREIGN`] and owned by
+    /// `owner`. Its guides are left out: guides belong to the open group.
+    pub fn merge(&mut self, other: Scene, owner: u32, faded: bool) {
+        let f0 = self
+            .face_owner
+            .keys()
+            .next_back()
+            .map_or(FOREIGN, |k| k.0 + 1);
+        let e0 = self
+            .edge_owner
+            .keys()
+            .next_back()
+            .map_or(FOREIGN, |k| k.0 + 1);
+        let v0 = self
+            .vertex_owner
+            .keys()
+            .next_back()
+            .map_or(FOREIGN, |k| k.0 + 1);
+        let fmap: BTreeMap<FaceId, FaceId> = other
+            .faces
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.id, FaceId(f0 + i as u32)))
+            .collect();
+        let vmap: BTreeMap<VertexId, VertexId> = other
+            .vertices
+            .iter()
+            .enumerate()
+            .map(|(i, (v, _))| (*v, VertexId(v0 + i as u32)))
+            .collect();
+        let face_base = self.faces.len() as u32;
+        let index_base = self.mesh.indices.len() as u32;
+        let corner_base = self.mesh.positions.len() as u32;
+        for mut f in other.faces {
+            f.id = fmap[&f.id];
+            f.tris = f.tris.start + index_base..f.tris.end + index_base;
+            f.faded = faded;
+            self.face_owner.insert(f.id, owner);
+            self.face_index.insert(f.id, self.faces.len());
+            self.faces.push(f);
+        }
+        for (i, mut e) in other.edges.into_iter().enumerate() {
+            e.id = EdgeId(e0 + i as u32);
+            e.va = vmap.get(&e.va).copied().unwrap_or(e.va);
+            e.vb = vmap.get(&e.vb).copied().unwrap_or(e.vb);
+            e.faces = e.faces.map(|f| f.and_then(|f| fmap.get(&f).copied()));
+            e.faded = faded;
+            self.edge_owner.insert(e.id, owner);
+            self.edge_index.insert(e.id, self.edges.len());
+            self.edges.push(e);
+        }
+        for (v, p) in other.vertices {
+            let id = vmap[&v];
+            self.vertex_owner.insert(id, owner);
+            self.vertices.push((id, p));
+        }
+        self.mesh.positions.extend(other.mesh.positions);
+        self.mesh.normals.extend(other.mesh.normals);
+        self.mesh
+            .faces
+            .extend(other.mesh.faces.into_iter().map(|k| k + face_base));
+        self.mesh
+            .indices
+            .extend(other.mesh.indices.into_iter().map(|i| i + corner_base));
+        self.mesh_vertex_ids.extend(
+            other
+                .mesh_vertex_ids
+                .into_iter()
+                .map(|v| vmap.get(&v).copied().unwrap_or(v)),
+        );
+        self.bounds = match (self.bounds, other.bounds) {
+            (Some(a), Some(b)) => Some((a.0.min(b.0), a.1.max(b.1))),
+            (a, b) => a.or(b),
+        };
+        if let Some((lo, hi)) = self.bounds {
+            self.tol = Tol::for_points(&[lo, hi]);
+        }
+    }
+
+    /// Who owns what a pick hit, if it came from another model ([`Scene::merge`]).
+    pub fn owner_of(&self, hit: crate::Hit) -> Option<u32> {
+        match hit {
+            crate::Hit::Vertex(v) => self.vertex_owner.get(&v).copied(),
+            crate::Hit::Edge(e) => self.edge_owner.get(&e).copied(),
+            crate::Hit::Face(f) => self.face_owner.get(&f).copied(),
+        }
     }
 
     /// The model vertex a mesh corner came from.

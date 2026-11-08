@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use prism_doc::{Command, Motion};
+use prism_doc::{Change, Command, Motion};
 use prism_infer::{AXES, Kind};
 use prism_math::{DQuat, DVec2, DVec3};
 use prism_ops::select::Selection;
@@ -158,13 +158,15 @@ impl Session {
     /// The selection a tool works on: the selection, or else (Move, Rotate)
     /// the item under the cursor, or (Scale) what is connected to it.
     fn working_selection(&self, s: DVec2, connected: bool) -> Selection {
-        if !self.selection.is_empty() {
+        if !self.selection.is_empty() || !self.groups.is_empty() {
             return self.selection.clone();
         }
-        let hit = pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit);
+        let hit = pick::pick(&self.scene, &self.view(), s, self.settings.aperture)
+            .map(|p| p.hit)
+            .filter(|h| self.owner(*h).is_none());
         match hit {
-            Some(h) if connected => click_select(self.doc.model(), Some(h), 3),
-            Some(h) => click_select(self.doc.model(), Some(h), 1),
+            Some(h) if connected => click_select(self.work_model(), Some(h), 3),
+            Some(h) => click_select(self.work_model(), Some(h), 1),
             None => Selection::default(),
         }
     }
@@ -424,6 +426,17 @@ impl Session {
 
     /// Show the step in progress on a copy of the model.
     pub(super) fn update_preview(&mut self) {
+        // Groups moving: the preview is the document with the step applied.
+        if !self.groups.is_empty()
+            && let Some(e @ (EditOp::Move { .. } | EditOp::Rotate { .. } | EditOp::Scale { .. })) =
+                &self.edit
+        {
+            let scene = self.transform_command(e).map(|c| self.preview_of(&c));
+            self.set_preview_scene(scene);
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
         // A whole body moved or turned rigidly: move what is drawn instead
         // of rebuilding the model (big imported meshes stay smooth).
         if let Some(scene) = self.rigid_preview() {
@@ -432,7 +445,7 @@ impl Session {
             self.dirty = true;
             return;
         }
-        let base = self.doc.model();
+        let base = self.work_model();
         let preview: Option<Model> = match &self.edit {
             Some(EditOp::Push {
                 face, d, new_loop, ..
@@ -498,7 +511,7 @@ impl Session {
 
     /// The command a move, rotation or scale in progress would commit.
     fn transform_command(&self, e: &EditOp) -> Option<Command> {
-        Some(match e {
+        match e {
             EditOp::Move {
                 selection,
                 verts,
@@ -506,18 +519,21 @@ impl Session {
                 copy,
                 ..
             } => {
-                if *copy {
-                    Command::Copy {
-                        selection: selection.clone(),
-                        step: Motion::Translate { by: *delta },
-                        count: 1,
+                let geometry = (!selection.is_empty()).then(|| {
+                    if *copy {
+                        Command::Copy {
+                            selection: selection.clone(),
+                            step: Motion::Translate { by: *delta },
+                            count: 1,
+                        }
+                    } else {
+                        Command::Translate {
+                            vertices: verts.clone(),
+                            by: *delta,
+                        }
                     }
-                } else {
-                    Command::Translate {
-                        vertices: verts.clone(),
-                        by: *delta,
-                    }
-                }
+                });
+                self.with_groups(geometry, Change::Translate { by: *delta }, *copy)
             }
             EditOp::Rotate {
                 centre,
@@ -530,34 +546,49 @@ impl Session {
                 ..
             } => {
                 u0.as_ref()?;
-                if *copy {
-                    Command::Copy {
-                        selection: selection.clone(),
-                        step: Motion::Rotate {
+                let geometry = (!selection.is_empty()).then(|| {
+                    if *copy {
+                        Command::Copy {
+                            selection: selection.clone(),
+                            step: Motion::Rotate {
+                                centre: *centre,
+                                axis: *normal,
+                                angle: *angle,
+                            },
+                            count: 1,
+                        }
+                    } else {
+                        Command::Rotate {
+                            vertices: verts.clone(),
                             centre: *centre,
                             axis: *normal,
                             angle: *angle,
-                        },
-                        count: 1,
+                        }
                     }
-                } else {
-                    Command::Rotate {
-                        vertices: verts.clone(),
-                        centre: *centre,
-                        axis: *normal,
-                        angle: *angle,
-                    }
-                }
+                });
+                let change = Change::Rotate {
+                    centre: *centre,
+                    axis: *normal,
+                    angle: *angle,
+                };
+                self.with_groups(geometry, change, *copy)
             }
             EditOp::Scale {
                 centre, k, verts, ..
-            } => Command::Scale {
-                vertices: verts.clone(),
-                centre: *centre,
-                factor: DVec3::splat(*k),
-            },
-            _ => return None,
-        })
+            } => {
+                let geometry = (!verts.is_empty()).then(|| Command::Scale {
+                    vertices: verts.clone(),
+                    centre: *centre,
+                    factor: DVec3::splat(*k),
+                });
+                let change = Change::Scale {
+                    centre: *centre,
+                    factor: DVec3::splat(*k),
+                };
+                self.with_groups(geometry, change, false)
+            }
+            _ => None,
+        }
     }
 
     /// A left press with an edit tool.
@@ -685,14 +716,15 @@ impl Session {
             self.finish_edit();
             return;
         }
+        let groups = self.groups_for_tool(s);
         let selection = self.working_selection(s, false);
-        if selection.is_empty() {
+        if selection.is_empty() && !groups {
             return;
         }
         let Some(i) = self.inference.clone() else {
             return;
         };
-        let verts = selection.all_vertices(self.doc.model());
+        let verts = selection.all_vertices(self.work_model());
         self.edit = Some(EditOp::Move {
             from: i.point,
             selection,
@@ -709,15 +741,16 @@ impl Session {
                 // The selection, or with nothing selected the item under
                 // the cursor alone, as in SketchUp (DECISIONS #26): a
                 // hovered face twists, and the faces attached to it fold.
+                let groups = self.groups_for_tool(s);
                 let selection = self.working_selection(s, false);
-                if selection.is_empty() {
+                if selection.is_empty() && !groups {
                     return;
                 }
                 let Some(i) = self.inference.clone() else {
                     return;
                 };
                 let normal = self.protractor_normal();
-                let verts = selection.all_vertices(self.doc.model());
+                let verts = selection.all_vertices(self.work_model());
                 self.edit = Some(EditOp::Rotate {
                     centre: i.point,
                     normal,
@@ -773,19 +806,24 @@ impl Session {
             self.finish_edit();
             return;
         }
+        let groups = self.groups_for_tool(s);
         let selection = self.working_selection(s, true);
-        if selection.is_empty() {
+        if selection.is_empty() && !groups {
             return;
         }
         let Some(i) = self.inference.clone() else {
             return;
         };
-        let m = self.doc.model();
+        let m = self.work_model();
         let verts = selection.all_vertices(m);
         let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
-        for v in &verts {
-            lo = lo.min(m.vertex(*v));
-            hi = hi.max(m.vertex(*v));
+        for p in verts
+            .iter()
+            .map(|v| m.vertex(*v))
+            .chain(self.groups_corners())
+        {
+            lo = lo.min(p);
+            hi = hi.max(p);
         }
         let centre = lo.lerp(hi, 0.5);
         let r0 = i.point.distance(centre);

@@ -163,6 +163,28 @@ impl Change {
     }
 }
 
+/// A change of groups, in a group's own coordinates.
+fn change_to_local(c: &Change, to_local: &DAffine3) -> Change {
+    match *c {
+        Change::Translate { by } => Change::Translate {
+            by: to_local.transform_vector3(by),
+        },
+        Change::Rotate {
+            centre,
+            axis,
+            angle,
+        } => Change::Rotate {
+            centre: to_local.transform_point3(centre),
+            axis: to_local.transform_vector3(axis).normalize(),
+            angle,
+        },
+        Change::Scale { centre, factor } => Change::Scale {
+            centre: to_local.transform_point3(centre),
+            factor,
+        },
+    }
+}
+
 impl From<Motion> for Change {
     fn from(m: Motion) -> Change {
         match m {
@@ -225,6 +247,128 @@ impl Command {
             Command::CopyInstances { count, .. } if *count > 1 => "Array",
             Command::CopyInstances { .. } => "Copy",
             Command::EraseInstances { .. } => "Erase",
+        }
+    }
+
+    /// The command in a group's own coordinates: tools work in the world,
+    /// and `to_local` maps the world into the open group (`model` is the
+    /// group's model, for the faces a distance is measured along).
+    pub fn to_local(&self, to_local: &DAffine3, model: &Model) -> Command {
+        let p = |v: DVec3| to_local.transform_point3(v);
+        let dir = |v: DVec3| to_local.transform_vector3(v);
+        // A distance along a face's normal, in the group's units.
+        let along = |face: FaceId, d: f64| -> f64 {
+            let Some(f) = model.face(face) else { return d };
+            let n = f.plane().normal;
+            // The world normal is the local one through the inverse
+            // transpose; a world step d along it, brought back.
+            let world_n = to_local.matrix3.transpose().mul_vec3(n).normalize();
+            dir(world_n * d).dot(n)
+        };
+        let scale = to_local.matrix3.determinant().abs().cbrt();
+        match self {
+            Command::Segment { p: a, q: b } => Command::Segment { p: p(*a), q: p(*b) },
+            Command::Rect { x0, y0, x1, y1, z } => Command::Loop {
+                points: [
+                    DVec3::new(*x0, *y0, *z),
+                    DVec3::new(*x1, *y0, *z),
+                    DVec3::new(*x1, *y1, *z),
+                    DVec3::new(*x0, *y1, *z),
+                ]
+                .into_iter()
+                .map(p)
+                .collect(),
+            },
+            Command::Loop { points } => Command::Loop {
+                points: points.iter().map(|v| p(*v)).collect(),
+            },
+            Command::PushPull {
+                face,
+                distance,
+                new_loop,
+            } => Command::PushPull {
+                face: *face,
+                distance: along(*face, *distance),
+                new_loop: *new_loop,
+            },
+            Command::Translate { vertices, by } => Command::Translate {
+                vertices: vertices.clone(),
+                by: dir(*by),
+            },
+            Command::Rotate {
+                vertices,
+                centre,
+                axis,
+                angle,
+            } => Command::Rotate {
+                vertices: vertices.clone(),
+                centre: p(*centre),
+                axis: dir(*axis).normalize(),
+                angle: *angle,
+            },
+            // Scale works along the group's own axes, as in SketchUp.
+            Command::Scale {
+                vertices,
+                centre,
+                factor,
+            } => Command::Scale {
+                vertices: vertices.clone(),
+                centre: p(*centre),
+                factor: *factor,
+            },
+            Command::Copy {
+                selection,
+                step,
+                count,
+            } => Command::Copy {
+                selection: selection.clone(),
+                step: match *step {
+                    Motion::Translate { by } => Motion::Translate { by: dir(by) },
+                    Motion::Rotate {
+                        centre,
+                        axis,
+                        angle,
+                    } => Motion::Rotate {
+                        centre: p(centre),
+                        axis: dir(axis).normalize(),
+                        angle,
+                    },
+                },
+                count: *count,
+            },
+            Command::Offset { face, distance } => Command::Offset {
+                face: *face,
+                distance: distance * scale,
+            },
+            Command::AddGuide { guide } => Command::AddGuide {
+                guide: match *guide {
+                    Guide::Line { origin, dir: d } => Guide::Line {
+                        origin: p(origin),
+                        dir: dir(d).normalize(),
+                    },
+                    Guide::Point { at } => Guide::Point { at: p(at) },
+                },
+            },
+            Command::Place { instances, change } => Command::Place {
+                instances: instances.clone(),
+                change: change_to_local(change, to_local),
+            },
+            Command::CopyInstances {
+                instances,
+                step,
+                count,
+            } => Command::CopyInstances {
+                instances: instances.clone(),
+                step: change_to_local(step, to_local),
+                count: *count,
+            },
+            Command::Batch { commands } => Command::Batch {
+                commands: commands
+                    .iter()
+                    .map(|c| c.to_local(to_local, model))
+                    .collect(),
+            },
+            other => other.clone(),
         }
     }
 
