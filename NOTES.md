@@ -591,8 +591,8 @@ others on that edge, such as the wall between the boxes, go with it).
   Move does: an endpoint, midpoint, edge, intersection or guide anywhere in
   the model is put onto the face's plane and sets the distance, with the
   usual glyph and label. With no snap, the cursor on the face's plane sets
-  it, as before. The distance is still measured from where you clicked, so
-  click on the face's edge to offset exactly to a snapped point.
+  it, as before. (Since the later fix below, a snapped point is where the
+  new loop goes, wherever the first click was.)
 
 ### Faces pulled flush join the solids (owner feedback, 2026-11-08)
 
@@ -855,3 +855,21 @@ Brief: `docs/briefs/16-model-health-2.md`.
 
 **Tests:** marks for an open box, a flipped face and a clean box (session),
 the export note (prism-ops).
+
+## Owner feedback, 2026-11-08 (after Model Health)
+- **Plan order:** a standing rule now says chunks are built in the order of
+  the PLAN 6.0 table. The table was reordered so each chunk comes after what
+  it needs: Exact Curves and Annotation & Sections before Inspector &
+  Features, Exact Curves before Shapes & Placement, Basic Materials before
+  Rendering. Next is View Settings.
+- **The blue box follows the move:** while Move, Rotate or Scale is under
+  way, a selected group's or component's box is drawn with the step applied
+  (`Session::group_change`). It used to stay where the group started.
+- **Offset through a snapped point:** when Offset snaps to a point, an edge
+  or a guide, the new loop now goes through that point
+  (`offset::distance_through`). It used to measure from the first click
+  (so it was off by how far that click was from the edge), and straight to
+  the nearest corner (past a corner the mitred loop is further out). A free
+  cursor still moves the loop by how far it has moved from the first click.
+  Left over: on a face with notches, a point can lie on more than one moved
+  edge; the smallest distance wins.

@@ -186,3 +186,21 @@ proptest! {
         prop_assert!(check::problems(&m).is_empty());
     }
 }
+
+/// The distance whose offset loop passes through a point: past a corner it
+/// follows the mitre, not the straight line to the corner (owner feedback,
+/// 2026-11-08).
+#[test]
+fn the_distance_through_a_point_follows_the_mitred_loop() {
+    let mut m = Model::new();
+    poly(&mut m, &[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]);
+    let f = face(&m, 2.0, 2.0);
+    let at = |x, y| offset::distance_through(&m, f, DVec3::new(x, y, 0.0)).unwrap();
+    // Beside an edge: the plain distance.
+    assert!((at(5.0, 2.0) + 1.0).abs() < 1e-9);
+    assert!((at(1.0, 2.0) - 1.0).abs() < 1e-9);
+    // Off a corner: the loop 2 out runs through (6, 5); straight to the
+    // corner would be 2.24.
+    assert!((at(6.0, 5.0) + 2.0).abs() < 1e-9, "{}", at(6.0, 5.0));
+    assert!((at(-1.0, -1.5) + 1.5).abs() < 1e-9);
+}

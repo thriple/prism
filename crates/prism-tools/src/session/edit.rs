@@ -511,6 +511,30 @@ impl Session {
         }
     }
 
+    /// How a move, rotation or scale in progress changes the selected
+    /// groups (their blue boxes follow it).
+    pub(super) fn group_change(&self) -> Option<Change> {
+        match self.edit.as_ref()? {
+            EditOp::Move { delta, .. } => Some(Change::Translate { by: *delta }),
+            EditOp::Rotate {
+                centre,
+                normal,
+                angle,
+                u0,
+                ..
+            } => u0.as_ref().map(|_| Change::Rotate {
+                centre: *centre,
+                axis: *normal,
+                angle: *angle,
+            }),
+            EditOp::Scale { centre, k, .. } => Some(Change::Scale {
+                centre: *centre,
+                factor: DVec3::splat(*k),
+            }),
+            _ => None,
+        }
+    }
+
     /// The command a move, rotation or scale in progress would commit.
     fn transform_command(&self, e: &EditOp) -> Option<Command> {
         match e {

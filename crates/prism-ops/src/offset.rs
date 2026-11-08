@@ -185,6 +185,40 @@ pub fn signed_distance(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
     Some(if inside { best } else { -best })
 }
 
+/// The offset distance whose loops pass through `p` (on or near the face's
+/// plane): positive into the face. Each edge, moved its own distance from
+/// `p`'s line, is tried; the smallest that reaches `p` between its mitred
+/// ends wins. Falls back to [`signed_distance`].
+pub fn distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
+    let (flat, loops) = flat_loops(model, face)?;
+    let q = flat.to_2d(p);
+    let slack = model.tol().dist;
+    let mut best: Option<f64> = None;
+    for l in &loops {
+        let n = l.len();
+        for i in 0..n {
+            let (a, b) = (l[i], l[(i + 1) % n]);
+            let t = (b - a).normalize_or_zero();
+            let d = DVec2::new(-t.y, t.x).dot(q - a);
+            let Some(moved) = offset_loop(l, d) else {
+                continue;
+            };
+            let (a1, b1) = (moved[i], moved[(i + 1) % n]);
+            let e = b1 - a1;
+            let len = e.length();
+            let along = (q - a1).dot(e) / len.max(f64::MIN_POSITIVE);
+            if e.dot(b - a) > 0.0
+                && along >= -slack
+                && along <= len + slack
+                && best.is_none_or(|x| d.abs() < x.abs())
+            {
+                best = Some(d);
+            }
+        }
+    }
+    best.or_else(|| signed_distance(model, face, p))
+}
+
 /// Offset a face: add its offset loops as edges (they split the face, or
 /// add a ring round it). Returns the distance used, if anything was added.
 pub fn offset(model: &mut Model, face: FaceId, distance: f64) -> Option<f64> {

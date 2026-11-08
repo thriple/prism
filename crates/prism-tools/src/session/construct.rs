@@ -118,14 +118,18 @@ impl Session {
                 .as_ref()
                 .filter(|i| i.kind.is_point() || matches!(i.kind, Kind::OnEdge | Kind::Guide))
                 .map(|i| i.point - *n * (i.point - *origin).dot(*n));
-            let Some(p) = snapped.or_else(|| plane_point(view, s, *origin, *n)) else {
-                return;
-            };
+            // A snapped point is where the new loop goes; a free cursor
+            // moves it by how far it has moved from the first click.
             let work = self.work.as_ref().unwrap_or_else(|| self.doc.model());
-            let Some(now) = offset::signed_distance(work, *face, p) else {
+            let dd = match snapped {
+                Some(p) => offset::distance_through(work, *face, p).map(|d| (p, d)),
+                None => plane_point(view, s, *origin, *n).and_then(|p| {
+                    offset::signed_distance(work, *face, p).map(|now| (p, now - *d0))
+                }),
+            };
+            let Some((p, mut dd)) = dd else {
                 return;
             };
-            let mut dd = now - *d0;
             let px = view.to_screen(p).map_or(0.0, |(_, z)| view.units_per_px(z));
             if dd.abs() < OFFSET_ZERO * px {
                 dd = 0.0;

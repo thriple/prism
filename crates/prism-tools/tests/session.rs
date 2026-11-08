@@ -1291,6 +1291,31 @@ fn offset_snaps_to_a_corner_off_its_plane() {
     assert!(grown, "offset 2 m out, to the corner's x");
 }
 
+/// A snapped point is where the offset loop goes, wherever the first click
+/// was, and past a corner the loop's mitre reaches it (owner feedback,
+/// 2026-11-08: lining an offset up with another edge over- or undershot).
+#[test]
+fn offset_through_a_snapped_point_past_a_corner() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    rect_on_ground(&mut d, 6.0, 5.0, 7.0, 6.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(6.5, 5.5, 0.0));
+    d.typed("1");
+    d.tool(OFFSET);
+    d.click(DVec3::new(3.0, 2.0, 0.0)); // inside, 1 m from the right edge
+    d.hover(DVec3::new(6.0, 5.0, 1.0));
+    let i = d.s.inference().expect("an inference while offsetting");
+    assert_eq!(i.kind, prism_infer::Kind::Endpoint);
+    let has = |x: f64, y: f64| {
+        d.s.display_scene()
+            .vertices
+            .iter()
+            .any(|(_, p)| p.distance(DVec3::new(x, y, 0.0)) < 1e-6)
+    };
+    assert!(has(6.0, 6.0) && has(-2.0, -2.0), "offset 2 m out");
+}
+
 // ---------- groups (Groups & Components part 1) ----------
 
 fn act(d: &mut Driver, id: &str) {
@@ -1368,6 +1393,33 @@ fn a_group_is_clicked_moved_opened_and_closed() {
     // Undo of the line opens the group again.
     undo(&mut d);
     assert_eq!(d.s.open_path(), [g]);
+}
+
+#[test]
+fn the_blue_box_moves_with_the_group_during_move() {
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.hover(DVec3::new(1.0, 0.0, 0.0));
+    key(&mut d, Key::Right);
+    d.hover(DVec3::new(1.0, 0.0, 0.0));
+    let blue = d.s.style.selected;
+    let xs: Vec<f64> =
+        d.s.overlay()
+            .tested
+            .iter()
+            .filter(|l| l.color == blue)
+            .flat_map(|l| [l.a.x, l.b.x])
+            .collect();
+    assert_eq!(xs.len(), 24, "one box of 12 edges");
+    let (lo, hi) = xs
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(l, h), x| (l.min(*x), h.max(*x)));
+    assert!(
+        (lo - 1.0).abs() < 1e-6 && (hi - 3.0).abs() < 1e-6,
+        "{lo} {hi}"
+    );
 }
 
 #[test]

@@ -688,10 +688,16 @@ impl Session {
                 self.style.open_box_dash,
             ));
         }
+        // While the groups are being moved, turned or scaled, the box goes
+        // with them.
+        let step = self
+            .group_change()
+            .map(|c| c.affine(1.0))
+            .unwrap_or(prism_math::DAffine3::IDENTITY);
         for g in &self.groups {
             if let Some(c) = self.group_box(*g) {
                 o.tested.extend(box_lines(
-                    c,
+                    c.map(|p| step.transform_point3(p)),
                     self.style.selected,
                     self.style.highlight_width,
                     [0.0, 0.0],
