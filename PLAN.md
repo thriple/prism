@@ -933,7 +933,7 @@ The milestones below are broken into chunks that can be built and tried one at a
 
 **Added since:** View Settings, Inspector & Features and Fit & Mechanisms come from sections 1.14, 1.17 and 1.15. Fit & Mechanisms works first on planar and mesh parts, and curved NURBS parts wait for Solids & CAD.
 
-**Suggested order:** Skeleton, Core Model and Actions & Keys can start together, then Viewport, Inference & Drawing, Edit Tools and Files & Formats. Groups & Components and Model Health come next. NURBS Spike is a short spike that can run at any time after Core Model, and it should run before the scope past Exact Curves is committed. Everything from Freeform NURBS on is ordered by what you decide to build, not by dependency alone.
+**Suggested order:** Skeleton, Core Model and Actions & Keys can start together, then Viewport, Inference & Drawing, Edit Tools and Files & Formats. Groups & Components and Model Health come next. NURBS Spike is a short spike that can run at any time after Core Model, and it should run before the scope past Exact Curves is committed. Everything from Freeform NURBS on is ordered by what you decide to build, not by dependency alone. **Standing rule (owner, 2026-11-08):** chunks are built in the order of the table above, top to bottom; the next chunk is the first row not yet started. Only the owner changes the order.
 
 ### 6.0a Building chunks in parts
 

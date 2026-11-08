@@ -19,10 +19,8 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Groups & Components: briefs 12, 13, 14. Model Health: briefs 15, 16.
 - **State:** `main` = session branch = `16a4648`, CI green, web page
   updated. Nothing uncommitted.
-- **Next: the owner's choice.** PLAN 6.0's order is least firm after
-  Model Health. Candidates: View Settings, Exact Curves, Basic Materials,
-  Annotation & Sections, Shapes & Placement, Inspector & Features, the
-  NURBS Spike. Ask before starting one.
+- **Next: View Settings,** the first row of the PLAN 6.0 table not yet
+  started (see the standing rule below).
 - **Waiting on the owner to try by hand:** groups and components (make,
   select, open, close, explode, copy), the Components, Outliner, Entity
   Info, Tags and Model Health windows, and the Push/Pull cases they
@@ -30,6 +28,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **Owner's standing instructions this session:** push tested work to
   `main` (everyone on one branch); breaking chunks into parts is welcome;
   "full auto" was on until Model Health was done.
+- **Standing rule (owner, 2026-11-08): follow the plan in order.** Build
+  the chunks in the order of the PLAN 6.0 table, top to bottom: the next
+  chunk is the first row not yet started. Do not ask which chunk is next.
+  Only the owner changes the order.
 - **GPU tests here:** install Mesa's software Vulkan driver first
   (`apt-get install -y mesa-vulkan-drivers`), then run with
   `PRISM_REQUIRE_GPU=1`; without it they skip silently.
