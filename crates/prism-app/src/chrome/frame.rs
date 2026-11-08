@@ -30,9 +30,21 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
         pos2(dock_rect.right() + g, body_top),
         pos2(screen.right() - g, body_top + size::TAB_HEIGHT),
     );
+    // Docked windows (Outliner, Model Health, ...) take a column on the
+    // right; the viewport gives up the room.
+    let side = chrome.side_open().then(|| {
+        Rect::from_min_max(
+            pos2(
+                screen.right() - g - size::SIDE_WIDTH,
+                strip.bottom() + size::TAB_GAP,
+            ),
+            pos2(screen.right() - g, body_bottom),
+        )
+    });
+    chrome.side_rect = side;
     let viewport = Rect::from_min_max(
         pos2(dock_rect.right() + g, strip.bottom() + size::TAB_GAP),
-        pos2(screen.right() - g, body_bottom),
+        pos2(side.map_or(screen.right(), |r| r.left()) - g, body_bottom),
     );
 
     top_bar(chrome, ctx, top);

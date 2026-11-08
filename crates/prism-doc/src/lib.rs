@@ -61,9 +61,6 @@ pub enum Command {
         centre: DVec3,
         factor: DVec3,
     },
-    Duplicate {
-        selection: Selection,
-    },
     /// Copies of a selection, each moved or rotated one step further than
     /// the last (`count` 1 is a plain copy; more is an array), in one step.
     Copy {
@@ -289,7 +286,6 @@ impl Command {
             Command::Translate { .. } => "Move",
             Command::Rotate { .. } => "Rotate",
             Command::Scale { .. } => "Scale",
-            Command::Duplicate { .. } => "Copy",
             Command::Copy { count, .. } if *count > 1 => "Array",
             Command::Copy { .. } => "Copy",
             Command::Offset { .. } => "Offset",
@@ -545,9 +541,6 @@ impl Command {
                 centre,
                 factor,
             } => transform::scale(m, vertices, *centre, *factor),
-            Command::Duplicate { selection } => {
-                prism_ops::duplicate(m, selection);
-            }
             Command::Copy {
                 selection,
                 step,

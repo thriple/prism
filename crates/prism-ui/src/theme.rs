@@ -146,6 +146,10 @@ pub mod size {
     pub const FOCUS_GAP: f32 = 4.0;
     pub const PANEL_PAD: f32 = 18.0;
     pub const PANEL_WIDTH: f32 = 300.0;
+    /// The column of docked windows on the right of the viewport.
+    pub const SIDE_WIDTH: f32 = 340.0;
+    /// Space between the windows in the side column.
+    pub const SIDE_GAP: f32 = 12.0;
     pub const PANEL_TITLE_GAP: f32 = 12.0;
     pub const VALUE_TIP_GAP: f32 = 12.0;
     pub const VALUE_TIP_PAD: [f32; 2] = [8.0, 4.0];

@@ -1,9 +1,11 @@
 //! Window > Components (Groups & Components part 2): the document's
 //! components, how many instances each has, select them all, rename.
 
-use egui::{Context, RichText};
+use std::collections::BTreeSet;
+
+use egui::{RichText, Ui};
 use prism_ui::theme::{self, color, size};
-use prism_ui::widgets::{SoftButton, SoftDialog, field};
+use prism_ui::widgets::{SideCard, SoftButton, field};
 
 use super::Chrome;
 
@@ -28,18 +30,20 @@ pub struct ComponentsWindow {
     pub renaming: Option<(u32, String)>,
 }
 
-pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
-    let open = chrome.components.is_some();
+/// The Components window's card in the side column, while it is open.
+pub(super) fn card(chrome: &mut Chrome, ui: &mut Ui, folded: &mut BTreeSet<&'static str>) {
+    let Some(mut state) = chrome.components.clone() else {
+        return;
+    };
     let rows = chrome.component_rows.clone();
     let mut ops = Vec::new();
-    let mut state = chrome.components.clone().unwrap_or_default();
-    let r = SoftDialog::new("Components")
+    let r = SideCard::new("Components")
         .subtitle(match rows.len() {
             0 => "None yet: Edit > Make Component".to_owned(),
             1 => "1 component".to_owned(),
             n => format!("{n} components"),
         })
-        .show(ctx, open, |ui| {
+        .show(ui, folded.contains("Components"), |ui| {
             for row in &rows {
                 ui.add_space(size::MENU_PAD);
                 ui.horizontal(|ui| match &mut state.renaming {
@@ -72,9 +76,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                 });
             }
         });
-    if r.close {
+    if super::panels::after_card(ui, folded, "Components", r) {
         chrome.components = None;
-    } else if open {
+    } else {
         chrome.components = Some(state);
     }
     chrome.component_ops.extend(ops);

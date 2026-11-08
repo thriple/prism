@@ -301,7 +301,7 @@ fn path(centre: Pos2, points: &[Vec2], angle: f32, stroke: Stroke) -> Shape {
 }
 
 /// The dropdown chevron, rotated by `angle` (half a turn when open).
-fn chevron_shape(centre: Pos2, angle: f32) -> Shape {
+pub(crate) fn chevron_shape(centre: Pos2, angle: f32) -> Shape {
     let h = size::CHEVRON * 0.5;
     path(
         centre,

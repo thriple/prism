@@ -2,11 +2,13 @@
 //! The app hands the rows in each frame and passes the requests on to the
 //! session.
 
-use egui::{Context, RichText};
+use std::collections::BTreeSet;
+
+use egui::{Context, RichText, Ui};
 use prism_doc::{InstanceId, TagId};
 use prism_tools::{EntityInfo, OutlineRow};
 use prism_ui::theme::{self, color, size};
-use prism_ui::widgets::{SoftButton, SoftDialog, field};
+use prism_ui::widgets::{SideCard, SideCardResponse, SoftButton, field};
 
 use super::Chrome;
 
@@ -47,47 +49,75 @@ pub struct Panels {
     pub name_edit: Option<(InstanceId, String)>,
     /// A tag being renamed.
     pub tag_edit: Option<(TagId, String)>,
+    /// The side windows folded to their titles.
+    pub folded: BTreeSet<&'static str>,
 }
 
 impl Panels {
     pub fn any_open(&self) -> bool {
         self.outliner || self.info || self.tags || self.health
     }
-
-    /// Close the last opened (Esc).
-    pub fn close_one(&mut self) {
-        if self.health {
-            self.health = false;
-        } else if self.tags {
-            self.tags = false;
-        } else if self.info {
-            self.info = false;
-        } else {
-            self.outliner = false;
-        }
-    }
 }
 
 pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
+    let Some(rect) = chrome.side_rect else {
+        return;
+    };
     let data = chrome.panel_data.clone();
     let mut p = chrome.panels.clone();
     let mut ops = Vec::new();
-    outliner(ctx, &mut p, &data, &mut ops);
-    info(ctx, &mut p, &data, &mut ops);
-    tags(ctx, &mut p, &data, &mut ops);
-    health(ctx, &mut p, &data, &mut ops);
+    egui::Area::new(egui::Id::unique("side-column"))
+        .order(egui::Order::Middle)
+        .fixed_pos(rect.min)
+        .show(ctx, |ui| {
+            // The whole column, every frame: the app redraws only on change,
+            // so a size taken from the last frame would cut new cards off.
+            ui.set_min_size(rect.size());
+            ui.set_max_size(rect.size());
+            egui::ScrollArea::vertical()
+                .max_height(rect.height())
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_width(rect.width());
+                    info(ui, &mut p, &data, &mut ops);
+                    outliner(ui, &mut p, &data, &mut ops);
+                    super::components::card(chrome, ui, &mut p.folded);
+                    tags(ui, &mut p, &data, &mut ops);
+                    health(ui, &mut p, &data, &mut ops);
+                    // Room for the last card's shadow.
+                    ui.add_space(size::GAP);
+                });
+        });
     chrome.panels = p;
     chrome.panel_ops.extend(ops);
 }
 
-fn outliner(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
-    let r = SoftDialog::new("Outliner")
+/// After a side window's card: fold or unfold it, and space before the
+/// next. Returns true if it was closed.
+pub(super) fn after_card(
+    ui: &mut Ui,
+    folded: &mut BTreeSet<&'static str>,
+    name: &'static str,
+    r: SideCardResponse,
+) -> bool {
+    if r.toggle && !folded.remove(name) {
+        folded.insert(name);
+    }
+    ui.add_space(size::SIDE_GAP);
+    r.close
+}
+
+fn outliner(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+    if !p.outliner {
+        return;
+    }
+    let r = SideCard::new("Outliner")
         .subtitle(match data.outline.len() {
             0 => "No groups yet".to_owned(),
             1 => "1 group or component".to_owned(),
             n => format!("{n} groups and components"),
         })
-        .show(ctx, p.outliner, |ui| {
+        .show(ui, p.folded.contains("Outliner"), |ui| {
             egui::ScrollArea::vertical()
                 .max_height(360.0)
                 .show(ui, |ui| {
@@ -130,102 +160,112 @@ fn outliner(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<Panel
                     }
                 });
         });
-    if r.close {
+    if after_card(ui, &mut p.folded, "Outliner", r) {
         p.outliner = false;
     }
 }
 
-fn info(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
-    let r = SoftDialog::new("Entity Info").show(ctx, p.info, |ui| match &data.info {
-        Some(EntityInfo::Instance {
-            id,
-            name,
-            kind,
-            tag,
-            hidden,
-        }) => {
-            ui.label(RichText::new(kind).color(color::MUTED));
-            ui.add_space(size::MENU_PAD);
-            ui.horizontal(|ui| {
-                ui.label("Name");
-                let text = match &mut p.name_edit {
-                    Some((i, t)) if i == id => t,
-                    _ => {
-                        p.name_edit = Some((*id, name.clone()));
-                        &mut p.name_edit.as_mut().expect("set").1
-                    }
-                };
-                let resp = field(ui, text, "No name", 180.0);
-                if resp.lost_focus() && *text != *name {
-                    ops.push(PanelOp::Name(*id, text.clone()));
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Tag");
-                let none = tag.is_none();
-                if ui
-                    .add(SoftButton::new("None").small().selected(none))
-                    .clicked()
-                {
-                    ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(None)));
-                }
-                for (t, tname, _, _) in &data.tags {
+fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+    if !p.info {
+        return;
+    }
+    let r =
+        SideCard::new("Entity Info").show(ui, p.folded.contains("Entity Info"), |ui| {
+            match &data.info {
+                Some(EntityInfo::Instance {
+                    id,
+                    name,
+                    kind,
+                    tag,
+                    hidden,
+                }) => {
+                    ui.label(RichText::new(kind).color(color::MUTED));
+                    ui.add_space(size::MENU_PAD);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Name");
+                        let text = match &mut p.name_edit {
+                            Some((i, t)) if i == id => t,
+                            _ => {
+                                p.name_edit = Some((*id, name.clone()));
+                                &mut p.name_edit.as_mut().expect("set").1
+                            }
+                        };
+                        let resp = field(ui, text, "No name", 180.0);
+                        if resp.lost_focus() && *text != *name {
+                            ops.push(PanelOp::Name(*id, text.clone()));
+                        }
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Tag");
+                        let none = tag.is_none();
+                        if ui
+                            .add(SoftButton::new("None").small().selected(none))
+                            .clicked()
+                        {
+                            ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(None)));
+                        }
+                        for (t, tname, _, _) in &data.tags {
+                            if ui
+                                .add(SoftButton::new(tname).small().selected(*tag == Some(*t)))
+                                .clicked()
+                            {
+                                ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(Some(*t))));
+                            }
+                        }
+                    });
                     if ui
-                        .add(SoftButton::new(tname).small().selected(*tag == Some(*t)))
+                        .add(SoftButton::new(if *hidden { "Show" } else { "Hide" }).small())
                         .clicked()
                     {
-                        ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(Some(*t))));
+                        ops.push(PanelOp::Hide(*id, !hidden));
                     }
                 }
-            });
-            if ui
-                .add(SoftButton::new(if *hidden { "Show" } else { "Hide" }).small())
-                .clicked()
-            {
-                ops.push(PanelOp::Hide(*id, !hidden));
+                Some(EntityInfo::Geometry {
+                    groups,
+                    faces,
+                    edges,
+                    points,
+                    area,
+                }) => {
+                    p.name_edit = None;
+                    let line =
+                        |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+                    ui.label(
+                        [
+                            line(*groups, "group"),
+                            line(*faces, "face"),
+                            line(*edges, "edge"),
+                            line(*points, "point"),
+                        ]
+                        .join(", "),
+                    );
+                    if *faces > 0 {
+                        ui.label(
+                            RichText::new(format!("Area {area:.4}"))
+                                .font(theme::mono())
+                                .color(color::MUTED),
+                        );
+                    }
+                }
+                None => {
+                    ui.label(RichText::new("Nothing selected").color(color::MUTED));
+                }
             }
-        }
-        Some(EntityInfo::Geometry {
-            groups,
-            faces,
-            edges,
-            points,
-            area,
-        }) => {
-            p.name_edit = None;
-            let line = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
-            ui.label(
-                [
-                    line(*groups, "group"),
-                    line(*faces, "face"),
-                    line(*edges, "edge"),
-                    line(*points, "point"),
-                ]
-                .join(", "),
-            );
-            if *faces > 0 {
-                ui.label(
-                    RichText::new(format!("Area {area:.4}"))
-                        .font(theme::mono())
-                        .color(color::MUTED),
-                );
-            }
-        }
-        None => {
-            ui.label(RichText::new("Nothing selected").color(color::MUTED));
-        }
-    });
-    if r.close {
+        });
+    if after_card(ui, &mut p.folded, "Entity Info", r) {
         p.info = false;
     }
 }
 
-fn tags(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
-    let r = SoftDialog::new("Tags")
+fn tags(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+    if !p.tags {
+        return;
+    }
+    let r = SideCard::new("Tags")
         .subtitle("Show or hide everything on a tag")
-        .show(ctx, p.tags, |ui| {
+        .show(ui, p.folded.contains("Tags"), |ui| {
             for (t, name, shown, count) in &data.tags {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui
                         .add(SoftButton::new(if *shown { "●" } else { "○" }).small())
                         .clicked()
@@ -269,27 +309,30 @@ fn tags(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>)
                 ops.push(PanelOp::Tag(prism_tools::TagOp::Add));
             }
         });
-    if r.close {
+    if after_card(ui, &mut p.folded, "Tags", r) {
         p.tags = false;
     }
 }
 
-fn health(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+fn health(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+    if !p.health {
+        return;
+    }
     let problems: usize = data
         .health
         .iter()
         .filter(|r| r.key != "nesting")
         .map(|r| r.count)
         .sum();
-    let r = SoftDialog::new("Model Health")
+    let r = SideCard::new("Model Health")
         .subtitle(if problems == 0 {
             "Nothing found".to_owned()
         } else {
             format!("{problems} things to look at")
         })
-        .show(ctx, p.health, |ui| {
+        .show(ui, p.folded.contains("Model Health"), |ui| {
             for row in &data.health {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let colour = if row.count == 0 {
                         color::MUTED
                     } else {
@@ -328,7 +371,7 @@ fn health(ctx: &Context, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp
             p.health_marks_off = !show;
             ui.label(RichText::new("Click a row to select and zoom to it.").color(color::MUTED));
         });
-    if r.close {
+    if after_card(ui, &mut p.folded, "Model Health", r) {
         p.health = false;
     }
 }

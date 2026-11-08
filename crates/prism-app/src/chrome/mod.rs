@@ -110,6 +110,9 @@ pub struct Chrome {
     pub(crate) panels: panels::Panels,
     pub panel_data: PanelData,
     pub panel_ops: Vec<PanelOp>,
+    /// The column on the right of the viewport where those windows dock,
+    /// while one is open (set by the frame each frame).
+    pub(crate) side_rect: Option<egui::Rect>,
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
@@ -180,6 +183,7 @@ impl Chrome {
             panels: Default::default(),
             panel_data: Default::default(),
             panel_ops: Vec::new(),
+            side_rect: None,
             hotkeys: None,
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
@@ -354,8 +358,12 @@ impl Chrome {
             || self.palette.is_some()
             || self.features_open
             || self.hotkeys.is_some()
-            || self.components.is_some()
-            || self.panels.any_open()
+    }
+
+    /// Whether a window is docked in the side column. These windows do
+    /// not take the keyboard or dim the viewport.
+    pub(crate) fn side_open(&self) -> bool {
+        self.components.is_some() || self.panels.any_open()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -368,10 +376,6 @@ impl Chrome {
             if !h.cancel_pending() {
                 self.hotkeys = None;
             }
-        } else if self.components.is_some() {
-            self.components = None;
-        } else if self.panels.any_open() {
-            self.panels.close_one();
         } else {
             self.features_open = false;
         }
@@ -452,7 +456,6 @@ impl Chrome {
         palette::show(self, ctx);
         features::show(self, ctx);
         hotkeys::show(self, ctx);
-        components::show(self, ctx);
         panels::show(self, ctx);
         layout
     }

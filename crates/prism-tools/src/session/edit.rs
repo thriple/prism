@@ -709,7 +709,12 @@ impl Session {
         }
         let view = self.view();
         let (o, dir) = view.ray(s);
-        let Some((face, t)) = self.scene.ray_face(o, dir) else {
+        // Only the open group's own faces: a closed group's are not pulled.
+        let Some((face, t)) = self
+            .scene
+            .ray_face(o, dir)
+            .filter(|(f, _)| !self.scene.face_owner.contains_key(f))
+        else {
             return;
         };
         let n = self.scene.face(face).map_or(DVec3::Z, |f| f.normal);

@@ -171,7 +171,11 @@ impl Session {
         let face = if self.selection.faces.len() == 1 {
             self.selection.faces.first().copied()
         } else {
-            self.scene.ray_face(o, dir).map(|(f, _)| f)
+            // Only the open group's own faces, as for Push/Pull.
+            self.scene
+                .ray_face(o, dir)
+                .map(|(f, _)| f)
+                .filter(|f| !self.scene.face_owner.contains_key(f))
         };
         let Some(face) = face else { return };
         let Some(sf) = self.scene.face(face) else {

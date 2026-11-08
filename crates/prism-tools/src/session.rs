@@ -1370,7 +1370,7 @@ impl Session {
         // What this click names: the item, a face and its edges (double),
         // or everything connected (triple).
         let named = match hit {
-            Some(h) => click_select(self.doc.model(), Some(h), n.min(3)),
+            Some(h) => click_select(self.work_model(), Some(h), n.min(3)),
             None => Selection::default(),
         };
         // With Shift or Ctrl, a double or triple click works from the

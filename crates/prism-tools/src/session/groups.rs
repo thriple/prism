@@ -45,6 +45,10 @@ pub(super) struct Piece {
     faded: bool,
 }
 
+/// How far the open group's dashed box stands off its contents, as a
+/// share of their largest size.
+const OPEN_BOX_MARGIN: f64 = 0.05;
+
 impl Session {
     /// The open group, as a path of instances from the root (empty at the root).
     pub fn open_path(&self) -> &[InstanceId] {
@@ -598,23 +602,27 @@ impl Session {
     pub fn group_box(&self, id: InstanceId) -> Option<[DVec3; 8]> {
         let mut path = self.ctx.clone();
         path.push(id);
-        self.path_box(&path)
+        self.path_box(&path, 0.0)
     }
 
-    /// The open group's box in the world (the dashed box).
+    /// The open group's box in the world (the dashed box). It stands a
+    /// little off its contents on every side, so it shows even round a
+    /// flat rectangle (owner feedback).
     pub fn open_box(&self) -> Option<[DVec3; 8]> {
         if self.ctx.is_empty() {
             return None;
         }
-        self.path_box(&self.ctx)
+        self.path_box(&self.ctx, OPEN_BOX_MARGIN)
     }
 
-    fn path_box(&self, path: &[InstanceId]) -> Option<[DVec3; 8]> {
+    /// `margin`: added on every side, as a share of the box's largest size.
+    fn path_box(&self, path: &[InstanceId], margin: f64) -> Option<[DVec3; 8]> {
         let asm = self.doc.assembly();
         let def = asm.context_def(path)?;
         let world = asm.world_of(path)?;
         let (lo, hi) = def_bounds(asm, def)?;
-        Some(corners(lo, hi).map(|p| world.transform_point3(p)))
+        let pad = DVec3::splat((hi - lo).max_element() * margin);
+        Some(corners(lo - pad, hi + pad).map(|p| world.transform_point3(p)))
     }
 
     /// The groups a box selects, taking their pieces out of `hits`: in a

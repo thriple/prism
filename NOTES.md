@@ -873,3 +873,26 @@ the export note (prism-ops).
   cursor still moves the loop by how far it has moved from the first click.
   Left over: on a face with notches, a point can lie on more than one moved
   edge; the smallest distance wins.
+
+## Owner feedback, 2026-11-08 (side windows, groups)
+- **Side windows:** Outliner, Entity Info, Components, Tags and Model
+  Health are no longer dialogs over a dimmed app. They dock as cards in a
+  column on the right of the viewport (`SideCard` in `prism-ui`), which
+  shrinks the viewport while one is open. Each card has a fold arrow and a
+  close button in its top-right corner; clicking the title folds it too.
+  They do not take the keyboard, so tools and shortcuts work while they
+  are open, and Esc no longer closes them. Screenshot:
+  `docs/screenshots/side-panels.png` (the Outliner folded). Left over: the
+  cards cannot be reordered, resized or moved to the left yet (the kit's
+  `PanelLayout`), and the column has a fixed width.
+- **Double- and triple-click inside an open group:** they looked the face up
+  in the root model instead of the group's, and found nothing. Fixed.
+- **Push/Pull and Offset on a closed group:** the hover already ignored a
+  closed group's faces, but a click still started a step on them. Now the
+  click does nothing, as SketchUp does.
+- **The open group's dashed box** stands off its contents by 5% of their
+  largest size on every side, so it shows round a flat rectangle.
+- **CI hang found and fixed:** the random undo test hit a sequence where
+  `Command::Duplicate` (a copy in place, never used by the app) left
+  coincident points, and the next Offset multiplied faces until memory ran
+  out. The command is removed; Copy welds its copies and covers the need.

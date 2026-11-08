@@ -1422,6 +1422,82 @@ fn the_blue_box_moves_with_the_group_during_move() {
     );
 }
 
+/// Inside an open group, a double-click takes a face and its edges, and a
+/// triple-click everything connected (owner feedback, 2026-11-08).
+#[test]
+fn double_and_triple_click_work_inside_an_open_group() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.desel");
+    d.tool(SELECT);
+    double_click(&mut d, DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.open_path(), [g]);
+    d.wait(1.0);
+    double_click(&mut d, DVec3::new(1.0, 1.0, 2.0));
+    let sel = d.s.selection();
+    assert_eq!(
+        (sel.faces.len(), sel.edges.len()),
+        (1, 4),
+        "the top and its edges"
+    );
+    d.wait(1.0);
+    let s = d.screen(DVec3::new(1.0, 1.0, 2.0));
+    for _ in 0..3 {
+        d.send(Input::Press {
+            button: Button::Left,
+            x: s.x,
+            y: s.y,
+            shift: false,
+            ctrl: false,
+        });
+        d.send(Input::Release {
+            button: Button::Left,
+        });
+    }
+    let sel = d.s.selection();
+    assert_eq!((sel.faces.len(), sel.edges.len()), (6, 12), "the whole box");
+}
+
+/// Push/Pull and Offset do nothing on a closed group's faces (owner
+/// feedback, 2026-11-08: the drag still ran).
+#[test]
+fn push_pull_and_offset_leave_a_closed_group_alone() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.desel");
+    let inside = |d: &Driver| {
+        let a = d.s.document().assembly();
+        let def = a.context_def(&[g]).expect("group");
+        a.def(def).expect("def").model.geometry_json()
+    };
+    let before = inside(&d);
+    for tool in [PUSH, OFFSET] {
+        d.tool(tool);
+        d.click(DVec3::new(1.0, 1.0, 2.0));
+        assert!(!d.s.in_operation(), "{tool}: no step started");
+        d.hover(DVec3::new(1.0, 1.0, 3.0));
+        assert!(d.s.inference().is_none(), "{tool}: no snapping");
+        d.click(DVec3::new(1.0, 1.0, 3.0));
+    }
+    assert_eq!(inside(&d), before);
+    assert_eq!(d.faces(), 0, "nothing at the root");
+}
+
+/// The open group's dashed box stands off its contents, so it shows round
+/// a flat rectangle too (owner feedback, 2026-11-08).
+#[test]
+fn the_open_box_stands_off_its_contents() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.s.open_path_to(&[g]);
+    let c = d.s.open_box().expect("a box while open");
+    let (lo, hi) = c
+        .iter()
+        .fold((c[0], c[0]), |(l, h), p| (l.min(*p), h.max(*p)));
+    assert!((lo - DVec3::splat(-0.1)).length() < 1e-9, "{lo}");
+    assert!((hi - DVec3::splat(2.1)).length() < 1e-9, "{hi}");
+}
+
 #[test]
 fn drawing_inside_a_group_snaps_to_geometry_outside_it() {
     let mut d = Driver::empty();
