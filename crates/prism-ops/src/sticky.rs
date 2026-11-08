@@ -126,7 +126,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     let new: BTreeSet<EdgeId> = added.iter().copied().collect();
     let mut faces = Vec::new();
     for plane in candidate_planes(model, &chain, pa, pb, &tol) {
-        faces.extend(rebuild_plane(model, &plane, &new, &tol, Fill::Drawn));
+        faces.extend(rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0));
     }
     faces.retain(|f| model.face(*f).is_some());
     Added {

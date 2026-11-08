@@ -136,19 +136,56 @@ pub fn crossings(a: &Flat, b: &Flat, tol: &Tol) -> Vec<(DVec3, DVec3)> {
     let p = (b.normal.cross(d) * ca + d.cross(a.normal) * cb) / len2;
     let dir = d / len2.sqrt();
     let (ia, ib) = (a.clip(p, dir, tol), b.clip(p, dir, tol));
-    let mut out = Vec::new();
+    // Corners of either face on the line: a crossing can be a shared edge
+    // for part of its length only, so each piece between them is tested.
+    let mut stops: Vec<f64> = [a, b]
+        .iter()
+        .flat_map(|f| {
+            std::iter::once(&f.outer)
+                .chain(f.holes.iter())
+                .flatten()
+                .map(move |q| f.origin + f.u * q.x + f.v * q.y)
+        })
+        .filter(|x| (*x - p).cross(dir).length() <= tol.dist)
+        .map(|x| (x - p).dot(dir))
+        .collect();
+    stops.sort_by(f64::total_cmp);
+    let mut out: Vec<(DVec3, DVec3)> = Vec::new();
     for (a0, a1) in &ia {
         for (b0, b1) in &ib {
             let (t0, t1) = (a0.max(*b0), a1.min(*b1));
             if t1 - t0 <= tol.dist * 10.0 {
                 continue;
             }
-            let mid = p + dir * (0.5 * (t0 + t1));
-            // Along both outlines: the edge they share.
-            if a.on_outline(a.to_2d(mid), tol.dist) && b.on_outline(b.to_2d(mid), tol.dist) {
-                continue;
+            let mut cuts: Vec<f64> = std::iter::once(t0)
+                .chain(
+                    stops
+                        .iter()
+                        .copied()
+                        .filter(|t| *t > t0 + tol.dist && *t < t1 - tol.dist),
+                )
+                .chain(std::iter::once(t1))
+                .collect();
+            cuts.dedup_by(|x, y| (*x - *y).abs() <= tol.dist);
+            let mut run: Option<(f64, f64)> = None;
+            for w in cuts.windows(2) {
+                let mid = p + dir * (0.5 * (w[0] + w[1]));
+                // Along both outlines: the edge they share.
+                let shared =
+                    a.on_outline(a.to_2d(mid), tol.dist) && b.on_outline(b.to_2d(mid), tol.dist);
+                match (&mut run, shared) {
+                    (Some(r), false) => r.1 = w[1],
+                    (None, false) => run = Some((w[0], w[1])),
+                    (Some(r), true) => {
+                        out.push((p + dir * r.0, p + dir * r.1));
+                        run = None;
+                    }
+                    (None, true) => {}
+                }
             }
-            out.push((p + dir * t0, p + dir * t1));
+            if let Some(r) = run {
+                out.push((p + dir * r.0, p + dir * r.1));
+            }
         }
     }
     out

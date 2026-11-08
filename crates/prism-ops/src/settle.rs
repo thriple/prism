@@ -18,13 +18,28 @@ use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Plane, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
 
-use crate::regions::{Fill, rebuild_plane};
+use crate::regions::{Fill, InsideTest, rebuild_plane};
 use crate::sticky::{crossing, on_segment_inside};
 
 /// After an edit that changed the touched vertices freely (Push/Pull).
+/// Overlapping faces are left for the solid rule; call [`dedupe_faces`]
+/// after it.
 pub fn settle(model: &mut Model, touched: &BTreeSet<VertexId>) {
+    settle_with(model, touched, &[], None);
+}
+
+/// [`settle`], knowing exactly what is inside the solid the edit makes
+/// (Push/Pull on a solid, [`crate::solid::Swept`]): every touched plane is
+/// rebuilt, and a region gets a face where the solid is on one side only.
+/// `planes` are rebuilt too (planes of faces the edit may have removed).
+pub(crate) fn settle_with(
+    model: &mut Model,
+    touched: &BTreeSet<VertexId>,
+    planes: &[Plane],
+    inside: Option<InsideTest>,
+) {
     let tags = touched.iter().map(|v| (*v, Tag::Free)).collect();
-    run(model, tags);
+    run(model, tags, planes, inside);
 }
 
 /// After an edit that moved each group of vertices by one affine map (a
@@ -36,7 +51,8 @@ pub fn settle_rigid(model: &mut Model, groups: &[BTreeSet<VertexId>]) {
             tags.insert(*v, Tag::Group(k));
         }
     }
-    run(model, tags);
+    run(model, tags, &[], None);
+    dedupe_faces(model);
 }
 
 /// How a vertex, edge or face took part in the edit.
@@ -88,7 +104,12 @@ struct Seg {
     tag: Tag,
 }
 
-fn run(model: &mut Model, tags: BTreeMap<VertexId, Tag>) {
+fn run(
+    model: &mut Model,
+    tags: BTreeMap<VertexId, Tag>,
+    extra: &[Plane],
+    inside: Option<InsideTest>,
+) {
     if tags.is_empty() {
         return;
     }
@@ -124,6 +145,19 @@ fn run(model: &mut Model, tags: BTreeMap<VertexId, Tag>) {
         }
     }
 
+    for p in extra {
+        let c = cell(p, &tol);
+        let known = around(c).any(|k| {
+            plane_cells
+                .get(&k)
+                .is_some_and(|ix| ix.iter().any(|i| planes[*i].same_surface(p, &tol)))
+        });
+        if !known {
+            plane_cells.entry(c).or_default().push(planes.len());
+            planes.push(*p);
+        }
+    }
+
     let edge_ids: BTreeMap<(VertexId, VertexId), EdgeId> =
         model.edges().map(|(id, e)| ((e.a, e.b), id)).collect();
     let mut in_faces: BTreeSet<EdgeId> = BTreeSet::new();
@@ -133,6 +167,11 @@ fn run(model: &mut Model, tags: BTreeMap<VertexId, Tag>) {
                 in_faces.insert(*e);
             }
         }
+    }
+    let mut edges_at: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+    for (id, e) in model.edges() {
+        edges_at.entry(e.a).or_default().push(id);
+        edges_at.entry(e.b).or_default().push(id);
     }
     let loose: Vec<EdgeId> = model
         .edges()
@@ -168,6 +207,22 @@ fn run(model: &mut Model, tags: BTreeMap<VertexId, Tag>) {
                 }
             }
         }
+        // Edges of faces in other planes can lie in this one too (a wall's
+        // corner edge along this plane): take those at this plane's points.
+        let mut at: BTreeSet<VertexId> = BTreeSet::new();
+        for f in &faces {
+            at.extend(model.face(*f).expect("face").loops().flatten().copied());
+        }
+        for v in &at {
+            for e in edges_at.get(v).into_iter().flatten() {
+                let ed = model.edge(*e).expect("edge");
+                if plane.contains(model.vertex(ed.a), &tol)
+                    && plane.contains(model.vertex(ed.b), &tol)
+                {
+                    edges.insert(*e);
+                }
+            }
+        }
         for e in &loose {
             let ed = model.edge(*e).expect("edge");
             if plane.contains(model.vertex(ed.a), &tol) && plane.contains(model.vertex(ed.b), &tol)
@@ -196,7 +251,10 @@ fn run(model: &mut Model, tags: BTreeMap<VertexId, Tag>) {
             continue;
         }
         let points = meeting_points(&segs, &tol);
-        if !points.is_empty() || contains_another(model, &faces, plane, &face_tag) {
+        if inside.is_some()
+            || !points.is_empty()
+            || contains_another(model, &faces, plane, &face_tag)
+        {
             work.push((*plane, points));
         }
     }
@@ -211,7 +269,14 @@ fn run(model: &mut Model, tags: BTreeMap<VertexId, Tag>) {
             .map(|(id, _)| id)
             .filter(|id| !before.contains(id))
             .collect();
-        rebuild_plane(model, &plane, &new, &tol, Fill::Closing);
+        rebuild_plane(
+            model,
+            &plane,
+            &new,
+            &tol,
+            Fill::Closing(inside),
+            crate::solid::step(&tol),
+        );
     }
 }
 
@@ -328,5 +393,40 @@ fn split_at(model: &mut Model, p: DVec3, tol: &Tol) {
         .collect();
     for e in through {
         model.split_edge(e, v);
+    }
+}
+
+/// Faces with the same loops facing the same way (overlapping faces left
+/// by an edit) become one: the lowest id stays.
+pub fn dedupe_faces(model: &mut Model) {
+    let mut seen: BTreeMap<Vec<VertexId>, FaceId> = BTreeMap::new();
+    let mut extra = Vec::new();
+    for (id, f) in model.faces() {
+        // The outer loop from its smallest vertex, in its own direction.
+        let n = f.outer.len();
+        let start = (0..n).min_by_key(|i| f.outer[*i]).unwrap_or(0);
+        let mut key: Vec<VertexId> = (0..n).map(|i| f.outer[(start + i) % n]).collect();
+        let mut holes: Vec<Vec<VertexId>> = f
+            .holes
+            .iter()
+            .map(|h| {
+                let mut h = h.clone();
+                h.sort();
+                h
+            })
+            .collect();
+        holes.sort();
+        for h in holes {
+            key.push(VertexId(u32::MAX));
+            key.extend(h);
+        }
+        if let std::collections::btree_map::Entry::Vacant(e) = seen.entry(key) {
+            e.insert(id);
+        } else {
+            extra.push(id);
+        }
+    }
+    for id in extra {
+        model.remove_face(id);
     }
 }

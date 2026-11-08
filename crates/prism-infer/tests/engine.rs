@@ -447,17 +447,19 @@ fn crossings_of_the_hovered_face_snap() {
     let f = prism_ops::face_at(&m, DVec3::new(2.0, 2.0, 0.0)).unwrap();
     let up = m.face(f).unwrap().plane().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
-    for (a, b) in [
-        (DVec3::new(1.0, 0.0, 0.5), DVec3::new(3.0, 0.0, 0.5)),
-        (DVec3::new(3.0, 0.0, 0.5), DVec3::new(3.0, 0.0, 1.5)),
-        (DVec3::new(3.0, 0.0, 1.5), DVec3::new(1.0, 0.0, 1.5)),
-        (DVec3::new(1.0, 0.0, 1.5), DVec3::new(1.0, 0.0, 0.5)),
-    ] {
-        prism_ops::add_segment(&mut m, a, b);
-    }
-    let win = prism_ops::face_at(&m, DVec3::new(2.0, 0.0, 1.0)).unwrap();
-    let out = m.face(win).unwrap().plane().normal.y < 0.0;
-    prism_ops::push_pull(&mut m, win, if out { -6.0 } else { 6.0 }, false);
+    // A 2 x 1 bar through the box from y = -1 to 6, moved in (a move does
+    // not cut, so the crossings stay for inference to find).
+    let before: std::collections::BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
+    prism_ops::add_rect(&mut m, 21.0, -1.0, 23.0, 6.0, 0.5);
+    let bar = prism_ops::face_at(&m, DVec3::new(22.0, 2.0, 0.5)).unwrap();
+    let up = m.face(bar).unwrap().plane().normal.z > 0.0;
+    prism_ops::push_pull(&mut m, bar, if up { 1.0 } else { -1.0 }, false);
+    let vs = m
+        .vertices()
+        .map(|(id, _)| id)
+        .filter(|id| !before.contains(id))
+        .collect();
+    prism_ops::transform::translate(&mut m, &vs, DVec3::new(-20.0, 0.0, 0.0));
     // Look at the back face (y = 4) from behind and below the tube, so the
     // cursor is over the back face itself.
     let cam = Camera {

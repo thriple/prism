@@ -45,6 +45,24 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     }
     let n = f.plane().normal;
     let shift = n * distance;
+    // On a solid, Push/Pull is a boolean with the block the face sweeps.
+    let swept = if new_loop {
+        None
+    } else {
+        crate::solid::Swept::of(model, face, distance)
+    };
+    let face_edges_before = edges_with_faces(model);
+    // The planes around the face, before the edit: a face there may shrink
+    // to nothing, and its plane may still need a face (a post left on top).
+    let around_planes: Vec<Plane> = {
+        let vs: BTreeSet<VertexId> = f.loops().flatten().copied().collect();
+        model
+            .faces()
+            .filter(|(_, g)| g.loops().flatten().any(|v| vs.contains(v)))
+            .map(|(_, g)| *g.plane())
+            .collect()
+    };
+    let before_ids: BTreeSet<prism_topo::EdgeId> = model.edges().map(|(id, _)| id).collect();
     let edge_faces = model.edge_faces();
     let others = |a: VertexId, b: VertexId| -> Vec<FaceId> {
         model
@@ -284,7 +302,39 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         .filter(|(_, p)| landing.iter().any(|q| tol.same_point(*p, *q)))
         .map(|(id, _)| id)
         .collect();
-    crate::settle::settle(model, &touched);
+    let test = swept.as_ref().map(|s| move |x: DVec3| s.inside(x));
+    let test: Option<&dyn Fn(DVec3) -> Option<bool>> =
+        test.as_ref().map(|f| f as &dyn Fn(DVec3) -> Option<bool>);
+    crate::settle::settle_with(model, &touched, &around_planes, test);
+    // Alt keeps the original face on purpose, inside or not.
+    if !new_loop {
+        crate::solid::keep_boundary(model, &touched, swept.as_ref());
+    }
+    crate::settle::dedupe_faces(model);
+    // Edges the edit left without a face (a box pushed flat, faces
+    // removed as inside) go, with their points; loose lines drawn before
+    // stay.
+    let now = edges_with_faces(model);
+    let left: Vec<prism_topo::EdgeId> = model
+        .edges()
+        .filter(|(id, _)| {
+            !now.contains(id) && (face_edges_before.contains(id) || !before_ids.contains(id))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    let mut ends = BTreeSet::new();
+    for e in left {
+        if let Some(ed) = model.edge(e) {
+            ends.insert(ed.a);
+            ends.insert(ed.b);
+        }
+        model.remove_edge(e);
+    }
+    for v in ends {
+        if !model.edges().any(|(_, e)| e.has(v)) && !model.faces().any(|(_, f)| f.uses_vertex(v)) {
+            model.remove_vertex(v);
+        }
+    }
     walls.retain(|w| model.face(*w).is_some());
 
     if new.is_empty() {
@@ -292,4 +342,14 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     } else {
         Pulled::Extruded { walls }
     }
+}
+
+/// Edges that at least one face runs along.
+fn edges_with_faces(model: &Model) -> BTreeSet<prism_topo::EdgeId> {
+    model
+        .edge_faces()
+        .into_iter()
+        .filter(|(_, f)| !f.is_empty())
+        .map(|(e, _)| e)
+        .collect()
 }

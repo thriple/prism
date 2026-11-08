@@ -603,3 +603,53 @@ others on that edge, such as the wall between the boxes, go with it).
   SketchUp, so the blocks join. Two boxes pulled side by side join too.
 - Left over (older behaviour): a rectangle that shares an edge with another
   rectangle gets no base when pulled up, so the box is open underneath.
+
+### The solid rule (owner asked for one general rule, 2026-11-08)
+
+DECISIONS #31, `prism-ops/src/solid.rs`. Push/Pull on a closed solid is a
+boolean with the block the face sweeps (union when pulling out, difference
+when pushing in). The inside test uses the solids as they were before the
+edit (a ray count over their faces) and the swept block, so it is exact
+even while the model is half rebuilt.
+
+**Steps after a pull:** the coplanar rule (#30) with that inside test (fills
+openings exactly), then cut the touched faces where they cross others, rebuild
+the planes around the swept block if anything was cut, keep only faces with
+the solid on exactly one side (turning round any that face in), keep one of
+any duplicates, and drop edges and points left without a face.
+
+**Fixed along the way:**
+- Intersect Faces could skip a crossing that was a shared edge for only
+  part of its length (it tested the midpoint only); it now tests each piece
+  between corners.
+- The coplanar rule missed edges owned by faces in other planes that lie in
+  the plane (a corner edge along a wall).
+- Welding a face onto an identical one facing the other way now removes
+  both (a box pushed flat), and faces count as identical only with the same
+  holes.
+- Region rebuilds no longer test every face against every region, or scan
+  every edge in the model per lookup (the Large Scene's ground plane was
+  2,500 x 2,500).
+
+**Tests:** the owner's cases, a block pulled into another, a block
+swallowed, a tunnel pushed through, open geometry untouched, and a property
+test (`tests/solids.rs`) of random pulls and notches on a box that must
+stay a valid closed solid. CI runs it with a fixed seed.
+
+**Speed (Large Scene, release):** Push/Pull 99 ms per preview (26 ms this
+morning without the solid rule). The inside test and the cutting step look
+at every face's flat form once per pull; a cache or spatial index would
+bring it down. Small models are instant.
+
+**Left over:**
+- Random sequences still find rare failures: about 1 seed in 3 at 2,000
+  cases. Two known kinds: a face whose outline touches itself at one
+  corner (a "pinched" loop, an older region-tracing limit), and a push
+  deeper than a neighbouring wall reaches, which slides that wall past
+  its own end. Run more with `PROPTEST_RNG_SEED=<n> PROPTEST_CASES=2000
+  cargo test --release -p prism-ops --test solids`.
+- Move, Rotate and Scale do not apply the solid rule (#31): moving a box
+  into another leaves the crossing for Intersect Faces, as before.
+- Behaviour change: pushing a window out through the back of a box now
+  cuts a tunnel by itself. Before, the tube stuck out and Intersect Faces
+  was needed.

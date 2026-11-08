@@ -100,42 +100,47 @@ fn a_wall_standing_on_a_floor_crosses_along_its_foot() {
     assert_eq!(s.len(), 1);
 }
 
-/// The owner's example: a box pushed through another, still joined to it.
-/// Intersect Faces puts the outline on the far face; the tunnel can then
-/// be opened.
+/// The owner's example: a box passing through another. Move does not cut
+/// (only Push/Pull keeps solids whole, DECISIONS #31), so Intersect Faces
+/// puts the outline on both faces it passes through.
 #[test]
-fn intersect_faces_cuts_where_a_pushed_box_comes_out() {
+fn intersect_faces_cuts_where_a_moved_bar_passes_through() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
     let f = face_at(&m, DVec3::new(2.0, 2.0, 0.0)).unwrap();
     let up = m.face(f).unwrap().plane().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
-    // A window on the front (y = 0), pushed through and out past the back.
-    poly(
-        &mut m,
-        &[
-            DVec3::new(1.0, 0.0, 0.5),
-            DVec3::new(3.0, 0.0, 0.5),
-            DVec3::new(3.0, 0.0, 1.5),
-            DVec3::new(1.0, 0.0, 1.5),
-        ],
-    );
-    let win = face_at(&m, DVec3::new(2.0, 0.0, 1.0)).unwrap();
-    let out = m.face(win).unwrap().plane().normal.y < 0.0;
-    prism_ops::push_pull(&mut m, win, if out { -6.0 } else { 6.0 }, false);
+    m = through_box(m);
     ok(&m);
     let crossing = all_crossings(&m, None);
     assert_eq!(
         crossing.len(),
-        4,
-        "the tube's four walls cross the back face"
+        8,
+        "the bar's four walls cross the front and the back"
     );
     let before = m.face_count();
-    assert_eq!(intersect_faces(&mut m, None), 4);
+    assert_eq!(intersect_faces(&mut m, None), 8);
     ok(&m);
     assert!(m.face_count() > before);
     // The back face (y = 4) now has a 2 x 1 opening as a face of its own.
     let opening = face_at(&m, DVec3::new(2.0, 4.0, 1.0)).expect("the opening");
     assert!((m.face_area(opening) - 2.0).abs() < 1e-9);
     assert!(all_crossings(&m, None).is_empty(), "nothing left to cut");
+}
+
+/// A 2 x 1 bar from y = -1 to 6 through the 4 x 4 x 2 box, made away from
+/// it and moved in (a move only merges faces on one plane).
+pub fn through_box(mut m: Model) -> Model {
+    let before: std::collections::BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
+    prism_ops::add_rect(&mut m, 21.0, -1.0, 23.0, 6.0, 0.5);
+    let bar = face_at(&m, DVec3::new(22.0, 2.0, 0.5)).unwrap();
+    let up = m.face(bar).unwrap().plane().normal.z > 0.0;
+    prism_ops::push_pull(&mut m, bar, if up { 1.0 } else { -1.0 }, false);
+    let vs = m
+        .vertices()
+        .map(|(id, _)| id)
+        .filter(|id| !before.contains(id))
+        .collect();
+    prism_ops::transform::translate(&mut m, &vs, DVec3::new(-20.0, 0.0, 0.0));
+    m
 }

@@ -247,7 +247,10 @@ fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
         }
     }
     let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
-    let mut seen: Vec<Vec<VertexId>> = Vec::new();
+    // Faces that became the same: facing the same way, one stays; back to
+    // back (a box's top pushed down onto its bottom), both go.
+    let mut seen: BTreeMap<Vec<VertexId>, (FaceId, Vec<VertexId>)> = BTreeMap::new();
+    let mut gone: Vec<FaceId> = Vec::new();
     for id in ids {
         let Some(f) = model.face_mut(id) else {
             continue;
@@ -266,15 +269,50 @@ fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
             fix(h);
         }
         f.holes.retain(|h| h.len() >= 3);
+        // Same outline and same holes: the same face.
         let mut key = f.outer.clone();
         key.sort();
-        if f.outer.len() < 3 || seen.contains(&key) {
-            model.remove_face(id);
-        } else {
-            seen.push(key);
+        let mut holes: Vec<Vec<VertexId>> = f
+            .holes
+            .iter()
+            .map(|h| {
+                let mut h = h.clone();
+                h.sort();
+                h
+            })
+            .collect();
+        holes.sort();
+        for h in holes {
+            key.push(VertexId(u32::MAX));
+            key.extend(h);
         }
+        if f.outer.len() < 3 {
+            gone.push(id);
+        } else if let Some((other, loop_)) = seen.get(&key) {
+            if !same_direction(loop_, &f.outer) {
+                gone.push(*other);
+            }
+            gone.push(id);
+        } else {
+            seen.insert(key, (id, f.outer.clone()));
+        }
+    }
+    for id in gone {
+        model.remove_face(id);
     }
     for v in into.keys() {
         model.remove_vertex(*v);
     }
+}
+
+/// Whether two loops with the same vertices run the same way round.
+fn same_direction(a: &[VertexId], b: &[VertexId]) -> bool {
+    let n = a.len();
+    if n != b.len() || n == 0 {
+        return false;
+    }
+    let Some(start) = b.iter().position(|v| *v == a[0]) else {
+        return false;
+    };
+    (0..n).all(|i| a[i] == b[(start + i) % n])
 }

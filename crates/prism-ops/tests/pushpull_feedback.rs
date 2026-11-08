@@ -191,3 +191,116 @@ fn pulling_a_face_flush_against_another_joins_the_blocks() {
         "nothing left inside"
     );
 }
+
+/// The solid rule (DECISIONS #31): B's side pulled past A's side, into A.
+/// The blocks join; nothing of either is left inside the other.
+#[test]
+fn pulling_a_block_into_another_joins_them() {
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 2.0, 2.0, 2.0); // A
+    block(&mut m, 3.0, 0.5, 5.0, 1.5, 1.0); // B
+    let side = prism_ops::face_at(&m, v(3.0, 1.0, 0.5)).expect("B's side");
+    prism_ops::push_pull(&mut m, side, 1.5, false); // 0.5 into A
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    closed(&m);
+    assert!(
+        prism_ops::face_at(&m, v(1.5, 1.0, 0.5)).is_none(),
+        "B's end is not left inside A"
+    );
+    assert!(
+        prism_ops::face_at(&m, v(1.75, 1.2, 1.0)).is_none(),
+        "B's top is not left inside A"
+    );
+    // A's side has a hole where B goes in, and is still there around it.
+    assert!(prism_ops::face_at(&m, v(2.0, 1.0, 0.5)).is_none());
+    assert_eq!(normal_at(&m, v(2.0, 1.0, 1.5)), v(1.0, 0.0, 0.0));
+}
+
+/// A box's side pulled right past a smaller block: the block is swallowed.
+#[test]
+fn a_pull_swallows_a_smaller_block() {
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 2.0, 4.0, 3.0); // big
+    block(&mut m, 3.0, 1.0, 4.0, 2.0, 1.0); // small, beside it
+    let side = prism_ops::face_at(&m, v(2.0, 3.0, 1.5)).expect("big's side");
+    prism_ops::push_pull(&mut m, side, 3.0, false);
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    closed(&m);
+    // Nothing of the small block is left inside (its footprint stays as
+    // edges on the floor, as in SketchUp).
+    assert!(
+        prism_ops::face_at(&m, v(3.5, 1.5, 1.0)).is_none(),
+        "its top"
+    );
+    assert!(
+        prism_ops::face_at(&m, v(3.0, 1.5, 0.5)).is_none(),
+        "its side"
+    );
+    assert!(
+        prism_ops::face_at(&m, v(3.5, 1.0, 0.5)).is_none(),
+        "its front"
+    );
+    let faces_above_floor = m
+        .faces()
+        .filter(|(_, f)| {
+            let c = m.points(&f.outer).iter().copied().sum::<DVec3>() / f.outer.len() as f64;
+            c.x > 0.01 && c.x < 4.99 && c.y > 0.01 && c.y < 3.99 && c.z > 0.01 && c.z < 2.99
+        })
+        .count();
+    assert_eq!(faces_above_floor, 0, "no faces inside the box");
+}
+
+/// A lone rectangle and an open box are never touched by the rule.
+#[test]
+fn faces_that_enclose_nothing_stay() {
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 2.0, 2.0, 2.0);
+    let top = prism_ops::face_at(&m, v(1.0, 1.0, 2.0)).expect("top");
+    prism_ops::remove(
+        &mut m,
+        &prism_ops::Selection {
+            faces: [top].into(),
+            ..Default::default()
+        },
+    );
+    let n = m.face_count();
+    let side = prism_ops::face_at(&m, v(2.0, 1.0, 1.0)).expect("side");
+    prism_ops::push_pull(&mut m, side, 1.0, false);
+    assert_eq!(m.face_count(), n, "the open box keeps its faces");
+}
+
+/// A window pushed in past the back of a box cuts a tunnel: nothing sticks
+/// out of the back, and the back has the opening (DECISIONS #31).
+#[test]
+fn pushing_a_window_out_through_the_back_cuts_a_tunnel() {
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 4.0, 4.0, 2.0);
+    poly(
+        &mut m,
+        &[
+            v(1.0, 0.0, 0.5),
+            v(3.0, 0.0, 0.5),
+            v(3.0, 0.0, 1.5),
+            v(1.0, 0.0, 1.5),
+        ],
+    );
+    let win = prism_ops::face_at(&m, v(2.0, 0.0, 1.0)).expect("window");
+    prism_ops::push_pull(&mut m, win, -6.0, false);
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    closed(&m);
+    let (_, hi) = m.bbox().expect("box");
+    assert!((hi.y - 4.0).abs() < 1e-9, "nothing sticks out of the back");
+    assert!(
+        prism_ops::face_at(&m, v(2.0, 4.0, 1.0)).is_none(),
+        "the back is open"
+    );
+    assert!(
+        prism_ops::face_at(&m, v(2.0, 0.0, 1.0)).is_none(),
+        "the front is open"
+    );
+    assert_eq!(
+        normal_at(&m, v(1.0, 2.0, 1.0)),
+        v(1.0, 0.0, 0.0),
+        "the tunnel's wall faces in"
+    );
+}

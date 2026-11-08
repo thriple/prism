@@ -174,6 +174,7 @@ fn merge_across(model: &mut Model, sel: &mut Selection) {
             &BTreeSet::new(),
             &tol,
             crate::regions::Fill::Drawn,
+            0.0,
         );
     }
 }

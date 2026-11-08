@@ -24,14 +24,19 @@ struct Region {
     holes: Vec<Vec<VertexId>>,
 }
 
+/// Whether a point is inside the solid an edit makes (None: cannot tell).
+pub(crate) type InsideTest<'a> = &'a dyn Fn(DVec3) -> Option<bool>;
+
 /// How regions that no face covered become faces.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Fill {
+#[derive(Clone, Copy)]
+pub(crate) enum Fill<'a> {
     /// Drawing: a region whose outer loop uses a new edge (a newly closed loop).
     Drawn,
-    /// After an edit (Push/Pull, Move): a region that uses a new edge and
-    /// closes an opening, so each of its edges has exactly one other face.
-    Closing,
+    /// After an edit. With an inside test (Push/Pull on a solid): a region
+    /// with the solid on exactly one side, facing out of it. Without: a
+    /// region that uses a new edge and closes an opening, so each of its
+    /// edges has exactly one other face.
+    Closing(Option<InsideTest<'a>>),
 }
 
 /// Rebuild the faces in `plane`. `new_edges` were just added. Returns the
@@ -42,6 +47,7 @@ pub(crate) fn rebuild_plane(
     new_edges: &BTreeSet<EdgeId>,
     tol: &Tol,
     fill: Fill,
+    step: f64,
 ) -> Vec<FaceId> {
     let frame = plane.frame();
     let on: BTreeMap<VertexId, DVec2> = model
@@ -63,7 +69,25 @@ pub(crate) fn rebuild_plane(
         .collect();
 
     let regions = trace(&on, &edges, tol);
-    let edge_of = |a: VertexId, b: VertexId| model.edge_between(a, b);
+    // Each old face's box in the plane, so a region only tests the faces
+    // that could cover it (a ground plane can hold thousands).
+    let old_boxes: Vec<(FaceId, DVec2, DVec2)> = old
+        .iter()
+        .filter_map(|f| {
+            let face = model.face(*f)?;
+            let pts: Vec<DVec2> = face.outer.iter().map(|v| on[v]).collect();
+            let lo = pts.iter().fold(DVec2::INFINITY, |a, p| a.min(*p));
+            let hi = pts.iter().fold(DVec2::NEG_INFINITY, |a, p| a.max(*p));
+            Some((*f, lo, hi))
+        })
+        .collect();
+    // The plane's edges by their ends (looking one up in the model scans
+    // every edge).
+    let by_ends: BTreeMap<(VertexId, VertexId), EdgeId> = edges
+        .iter()
+        .map(|(id, a, b)| ((*a.min(b), *a.max(b)), *id))
+        .collect();
+    let edge_of = |a: VertexId, b: VertexId| by_ends.get(&(a.min(b), a.max(b))).copied();
 
     // Decide which regions are faces, and which way each faces.
     let mut keep: BTreeSet<FaceId> = BTreeSet::new();
@@ -77,15 +101,17 @@ pub(crate) fn rebuild_plane(
         let Some(sample) = interior_point(&loops) else {
             continue;
         };
-        let covers: Vec<FaceId> = old
+        let covers: Vec<FaceId> = old_boxes
             .iter()
-            .copied()
+            .filter(|(_, lo, hi)| sample.cmpge(*lo).all() && sample.cmple(*hi).all())
+            .map(|(f, _, _)| *f)
             .filter(|f| face_contains_2d(model, *f, &frame, sample))
             .collect();
         let parent = covers.first().copied();
         // After an edit, faces covering a region back to back (a face pulled
         // flush against another) are inside one solid now: both go.
-        if fill == Fill::Closing {
+        let closing = matches!(fill, Fill::Closing(_));
+        if closing {
             let facing = |f: &FaceId| {
                 model
                     .face(*f)
@@ -97,24 +123,44 @@ pub(crate) fn rebuild_plane(
         }
         let closes = loop_pairs(&r.outer)
             .any(|(a, b)| edge_of(a, b).is_some_and(|e| new_edges.contains(&e)));
-        if parent.is_none() && (fill == Fill::Closing || !closes) {
-            if fill == Fill::Closing && uses_edge(r, new_edges, &edge_of) {
-                openings.push(r);
+        if parent.is_none() && (closing || !closes) {
+            match fill {
+                Fill::Closing(Some(inside)) => {
+                    // Exactly: a face where the solid is on one side only.
+                    let c = frame.origin + frame.u * sample.x + frame.v * sample.y;
+                    let (above, below) = (
+                        inside(c + frame.normal * step),
+                        inside(c - frame.normal * step),
+                    );
+                    if let (Some(a), Some(b)) = (above, below)
+                        && a != b
+                    {
+                        made_faces.push(make_face(model, r, &frame, b));
+                    }
+                }
+                Fill::Closing(None) if uses_edge(r, new_edges, &edge_of) => openings.push(r),
+                _ => {}
             }
             continue;
         }
-        // Unchanged: keep the face as it is.
-        if let Some(same) = old.iter().copied().find(|f| same_region(model.face(*f), r)) {
-            keep.insert(same);
+        if covers.is_empty() {
+            let up = neighbour_facing(model, &old, r, &frame).unwrap_or(true);
+            made_faces.push(make_face(model, r, &frame, up));
             continue;
         }
-        let up = match parent {
-            Some(p) => model
-                .face(p)
-                .is_some_and(|f| f.plane().normal.dot(frame.normal) > 0.0),
-            None => neighbour_facing(model, &old, r, &frame).unwrap_or(true),
-        };
-        made_faces.push(make_face(model, r, &frame, up));
+        // One face for each face that covered the region. Several only
+        // while faces overlap in the middle of an edit: the solid rule needs
+        // to count each solid's own face, and `dedupe_faces` then keeps one.
+        for c in &covers {
+            if same_region(model.face(*c), r) {
+                keep.insert(*c);
+            } else {
+                let up = model
+                    .face(*c)
+                    .is_some_and(|f| f.plane().normal.dot(frame.normal) > 0.0);
+                made_faces.push(make_face(model, r, &frame, up));
+            }
+        }
     }
 
     if !openings.is_empty() {
@@ -350,11 +396,20 @@ fn trace(
             holes: vec![],
         })
         .collect();
+    let boxes: Vec<(DVec2, DVec2)> = outers
+        .iter()
+        .map(|(_, poly, _)| {
+            let lo = poly.iter().fold(DVec2::INFINITY, |a, p| a.min(*p));
+            let hi = poly.iter().fold(DVec2::NEG_INFINITY, |a, p| a.max(*p));
+            (lo, hi)
+        })
+        .collect();
     for island in islands {
         let probe = on[&island[0]];
         let host = outers
             .iter()
             .enumerate()
+            .filter(|(i, _)| probe.cmpge(boxes[*i].0).all() && probe.cmple(boxes[*i].1).all())
             .filter(|(_, (l, poly, _))| {
                 !l.contains(&island[0]) && point_in_polygon(probe, poly) == Inside::Inside
             })
@@ -416,7 +471,16 @@ fn remove_spurs(mut c: Vec<VertexId>) -> Vec<VertexId> {
 /// horizontal line between two vertex heights crosses the loops at known
 /// places; the middle of the widest inside stretch is used.
 pub(crate) fn interior_point(loops: &[Vec<DVec2>]) -> Option<DVec2> {
-    let outer = loops.first()?;
+    interior_points(loops).into_iter().next()
+}
+
+/// Points strictly inside the first loop and outside the others, best
+/// first (the middle of the widest stretch on each scan line).
+pub(crate) fn interior_points(loops: &[Vec<DVec2>]) -> Vec<DVec2> {
+    let mut out = Vec::new();
+    let Some(outer) = loops.first() else {
+        return out;
+    };
     let (lo, hi) = outer
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
@@ -456,10 +520,10 @@ pub(crate) fn interior_point(loops: &[Vec<DVec2>]) -> Option<DVec2> {
         if let Some((w, x)) = best
             && w > 0.0
         {
-            return Some(DVec2::new(x, y));
+            out.push(DVec2::new(x, y));
         }
     }
-    None
+    out
 }
 
 #[cfg(test)]
