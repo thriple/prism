@@ -605,7 +605,13 @@ fn move_by_a_typed_distance_and_copy_into_arrays() {
     assert_eq!(d.faces(), 4, "an array of three copies");
     assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(9.0, 0.0, 0.0)).is_some());
     d.typed("/4");
-    assert_eq!(d.faces(), 5, "four copies between");
+    // Four copies between, 1 m squares 0.5 m apart: they overlap, and the
+    // coplanar rule splits them into six strips (PLAN 1.9).
+    assert_eq!(
+        d.faces(),
+        6,
+        "four copies between, split where they overlap"
+    );
     assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(3.5, 0.0, 0.0)).is_some());
     d.send(Input::Action {
         id: "edit.undo".into(),

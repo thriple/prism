@@ -74,3 +74,27 @@ fn move_preview_on_the_large_scene() {
         fast.as_secs_f64() * 1e3
     );
 }
+
+/// How long one Push/Pull on the Large Scene takes (the preview runs it on
+/// every mouse move).
+#[test]
+#[ignore = "prints timings"]
+fn push_pull_on_the_large_scene() {
+    let doc = prism_tools::scenes::large(50);
+    let m = doc.model().clone();
+    let (top, _) = m
+        .faces()
+        .max_by(|a, b| a.1.plane().origin.z.total_cmp(&b.1.plane().origin.z))
+        .expect("a face");
+    let n = 10;
+    let t = std::time::Instant::now();
+    for _ in 0..n {
+        let mut c = m.clone();
+        prism_ops::push_pull(&mut c, top, 0.5, false);
+    }
+    println!(
+        "{} faces: push/pull {:.1} ms",
+        m.face_count(),
+        t.elapsed().as_secs_f64() * 1e3 / f64::from(n)
+    );
+}

@@ -15,6 +15,7 @@ pub mod offset;
 pub mod pushpull;
 mod regions;
 pub mod select;
+pub mod settle;
 pub mod sticky;
 pub mod transform;
 

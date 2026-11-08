@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use prism_math::{DVec3, Plane, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
-use crate::regions::rebuild_plane;
+use crate::regions::{Fill, rebuild_plane};
 
 /// What adding a segment changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -126,7 +126,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     let new: BTreeSet<EdgeId> = added.iter().copied().collect();
     let mut faces = Vec::new();
     for plane in candidate_planes(model, &chain, pa, pb, &tol) {
-        faces.extend(rebuild_plane(model, &plane, &new, &tol));
+        faces.extend(rebuild_plane(model, &plane, &new, &tol, Fill::Drawn));
     }
     faces.retain(|f| model.face(*f).is_some());
     Added {
@@ -155,7 +155,7 @@ pub fn add_rect(model: &mut Model, x0: f64, y0: f64, x1: f64, y1: f64, z: f64) -
 
 /// Where segment `a`–`b` crosses `c`–`d`: its parameter along `a`–`b` and
 /// the point. Only true crossings clear of all four ends count.
-fn crossing(a: DVec3, b: DVec3, c: DVec3, d: DVec3, tol: &Tol) -> Option<(f64, DVec3)> {
+pub(crate) fn crossing(a: DVec3, b: DVec3, c: DVec3, d: DVec3, tol: &Tol) -> Option<(f64, DVec3)> {
     let (u, v) = (b - a, d - c);
     let (lu, lv) = (u.length(), v.length());
     if lu <= tol.dist || lv <= tol.dist || tol.parallel(u / lu, v / lv) {

@@ -557,3 +557,30 @@ others on that edge, such as the wall between the boxes, go with it).
   that touch or overlap are rebuilt as one set of regions (as the Eraser
   merge and drawing already do). Do this with Groups & Components, or
   before it.
+
+### Push/Pull edge by edge, and the coplanar rule (owner feedback, 2026-11-08)
+
+- **Trench when pushing a ring back:** Push/Pull only stretched faces with
+  no holes, so a ring (a face with a hole) always extruded and left its old
+  walls behind. Now it decides edge by edge: an edge whose other faces run
+  along the push and lie behind the face slides (those faces stretch);
+  every other edge gets a wall. The ring's outer walls get shorter, and the
+  middle stays up on four new walls.
+- **Missing face and a stray triangle:** pushing a cube's top down past a
+  box pulled out of its side left the side face with a hole crossing its
+  outline (drawn as a stray triangle that could not be picked). The
+  coplanar rule (DECISIONS #30, `prism-ops/src/settle.rs`) now runs after
+  Push/Pull, Move, Rotate, Scale and copies: crossing edges in each touched
+  plane are split and the plane's faces rebuilt; the opening at the pulled
+  box's back gets a face, facing out.
+- Two boxes of different heights sharing a wall now share one wall face.
+- An array of overlapping copies is split where the copies overlap (the
+  rule runs once, after every copy is placed).
+- **Speed (Large Scene, 15,000 faces, release):** Push/Pull 26 ms per
+  preview (it was about 350 ms, from a whole-model weld it no longer
+  does); moving the whole scene commits in 425 ms (367 ms before). Each
+  plane is checked cheaply first and rebuilt only when something meets;
+  geometry moved together is not checked against itself.
+- **Left over:** a face with an opening that the edit did not close stays
+  open (an open box whose top is pushed keeps its opening). The rule does
+  not yet run after Offset or Import.

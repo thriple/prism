@@ -163,19 +163,30 @@ impl Command {
                 step,
                 count,
             } => {
+                // Place every copy first, then run the coplanar rule once,
+                // so overlapping copies split each other, not the original
+                // before the next copy is taken.
+                let mut placed: Vec<BTreeSet<VertexId>> = Vec::new();
                 for k in 1..=*count {
                     let copy = prism_ops::duplicate(m, selection);
                     let vs = copy.all_vertices(m);
                     let k = f64::from(k);
                     match *step {
-                        Motion::Translate { by } => transform::translate(m, &vs, by * k),
+                        Motion::Translate { by } => transform::translate_only(m, &vs, by * k),
                         Motion::Rotate {
                             centre,
                             axis,
                             angle,
-                        } => transform::rotate(m, &vs, centre, axis, angle * k),
+                        } => transform::rotate_only(m, &vs, centre, axis, angle * k),
                     }
+                    placed.push(vs);
                 }
+                // Copies that landed on each other were welded (the lower id
+                // stays), so the vertices left are the ones to settle.
+                for g in &mut placed {
+                    g.retain(|v| m.has_vertex(*v));
+                }
+                prism_ops::settle::settle_rigid(m, &placed);
             }
             Command::Offset { face, distance } => {
                 prism_ops::offset::offset(m, *face, *distance);

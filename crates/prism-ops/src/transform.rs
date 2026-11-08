@@ -26,7 +26,70 @@ pub fn scale(model: &mut Model, vs: &BTreeSet<VertexId>, centre: DVec3, k: DVec3
     apply(model, vs, |p| centre + (p - centre) * k);
 }
 
+/// Move vertices by `d` without the coplanar rule afterwards, for edits
+/// that make several moves and then run it once ([`settle_at`]).
+pub fn translate_only(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3) {
+    apply_only(model, vs, |p| p + d);
+}
+
+/// [`rotate`] without the coplanar rule afterwards.
+pub fn rotate_only(
+    model: &mut Model,
+    vs: &BTreeSet<VertexId>,
+    centre: DVec3,
+    axis: DVec3,
+    angle: f64,
+) {
+    let q = DQuat::from_axis_angle(axis.normalize(), angle);
+    apply_only(model, vs, |p| centre + q * (p - centre));
+}
+
 fn apply(model: &mut Model, vs: &BTreeSet<VertexId>, f: impl Fn(DVec3) -> DVec3) {
+    let targets: Vec<(VertexId, DVec3)> = vs.iter().map(|v| (*v, f(model.vertex(*v)))).collect();
+    apply_only(model, vs, f);
+    // Welding may have replaced some moved vertices: find those by place.
+    let tol = model.tol();
+    let gone: Vec<DVec3> = targets
+        .iter()
+        .filter(|(v, _)| !model.has_vertex(*v))
+        .map(|(_, p)| *p)
+        .collect();
+    let mut touched: BTreeSet<VertexId> = vs
+        .iter()
+        .copied()
+        .filter(|v| model.has_vertex(*v))
+        .collect();
+    if !gone.is_empty() {
+        touched.extend(
+            model
+                .vertices()
+                .filter(|(_, p)| gone.iter().any(|q| tol.same_point(*p, *q)))
+                .map(|(id, _)| id),
+        );
+    }
+    crate::settle::settle_rigid(model, &[touched]);
+}
+
+/// Move a few vertices by `d`, welding only them onto what they land on
+/// (not the whole model), without the coplanar rule. For Push/Pull.
+pub(crate) fn translate_few(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3) {
+    let faces: Vec<FaceId> = model
+        .faces()
+        .filter(|(_, face)| face.loops().flatten().any(|v| vs.contains(v)))
+        .map(|(id, _)| id)
+        .collect();
+    for v in vs {
+        let p = model.vertex(*v);
+        model.set_vertex(*v, p + d);
+    }
+    let tol = model.tol();
+    weld_new(model, vs, &tol);
+    for id in faces {
+        settle_face(model, id, &tol);
+    }
+}
+
+fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, f: impl Fn(DVec3) -> DVec3) {
     for v in vs {
         let p = model.vertex(*v);
         model.set_vertex(*v, f(p));

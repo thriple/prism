@@ -24,6 +24,16 @@ struct Region {
     holes: Vec<Vec<VertexId>>,
 }
 
+/// How regions that no face covered become faces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Fill {
+    /// Drawing: a region whose outer loop uses a new edge (a newly closed loop).
+    Drawn,
+    /// After an edit (Push/Pull, Move): a region that uses a new edge and
+    /// closes an opening, so each of its edges has exactly one other face.
+    Closing,
+}
+
 /// Rebuild the faces in `plane`. `new_edges` were just added. Returns the
 /// faces made.
 pub(crate) fn rebuild_plane(
@@ -31,6 +41,7 @@ pub(crate) fn rebuild_plane(
     plane: &Plane,
     new_edges: &BTreeSet<EdgeId>,
     tol: &Tol,
+    fill: Fill,
 ) -> Vec<FaceId> {
     let frame = plane.frame();
     let on: BTreeMap<VertexId, DVec2> = model
@@ -57,6 +68,7 @@ pub(crate) fn rebuild_plane(
     // Decide which regions are faces, and which way each faces.
     let mut keep: BTreeSet<FaceId> = BTreeSet::new();
     let mut made_faces: Vec<Face> = Vec::new();
+    let mut openings: Vec<&Region> = Vec::new();
     for r in &regions {
         let loops: Vec<Vec<DVec2>> = std::iter::once(&r.outer)
             .chain(r.holes.iter())
@@ -71,7 +83,10 @@ pub(crate) fn rebuild_plane(
             .find(|f| face_contains_2d(model, *f, &frame, sample));
         let closes = loop_pairs(&r.outer)
             .any(|(a, b)| edge_of(a, b).is_some_and(|e| new_edges.contains(&e)));
-        if parent.is_none() && !closes {
+        if parent.is_none() && (fill == Fill::Closing || !closes) {
+            if fill == Fill::Closing && uses_edge(r, new_edges, &edge_of) {
+                openings.push(r);
+            }
             continue;
         }
         // Unchanged: keep the face as it is.
@@ -88,12 +103,90 @@ pub(crate) fn rebuild_plane(
         made_faces.push(make_face(model, r, &frame, up));
     }
 
+    if !openings.is_empty() {
+        let mut chosen: Vec<Vec<Vec<VertexId>>> = keep
+            .iter()
+            .filter_map(|f| model.face(*f))
+            .map(|f| f.loops().cloned().collect())
+            .chain(
+                made_faces
+                    .iter()
+                    .map(|f| f.loops().cloned().collect::<Vec<_>>()),
+            )
+            .collect();
+        let others = other_faces(model, &old);
+        // One opening filled can make the next one an opening, so repeat.
+        loop {
+            let found = openings.iter().position(|r| {
+                region_loops(r).flat_map(|l| loop_pairs(l)).all(|(a, b)| {
+                    let key = (a.min(b), a.max(b));
+                    let beside = others.get(&key).map_or(0, |d| d.len());
+                    let inside = chosen
+                        .iter()
+                        .flatten()
+                        .flat_map(|l| loop_pairs(l))
+                        .filter(|(x, y)| (*x.min(y), *x.max(y)) == key)
+                        .count();
+                    beside + inside == 1
+                })
+            });
+            let Some(i) = found else { break };
+            let r = openings.remove(i);
+            // Face the way that agrees with the faces around it: across a
+            // shared edge, neighbours run the edge in opposite directions.
+            let votes: i32 = region_loops(r)
+                .flat_map(|l| loop_pairs(l))
+                .map(|(a, b)| {
+                    let key = (a.min(b), a.max(b));
+                    others.get(&key).map_or(0, |dirs| {
+                        dirs.iter()
+                            .map(|from| if *from == a { -1 } else { 1 })
+                            .sum::<i32>()
+                    })
+                })
+                .sum();
+            let face = make_face(model, r, &frame, votes >= 0);
+            chosen.push(face.loops().cloned().collect());
+            made_faces.push(face);
+        }
+    }
+
     for f in &old {
         if !keep.contains(f) {
             model.remove_face(*f);
         }
     }
     made_faces.into_iter().map(|f| model.add_face(f)).collect()
+}
+
+fn region_loops(r: &Region) -> impl Iterator<Item = &Vec<VertexId>> {
+    std::iter::once(&r.outer).chain(r.holes.iter())
+}
+
+/// Whether any loop of the region runs along one of `edges`.
+fn uses_edge(
+    r: &Region,
+    edges: &BTreeSet<EdgeId>,
+    edge_of: &impl Fn(VertexId, VertexId) -> Option<EdgeId>,
+) -> bool {
+    region_loops(r)
+        .flat_map(|l| loop_pairs(l))
+        .any(|(a, b)| edge_of(a, b).is_some_and(|e| edges.contains(&e)))
+}
+
+/// For each edge (as a sorted vertex pair), the start vertex of each run
+/// along it by a face that is not one of `except`.
+fn other_faces(model: &Model, except: &[FaceId]) -> BTreeMap<(VertexId, VertexId), Vec<VertexId>> {
+    let mut out: BTreeMap<(VertexId, VertexId), Vec<VertexId>> = BTreeMap::new();
+    for (id, f) in model.faces() {
+        if except.contains(&id) {
+            continue;
+        }
+        for (a, b) in f.loops().flat_map(|l| loop_pairs(l)) {
+            out.entry((a.min(b), a.max(b))).or_default().push(a);
+        }
+    }
+    out
 }
 
 /// Build a face from a region, facing along the frame normal if `up`.

@@ -168,7 +168,13 @@ fn merge_across(model: &mut Model, sel: &mut Selection) {
         model.remove_edge(*e);
     }
     for p in planes {
-        crate::regions::rebuild_plane(model, &p, &BTreeSet::new(), &tol);
+        crate::regions::rebuild_plane(
+            model,
+            &p,
+            &BTreeSet::new(),
+            &tol,
+            crate::regions::Fill::Drawn,
+        );
     }
 }
 
