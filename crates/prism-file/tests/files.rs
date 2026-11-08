@@ -118,7 +118,7 @@ fn a_newer_file_is_refused_and_an_older_one_migrates() {
             schema: prism_file::SCHEMA + 1
         })
     );
-    let old = prism_file::schema_0_for_tests(&c.model());
+    let old = prism_file::schema_0_for_tests(c.model());
     let back = read(&old).expect("migrates");
     assert_eq!(back.model().to_json(), c.model().to_json());
     assert_eq!(back.settings, Settings::default());
