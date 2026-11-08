@@ -1,13 +1,17 @@
-//! The document: the model, and every edit as a command in a history, so
+//! The document: the geometry, and every edit as a command in a history, so
 //! undo, redo, autosave and test replay all come from one log.
 //!
-//! Each step keeps a snapshot of the model before and after (the model is
-//! plain data). Undo and redo put a snapshot back exactly. Id counters are
-//! never wound back, so an id is never handed out twice.
+//! The geometry is an [`Assembly`]: the root model and its groups. Each step
+//! keeps the assembly before and after; definitions it did not change are
+//! shared, not copied. Undo and redo put a snapshot back exactly. Id
+//! counters are never wound back, so an id is never handed out twice.
 
 use std::collections::BTreeSet;
 
-use prism_math::DVec3;
+pub mod assembly;
+
+pub use assembly::{Assembly, DefId, Definition, Instance, InstanceId, Placed, ROOT};
+use prism_math::{DAffine3, DQuat, DVec3};
 use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
 use prism_topo::{FaceId, Guide, Model, VertexId};
@@ -83,6 +87,97 @@ pub enum Command {
     IntersectFaces {
         faces: Option<BTreeSet<FaceId>>,
     },
+    /// A command run inside an open group (the path of instances to it).
+    In {
+        context: Vec<InstanceId>,
+        command: Box<Command>,
+    },
+    /// Several commands as one step (geometry and groups selected together).
+    Batch {
+        commands: Vec<Command>,
+    },
+    /// Make Group from a selection and selected groups.
+    MakeGroup {
+        selection: Selection,
+        #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+        instances: BTreeSet<InstanceId>,
+    },
+    /// Explode a group into its parent.
+    Explode {
+        instance: InstanceId,
+    },
+    /// Move, rotate or scale whole groups.
+    Place {
+        instances: BTreeSet<InstanceId>,
+        change: Change,
+    },
+    /// Copies of groups, each one step further than the last.
+    CopyInstances {
+        instances: BTreeSet<InstanceId>,
+        step: Change,
+        count: u32,
+    },
+    /// Erase groups.
+    EraseInstances {
+        instances: BTreeSet<InstanceId>,
+    },
+}
+
+/// How groups are moved, turned or scaled.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Change {
+    Translate {
+        by: DVec3,
+    },
+    Rotate {
+        centre: DVec3,
+        axis: DVec3,
+        angle: f64,
+    },
+    Scale {
+        centre: DVec3,
+        factor: DVec3,
+    },
+}
+
+impl Change {
+    /// The change applied `k` times.
+    pub fn affine(&self, k: f64) -> DAffine3 {
+        match *self {
+            Change::Translate { by } => DAffine3::from_translation(by * k),
+            Change::Rotate {
+                centre,
+                axis,
+                angle,
+            } => {
+                DAffine3::from_translation(centre)
+                    * DAffine3::from_quat(DQuat::from_axis_angle(axis.normalize(), angle * k))
+                    * DAffine3::from_translation(-centre)
+            }
+            Change::Scale { centre, factor } => {
+                DAffine3::from_translation(centre)
+                    * DAffine3::from_scale(factor.powf(k))
+                    * DAffine3::from_translation(-centre)
+            }
+        }
+    }
+}
+
+impl From<Motion> for Change {
+    fn from(m: Motion) -> Change {
+        match m {
+            Motion::Translate { by } => Change::Translate { by },
+            Motion::Rotate {
+                centre,
+                axis,
+                angle,
+            } => Change::Rotate {
+                centre,
+                axis,
+                angle,
+            },
+        }
+    }
 }
 
 /// How a copy is placed.
@@ -118,10 +213,66 @@ impl Command {
             Command::AddGuide { .. } => "Guide",
             Command::Import { .. } => "Import",
             Command::IntersectFaces { .. } => "Intersect Faces",
+            Command::In { command, .. } => command.name(),
+            Command::Batch { commands } => commands.first().map_or("Edit", |c| c.name()),
+            Command::MakeGroup { .. } => "Make Group",
+            Command::Explode { .. } => "Explode",
+            Command::Place { change, .. } => match change {
+                Change::Translate { .. } => "Move",
+                Change::Rotate { .. } => "Rotate",
+                Change::Scale { .. } => "Scale",
+            },
+            Command::CopyInstances { count, .. } if *count > 1 => "Array",
+            Command::CopyInstances { .. } => "Copy",
+            Command::EraseInstances { .. } => "Erase",
         }
     }
 
-    /// Run the command on a model.
+    /// Run the command inside definition `ctx` of an assembly.
+    pub fn apply_in(&self, asm: &mut Assembly, ctx: DefId) {
+        match self {
+            Command::In { context, command } => {
+                if let Some(def) = asm.context_def(context) {
+                    command.apply_in(asm, def);
+                }
+            }
+            Command::Batch { commands } => {
+                for c in commands {
+                    c.apply_in(asm, ctx);
+                }
+            }
+            Command::MakeGroup {
+                selection,
+                instances,
+            } => {
+                asm.make_group(ctx, selection, instances);
+            }
+            Command::Explode { instance } => {
+                asm.explode(ctx, *instance);
+            }
+            Command::Place { instances, change } => {
+                asm.place(ctx, instances, &change.affine(1.0));
+            }
+            Command::CopyInstances {
+                instances,
+                step,
+                count,
+            } => {
+                let steps: Vec<DAffine3> =
+                    (1..=*count).map(|k| step.affine(f64::from(k))).collect();
+                asm.copy(ctx, instances, &steps);
+            }
+            Command::EraseInstances { instances } => asm.erase(ctx, instances),
+            geometry => {
+                if let Some(d) = asm.def_mut(ctx) {
+                    geometry.apply(&mut d.model);
+                }
+            }
+        }
+    }
+
+    /// Run a geometry command on a model (commands that change groups do
+    /// nothing here; see [`Command::apply_in`]).
     pub fn apply(&self, m: &mut Model) {
         match self {
             Command::Segment { p, q } => {
@@ -200,22 +351,30 @@ impl Command {
             Command::IntersectFaces { faces } => {
                 prism_ops::intersect::intersect_faces(m, faces.as_ref());
             }
+            // These change groups: run them with `apply_in`.
+            Command::In { .. }
+            | Command::Batch { .. }
+            | Command::MakeGroup { .. }
+            | Command::Explode { .. }
+            | Command::Place { .. }
+            | Command::CopyInstances { .. }
+            | Command::EraseInstances { .. } => {}
         }
     }
 }
 
-/// A command and the model before and after it.
+/// A command and the geometry before and after it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Step {
     command: Command,
-    before: Model,
-    after: Model,
+    before: Assembly,
+    after: Assembly,
 }
 
-/// The model and its history.
+/// The geometry and its history.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Document {
-    model: Model,
+    asm: Assembly,
     done: Vec<Step>,
     undone: Vec<Step>,
     /// Counts changes (runs, undos and redos), so the app can tell whether
@@ -231,36 +390,75 @@ impl Document {
 
     /// Start from an existing model (with an empty history).
     pub fn with_model(model: Model) -> Self {
+        Self::with_assembly(Assembly::with_model(model))
+    }
+
+    /// Start from existing geometry and groups (with an empty history).
+    pub fn with_assembly(asm: Assembly) -> Self {
         Self {
-            model,
+            asm,
             ..Self::default()
         }
     }
 
+    /// The root model: the geometry outside every group.
     pub fn model(&self) -> &Model {
-        &self.model
+        &self.asm.root().model
     }
 
-    /// Run a command. A command that changes nothing is not recorded.
-    /// Returns whether it changed the model.
+    /// The geometry and its groups.
+    pub fn assembly(&self) -> &Assembly {
+        &self.asm
+    }
+
+    /// Run a command (wrapped in [`Command::In`] to run it inside a group).
+    /// A command that changes nothing is not recorded. Returns whether it
+    /// changed anything.
     pub fn run(&mut self, command: Command) -> bool {
-        let before = self.model.clone();
-        command.apply(&mut self.model);
-        if self.model == before {
+        let before = self.asm.clone();
+        command.apply_in(&mut self.asm, ROOT);
+        if self.asm == before {
             // Put it back exactly: a command can change a value without
-            // changing it (0.0 to -0.0 compare equal), and the model must
+            // changing it (0.0 to -0.0 compare equal), and the geometry must
             // stay what the history says it is.
-            self.model = before;
+            self.asm = before;
             return false;
         }
         self.done.push(Step {
             command,
             before,
-            after: self.model.clone(),
+            after: self.asm.clone(),
         });
         self.undone.clear();
         self.revision += 1;
         true
+    }
+
+    /// Run a command inside the group at `context` (the root for none).
+    pub fn run_in(&mut self, context: &[InstanceId], command: Command) -> bool {
+        if context.is_empty() {
+            self.run(command)
+        } else {
+            self.run(Command::In {
+                context: context.to_vec(),
+                command: Box::new(command),
+            })
+        }
+    }
+
+    /// The group the last step was in (Undo reopens it), and the next.
+    pub fn undo_context(&self) -> Vec<InstanceId> {
+        self.done
+            .last()
+            .map(|s| context_of(&s.command))
+            .unwrap_or_default()
+    }
+
+    pub fn redo_context(&self) -> Vec<InstanceId> {
+        self.undone
+            .last()
+            .map(|s| context_of(&s.command))
+            .unwrap_or_default()
     }
 
     /// Goes up with every change, undo and redo.
@@ -289,9 +487,8 @@ impl Document {
         let Some(step) = self.done.pop() else {
             return false;
         };
-        let counters = self.model.counters();
-        self.model = step.before.clone();
-        self.model.keep_counters_at_least(counters);
+        let now = std::mem::replace(&mut self.asm, step.before.clone());
+        self.asm.keep_counters_from(&now);
         self.undone.push(step);
         self.revision += 1;
         true
@@ -301,9 +498,8 @@ impl Document {
         let Some(step) = self.undone.pop() else {
             return false;
         };
-        let counters = self.model.counters();
-        self.model = step.after.clone();
-        self.model.keep_counters_at_least(counters);
+        let now = std::mem::replace(&mut self.asm, step.after.clone());
+        self.asm.keep_counters_from(&now);
         self.done.push(step);
         self.revision += 1;
         true
@@ -321,6 +517,13 @@ impl Document {
             d.run(c.clone());
         }
         d
+    }
+}
+
+fn context_of(c: &Command) -> Vec<InstanceId> {
+    match c {
+        Command::In { context, .. } => context.clone(),
+        _ => Vec::new(),
     }
 }
 

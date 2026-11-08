@@ -316,3 +316,51 @@ fn same_direction(a: &[VertexId], b: &[VertexId]) -> bool {
     };
     (0..n).all(|i| a[i] == b[(start + i) % n])
 }
+
+/// Map a whole model by an affine transform (placing a group's geometry in
+/// its parent, Explode). Faces get their planes refitted; a mirroring
+/// transform turns every loop round, so faces still face out.
+pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
+    let verts: Vec<(VertexId, DVec3)> = model.vertices().collect();
+    for (v, p) in verts {
+        model.set_vertex(v, m.transform_point3(p));
+    }
+    let guides: Vec<(prism_topo::GuideId, prism_topo::Guide)> =
+        model.guides().map(|(id, g)| (id, *g)).collect();
+    for (id, g) in guides {
+        let moved = match g {
+            prism_topo::Guide::Line { origin, dir } => prism_topo::Guide::Line {
+                origin: m.transform_point3(origin),
+                dir: m.transform_vector3(dir).normalize(),
+            },
+            prism_topo::Guide::Point { at } => prism_topo::Guide::Point {
+                at: m.transform_point3(at),
+            },
+        };
+        model.remove_guide(id);
+        model.add_guide(moved);
+    }
+    let mirror = m.matrix3.determinant() < 0.0;
+    let tol = model.tol();
+    let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
+    for id in ids {
+        let Some(face) = model.face(id).cloned() else {
+            continue;
+        };
+        let mut outer = face.outer.clone();
+        let mut holes = face.holes.clone();
+        if mirror {
+            outer.reverse();
+            holes.iter_mut().for_each(|h| h.reverse());
+        }
+        let Some(plane) = Plane::fit(&model.points(&outer), &tol) else {
+            model.remove_face(id);
+            continue;
+        };
+        if let Some(f) = model.face_mut(id) {
+            f.outer = outer;
+            f.holes = holes;
+            f.surface = Surface::Plane(plane);
+        }
+    }
+}
