@@ -1719,12 +1719,11 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   a plane after a rotate gave a loop whose last point repeated its first,
   naming an edge from a point to itself. A face's loops now drop a point
   repeated next to itself when linked.
-- **Still open (older, not fixed): Move of one corner of a face with a
-  hole.** Moving the outer square's corner up refits that face's plane
-  and moves the points of its hole, which a neighbouring face shares, so
-  that face (the ring inside, whose own hole stays) is left not planar;
-  later edits then build odd faces from it (a duplicate face after a
-  rotate, arcs off their circles). The undo property test only checks
-  bookkeeping, so it finds this now and then (about 1 in 1000 cases),
-  and CI can fail on it at random. It needs its own fix: Move should
-  fold, or move the shared hole's neighbour with it, or refuse.
+- **Move of one corner of a face with a hole (fixed):** lifting the
+  corner bent the face, and flattening it moved its hole's points too,
+  which the ring inside shares, leaving the ring bent (later edits then
+  built odd faces from it). A move that would bend a face with holes is
+  now refused, like one that would fold a face with arcs
+  (`HOLE_FACE_WOULD_FOLD`); a move that keeps it flat is fine. Folding
+  faces with holes (auto-fold, Alt) is not built. The undo property test
+  ran 9000 cases clean after this, and the core properties 3000.

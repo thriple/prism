@@ -52,6 +52,10 @@ pub const ARC_WOULD_BEND: &str =
 pub const ARC_FACE_WOULD_FOLD: &str =
     "Refused: a face with arcs would fold. Keep it flat, or move all of it.";
 
+/// Said when a move would fold a face with holes.
+pub const HOLE_FACE_WOULD_FOLD: &str =
+    "Refused: a face with a hole would fold. Keep it flat, or move all of it.";
+
 /// Said when a move would bend a curved face.
 pub const CURVED_WOULD_BEND: &str = "Refused: a curved face would bend. Move all of it.";
 
@@ -110,7 +114,31 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
                     .all(|v| pl.contains(m.transform_point3(model.vertex(*v)), &tol))
             })
     });
-    (!flat).then_some(ARC_FACE_WOULD_FOLD)
+    if !flat {
+        return Some(ARC_FACE_WOULD_FOLD);
+    }
+    // A face with holes that would bend cannot be folded into flat pieces
+    // yet; flattening it would move points it shares with its neighbours
+    // (the ring inside a hole), bending them in turn.
+    let holes_flat = model.faces().all(|(_, f)| {
+        let n = f.loops().flatten().filter(|v| vs.contains(v)).count();
+        f.holes.is_empty() || n == 0 || n == f.loops().flatten().count() || {
+            let after: Vec<DVec3> = f
+                .loops()
+                .flatten()
+                .map(|v| {
+                    let p = model.vertex(*v);
+                    if vs.contains(v) {
+                        m.transform_point3(p)
+                    } else {
+                        p
+                    }
+                })
+                .collect();
+            Plane::fit(&after, &tol).is_some_and(|pl| after.iter().all(|q| pl.contains(*q, &tol)))
+        }
+    });
+    (!holes_flat).then_some(HOLE_FACE_WOULD_FOLD)
 }
 
 /// Send the arcs with both ends in `vs` through `m`.

@@ -305,3 +305,26 @@ fn moving_a_box_top_leaves_a_corner_neighbours_edge_straight() {
         }
     }
 }
+
+/// Lifting one corner of a square with a ring in its hole would fold the
+/// square, and flattening it used to move the ring's points too, leaving
+/// the ring bent (found by the undo property test). Refused instead; the
+/// same corner moved within the plane is fine.
+#[test]
+fn a_face_with_a_hole_is_not_folded_by_moving_a_corner() {
+    use prism_ops::transform::{HOLE_FACE_WOULD_FOLD, arcs_refusal};
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
+    prism_ops::add_rect(&mut m, 1.0, 1.0, 3.0, 3.0, 0.0);
+    let corner = prism_ops::vertex_at(&m, DVec3::ZERO).expect("a corner");
+    let vs = [corner].into();
+    let up = prism_math::DAffine3::from_translation(DVec3::Z);
+    assert_eq!(arcs_refusal(&m, &vs, &up), Some(HOLE_FACE_WOULD_FOLD));
+    let before = m.to_json();
+    prism_ops::transform::translate(&mut m, &vs, DVec3::Z);
+    assert_eq!(m.to_json(), before, "refused: nothing moves");
+    let aside = prism_math::DAffine3::from_translation(DVec3::new(-0.5, 0.0, 0.0));
+    assert_eq!(arcs_refusal(&m, &vs, &aside), None);
+    prism_ops::transform::translate(&mut m, &vs, DVec3::new(-0.5, 0.0, 0.0));
+    assert!(prism_ops::check::problems(&m).is_empty());
+}

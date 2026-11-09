@@ -121,9 +121,11 @@ fn every_kind(d: &Document) -> Vec<Command> {
     }
     let all: BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
     if let Some(corner) = prism_ops::vertex_at(m, DVec3::ZERO) {
+        // Within its plane: lifting it would fold the square round the
+        // ring, which has a hole (refused).
         out.push(Command::Translate {
             vertices: [corner].into(),
-            by: DVec3::new(0.0, 0.0, 1.0),
+            by: DVec3::new(-0.5, -0.5, 0.0),
         });
     }
     if let Some(corner) = prism_ops::vertex_at(m, DVec3::ZERO) {
