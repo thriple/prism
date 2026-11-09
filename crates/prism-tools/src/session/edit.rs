@@ -471,12 +471,32 @@ impl Session {
         // A whole body moved or turned rigidly: move what is drawn instead
         // of rebuilding the model (big imported meshes stay smooth).
         if let Some(scene) = self.rigid_preview() {
+            self.refused = None;
             self.set_preview_scene(Some(scene));
             self.overlay_dirty = true;
             self.dirty = true;
             return;
         }
         let base = self.work_model();
+        let refused = match &self.edit {
+            Some(EditOp::Push {
+                face, d, new_loop, ..
+            }) => Command::PushPull {
+                face: *face,
+                distance: *d,
+                new_loop: *new_loop,
+            }
+            .refusal(base),
+            Some(EditOp::Offset { face, d, .. }) => Command::Offset {
+                face: *face,
+                distance: *d,
+            }
+            .refusal(base),
+            Some(e @ (EditOp::Move { .. } | EditOp::Rotate { .. } | EditOp::Scale { .. })) => {
+                self.transform_command(e).and_then(|c| c.refusal(base))
+            }
+            _ => None,
+        };
         let preview: Option<Model> = match &self.edit {
             Some(EditOp::Push {
                 face, d, new_loop, ..
@@ -503,6 +523,7 @@ impl Session {
             }
             _ => None,
         };
+        self.refused = refused;
         self.set_preview(preview);
         self.overlay_dirty = true;
         self.dirty = true;

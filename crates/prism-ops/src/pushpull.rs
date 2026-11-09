@@ -35,6 +35,9 @@ fn key(a: VertexId, b: VertexId) -> (VertexId, VertexId) {
     (a.min(b), a.max(b))
 }
 
+/// Said when Push/Pull is asked to pull a face with arcs.
+pub const ARC_FACE_PULL: &str = "Faces with arcs cannot be pulled yet.";
+
 pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool) -> Pulled {
     let tol = model.tol();
     let Some(f) = model.face(face).cloned() else {

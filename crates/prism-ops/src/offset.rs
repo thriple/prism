@@ -123,6 +123,9 @@ fn valid(before: &[Vec<DVec2>], after: &[Vec<DVec2>], gap: f64) -> bool {
     true
 }
 
+/// Said when Offset is asked to offset a face with arcs.
+pub const ARC_FACE_OFFSET: &str = "Faces with arcs cannot be offset yet.";
+
 /// The loops of `face` offset by `distance` (positive into the face), in
 /// 3D, outline first, and the distance actually used: `distance`, or less
 /// if that would make an invalid outline. None if the face has no valid

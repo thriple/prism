@@ -21,7 +21,7 @@ pub fn translate(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3) {
 }
 
 /// The turn about the line through `centre` along `axis`, by `angle`.
-fn turn(centre: DVec3, axis: DVec3, angle: f64) -> DAffine3 {
+pub fn turn(centre: DVec3, axis: DVec3, angle: f64) -> DAffine3 {
     let q = DQuat::from_axis_angle(axis.normalize(), angle);
     DAffine3::from_translation(centre)
         * DAffine3::from_quat(q)
@@ -35,38 +35,58 @@ pub fn rotate(model: &mut Model, vs: &BTreeSet<VertexId>, centre: DVec3, axis: D
 
 /// Scale about `centre` by `k` along each axis.
 pub fn scale(model: &mut Model, vs: &BTreeSet<VertexId>, centre: DVec3, k: DVec3) {
-    let m = DAffine3::from_translation(centre)
-        * DAffine3::from_scale(k)
-        * DAffine3::from_translation(-centre);
-    apply(model, vs, &m);
+    apply(model, vs, &scaling(centre, k));
 }
+
+/// The scale about `centre` by `k` along each axis.
+pub fn scaling(centre: DVec3, k: DVec3) -> DAffine3 {
+    DAffine3::from_translation(centre)
+        * DAffine3::from_scale(k)
+        * DAffine3::from_translation(-centre)
+}
+
+/// Said when a move would bend an arc.
+pub const ARC_WOULD_BEND: &str =
+    "Refused: an arc would bend. Move its whole curve, or scale it evenly.";
+/// Said when a move would fold a face with arcs.
+pub const ARC_FACE_WOULD_FOLD: &str =
+    "Refused: a face with arcs would fold. Keep it flat, or move all of it.";
 
 /// Whether moving `vs` by `m` keeps every arc an arc and its faces flat:
 /// each arc with an end in `vs` has both there, `m` scales evenly if any
 /// does, and a face with arcs that moves only in part stays in its plane
 /// (such a face cannot be folded into flat pieces yet).
 pub fn arcs_follow(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> bool {
+    arcs_refusal(model, vs, m).is_none()
+}
+
+/// Why moving `vs` by `m` is refused ([`arcs_follow`]), if it is: what the
+/// tools say.
+pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Option<&'static str> {
     let arcs_ok = model.edges().all(|(_, e)| {
         let (a, b) = (vs.contains(&e.a), vs.contains(&e.b));
         !e.curve.is_arc() || (!a && !b) || (a && b && e.curve.transformed(m).is_some())
     });
+    if !arcs_ok {
+        return Some(ARC_WOULD_BEND);
+    }
     let tol = model.tol();
-    arcs_ok
-        && model.faces().all(|(id, f)| {
-            let moved: Vec<VertexId> = f
-                .loops()
-                .flatten()
-                .copied()
-                .filter(|v| vs.contains(v))
-                .collect();
-            !model.face_has_arcs(id)
-                || moved.is_empty()
-                || moved.len() == f.loops().flatten().count()
-                || moved.iter().all(|v| {
-                    f.plane()
-                        .contains(m.transform_point3(model.vertex(*v)), &tol)
-                })
-        })
+    let flat = model.faces().all(|(id, f)| {
+        let moved: Vec<VertexId> = f
+            .loops()
+            .flatten()
+            .copied()
+            .filter(|v| vs.contains(v))
+            .collect();
+        !model.face_has_arcs(id)
+            || moved.is_empty()
+            || moved.len() == f.loops().flatten().count()
+            || moved.iter().all(|v| {
+                f.plane()
+                    .contains(m.transform_point3(model.vertex(*v)), &tol)
+            })
+    });
+    (!flat).then_some(ARC_FACE_WOULD_FOLD)
 }
 
 /// Send the arcs with both ends in `vs` through `m`.

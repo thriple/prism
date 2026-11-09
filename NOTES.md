@@ -1371,3 +1371,11 @@ and inference, 2d the Circle and Polygon tools).
   step), moves each such end to the nearest point on the circle. A point
   shared by two such arcs follows the first. Model Health's lines now
   follow arcs; its face outlines are still drawn through the corners only.
+- **Part 4, refusals say why:** while a Move, Rotate or Scale would bend
+  an arc or fold a face with arcs, or Push/Pull or Offset is on a face
+  with arcs, the status bar's hint is the reason
+  (`Command::refusal`; the words are constants in prism-ops). The edit
+  still changes nothing. Not checked by eye in the app.
+- **2c is done.** For the owner to try: click and erase a circle, snap to
+  an arc's centre (hover the arc first), quadrants, Model Health's Repair,
+  and the refusal hints.

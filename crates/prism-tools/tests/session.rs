@@ -1956,3 +1956,45 @@ fn model_health_repairs_an_arc_off_its_circle_with_undo() {
     undo(&mut d);
     assert_eq!(row(&d).count, 2, "one step, undone");
 }
+
+#[test]
+fn refused_edits_of_arcs_say_why() {
+    use prism_ops::offset::ARC_FACE_OFFSET;
+    use prism_ops::pushpull::ARC_FACE_PULL;
+    use prism_ops::transform::{ARC_FACE_WOULD_FOLD, ARC_WOULD_BEND};
+    use prism_tools::session::OFFSET;
+    let mut d = circle_in_a_rectangle();
+    let before = d.s.model().clone();
+    // A seam moved on its own would bend both halves of the circle.
+    d.tool(SELECT);
+    d.click(DVec3::new(3.0, 3.0, 0.0));
+    assert_eq!(d.s.selection().vertices.len(), 1);
+    d.tool(MOVE);
+    d.click(DVec3::new(3.0, 3.0, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.hover(DVec3::new(3.5, 3.0, 0.0));
+    assert_eq!(d.s.hint(), ARC_WOULD_BEND);
+    d.send(Input::Key { key: Key::Escape });
+    assert_ne!(d.s.hint(), ARC_WOULD_BEND, "gone once the move ends");
+    // Lifting a corner would fold the face around the circle.
+    d.tool(SELECT);
+    d.click(DVec3::new(6.0, 4.0, 0.0));
+    d.tool(MOVE);
+    d.click(DVec3::new(6.0, 4.0, 0.0));
+    d.send(Input::Key { key: Key::Up });
+    d.hover(DVec3::new(6.0, 4.0, 1.0));
+    assert_eq!(d.s.hint(), ARC_FACE_WOULD_FOLD);
+    d.send(Input::Key { key: Key::Escape });
+    // Push/Pull and Offset on a half of the disc.
+    d.tool(PUSH);
+    d.click(DVec3::new(3.5, 2.5, 0.0));
+    d.hover(DVec3::new(3.5, 2.5, 0.5));
+    assert_eq!(d.s.hint(), ARC_FACE_PULL);
+    d.send(Input::Key { key: Key::Escape });
+    d.tool(OFFSET);
+    d.click(DVec3::new(3.5, 2.5, 0.0));
+    d.hover(DVec3::new(3.6, 2.3, 0.0));
+    assert_eq!(d.s.hint(), ARC_FACE_OFFSET);
+    d.send(Input::Key { key: Key::Escape });
+    assert_eq!(d.s.model(), &before, "nothing changed");
+}

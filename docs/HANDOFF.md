@@ -22,11 +22,11 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - `Command::Duplicate` was removed (it made CI hang);
   - Updates and MCP Server were added to the plan, right after View
     Settings.
-- **State:** `main` = session branch. Last push: Exact Curves 2b
-  (crossings). Its CI: every code job passed (Windows included); only the
-  Web build failed, twice, downloading `trunk` from GitHub releases (a
-  504, not our code). Re-run it; if it flakes again, make the Install
-  trunk step retry (`curl --fail --retry`). Step 2c waits for the owner.
+- **State:** `main` = session branch. Last push: Exact Curves 2c
+  (done). Check its CI first. 2b's Web build failed on GitHub download
+  504s (not our code); 2c part 1's CI was fully green. If the trunk
+  download flakes again, make the Install trunk step retry
+  (`curl --fail --retry`). Step 2d waits for the owner's go-ahead.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves part 1 is built** (brief 22: faces name their edges, file
@@ -34,8 +34,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **Exact Curves part 2** is briefed (brief 23, four steps). Steps 2a
   (arcs in the core) and 2b (exact crossings) are built. **Next: step 2c**
   (picking, inference, Eraser, Model Health). 2c parts 1 (whole curves:
-  select, Eraser), 2 (arc snaps) and 3 (Model Health: arcs off their
-  circle, Repair) are built; next 2c part 4 (say why a move was refused). Where to start for 2c:
+  select, Eraser), 2 (arc snaps), 3 (Model Health: arcs off their
+  circle, Repair) and 4 (refused edits say why, in the status bar) are
+  built: **2c is done; next is 2d** (Circle and Polygon tools, brief 23).
+  The notes below were the starting points for 2c: Where to start for 2c:
   - picking and hover already use drawn points (`prism-view/src/pick.rs`,
     `prism-tools/src/select.rs`); selecting an arc should take every edge
     with its `curve_id`, and the Eraser the whole curve;

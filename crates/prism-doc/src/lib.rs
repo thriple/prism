@@ -531,6 +531,35 @@ impl Command {
 
     /// Run a geometry command on a model (commands that change groups do
     /// nothing here; see [`Command::apply_in`]).
+    /// Why this edit leaves `m` as it is, when it is refused because of
+    /// arcs (what the tools say).
+    pub fn refusal(&self, m: &Model) -> Option<&'static str> {
+        use prism_ops::transform::{arcs_refusal, scaling, turn};
+        match self {
+            Command::PushPull { face, .. } if m.face_has_arcs(*face) => {
+                Some(prism_ops::pushpull::ARC_FACE_PULL)
+            }
+            Command::Offset { face, .. } if m.face_has_arcs(*face) => {
+                Some(prism_ops::offset::ARC_FACE_OFFSET)
+            }
+            Command::Translate { vertices, by } => {
+                arcs_refusal(m, vertices, &prism_math::DAffine3::from_translation(*by))
+            }
+            Command::Rotate {
+                vertices,
+                centre,
+                axis,
+                angle,
+            } => arcs_refusal(m, vertices, &turn(*centre, *axis, *angle)),
+            Command::Scale {
+                vertices,
+                centre,
+                factor,
+            } => arcs_refusal(m, vertices, &scaling(*centre, *factor)),
+            _ => None,
+        }
+    }
+
     pub fn apply(&self, m: &mut Model) {
         match self {
             Command::Segment { p, q } => {

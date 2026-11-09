@@ -310,6 +310,8 @@ pub struct Session {
     view: prism_view::ViewStyle,
     /// The guide under the Eraser.
     hover_guide: Option<prism_topo::GuideId>,
+    /// Why the edit in progress changes nothing (arcs), for the status bar.
+    refused: Option<&'static str>,
     /// The open group (empty at the root), and the selected groups in it.
     ctx: Vec<prism_doc::InstanceId>,
     groups: BTreeSet<prism_doc::InstanceId>,
@@ -342,6 +344,7 @@ impl Session {
             measure_only: false,
             view: prism_view::ViewStyle::default(),
             hover_guide: None,
+            refused: None,
             ctx: Vec::new(),
             groups: BTreeSet::new(),
             last_hidden: BTreeSet::new(),
@@ -555,6 +558,9 @@ impl Session {
 
     /// The status bar's hint for the tool's next step (feel test `hintText(`).
     pub fn hint(&self) -> &'static str {
+        if let Some(r) = self.refused.filter(|_| self.edit.is_some()) {
+            return r;
+        }
         if let Some(h) = self.edit_hint() {
             return h;
         }
