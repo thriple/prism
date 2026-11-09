@@ -30,6 +30,7 @@ mod construct;
 mod edit;
 mod groups;
 mod health;
+mod round;
 mod shapes;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
@@ -38,6 +39,7 @@ pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
+pub use round::FILLET;
 pub use shapes::{CIRCLE, DEFAULT_SIDES, GREYED_TOOLS, POLYGON, polygon_points};
 
 /// Tool ids (the action registry's).
@@ -287,6 +289,11 @@ pub struct Session {
     arc_radius: Option<f64>,
     last_fillet: Option<DVec3>,
     arc_notice: Option<&'static str>,
+    /// The Fillet / Chamfer tool: its size, the edge it last rounded (and
+    /// whether as a fillet), and why it last refused.
+    round_size: Option<f64>,
+    round_last: Option<(prism_topo::EdgeId, bool)>,
+    round_notice: Option<&'static str>,
     shape_radius: Option<f64>,
     sides: u32,
     last_op: Option<LastOp>,
@@ -399,6 +406,9 @@ impl Session {
             arc_radius: None,
             last_fillet: None,
             arc_notice: None,
+            round_size: None,
+            round_last: None,
+            round_notice: None,
             shape_radius: None,
             sides: shapes::DEFAULT_SIDES,
             last_op: None,
@@ -537,7 +547,8 @@ impl Session {
             return !c.is_control();
         }
         let editable = self.in_operation() && self.boxing.is_none()
-            || self.last_op.is_some() && self.typing_tool();
+            || self.last_op.is_some() && self.typing_tool()
+            || self.tool == FILLET;
         editable && (c.is_ascii_digit() || c == '.' || c == '-' || c == self.number.decimal)
     }
 
@@ -801,6 +812,8 @@ impl Session {
         self.shape = None;
         self.arc = None;
         self.last_fillet = None;
+        self.round_last = None;
+        self.round_notice = None;
         self.boxing = None;
         self.typed.clear();
         self.lock = Lock::None;
@@ -1689,7 +1702,7 @@ impl Session {
             self.edit_enter(&text);
             return;
         }
-        if self.shape_enter(&text) || self.arc_enter(&text) {
+        if self.shape_enter(&text) || self.arc_enter(&text) || self.round_enter(&text) {
             return;
         }
         if !text.is_empty() && self.edit_retype(&text) {

@@ -15,6 +15,7 @@ use prism_view::pick::{self, Hit};
 use prism_view::style::alpha;
 
 use super::construct::{OFFSET, PROTRACTOR, TAPE};
+use super::round::FILLET;
 use super::{LastOp, Session, rect_basis};
 
 pub const PUSH: &str = "tool.push";
@@ -119,7 +120,7 @@ pub(super) enum EditOp {
 pub(super) fn is_edit(t: &str) -> bool {
     matches!(
         t,
-        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR
+        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR | FILLET
     )
 }
 
@@ -238,6 +239,7 @@ impl Session {
     /// Hover and previews for the edit tools, after inference ran.
     pub(super) fn edit_hover(&mut self, s: DVec2, view: &View) {
         match self.tool.as_str() {
+            FILLET => self.round_hover(s, view),
             PUSH => {
                 if let Some(EditOp::Push { .. }) = &self.edit {
                     self.push_drag(s, view);
@@ -688,6 +690,7 @@ impl Session {
     /// A left press with an edit tool.
     pub(super) fn edit_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
         match self.tool.as_str() {
+            FILLET => self.round_press(s, ctrl),
             PUSH => self.push_press(s, n_clicks),
             ERASE => {
                 let mut edges = BTreeSet::new();
@@ -1243,6 +1246,7 @@ impl Session {
                 ("Angle", format!("{:.1}°", angle.to_degrees()))
             }
             (None, Some(LastOp::Edit(EditOp::Scale { k, .. }))) => ("Scale", format!("{k:.3}×")),
+            (None, _) if self.tool == FILLET => self.round_measurement(),
             (None, _) if self.tool == PUSH => (
                 "Distance",
                 self.last_push.map_or(String::new(), |(d, _)| nf.show(d)),
@@ -1281,6 +1285,7 @@ impl Session {
                 "Move to scale about the centre · click to finish · type a factor + Enter · Esc cancels"
             }
             (SCALE, None) => "Click a point to scale from (about the selection's centre)",
+            (FILLET, _) => self.round_hint(),
             (ERASE, _) => {
                 "Click or drag over edges to erase them (with the faces they bound) · Ctrl softens · Ctrl+Shift unsoftens"
             }
@@ -1550,7 +1555,7 @@ impl Session {
 }
 
 /// The edge under the cursor (the Eraser picks only edges).
-fn edge_pick(
+pub(super) fn edge_pick(
     scene: &prism_view::Scene,
     view: &View,
     s: DVec2,

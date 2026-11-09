@@ -201,6 +201,17 @@ fn every_kind(d: &Document) -> Vec<Command> {
             new_loop: false,
         });
     }
+    // A solid's edge rounded (Exact Curves 5a), when one can be.
+    if let Some((edge, _)) = m
+        .edges()
+        .find(|(id, _)| prism_ops::round::refusal(m, *id, 0.1, true).is_none())
+    {
+        out.push(Command::RoundEdge {
+            edge,
+            size: 0.1,
+            fillet: true,
+        });
+    }
     out
 }
 
@@ -229,7 +240,7 @@ proptest! {
     /// Any sequence of commands, undone all the way and redone, ends exactly
     /// where it was.
     #[test]
-    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..23, 1..6)) {
+    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..24, 1..6)) {
         let mut d = setup();
         let start = d.model().geometry_json();
         let mut ran = 0;
@@ -360,6 +371,54 @@ fn a_new_radius_undoes_exactly() {
     let after = d.model().to_json();
     d.undo();
     assert_eq!(d.model().geometry_json(), before);
+    d.redo();
+    assert_eq!(d.model().to_json(), after);
+}
+
+/// A box's edge filleted, then another chamfered, undo and redo exactly
+/// (Exact Curves 5a).
+#[test]
+fn rounding_edges_undoes_exactly() {
+    let mut d = setup();
+    d.run(Command::Rect {
+        x0: 10.0,
+        y0: 10.0,
+        x1: 12.0,
+        y1: 12.0,
+        z: 0.0,
+    });
+    let face = prism_ops::face_at(d.model(), DVec3::new(11.0, 11.0, 0.0)).expect("the square");
+    let up = d.model().face(face).unwrap().plane().unwrap().normal.z;
+    assert!(d.run(Command::PushPull {
+        face,
+        distance: 2.0 * up,
+        new_loop: false,
+    }));
+    let before = d.model().geometry_json();
+    let mut ran = 0;
+    for fillet in [true, false] {
+        let m = d.model();
+        let Some((edge, _)) = m
+            .edges()
+            .find(|(id, _)| prism_ops::round::refusal(m, *id, 0.1, fillet).is_none())
+        else {
+            break;
+        };
+        assert!(d.run(Command::RoundEdge {
+            edge,
+            size: 0.1,
+            fillet,
+        }));
+        ran += 1;
+        let p = prism_ops::check::problems(d.model());
+        assert!(p.is_empty(), "{p:?}");
+    }
+    assert_eq!(ran, 2, "the setup has a box with edges to round");
+    let after = d.model().to_json();
+    d.undo();
+    d.undo();
+    assert_eq!(d.model().geometry_json(), before);
+    d.redo();
     d.redo();
     assert_eq!(d.model().to_json(), after);
 }

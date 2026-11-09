@@ -214,6 +214,13 @@ pub enum Command {
     EraseInstances {
         instances: BTreeSet<InstanceId>,
     },
+    /// Round a solid's edge (`fillet`, a radius) or cut it off (a chamfer,
+    /// how far into each face).
+    RoundEdge {
+        edge: prism_topo::EdgeId,
+        size: f64,
+        fillet: bool,
+    },
 }
 
 /// How groups are moved, turned or scaled.
@@ -360,6 +367,8 @@ impl Command {
             Command::CopyInstances { count, .. } if *count > 1 => "Array",
             Command::CopyInstances { .. } => "Copy",
             Command::EraseInstances { .. } => "Erase",
+            Command::RoundEdge { fillet: true, .. } => "Fillet",
+            Command::RoundEdge { .. } => "Chamfer",
         }
     }
 
@@ -494,6 +503,11 @@ impl Command {
                 face: *face,
                 distance: distance * scale,
             },
+            Command::RoundEdge { edge, size, fillet } => Command::RoundEdge {
+                edge: *edge,
+                size: size * scale,
+                fillet: *fillet,
+            },
             Command::AddGuide { guide } => Command::AddGuide {
                 guide: match *guide {
                     Guide::Line { origin, dir: d } => Guide::Line {
@@ -601,6 +615,9 @@ impl Command {
                 prism_ops::pushpull::refusal(m, *face, *distance)
             }
             Command::Fillet { corner, radius } => prism_ops::fillet::refusal(m, *corner, *radius),
+            Command::RoundEdge { edge, size, fillet } => {
+                prism_ops::round::refusal(m, *edge, *size, *fillet)
+            }
             Command::Offset { face, .. } if m.face(*face).is_some_and(|f| f.is_curved()) => {
                 Some(prism_ops::offset::CURVED_OFFSET)
             }
@@ -645,6 +662,9 @@ impl Command {
             Command::Polygon { points } => prism_ops::add_polygon(m, points),
             Command::Fillet { corner, radius } => {
                 prism_ops::fillet::fillet(m, *corner, *radius);
+            }
+            Command::RoundEdge { edge, size, fillet } => {
+                prism_ops::round::round(m, *edge, *size, *fillet);
             }
             Command::Arc {
                 centre,

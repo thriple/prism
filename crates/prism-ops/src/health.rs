@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_geom::{Curve, circle_distance};
+use prism_geom::{Curve, Surface, circle_distance};
 use prism_math::{DVec2, DVec3, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
 
@@ -340,9 +340,21 @@ fn reversed(model: &Model) -> BTreeSet<FaceId> {
         if solid_faces.contains(&start) {
             let flats: Vec<Flat> = piece.iter().filter_map(|f| Flat::of(model, *f)).collect();
             let right = piece.iter().find(|f| !wrong.contains(*f)).copied();
-            if let Some(right) = right
-                && faces_inward(model, right, &flats, &tol) == Some(true)
+            // Rays through the flat faces alone would escape through a
+            // curved one: with curved faces, go by the enclosed volume.
+            let inward = if piece
+                .iter()
+                .any(|f| model.face(*f).is_some_and(|f| f.is_curved()))
             {
+                let v: f64 = piece
+                    .iter()
+                    .map(|f| face_volume(model, *f) * if wrong.contains(f) { -1.0 } else { 1.0 })
+                    .sum();
+                Some(v < 0.0)
+            } else {
+                right.and_then(|r| faces_inward(model, r, &flats, &tol))
+            };
+            if inward == Some(true) {
                 wrong = piece
                     .iter()
                     .copied()
@@ -353,6 +365,40 @@ fn reversed(model: &Model) -> BTreeSet<FaceId> {
         out.extend(wrong);
     }
     out
+}
+
+/// A face's share of the volume its closed shell encloses (signed, by the
+/// divergence theorem: a third of the integral of position · normal).
+pub fn face_volume(model: &Model, id: FaceId) -> f64 {
+    let Some(f) = model.face(id) else {
+        return 0.0;
+    };
+    match f.surface {
+        Surface::Plane(p) => model.face_area(id) * p.normal.dot(p.origin) / 3.0,
+        Surface::Cylinder(c) => {
+            // Unrolled, the loops wind counter-clockwise where the face
+            // points away from the axis. Position · out-from-the-axis is
+            // r + o · out, with o the axis's offset from the origin; the
+            // second part integrates (Green) round the loop as -r (axis ×
+            // out) · o dh.
+            let o = c.origin - c.axis * c.origin.dot(c.axis);
+            let mut sum = 0.0;
+            for k in 0..f.loops().count() {
+                let pts = model.unrolled(f, k);
+                let n = pts.len();
+                for i in 0..n {
+                    let ((p, a), (q, b)) = (pts[i], pts[(i + 1) % n]);
+                    let along = |x: DVec3| {
+                        let out = (x - c.axis_point(x)).normalize_or_zero();
+                        -c.radius * c.axis.cross(out).dot(o)
+                    };
+                    sum +=
+                        c.radius * a.perp_dot(b) / 2.0 + (along(p) + along(q)) / 2.0 * (b.y - a.y);
+                }
+            }
+            sum / 3.0
+        }
+    }
 }
 
 /// Whether a face points into the solid its shell encloses.

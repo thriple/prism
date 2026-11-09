@@ -18,6 +18,7 @@ pub mod pushpull;
 pub mod radius;
 pub mod reach;
 mod regions;
+pub mod round;
 pub mod select;
 pub mod settle;
 pub mod solid;

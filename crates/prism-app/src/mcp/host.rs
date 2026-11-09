@@ -734,6 +734,42 @@ mod tests {
     }
 
     #[test]
+    fn use_tool_fillets_a_box_edge() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.rect", "steps": [{"click": [0, 0, 0]}, {"click": [2, 2, 0]}]}),
+        ));
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.push", "steps": [{"click": [1, 1, 0]}, {"move": [1, 1, 0.5]}, {"type": "2"}]}),
+        ));
+        assert_eq!(r["model"]["faces"], 6, "{r}");
+        // Greyed until Exact Curves is done, but reachable here (brief 26).
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.fillet", "steps": [{"click": [2, 0, 1]}, {"type": "0.25"}]}),
+        ));
+        assert_eq!(r["model"]["faces"], 7, "{r}");
+        let g = value(h.call("get_geometry", &json!({})));
+        let radii: Vec<&Value> = g["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|f| f["cylinder"].get("radius"))
+            .collect();
+        assert_eq!(radii, [&json!(0.25)], "{g}");
+    }
+
+    #[test]
     fn geometry_lists_a_cylinder_face() {
         let mut doc = prism_doc::Document::new();
         doc.run(prism_doc::Command::Import {

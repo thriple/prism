@@ -16,7 +16,7 @@ pub const POLYGON: &str = "tool.polygon";
 
 /// Built, but greyed in menus, toolbars and the dock until Exact Curves is
 /// done (owner, 2026-11-09). Only MCP `use_tool` reaches them.
-pub const GREYED_TOOLS: [&str; 7] = [
+pub const GREYED_TOOLS: [&str; 8] = [
     CIRCLE,
     POLYGON,
     super::arcs::ARC,
@@ -24,6 +24,7 @@ pub const GREYED_TOOLS: [&str; 7] = [
     super::arcs::ARC3,
     super::arcs::ARC_CENTRE,
     super::arcs::PIE,
+    super::round::FILLET,
 ];
 
 /// A polygon's sides when none were typed.

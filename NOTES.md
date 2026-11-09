@@ -1670,3 +1670,38 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   never merged"); erasing one merges the faces. The owner asked to look at
   the shape rules against SketchUp as a whole.
 - Tests: the wedge (`pushpull_feedback.rs`), retracing (`sticky.rs`).
+
+## Exact Curves (part 5, step 5a): fillet and chamfer of an edge
+
+- **Brief 26** splits part 5 into 5a (fillet and chamfer), 5b (cones,
+  spheres and tori in the core), 5c (Follow Me along lines), 5d (Follow
+  Me along arcs, Alt for a face's perimeter) and 5e (the curve tools
+  become active). Follow Me follows SketchUp's rules (the profile is
+  projected square to the path's first segment; the end is square to the
+  last).
+- **`prism_ops::round`:** a straight edge between two flat faces at an
+  angle (convex or concave), with plain corners at its ends, is cut off
+  flat (chamfer: each face cut back by the size, square to the edge) or
+  rounded (fillet: a cylinder face tangent to both, soft and smooth where
+  it meets them). The faces across the ends get a line or an arc. A
+  fillet needs those faces square to the edge (else an ellipse:
+  `SLANTED_END`, until DECISIONS #32). Other refusals: `NOT_AN_EDGE`,
+  `TOO_WIDE`. `Command::RoundEdge { edge, size, fillet }`.
+- **The Fillet / Chamfer tool** (`tool.fillet`, greyed until 5e, MCP
+  `use_tool` reaches it): click an edge to round it with the size (a
+  tenth of the narrower face when none was typed); Ctrl chamfers; typing
+  a size + Enter sets the next one and changes the last (a refused size
+  leaves the last as it was, with the reason in the hint). A click near a
+  flat corner rounds the corner (brief 24's fillet).
+- **Model Health fix:** the reversed check went by rays through a closed
+  shell's flat faces only, so a shell with a cylinder face could look
+  inside out (a large fillet showed every face reversed). With curved
+  faces it now goes by the enclosed volume (`health::face_volume`, exact
+  for cylinder faces).
+- Not built: fillets where filleted edges meet (a corner of three), Shift
+  for tangent-connected edges, a ghost preview before the click (the
+  click applies at once; typing adjusts it).
+- Tests: a cube edge chamfered and filleted (exact volumes), a concave
+  edge, each refusal, the default size, a property test of random rounds
+  on random boxes (3000 cases run once), undo and redo, the session tool
+  (clicks, typing, Ctrl, a refused size), MCP.

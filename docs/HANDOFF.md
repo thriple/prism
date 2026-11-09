@@ -22,8 +22,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - `Command::Duplicate` was removed (it made CI hang);
   - Updates and MCP Server were added to the plan, right after View
     Settings.
-- **State:** `main` = session branch, clean, last code push is Exact Curves 4d
-  (the commit after de21a5a). CI and releases green on both branches through 4c; check 4d's. GitHub release downloads gave 504s in the Web build on
+- **State:** `main` = session branch, clean, last code push is Exact Curves 5a.
+  CI and releases green on both branches through 4d (282bd71) and the
+  session 5 wedge fix (ddd7523, check its CI too). GitHub release downloads gave 504s in the Web build on
   2026-11-09 (not our code): re-run; if it repeats, make the download
   steps retry (`curl --fail --retry`).
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
@@ -33,8 +34,13 @@ Updated 2026-11-09 (Guam), before a context compaction.
   4a–4d are all built (`Surface::Cylinder`, `plane()` is an
   `Option`; Push/Pull makes cylinders, shaded and picked; soft and smooth
   edges, file schema 5; Push/Pull on a side changes the radius,
-  `prism_ops::radius`). Next is part 5 (Follow Me, fillet and chamfer):
-  write its brief first. The DECISIONS #32 fallback comes after part 5.
+  `prism_ops::radius`). **Part 5 is under way** (brief 26, steps
+  5a–5e): 5a is built (`prism_ops::round`, `Command::RoundEdge`, the
+  Fillet / Chamfer tool `tool.fillet`, greyed). Next is 5b: cones,
+  spheres and tori in the core (surfaces, check, files layout 5 / schema
+  6, grid shading, picking by triangles then onto the surface, MCP).
+  Then 5c and 5d (Follow Me), then 5e ungreys the curve tools. The
+  DECISIONS #32 fallback comes after part 5.
   - Part 4 lessons: `Face::new` links edges by corners, which is wrong
     when two arcs join the same two points: make faces with
     `Face::with_edges`. Keep edge creation order in Push/Pull (recorded

@@ -2456,3 +2456,53 @@ fn edit_soften_toggles_the_selected_edges() {
     action(&mut d, "edit.soften");
     assert_eq!(soft_count(&d), 0, "all soft: made plain again");
 }
+
+// ---------- Fillet / Chamfer (brief 26, step 5a) ----------
+
+fn radii(d: &Driver) -> Vec<f64> {
+    d.s.model()
+        .faces()
+        .filter_map(|(_, f)| match f.surface {
+            prism_geom::Surface::Cylinder(c) => Some(c.radius),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_fillet_tool_rounds_an_edge_and_ctrl_chamfers_one() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("2");
+    let faces = d.faces();
+    d.tool(FILLET);
+    assert!(d.s.hint().contains("Ctrl cuts it off"), "{}", d.s.hint());
+    // An upright corner edge, at its middle: rounded with a tenth of the
+    // face's width.
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    assert_eq!(d.faces(), faces + 1);
+    assert_eq!(radii(&d).len(), 1);
+    assert!((radii(&d)[0] - 0.2).abs() < 1e-9, "{:?}", radii(&d));
+    valid(&d);
+    // A typed size changes it.
+    d.typed("0.5");
+    assert!((radii(&d)[0] - 0.5).abs() < 1e-9, "{:?}", radii(&d));
+    assert_eq!(d.faces(), faces + 1);
+    valid(&d);
+    // Ctrl cuts another edge off flat, with the same size.
+    let s = d.screen(DVec3::new(0.0, 0.0, 1.0));
+    d.click_px(s, false, true);
+    assert_eq!(d.faces(), faces + 2);
+    assert_eq!(radii(&d).len(), 1, "flat");
+    valid(&d);
+    // Too big for the faces: refused, and the hint says why.
+    d.typed("5");
+    assert_eq!(d.s.hint(), prism_ops::round::TOO_WIDE);
+    undo(&mut d);
+    undo(&mut d);
+    assert_eq!(d.faces(), faces, "one undo each");
+}
