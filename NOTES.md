@@ -1137,3 +1137,32 @@ Brief: `docs/briefs/21-mcp-server.md` (PLAN section 8 decision 6).
 - **Not tried yet:** Claude Code itself connecting (not installable here
   against the app's window; curl stood in for it).
 
+## MCP Server (part 2: drawing and seeing)
+Brief: `docs/briefs/21-mcp-server.md`.
+- **`use_tool`:** picks a tool, then clicks and moves at world points in
+  metres (projected through the camera, after `Session::settle_camera`
+  finishes any ease), types into the measurement box, presses keys, locks
+  axes (arrow keys). Every step is an ordinary session event, so it is
+  undoable and recorded. Each click reports where inference put it. A
+  point outside the view stops the steps with a message. Clicking the same
+  spot twice in a row counts as a double-click, as for a person.
+- **`get_geometry`:** faces (unit normal, area, outer loop, holes) and
+  edges (ends, length) of the open group, world coordinates, up to a limit
+  (200), with totals. Areas are the group's own (a scaled group's are not
+  scaled).
+- **`screenshot`:** the app holds the call, draws the next frame, reads
+  the viewport's colour texture back (`Gpu::read_viewport`), shrinks it to
+  at most 1024 pixels wide and sends a PNG (our own small encoder on
+  `flate2`, which Prism already had). If the window is minimised, no frame
+  is drawn and the call times out after 60 seconds.
+- **`replay_session`:** reads a recording from a path or its JSON, replays
+  it in a separate session, and says whether the end matches.
+- **`get_model`** also gives the display unit and the model's bounds.
+- **Checked:** tests draw a 2 by 1 m rectangle by clicks and push it 1.5 m
+  by typing (top face area and height checked), refuse a point behind the
+  camera, undo; list the cube's geometry; replay a recording made in the
+  test. In the real app under Xvfb, curl drew a box with `use_tool` and
+  `screenshot` returned a 1024 by 600 PNG showing it.
+- **Push/Pull clicks report no inference point** (the tool picks a face,
+  not a point); the face's change shows in the counts and `get_geometry`.
+

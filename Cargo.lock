@@ -2147,6 +2147,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "env_logger",
+ "flate2",
  "interprocess",
  "js-sys",
  "log",

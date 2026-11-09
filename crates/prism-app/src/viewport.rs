@@ -48,6 +48,12 @@ impl Viewport {
         }
     }
 
+    /// Send an input as if it came from the mouse or keys (the MCP
+    /// server's `use_tool`).
+    pub fn drive(&mut self, input: Input) -> prism_tools::Response {
+        self.send(input)
+    }
+
     fn send(&mut self, input: Input) -> prism_tools::Response {
         self.session.handle(&Event { t: self.now, input })
     }

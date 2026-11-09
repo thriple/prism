@@ -13,11 +13,28 @@ pub const LEGACY: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const VERSION_KEY: &str = "io.modelcontextprotocol/protocolVersion";
 const SERVER_INFO_KEY: &str = "io.modelcontextprotocol/serverInfo";
 
+/// What a tool gives back.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Output {
+    Text(String),
+    /// A PNG, and a line about it.
+    Image {
+        png: Vec<u8>,
+        text: String,
+    },
+}
+
+impl From<String> for Output {
+    fn from(s: String) -> Self {
+        Output::Text(s)
+    }
+}
+
 /// What runs the tools (the app, or a fake in tests).
 pub trait Host {
-    /// Run tool `name`. `Ok` is the text to return; `Err` a tool error the
-    /// assistant sees (not a protocol error).
-    fn call(&mut self, name: &str, args: &Value) -> Result<String, String>;
+    /// Run tool `name`. `Err` is a tool error the assistant sees (not a
+    /// protocol error).
+    fn call(&mut self, name: &str, args: &Value) -> Result<Output, String>;
 }
 
 /// The HTTP answer: a status, and a JSON body unless there is none.
@@ -85,6 +102,51 @@ pub fn tools() -> Value {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Words to match, such as \"group\" or \"view\"."}
+                },
+            },
+        },
+        {
+            "name": "get_geometry",
+            "title": "List faces and edges",
+            "description": "The open group's faces (id, unit normal, area in square metres, outer loop points, number of holes) and edges (id, end points, length), in world coordinates and metres. Up to `limit` of each (default 200); the totals are always given.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 0, "description": "Most faces and most edges to list."}
+                },
+            },
+        },
+        {
+            "name": "use_tool",
+            "title": "Use a tool",
+            "description": "Use Prism's tools as a person would. Optionally pick `tool` (an id such as tool.line, tool.rect, tool.pushpull, tool.move; see list_actions), then run `steps` in order. A step is one of: {\"click\": [x, y, z]} (press and release at a model point, in metres), {\"move\": [x, y, z]} (hover there, for direction and inference), {\"type\": \"2.5\"} (type into the measurement box and press Enter; units such as 400mm work), {\"key\": \"Enter\"|\"Escape\"|\"Backspace\"}, {\"lock\": \"red\"|\"green\"|\"blue\"} (lock an axis). Points are projected through the current view, so they must be visible; inference snaps a click to nearby points, edges and faces, and each click reports where it landed. Exact sizes come from typed values. Every change is undoable (run_action edit.undo).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "description": "A tool's action id, picked before the steps."},
+                    "steps": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Clicks, moves, typed values, keys and axis locks, in order."
+                    }
+                },
+            },
+        },
+        {
+            "name": "screenshot",
+            "title": "Screenshot",
+            "description": "A picture of the viewport as it is after the latest change (PNG, at most 1024 pixels wide).",
+            "inputSchema": none,
+        },
+        {
+            "name": "replay_session",
+            "title": "Replay a recorded session",
+            "description": "Play a session recorded with Help > Record Session, from a file path or its JSON text, in a separate session (the open document is not changed). Says whether the end matches what was recorded, and the end's counts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The recording's file on this computer."},
+                    "json": {"type": "string", "description": "Or the recording's JSON text."}
                 },
             },
         },
@@ -192,12 +254,19 @@ pub fn handle(msg: &Value, header: Option<&str>, host: &mut dyn Host) -> Reply {
                 return Reply::error(200, id, -32602, &format!("Unknown tool: {name}"), None);
             }
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
-            let (text, is_error) = match host.call(name, &args) {
-                Ok(t) => (t, false),
-                Err(e) => (e, true),
+            let (content, is_error) = match host.call(name, &args) {
+                Ok(Output::Text(t)) => (json!([{"type": "text", "text": t}]), false),
+                Ok(Output::Image { png, text }) => (
+                    json!([
+                        {"type": "image", "data": super::image::base64(&png), "mimeType": "image/png"},
+                        {"type": "text", "text": text},
+                    ]),
+                    false,
+                ),
+                Err(e) => (json!([{"type": "text", "text": e}]), true),
             };
             finish(json!({
-                "content": [{"type": "text", "text": text}],
+                "content": content,
                 "isError": is_error,
             }))
         }
@@ -217,11 +286,17 @@ mod tests {
 
     struct Fake(Vec<String>);
     impl Host for Fake {
-        fn call(&mut self, name: &str, args: &Value) -> Result<String, String> {
+        fn call(&mut self, name: &str, args: &Value) -> Result<Output, String> {
             self.0.push(name.to_owned());
+            if name == "screenshot" {
+                return Ok(Output::Image {
+                    png: b"foo".to_vec(),
+                    text: "800 x 600".into(),
+                });
+            }
             match args.get("id").and_then(Value::as_str) {
                 Some("bad") => Err("greyed".into()),
-                _ => Ok(format!("ran {name}")),
+                _ => Ok(format!("ran {name}").into()),
             }
         }
     }
@@ -296,6 +371,10 @@ mod tests {
                 "get_selection",
                 "get_health",
                 "list_actions",
+                "get_geometry",
+                "use_tool",
+                "screenshot",
+                "replay_session",
                 "run_action"
             ]
         );
@@ -315,9 +394,16 @@ mod tests {
         let r = handle(&call("run_action", "bad"), None, &mut h);
         assert_eq!(result(&r)["isError"], true);
         assert_eq!(result(&r)["content"][0]["text"], "greyed");
+        // A picture comes back as image content.
+        let r = handle(&call("screenshot", ""), None, &mut h);
+        let c = &result(&r)["content"];
+        assert_eq!(c[0]["type"], "image");
+        assert_eq!(c[0]["mimeType"], "image/png");
+        assert_eq!(c[0]["data"], "Zm9v");
+        assert_eq!(c[1]["text"], "800 x 600");
         let r = handle(&call("no_such_tool", ""), None, &mut h);
         assert_eq!(r.body.unwrap()["error"]["code"], -32602);
-        assert_eq!(h.0, ["run_action", "run_action"]);
+        assert_eq!(h.0, ["run_action", "run_action", "screenshot"]);
     }
 
     #[test]

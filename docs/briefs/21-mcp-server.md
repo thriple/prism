@@ -27,6 +27,20 @@ M chunk, two parts (PLAN 6.0a).
 - **Threads:** the server runs on its own thread. Tool calls go to the app's main thread through a channel and wake the event loop; the server waits for the answer (with a time limit).
 - **Native only.** On the web build the window says it is not available (browsers cannot listen).
 
+## Requirements (part 2)
+- **`use_tool`:** pick a tool (optional), then run steps as a person would: `click` or `move` at a model point (metres, world coordinates; projected through the current camera, which first finishes any easing), `type` a value for the measurement box (then Enter), `key` (Enter, Escape, Backspace, arrows), `lock` an axis (red, green, blue: the arrow keys). Each click reports the point inference snapped to. A point outside the view stops the steps with a message to change the view first. It answers with the tool's hint, the measurement box, the counts and whether Undo can run. Everything goes through the session's events, so it is undoable and recorded like a person's input.
+- **`get_geometry`:** the open group's faces (normal, area, outer loop points, number of holes) and edges (end points, length), in world coordinates and metres, up to a limit (default 200 each, with the totals).
+- **`screenshot`:** the viewport as a PNG image (at most 1024 points wide), taken after the next frame is drawn, so it shows the latest change.
+- **`replay_session`:** play a recorded session (Help > Record Session) from a file path or its JSON text, in a separate session (the open document is not touched), and say whether the end matches what was recorded, with the end's counts.
+- **`get_model`** also gives the display units and the model's bounds.
+
+## Tests (part 2)
+- `use_tool` draws a rectangle on the ground by clicks and pushes it up by a typed value: the faces and their height are right; a point behind the camera stops with a message; Undo takes it back.
+- `get_geometry` lists the cube's faces with unit normals and the right areas, and honours the limit.
+- `replay_session` of a session recorded in the test matches; a changed result does not; a bad path is an error.
+- The PNG encoder writes a valid PNG (signature, IHDR, the pixels back through inflate), base64 matches known values, and the shrink keeps the aspect.
+- The protocol returns image content for an image result.
+
 ## Out of scope (part 1)
 Part 2's items; resources and prompts; remote (non-local) connections; OAuth.
 
@@ -35,6 +49,9 @@ Part 2's items; resources and prompts; remote (non-local) connections; OAuth.
 - Server (local socket): no token 401, wrong token 401, a foreign `Origin` 403, GET 405, a good request 200 with JSON, a notification 202.
 - Host (the real chrome and viewport, no GPU): `run_action` of Select All selects, Redo is refused with "Nothing to redo" (the start cube can already be undone), Make Group then Undo goes through the history, `get_model` counts faces.
 - The token is 32 hex characters and changes on New Token; the settings read back.
+
+## Out of scope (part 2)
+Opening a replayed session in a tab; watching the model for changes (subscriptions); resources and prompts.
 
 ## Acceptance
 - [ ] Claude Code connects with the copied command, reads the model and runs actions (owner, on Windows).

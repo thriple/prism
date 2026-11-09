@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tiny_http::{Header, Method, Request, Response};
 
-use super::protocol::{self, Host};
+use super::protocol::{self, Host, Output};
 use super::{Call, Wake};
 
 /// The largest request body read.
@@ -131,7 +131,7 @@ struct Remote<'a> {
 }
 
 impl Host for Remote<'_> {
-    fn call(&mut self, name: &str, args: &Value) -> Result<String, String> {
+    fn call(&mut self, name: &str, args: &Value) -> Result<Output, String> {
         let (reply, answer) = channel();
         self.tx
             .send(Call {
@@ -267,7 +267,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(5))
             .expect("a call arrives");
         assert_eq!(c.name, "get_model");
-        c.reply.send(Ok("a model".into())).unwrap();
+        c.reply.send(Ok(Output::Text("a model".into()))).unwrap();
         let (status, body) = client.join().unwrap();
         assert_eq!(status, 200);
         let v: Value = serde_json::from_str(&body).unwrap();

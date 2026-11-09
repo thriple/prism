@@ -157,6 +157,8 @@ struct App {
     start_file: Option<String>,
     /// The model version Model Health last checked.
     health_version: Option<u64>,
+    /// Screenshots the assistant asked for, taken after the next frame.
+    shots: Vec<crate::mcp::Call>,
 }
 
 impl App {
@@ -205,17 +207,24 @@ impl App {
             tab_actions: Vec::new(),
             start_file,
             health_version: None,
+            shots: Vec::new(),
         }
     }
 
     /// Run the assistant's waiting tool calls (brief 21).
     fn serve_mcp(&mut self) {
         for call in self.chrome.mcp.take_calls() {
+            if call.name == "screenshot" {
+                self.chrome.mcp.note("screenshot".into());
+                self.shots.push(call);
+                continue;
+            }
             let mut host = crate::mcp::host::AppHost {
                 chrome: &mut self.chrome,
                 viewport: &mut self.viewport,
                 files: &mut self.files,
                 tab_actions: &mut self.tab_actions,
+                last_tool: &mut self.last_tool,
             };
             let result = crate::mcp::protocol::Host::call(&mut host, &call.name, &call.args);
             let what = call
@@ -228,10 +237,6 @@ impl App {
                 if result.is_ok() { "" } else { " (refused)" }
             ));
             let _ = call.reply.send(result);
-        }
-        if self.chrome.active_tool != self.last_tool {
-            self.viewport.tool_changed(self.chrome.active_tool);
-            self.last_tool = self.chrome.active_tool;
         }
         self.request_redraw();
     }
@@ -513,7 +518,7 @@ impl App {
             .tessellate(output.shapes, output.pixels_per_point);
 
         let s = &mut self.viewport.session;
-        let mut redraw = s.take_dirty();
+        let mut redraw = s.take_dirty() || !self.shots.is_empty();
         let highlight_changed = s.take_highlight_dirty();
         let overlay_changed = s.take_overlay_dirty();
         redraw |= overlay_changed || highlight_changed;
@@ -546,6 +551,28 @@ impl App {
             output.pixels_per_point,
             Some(draw),
         );
+        // The assistant's screenshots show this frame (brief 21).
+        if !self.shots.is_empty() {
+            #[cfg(not(target_arch = "wasm32"))]
+            let picture = gpu.read_viewport();
+            #[cfg(target_arch = "wasm32")]
+            let picture: Option<crate::mcp::image::Rgba> = None;
+            let result = picture
+                .map(|p| {
+                    let small = p.shrink(crate::mcp::SHOT_WIDTH);
+                    crate::mcp::protocol::Output::Image {
+                        png: small.png(),
+                        text: format!(
+                            "The viewport, {} by {} pixels (drawn at {} by {}).",
+                            small.w, small.h, p.w, p.h
+                        ),
+                    }
+                })
+                .ok_or_else(|| "The viewport has not been drawn yet.".to_owned());
+            for call in std::mem::take(&mut self.shots) {
+                let _ = call.reply.send(result.clone());
+            }
+        }
 
         // Draw again only when something will change: egui says when.
         let delay = output

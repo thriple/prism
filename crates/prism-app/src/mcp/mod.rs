@@ -4,6 +4,7 @@
 //! the tools run on the main thread through [`host`].
 
 pub mod host;
+pub mod image;
 pub mod protocol;
 #[cfg(not(target_arch = "wasm32"))]
 mod server;
@@ -16,6 +17,8 @@ use serde_json::Value;
 
 /// The default port: unassigned, and unlikely to be in use.
 pub const DEFAULT_PORT: u16 = 47615;
+/// The widest screenshot sent, in pixels (pictures cost the assistant).
+pub const SHOT_WIDTH: u32 = 1024;
 /// How many recent calls the window lists.
 const LOG_LINES: usize = 6;
 
@@ -84,7 +87,7 @@ pub enum Listen {
 pub struct Call {
     pub name: String,
     pub args: Value,
-    pub reply: std::sync::mpsc::Sender<Result<String, String>>,
+    pub reply: std::sync::mpsc::Sender<Result<protocol::Output, String>>,
 }
 
 type Wake = Arc<dyn Fn() + Send + Sync>;

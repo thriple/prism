@@ -7,7 +7,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **Built, in order:** Skeleton, Soft Theme, Actions & Keys, Core Model,
   Viewport, Inference & Drawing, Edit Tools (3 parts), Files & Formats
   (3 parts), Groups & Components (3 parts), Model Health (2 parts), View
-  Settings (2 parts, briefs 17 and 18), Toolbars (2 parts, brief 19), Updates (brief 20), MCP Server part 1 (brief 21). PLAN
+  Settings (2 parts, briefs 17 and 18), Toolbars (2 parts, brief 19), Updates (brief 20), MCP Server (2 parts, brief 21). PLAN
   6.0 has the details; NOTES has a section per part.
 - **Since the last compaction (2026-11-08 to 09), owner feedback fixed:**
   - the plan was put in build order, with a standing rule to follow it;
@@ -25,9 +25,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **State:** `main` = session branch, CI green. Nothing uncommitted.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
-- **Next: MCP Server part 2** (brief 21: drawing at model coordinates,
-  screenshots, replay), then the next rows of the PLAN 6.0 table (see the
-  standing rule below).
+- **Next: Exact Curves** (the next PLAN 6.0 row; needs a brief), then the
+  rows after it (see the standing rule below).
+- **MCP Server** waits on the owner connecting Claude Code to it.
 - **MCP spec:** 2026-07-28 is the newest release (stateless, no
   `initialize`); the server speaks it and the older handshake. The spec
   site is blocked here; the spec repository on GitHub is reachable

@@ -116,6 +116,54 @@ impl Gpu {
     }
 
     /// The viewport's picture for egui to show (after the first frame).
+    /// The viewport's last picture, read back from the GPU (the MCP
+    /// server's screenshot). Waits for the GPU, so native only.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn read_viewport(&self) -> Option<crate::mcp::image::Rgba> {
+        let tex = self.viewport.color_texture()?;
+        let (w, h) = (tex.width(), tex.height());
+        let row = (w * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("screenshot"),
+            size: u64::from(row * h),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = self.device.create_command_encoder(&Default::default());
+        enc.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buf,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([enc.finish()]);
+        let slice = buf.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        let data = slice.get_mapped_range().ok()?;
+        let mut px = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            px.extend_from_slice(&data[(y * row) as usize..(y * row + w * 4) as usize]);
+        }
+        Some(crate::mcp::image::Rgba { w, h, px })
+    }
+
     pub fn viewport_texture(&self) -> Option<egui::TextureId> {
         self.viewport_texture
     }

@@ -826,6 +826,15 @@ impl Session {
         }
     }
 
+    /// Finish any camera ease now (an assistant clicking at model points
+    /// needs the camera where it is going, not where it is on the way).
+    pub fn settle_camera(&mut self) {
+        if self.motion.is_some() {
+            self.settle();
+            self.dirty = true;
+        }
+    }
+
     /// Wheel steps during an ease build on its goal.
     fn settle_goal(&mut self) {
         if let Some(m) = &self.motion {
