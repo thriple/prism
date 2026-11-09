@@ -43,3 +43,5 @@ Exact Curves grows from L to five parts:
 3. **The arc tools:** 2-point, 3-point, centre and pie arcs; real tangent inference; Offset of chains with arcs; double-click a corner to fillet it with Arc.
 4. **Curved faces:** cylinders from Push/Pull, shading and picking of curved faces, soft and smooth edges, Push/Pull on a cylinder.
 5. **Follow Me, fillet and chamfer:** Follow Me along lines and arcs (planes, cylinders, cones, spheres, tori); fillet and chamfer on planar edges.
+
+The owner chose fine segments, flagged (DECISIONS #32), **built after part 5**, not partway through the chunk.
