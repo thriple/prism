@@ -84,8 +84,11 @@ fn moving_a_point_onto_another_welds_them() {
     assert!(check::no_duplicates(&m, &m.tol()).is_empty());
 }
 
+/// DECISIONS #15: the two halves merge back into one face. (This test once
+/// said both halves go: it passed only because the merged face's middle was
+/// on the erased line, the owner's bug of 2026-11-09.)
 #[test]
-fn erasing_the_line_across_a_face_removes_both_halves() {
+fn erasing_the_line_across_a_face_merges_the_halves() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
     prism_ops::add_segment(&mut m, DVec3::new(0.0, 2.0, 0.0), DVec3::new(4.0, 2.0, 0.0));
@@ -94,11 +97,9 @@ fn erasing_the_line_across_a_face_removes_both_halves() {
     let b = prism_ops::vertex_at(&m, DVec3::new(4.0, 2.0, 0.0)).expect("b");
     let e = m.edge_between(a, b).expect("middle edge");
     prism_ops::remove(&mut m, &Selection::edge(e));
-    assert_eq!(
-        m.face_count(),
-        0,
-        "as the prototype: faces using the edge go"
-    );
+    assert_eq!(m.face_count(), 1, "one face again");
+    let (id, _) = m.faces().next().unwrap();
+    assert!((m.face_area(id) - 16.0).abs() < 1e-9);
     assert_eq!(m.edge_count(), 6);
 }
 
@@ -192,6 +193,35 @@ fn erasing_the_edge_between_two_flat_faces_merges_them() {
         // The merged face can be offset, as the owner wanted.
         assert!(prism_ops::offset::offset(&mut m, id, 0.5 * k).is_some());
         assert!(check::problems(&m).is_empty());
+    }
+}
+
+/// The owner's session: a line drawn across a face from midpoint to
+/// midpoint, then erased, leaves the face whole (the middle of the merged
+/// face is on the erased line, so it must not be the point that tells which
+/// old face covered it).
+#[test]
+fn erasing_a_line_through_the_middle_of_a_face_merges_it_back() {
+    let mid = |a: DVec3, b: DVec3| (a + b) * 0.5;
+    let m0 = boxed(1.0);
+    let faces: Vec<_> = m0.faces().map(|(id, _)| id).collect();
+    for f in faces {
+        let pts = m0.points(&m0.face(f).unwrap().outer);
+        // Across each way: from one side's middle to the opposite one's.
+        for i in 0..2 {
+            let mut m = m0.clone();
+            let (a, b) = (mid(pts[i], pts[i + 1]), mid(pts[i + 2], pts[(i + 3) % 4]));
+            prism_ops::add_segment(&mut m, a, b);
+            assert_eq!(m.face_count(), 7);
+            let (va, vb) = (
+                prism_ops::vertex_at(&m, a).unwrap(),
+                prism_ops::vertex_at(&m, b).unwrap(),
+            );
+            let e = m.edge_between(va, vb).expect("the line");
+            prism_ops::remove(&mut m, &Selection::edge(e));
+            assert_eq!(m.face_count(), 6, "face {f:?}, way {i}");
+            assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+        }
     }
 }
 

@@ -576,6 +576,31 @@ fn pulling_matches_an_endpoints_height() {
     assert!(tops.iter().all(|z| (z - 1.25).abs() < 1e-9), "{tops:?}");
 }
 
+/// Owner, 2026-11-09: an edge's middle is a snap too.
+#[test]
+fn pulling_matches_an_edges_midpoint() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.typed("1.25");
+    rect_on_ground(&mut d, 3.0, 0.0, 4.0, 1.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(3.5, 0.5, 0.0));
+    // The middle of the first box's upright corner edge.
+    let mid = DVec3::new(1.0, 0.0, 0.625);
+    d.hover(mid);
+    d.click(mid);
+    let tops: Vec<f64> =
+        d.s.model()
+            .vertices()
+            .filter(|(_, p)| p.x > 2.0 && p.z > 0.1)
+            .map(|(_, p)| p.z)
+            .collect();
+    assert_eq!(tops.len(), 4);
+    assert!(tops.iter().all(|z| (z - 0.625).abs() < 1e-9), "{tops:?}");
+}
+
 #[test]
 fn move_by_a_typed_distance_and_copy_into_arrays() {
     let mut d = Driver::empty();
@@ -779,6 +804,11 @@ fn dragging_a_corner_grip_follows_the_line_from_the_anchor() {
     let (label, value, _) = d.s.measurement();
     assert_eq!(label, "Scale");
     assert!(value.starts_with("2.000"), "{value}");
+    // The box scales with the preview: a grip stands off the 4 m square.
+    let grip_at =
+        |d: &Driver, p: DVec3| d.s.overlay().marks.iter().any(|m| m.at.distance(p) < 1e-6);
+    assert!(grip_at(&d, DVec3::new(4.2, 4.2, 0.0)), "the box follows");
+    assert!(!grip_at(&d, DVec3::new(2.1, 2.1, 0.0)));
     d.click(DVec3::new(4.3, 4.3, 0.0));
     assert!(has_point(&d, 4.0, 4.0) && has_point(&d, 0.0, 0.0));
     undo(&mut d);

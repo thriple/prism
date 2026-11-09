@@ -34,6 +34,25 @@ pub(super) struct Boxes {
 }
 
 impl Boxes {
+    /// The contents' box `lo`..`hi` and the box drawn round it. Flat axes
+    /// stay flat (a face on the ground keeps a flat box).
+    fn around(lo: DVec3, hi: DVec3) -> Boxes {
+        let size = (hi - lo).max_element();
+        let pad = DVec3::from_array(std::array::from_fn(|a| {
+            if hi[a] - lo[a] <= 1e-12 {
+                0.0
+            } else {
+                MARGIN * size
+            }
+        }));
+        Boxes {
+            lo,
+            hi,
+            dlo: lo - pad,
+            dhi: hi + pad,
+        }
+    }
+
     fn flat(&self, a: usize) -> bool {
         self.hi[a] - self.lo[a] <= 1e-12
     }
@@ -99,24 +118,23 @@ impl Session {
             (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN)),
             |(lo, hi), p| (lo.min(*p), hi.max(*p)),
         );
-        let size = (hi - lo).max_element();
-        if size <= self.scene.tol.dist {
+        if (hi - lo).max_element() <= self.scene.tol.dist {
             return None;
         }
-        // Flat axes stay flat (a face on the ground keeps a flat box).
-        let pad = DVec3::from_array(std::array::from_fn(|a| {
-            if hi[a] - lo[a] <= 1e-12 {
-                0.0
-            } else {
-                MARGIN * size
-            }
-        }));
-        Some(Boxes {
-            lo,
-            hi,
-            dlo: lo - pad,
-            dhi: hi + pad,
-        })
+        Some(Boxes::around(lo, hi))
+    }
+
+    /// The box as drawn: while scaling, scaled with the preview.
+    fn shown_boxes(&self) -> Option<Boxes> {
+        let b = self.scale_boxes()?;
+        let Some(EditOp::Scale { anchor, k, .. }) = &self.edit else {
+            return Some(b);
+        };
+        let (p, q) = (
+            *anchor + (b.lo - *anchor) * *k,
+            *anchor + (b.hi - *anchor) * *k,
+        );
+        Some(Boxes::around(p.min(q), p.max(q)))
     }
 
     /// The grip under the cursor, if any.
@@ -271,7 +289,7 @@ impl Session {
     /// The box, its grips (the hovered one larger) and, while scaling, the
     /// anchor.
     pub(super) fn scale_overlay(&self, o: &mut Overlay) {
-        let Some(b) = self.scale_boxes() else { return };
+        let Some(b) = self.shown_boxes() else { return };
         let fb = &self.style.feedback;
         let c = |i: u8, j: u8, k: u8| b.at([i, j, k], true);
         for (p, q) in [

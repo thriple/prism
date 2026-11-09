@@ -24,7 +24,7 @@ pub const ROTATE: &str = "tool.rotate";
 pub const SCALE: &str = "tool.scale";
 pub const ERASE: &str = "tool.erase";
 
-/// Push/Pull's snaps: match an endpoint within this many pixels (times the
+/// Push/Pull's snaps: match an endpoint or an edge's middle within this many pixels (times the
 /// aperture), the ground within 12, and zero within 6.
 const PUSH_MATCH: f64 = 14.0;
 const PUSH_GROUND: f64 = 12.0;
@@ -357,6 +357,27 @@ impl Session {
                     best = dd;
                     t = (p - *p0).dot(*n);
                     *snap = Some(("Match Endpoint".to_owned(), p));
+                }
+            }
+        }
+        // An edge's middle in sight (owner, 2026-11-09), as in SketchUp;
+        // an end as near wins.
+        let tol = self.scene.tol.dist;
+        for e in &self.scene.edges {
+            let p = e.curve.point(e.a, e.b, 0.5);
+            if let Some((q, _)) = view.to_screen(p) {
+                let dd = q.distance(s);
+                let in_sight = || {
+                    let (o, d) = view.ray(q);
+                    let tp = (p - o).dot(d) / d.length_squared();
+                    self.scene
+                        .ray_face(o, d)
+                        .is_none_or(|(_, t)| (tp - t) * d.length() <= tol)
+                };
+                if dd < PUSH_MATCH * ap && dd < best && in_sight() {
+                    best = dd;
+                    t = (p - *p0).dot(*n);
+                    *snap = Some(("Match Midpoint".to_owned(), p));
                 }
             }
         }

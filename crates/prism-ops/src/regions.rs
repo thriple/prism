@@ -151,6 +151,32 @@ pub(crate) fn rebuild_plane(
             .map(|(f, _, _)| *f)
             .filter(|f| face_contains_2d(model, *f, &frame, sample))
             .collect();
+        // The sample can sit on an old face's edge (the middle of two faces
+        // just merged is on the line erased between them) and so be inside
+        // neither. Then go by the edges: a face runs along each of its
+        // edges with itself on the left (about its normal), so an old face
+        // running along one of the region's edges with the region on that
+        // side covers it. One is enough, as a sample finds one.
+        let covers = if covers.is_empty() {
+            old.iter()
+                .copied()
+                .find(|f| {
+                    model.face(*f).is_some_and(|face| {
+                        let up = face
+                            .plane()
+                            .is_some_and(|p| p.normal.dot(frame.normal) > 0.0);
+                        face.sides().any(|s| {
+                            r.outer
+                                .iter()
+                                .any(|(from, e)| s.edge == *e && (s.from == *from) == up)
+                        })
+                    })
+                })
+                .into_iter()
+                .collect()
+        } else {
+            covers
+        };
         let parent = covers.first().copied();
         // After an edit, faces covering a region back to back (a face pulled
         // flush against another) are inside one solid now: both go.

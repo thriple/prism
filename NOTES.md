@@ -1752,3 +1752,20 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   built; the box follows the world axes (a group's own axes later).
 - Tests: corner grip by typing, Alt about the centre, a face grip, a
   drag along the anchor line with one undo, a cube's top grip.
+
+### Owner's bugs (2026-11-09, session 2 recording)
+- **Erasing a line across a face removed the face.** The line ran from
+  midpoint to midpoint, so the merged face's middle (the point used to
+  find which old face covered it) lay on the erased line, inside neither
+  half. Now, when that point finds no face, the region's own edges decide:
+  an old face that runs along one of them with the region on its side
+  covers it (exact, no sampling). The old test that said both halves go
+  had passed only because of this bug; it now expects one face
+  (DECISIONS #15).
+- **The Scale box did not follow the drag.** It is drawn scaled by the
+  current factors about the anchor.
+- **Push/Pull snaps to an edge's middle** ("Match Midpoint"), as SketchUp
+  does, when the middle is in sight (not behind a face); an endpoint as
+  near wins. Hidden endpoints are still matched, as before.
+- Tests: a line through each face of a box, both ways, erased; the drag
+  test checks the grips move; a pull matched to an upright edge's middle.
