@@ -587,6 +587,15 @@ mod tests {
         ]) {
             assert!(reg.get(id).is_some_and(Action::built), "{id} is greyed");
         }
+        // View Settings (with Lighting) is listed with the other windows.
+        let (_, window) = reg
+            .menubar()
+            .iter()
+            .find(|(n, _)| *n == "Window")
+            .expect("a Window menu");
+        let mut ids = Vec::new();
+        ids_in(&Entry::from_items(window), &mut ids);
+        assert!(ids.contains(&"view.settings"));
     }
 
     #[test]

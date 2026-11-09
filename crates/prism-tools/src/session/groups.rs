@@ -45,10 +45,18 @@ pub(super) struct Piece {
     faded: bool,
 }
 
-/// Mark a scene's edges as a hidden object's ghost (drawn dashed).
+/// A hidden object's ghost (owner, 2026-11-09): its edges only, drawn
+/// the way hidden lines are. No faces, so it casts no shadow and hides
+/// nothing; it is picked by its edges.
 fn ghost(mut s: Scene) -> Scene {
+    s.faces.clear();
+    s.face_index.clear();
+    s.mesh = Default::default();
+    s.mesh_vertex_ids.clear();
     for e in &mut s.edges {
         e.ghost = true;
+        e.normals = [None, None];
+        e.faces = [None, None];
     }
     s
 }

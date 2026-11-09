@@ -1540,7 +1540,6 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("view.toolbars"),
             Item::Action("view.edittoolbars"),
             Item::Action("view.resettoolbars"),
-            Item::Action("view.settings"),
             Item::Separator,
             Item::Sub(
                 "Show",
@@ -1763,6 +1762,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("win.materials"),
             Item::Action("win.components"),
             Item::Action("win.tags"),
+            Item::Action("view.settings"),
             Item::Separator,
             Item::Action("win.prefs"),
             Item::Action("win.hotkeys"),

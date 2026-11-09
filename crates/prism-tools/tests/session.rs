@@ -1846,8 +1846,13 @@ fn hidden_groups_show_as_ghosts_to_unhide() {
         d.s.scene().edges.iter().any(|e| e.ghost),
         "drawn as a ghost"
     );
+    // Edges only: no faces to draw, shade or cast shadows.
+    assert!(d.s.scene().faces.is_empty() && d.s.scene().mesh.indices.is_empty());
     d.wait(1.0);
+    // The face's middle is empty now; a click on an edge picks the ghost.
     d.click(DVec3::new(1.0, 0.0, 1.0));
+    assert!(d.s.selected_groups().is_empty(), "nothing at the face");
+    d.click(DVec3::new(1.0, 0.0, 2.0));
     assert_eq!(
         d.s.selected_groups().iter().copied().collect::<Vec<_>>(),
         [g]

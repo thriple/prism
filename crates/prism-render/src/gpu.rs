@@ -1005,8 +1005,15 @@ impl Renderer {
                 if e.faded {
                     color = color.with_alpha(style.faded_alpha);
                 }
-                let mut l = LineInstance::new(e.a, e.b, color, style.edge_width).flags(MODEL_EDGE);
+                // A hidden object's ghost looks like a hidden line: faint,
+                // and dashed unless hidden lines are set to Faint.
                 if e.ghost {
+                    color = style
+                        .edge
+                        .with_alpha(crate::style::alpha(style.hidden_alpha));
+                }
+                let mut l = LineInstance::new(e.a, e.b, color, style.edge_width).flags(MODEL_EDGE);
+                if e.ghost && style.hidden_lines != HiddenLines::Faint {
                     l = l.dashed(style.hidden_dash);
                 }
                 if let Some(n) = e.normals[0] {
