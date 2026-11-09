@@ -23,7 +23,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Updates and MCP Server were added to the plan, right after View
     Settings.
 - **State:** `main` = session branch. Last push: Exact Curves 2b
-  (crossings). Check its CI first (all jobs, Windows included).
+  (crossings). Its CI: every code job passed (Windows included); only the
+  Web build failed, twice, downloading `trunk` from GitHub releases (a
+  504, not our code). Re-run it; if it flakes again, make the Install
+  trunk step retry (`curl --fail --retry`). Step 2c waits for the owner.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves part 1 is built** (brief 22: faces name their edges, file

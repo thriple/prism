@@ -1335,3 +1335,7 @@ and inference, 2d the Circle and Polygon tools).
 - Checked in the app (Xvfb): two circles across a square and a line open
   as twelve faces, drawn smooth.
 - **Not yet:** the tools still do not say why a move was refused (2c/2d).
+- **CI for 2b (59f7db9):** all code jobs green. The Web build failed twice
+  at "Install trunk": the download from GitHub releases returned a 504
+  page. If it happens again, make that step retry
+  (`curl --fail --retry 5 --retry-all-errors`).
