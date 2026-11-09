@@ -1365,3 +1365,9 @@ and inference, 2d the Circle and Polygon tools).
 - **Disk:** the build cache filled the session's disk (a linker bus
   error); deleting `target/debug/incremental` and building with
   `CARGO_INCREMENTAL=0` fixed it.
+- **Part 3, Model Health:** a row "Arcs off their circle" lists arcs with
+  an end farther than tolerance from their circle (drawn in the model when
+  problems are shown); its fix, Repair (`Command::RepairArcs`, one undo
+  step), moves each such end to the nearest point on the circle. A point
+  shared by two such arcs follows the first. Model Health's lines now
+  follow arcs; its face outlines are still drawn through the corners only.

@@ -347,3 +347,24 @@ fn lifting_a_corner_of_a_face_with_arcs_is_refused() {
     assert_ne!(m, before);
     clean(&m);
 }
+
+#[test]
+fn model_health_finds_arcs_off_their_circle_and_repairs_them() {
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    assert!(prism_ops::health::check(&m).off_circle.is_empty());
+    // Knock a seam off the circle (as an old file or a bug might).
+    let seam = m
+        .vertices()
+        .find(|(_, p)| p.distance(DVec3::Y) < 1e-9)
+        .map(|(id, _)| id)
+        .expect("a seam at (0, 1)");
+    m.set_vertex(seam, DVec3::new(0.0, 1.01, 0.0));
+    let r = prism_ops::health::check(&m);
+    assert_eq!(r.off_circle.edges.len(), 2, "both halves end there");
+    assert_eq!(prism_ops::health::repair_arcs(&mut m), 2);
+    assert!(prism_ops::health::check(&m).off_circle.is_empty());
+    assert!(m.vertex(seam).distance(DVec3::Y) < 1e-12);
+    clean(&m);
+    assert!((areas(&m)[0] - PI).abs() < 1e-9);
+}

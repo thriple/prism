@@ -107,6 +107,8 @@ pub enum Command {
     },
     /// Remove edges in no face, and points left on nothing.
     RemoveStray,
+    /// Move the ends of arcs that left their circle back onto it.
+    RepairArcs,
     /// A command run inside an open group (the path of instances to it).
     In {
         context: Vec<InstanceId>,
@@ -304,6 +306,7 @@ impl Command {
             Command::ReverseFaces { .. } => "Reverse Faces",
             Command::CleanEnvelope { .. } => "Clean Envelope",
             Command::RemoveStray => "Remove Stray Edges",
+            Command::RepairArcs => "Repair Arcs",
             Command::Batch { commands } => commands.first().map_or("Edit", |c| c.name()),
             Command::MakeGroup { .. } => "Make Group",
             Command::Explode { .. } => "Explode",
@@ -619,6 +622,9 @@ impl Command {
             }
             Command::RemoveStray => {
                 prism_ops::health::remove_stray(m);
+            }
+            Command::RepairArcs => {
+                prism_ops::health::repair_arcs(m);
             }
             // These change groups: run them with `apply_in`.
             Command::In { .. }

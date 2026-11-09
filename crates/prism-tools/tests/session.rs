@@ -1928,3 +1928,31 @@ fn the_eraser_takes_the_whole_circle_and_the_faces_merge() {
     same(&areas(&d), &[12.0, 12.0]);
     valid(&d);
 }
+
+#[test]
+fn model_health_repairs_an_arc_off_its_circle_with_undo() {
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    let seam = m
+        .vertices()
+        .find(|(_, p)| p.distance(DVec3::Y) < 1e-9)
+        .map(|(id, _)| id)
+        .expect("a seam at (0, 1)");
+    m.set_vertex(seam, DVec3::new(0.0, 1.01, 0.0));
+    let mut d = Driver::new(Document::with_model(m));
+    let row = |d: &Driver| {
+        d.s.health_rows()
+            .into_iter()
+            .find(|r| r.key == "arcs")
+            .expect("row")
+    };
+    assert_eq!(row(&d).count, 2);
+    assert_eq!(row(&d).fix, Some("Repair"));
+    d.s.select_health("arcs");
+    assert_eq!(d.s.selection().edges.len(), 2);
+    d.s.health_fix("arcs");
+    assert_eq!(row(&d).count, 0);
+    assert!(d.s.model().vertex(seam).distance(DVec3::Y) < 1e-12);
+    undo(&mut d);
+    assert_eq!(row(&d).count, 2, "one step, undone");
+}

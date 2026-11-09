@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use prism_geom::{Curve, circle_distance};
 use prism_math::{DVec2, DVec3, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
 
@@ -57,6 +58,8 @@ pub struct Report {
     pub far_from_origin: bool,
     /// Pieces smaller than ten tolerances.
     pub tiny: Found,
+    /// Arcs with an end off their circle.
+    pub off_circle: Found,
 }
 
 /// Run every check.
@@ -100,7 +103,55 @@ pub fn check(model: &Model) -> Report {
         r.far_from_origin = ((lo + hi) * 0.5).length() > 1e4 * size;
     }
     r.tiny = tiny(model, &tol);
+    r.off_circle.edges = off_circle(model, &tol).into_keys().collect();
     r
+}
+
+/// Arcs with an end off their circle, and where each such end belongs.
+fn off_circle(model: &Model, tol: &Tol) -> BTreeMap<EdgeId, Vec<(VertexId, DVec3)>> {
+    let mut out = BTreeMap::new();
+    for (id, e) in model.edges() {
+        let Curve::Arc {
+            centre,
+            axis,
+            radius,
+        } = e.curve
+        else {
+            continue;
+        };
+        let mut ends = Vec::new();
+        for v in [e.a, e.b] {
+            let p = model.vertex(v);
+            if circle_distance(centre, axis, radius, p) > tol.dist {
+                let w = p - centre;
+                let r = w - axis * w.dot(axis);
+                let dir = r
+                    .try_normalize()
+                    .unwrap_or_else(|| prism_math::Plane::new(centre, axis).frame().u);
+                ends.push((v, centre + dir * radius));
+            }
+        }
+        if !ends.is_empty() {
+            out.insert(id, ends);
+        }
+    }
+    out
+}
+
+/// Repair Arcs: move each end that left its arc's circle back onto it (the
+/// nearest point). A point shared by two such arcs follows the first.
+/// Returns how many arcs were repaired.
+pub fn repair_arcs(model: &mut Model) -> usize {
+    let found = off_circle(model, &model.tol());
+    let mut moved = BTreeSet::new();
+    for ends in found.values() {
+        for &(v, p) in ends {
+            if moved.insert(v) {
+                model.set_vertex(v, p);
+            }
+        }
+    }
+    found.len()
 }
 
 fn pair(a: VertexId, b: VertexId) -> (VertexId, VertexId) {

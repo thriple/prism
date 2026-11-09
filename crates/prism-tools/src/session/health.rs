@@ -68,6 +68,12 @@ impl Session {
                 Some("Intersect Faces"),
             ),
             row("tiny", "Tiny pieces", &r.tiny, None),
+            row(
+                "arcs",
+                "Arcs off their circle",
+                &r.off_circle,
+                Some("Repair"),
+            ),
         ];
         // Information only: nesting and scale.
         let asm = self.doc.assembly();
@@ -113,6 +119,7 @@ impl Session {
             "stray" => r.stray,
             "crossing" => r.crossing,
             "tiny" => r.tiny,
+            "arcs" => r.off_circle,
             _ => return,
         };
         let sel = Selection {
@@ -146,6 +153,7 @@ impl Session {
             // Clean Envelope works on the selection when there is one (PLAN 1.10).
             "interior" => Command::CleanEnvelope { faces: only },
             "stray" => Command::RemoveStray,
+            "arcs" => Command::RepairArcs,
             "crossing" => Command::IntersectFaces { faces: None },
             _ => return,
         };
@@ -181,19 +189,28 @@ impl Session {
         let mut edge_lines = |found: &Found, color| {
             for e in &found.edges {
                 if let Some(ed) = m.edge(*e) {
-                    o.lines.push(Line {
-                        a: m.vertex(ed.a),
-                        b: m.vertex(ed.b),
-                        color,
-                        width: w,
-                        dash: [0.0, 0.0],
-                    });
+                    // Along an arc's drawn points.
+                    let (a, b) = (m.vertex(ed.a), m.vertex(ed.b));
+                    let pts: Vec<_> = std::iter::once(a)
+                        .chain(ed.curve.inner_points(a, b))
+                        .chain(std::iter::once(b))
+                        .collect();
+                    for p in pts.windows(2) {
+                        o.lines.push(Line {
+                            a: p[0],
+                            b: p[1],
+                            color,
+                            width: w,
+                            dash: [0.0, 0.0],
+                        });
+                    }
                 }
             }
         };
         edge_lines(&r.open_edges, self.style.health_open);
         edge_lines(&r.non_manifold, self.style.health_many);
         edge_lines(&r.stray, self.style.health_stray);
+        edge_lines(&r.off_circle, self.style.health_many);
         for f in r.interior.faces.iter().chain(&r.crossing.faces) {
             if let Some(face) = m.face(*f) {
                 for l in face.loops() {
