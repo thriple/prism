@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 64a71957a34062f53f21e3e986fa3321467ca805b86af568e937d1a08dbc28fc # shrinks to rects = [Rect(0, 5, 3, 6), Rect(2, 1, 3, 2), Rect(1, 1, 2, 5), Rect(3, 2, 4, 5)]
+cc c13bd254fbcc3f9400dbcfcd2b0331632612ee4dccd5f3dbcdfa6ffe3facc798 # shrinks to ops = [Line(0, 0, 7, 7), Circle(6, 5, 2), Circle(6, 4, 3)]

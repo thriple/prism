@@ -893,6 +893,7 @@ impl Model {
     pub fn bookkeeping_problems(&self) -> Vec<String> {
         let mut out = Vec::new();
         let mut pairs = std::collections::BTreeSet::new();
+        let mut lines = std::collections::BTreeSet::new();
         let tol = self.tol();
         for (id, e) in &self.edges {
             if let Curve::Arc {
@@ -924,7 +925,9 @@ impl Model {
                     "edge {id:?} is not ordered or joins a vertex to itself"
                 ));
             }
-            if !pairs.insert((e.a, e.b)) && !e.curve.is_arc() {
+            pairs.insert((e.a, e.b));
+            // A line and an arc, or two arcs, may join the same two vertices.
+            if !e.curve.is_arc() && !lines.insert((e.a, e.b)) {
                 out.push(format!("edge {id:?} repeats another edge"));
             }
         }

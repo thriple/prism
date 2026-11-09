@@ -399,6 +399,7 @@ fn trace(
                 .then(x.3.total_cmp(&y.3))
                 .then(x.0.cmp(&y.0))
         });
+        sort_tangent_runs(o, list, tol);
     }
 
     // Each half-edge u→v continues to the half-edge just clockwise of v→u
@@ -482,6 +483,41 @@ fn trace(
 }
 
 /// Order two directions from `o` counter-clockwise, starting from +x (exact).
+/// Half-edges leaving one way within tolerance (an arc and a tangent line
+/// or arc) sort by rounding noise; put each such run of neighbours in order
+/// of curvature instead. Two directions agree when, as far out as the
+/// shorter one reaches (its length, or an arc's radius), they are less than
+/// the tolerance apart.
+fn sort_tangent_runs(o: DVec2, list: &mut [(EdgeId, VertexId, DVec2, f64)], tol: &Tol) {
+    let n = list.len();
+    let same = |x: DVec2, y: DVec2| {
+        let (dx, dy) = (x - o, y - o);
+        let (lx, ly) = (dx.length(), dy.length());
+        lx > 0.0
+            && ly > 0.0
+            && dx.dot(dy) > 0.0
+            && (dx / lx).perp_dot(dy / ly).abs() * lx.min(ly) < tol.dist
+    };
+    if n < 2 || !list.iter().any(|x| x.3 != 0.0) {
+        return;
+    }
+    // Start just after a gap between neighbours, so no run wraps around.
+    let Some(start) = (0..n).find(|&i| !same(list[(i + n - 1) % n].2, list[i].2)) else {
+        list.sort_by(|x, y| x.3.total_cmp(&y.3).then(x.0.cmp(&y.0)));
+        return;
+    };
+    list.rotate_left(start);
+    let mut i = 0;
+    while i < n {
+        let mut j = i + 1;
+        while j < n && same(list[j - 1].2, list[j].2) {
+            j += 1;
+        }
+        list[i..j].sort_by(|x, y| x.3.total_cmp(&y.3).then(x.0.cmp(&y.0)));
+        i = j;
+    }
+}
+
 fn ccw_order(o: DVec2, p: DVec2, q: DVec2) -> std::cmp::Ordering {
     let half = |d: DVec2| {
         if d.y > 0.0 || (d.y == 0.0 && d.x > 0.0) {
@@ -534,7 +570,9 @@ pub(crate) fn interior_point(loops: &[Vec<DVec2>]) -> Option<DVec2> {
 }
 
 /// Points strictly inside the first loop and outside the others, best
-/// first (the middle of the widest stretch on each scan line).
+/// first: the middle of the widest stretch on each scan line, ranked by the
+/// box that fits there (the smaller of its width and the gap's height), so
+/// the best point is not in a thin spot (such as where two arcs touch).
 pub(crate) fn interior_points(loops: &[Vec<DVec2>]) -> Vec<DVec2> {
     let mut out = Vec::new();
     let Some(outer) = loops.first() else {
@@ -559,7 +597,8 @@ pub(crate) fn interior_points(loops: &[Vec<DVec2>]) -> Vec<DVec2> {
         .map(|w| (w[1] - w[0], (w[0] + w[1]) * 0.5))
         .collect();
     gaps.sort_by(|a, b| b.0.total_cmp(&a.0));
-    for (_, y) in gaps {
+    let mut found: Vec<(f64, DVec2)> = Vec::new();
+    for (h, y) in gaps {
         let mut xs: Vec<f64> = Vec::new();
         for l in loops {
             for i in 0..l.len() {
@@ -579,9 +618,12 @@ pub(crate) fn interior_points(loops: &[Vec<DVec2>]) -> Vec<DVec2> {
         if let Some((w, x)) = best
             && w > 0.0
         {
-            out.push(DVec2::new(x, y));
+            found.push((w.min(h), DVec2::new(x, y)));
         }
     }
+    // Stable, so equal boxes keep the widest-gap order.
+    found.sort_by(|a, b| b.0.total_cmp(&a.0));
+    out.extend(found.into_iter().map(|(_, p)| p));
     out
 }
 

@@ -154,6 +154,38 @@ impl Curve {
         }
     }
 
+    /// The point of the curve from `a` to `b` closest to `p`.
+    pub fn closest_point(&self, a: DVec3, b: DVec3, p: DVec3) -> DVec3 {
+        match *self {
+            Curve::Line => {
+                let d = b - a;
+                let l2 = d.length_squared();
+                if l2 == 0.0 {
+                    return a;
+                }
+                a + d * ((p - a).dot(d) / l2).clamp(0.0, 1.0)
+            }
+            Curve::Arc { radius, .. } => {
+                let Some((u, v, c)) = self.frame(a) else {
+                    return a;
+                };
+                let w = p - c;
+                let (x, y) = (w.dot(u), w.dot(v));
+                if x == 0.0 && y == 0.0 {
+                    return a;
+                }
+                let th = y.atan2(x).rem_euclid(TAU);
+                if th <= self.sweep(a, b) {
+                    c + (u * th.cos() + v * th.sin()) * radius
+                } else if p.distance(a) <= p.distance(b) {
+                    a
+                } else {
+                    b
+                }
+            }
+        }
+    }
+
     /// For an arc, its plane (through the centre, along the axis).
     pub fn plane(&self) -> Option<Plane> {
         match *self {
@@ -180,6 +212,112 @@ pub fn even_scale(m: &DAffine3) -> Option<f64> {
         && close(c[1].dot(c[2]) / s, 0.0)
         && close(c[0].dot(c[2]) / s, 0.0);
     (even && s > 0.0).then_some(s)
+}
+
+/// How far `p` is from the circle about `centre` with unit `axis` and
+/// `radius`.
+pub fn circle_distance(centre: DVec3, axis: DVec3, radius: f64, p: DVec3) -> f64 {
+    let w = p - centre;
+    let h = w.dot(axis);
+    ((w - axis * h).length() - radius).hypot(h)
+}
+
+/// Where the circle about `centre` (unit `axis`, `radius`) meets the line
+/// through `p` and `q`: none, one (touching, or the line passing through
+/// its plane) or two points. `eps` is the model tolerance: it decides
+/// touching and whether the line lies in the circle's plane.
+pub fn circle_line(
+    centre: DVec3,
+    axis: DVec3,
+    radius: f64,
+    p: DVec3,
+    q: DVec3,
+    eps: f64,
+) -> Vec<DVec3> {
+    let len = p.distance(q);
+    if len <= eps {
+        return Vec::new();
+    }
+    let d = (q - p) / len;
+    let (hp, hq) = ((p - centre).dot(axis), (q - centre).dot(axis));
+    if hp.abs() <= eps && hq.abs() <= eps {
+        // In the plane: around the foot of the centre on the line.
+        let foot = p + d * (centre - p).dot(d);
+        let h = foot.distance(centre);
+        if (h - radius).abs() <= eps {
+            return vec![foot];
+        }
+        if h > radius {
+            return Vec::new();
+        }
+        let s = (radius * radius - h * h).sqrt();
+        return vec![foot - d * s, foot + d * s];
+    }
+    // Through the plane: at most the one point where it passes.
+    let den = d.dot(axis);
+    if den.abs() * len <= eps {
+        return Vec::new();
+    }
+    let x = p - d * (hp / den);
+    if circle_distance(centre, axis, radius, x) <= eps {
+        vec![x]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Where two circles meet: none, one (touching) or two points. Circles in
+/// one plane are solved there; otherwise the first circle meets the
+/// second's plane at up to two points, kept if they lie on the second
+/// circle. The same circle twice gives none. `eps` as for [`circle_line`].
+pub fn circle_circle(
+    (c1, n1, r1): (DVec3, DVec3, f64),
+    (c2, n2, r2): (DVec3, DVec3, f64),
+    eps: f64,
+) -> Vec<DVec3> {
+    if n1.cross(n2).length() * r1.max(r2) <= eps {
+        let h = (c2 - c1).dot(n1);
+        if h.abs() > eps {
+            return Vec::new();
+        }
+        let d = c2 - c1 - n1 * h;
+        let dist = d.length();
+        if dist <= eps || dist > r1 + r2 + eps || dist < (r1 - r2).abs() - eps {
+            return Vec::new();
+        }
+        let e = d / dist;
+        let along = (dist * dist + r1 * r1 - r2 * r2) / (2.0 * dist);
+        if (dist - (r1 + r2)).abs() <= eps || (dist - (r1 - r2).abs()).abs() <= eps {
+            return vec![c1 + e * r1 * along.signum()];
+        }
+        let f = n1.cross(e);
+        let s = (r1 * r1 - along * along).max(0.0).sqrt();
+        return vec![c1 + e * along - f * s, c1 + e * along + f * s];
+    }
+    // The first circle against the second's plane: the height above it at
+    // angle t is c + a cos t + b sin t = c + rr cos(t - phi).
+    let u = n1.any_orthonormal_vector();
+    let v = n1.cross(u);
+    let (a, b, c) = (r1 * u.dot(n2), r1 * v.dot(n2), (c1 - c2).dot(n2));
+    let rr = a.hypot(b);
+    if c.abs() > rr + eps {
+        return Vec::new();
+    }
+    let phi = b.atan2(a);
+    let at = |t: f64| c1 + (u * t.cos() + v * t.sin()) * r1;
+    let pts = if (c.abs() - rr).abs() <= eps {
+        vec![at(if c > 0.0 {
+            phi + std::f64::consts::PI
+        } else {
+            phi
+        })]
+    } else {
+        let w = (-c / rr).clamp(-1.0, 1.0).acos();
+        vec![at(phi - w), at(phi + w)]
+    };
+    pts.into_iter()
+        .filter(|x| circle_distance(c2, n2, r2, *x) <= eps)
+        .collect()
 }
 
 /// The surface a face lies on.
@@ -263,6 +401,132 @@ mod tests {
         let area = c.bulge_area(a, b, DVec3::Z) + c.bulge_area(b, a, DVec3::Z);
         assert!((area - PI).abs() < 1e-12);
         assert!((c.bulge_area(a, b, -DVec3::Z) + PI / 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn closest_points_on_an_arc_and_a_line() {
+        let (c, a, b) = upper();
+        assert!(close(
+            c.closest_point(a, b, DVec3::new(0.0, 3.0, 1.0)),
+            DVec3::Y
+        ));
+        // Below the upper half: the nearer end.
+        assert!(close(c.closest_point(a, b, DVec3::new(0.9, -2.0, 0.0)), a));
+        let p = Curve::Line.closest_point(DVec3::ZERO, DVec3::X, DVec3::new(0.5, 2.0, 0.0));
+        assert!(close(p, DVec3::new(0.5, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn circles_meet_lines() {
+        let eps = 1e-9;
+        let (o, z) = (DVec3::ZERO, DVec3::Z);
+        let x = DVec3::new(-2.0, 0.5, 0.0);
+        let pts = circle_line(o, z, 1.0, x, x + DVec3::X, eps);
+        assert_eq!(pts.len(), 2);
+        assert!(pts.iter().all(|p| (p.length() - 1.0).abs() < 1e-12));
+        // Touching at the top; missing above it.
+        let top = circle_line(
+            o,
+            z,
+            1.0,
+            DVec3::new(-2.0, 1.0, 0.0),
+            DVec3::new(2.0, 1.0, 0.0),
+            eps,
+        );
+        assert_eq!(top.len(), 1);
+        assert!(close(top[0], DVec3::Y));
+        assert!(
+            circle_line(
+                o,
+                z,
+                1.0,
+                DVec3::new(0.0, 2.0, 0.0),
+                DVec3::new(1.0, 2.0, 0.0),
+                eps
+            )
+            .is_empty()
+        );
+        // Through the plane, on the circle or not.
+        let up = circle_line(
+            o,
+            z,
+            1.0,
+            DVec3::new(1.0, 0.0, -1.0),
+            DVec3::new(1.0, 0.0, 1.0),
+            eps,
+        );
+        assert_eq!(up.len(), 1);
+        assert!(close(up[0], DVec3::X));
+        assert!(
+            circle_line(
+                o,
+                z,
+                1.0,
+                DVec3::new(0.0, 0.0, -1.0),
+                DVec3::new(0.0, 0.0, 1.0),
+                eps
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn circles_meet_circles() {
+        let eps = 1e-9;
+        let z = DVec3::Z;
+        let one = |c: DVec3, r: f64| (c, z, r);
+        let pts = circle_circle(one(DVec3::ZERO, 1.0), one(DVec3::X, 1.0), eps);
+        assert_eq!(pts.len(), 2);
+        let h = 0.75f64.sqrt();
+        assert!(pts.iter().any(|p| close(*p, DVec3::new(0.5, h, 0.0))));
+        assert!(pts.iter().any(|p| close(*p, DVec3::new(0.5, -h, 0.0))));
+        // Touching from outside and inside.
+        let out = circle_circle(
+            one(DVec3::ZERO, 1.0),
+            one(DVec3::new(2.0, 0.0, 0.0), 1.0),
+            eps,
+        );
+        assert_eq!(out.len(), 1);
+        assert!(close(out[0], DVec3::X));
+        let inside = circle_circle(one(DVec3::ZERO, 2.0), one(DVec3::X, 1.0), eps);
+        assert_eq!(inside.len(), 1);
+        assert!(close(inside[0], DVec3::new(2.0, 0.0, 0.0)));
+        let inside = circle_circle(one(DVec3::X, 1.0), one(DVec3::ZERO, 2.0), eps);
+        assert!(close(inside[0], DVec3::new(2.0, 0.0, 0.0)));
+        // Apart, nested, the same circle.
+        assert!(
+            circle_circle(
+                one(DVec3::ZERO, 1.0),
+                one(DVec3::new(3.0, 0.0, 0.0), 1.0),
+                eps
+            )
+            .is_empty()
+        );
+        assert!(circle_circle(one(DVec3::ZERO, 3.0), one(DVec3::X, 1.0), eps).is_empty());
+        assert!(circle_circle(one(DVec3::ZERO, 1.0), one(DVec3::ZERO, 1.0), eps).is_empty());
+        // A standing circle through a lying one.
+        let pts = circle_circle(one(DVec3::ZERO, 1.0), (DVec3::ZERO, DVec3::Y, 1.0), eps);
+        assert_eq!(pts.len(), 2);
+        assert!(
+            pts.iter()
+                .all(|p| p.z.abs() < 1e-12 && (p.length() - 1.0).abs() < 1e-12)
+        );
+        // Standing, through only one of those points.
+        let pts = circle_circle(
+            one(DVec3::ZERO, 1.0),
+            (DVec3::new(1.0, 0.0, 1.0), DVec3::Y, 1.0),
+            eps,
+        );
+        assert_eq!(pts.len(), 1);
+        assert!(close(pts[0], DVec3::X));
+        // Standing in the plane x = 1, which only touches the lying one.
+        let pts = circle_circle(
+            one(DVec3::ZERO, 1.0),
+            (DVec3::new(1.0, 0.0, 1.0), DVec3::X, 1.0),
+            eps,
+        );
+        assert_eq!(pts.len(), 1);
+        assert!(close(pts[0], DVec3::X));
     }
 
     #[test]

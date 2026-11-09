@@ -6,8 +6,8 @@
 
 ## Steps (each one is tested, documented and pushed on its own)
 Part 2 is too big for one go, so it is built in four steps:
-- **2a. Arcs in the core:** the curve, curve ids, face finding with arcs (a circle alone is a face), files, areas, transforms, drawing.
-- **2b. Crossings:** lines and arcs cut each other, and points split arcs.
+- **2a. Arcs in the core:** the curve, curve ids, face finding with arcs (a circle alone is a face), files, areas, transforms, drawing. *(Built.)*
+- **2b. Crossings:** lines and arcs cut each other, and points split arcs. *(Built.)*
 - **2c. Picking and inference:** arcs are picked, erased and snapped to.
 - **2d. The Circle and Polygon tools.**
 

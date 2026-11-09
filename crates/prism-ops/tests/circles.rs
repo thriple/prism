@@ -1,4 +1,5 @@
-//! Exact circles (Exact Curves part 2a): faces, holes and transforms.
+//! Exact circles (Exact Curves part 2): faces, holes, crossings and
+//! transforms.
 
 use std::collections::BTreeSet;
 use std::f64::consts::PI;
@@ -183,4 +184,166 @@ fn push_pull_and_offset_wait_for_their_parts() {
     prism_ops::push_pull(&mut m, FaceId(0), 1.0, false);
     assert_eq!(prism_ops::offset::offset(&mut m, FaceId(0), 0.1), None);
     assert_eq!(m, before);
+}
+
+fn seg(m: &mut Model, a: (f64, f64), b: (f64, f64)) {
+    prism_ops::add_segment(m, DVec3::new(a.0, a.1, 0.0), DVec3::new(b.0, b.1, 0.0));
+}
+
+fn sum(a: &[f64]) -> f64 {
+    a.iter().sum()
+}
+
+/// The area of the slice of a unit circle cut off by a chord `h` from the
+/// centre.
+fn slice(h: f64) -> f64 {
+    h.acos() - h * (1.0 - h * h).sqrt()
+}
+
+#[test]
+fn a_line_across_a_circle_splits_its_face() {
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    seg(&mut m, (-2.0, 0.5), (2.0, 0.5));
+    let a = areas(&m);
+    assert_eq!(a.len(), 2);
+    assert!((a[0] - slice(0.5)).abs() < 1e-9, "{a:?}");
+    assert!((sum(&a) - PI).abs() < 1e-9);
+    // Four arcs of one curve: the two halves, each cut once.
+    assert_eq!(arcs(&m).len(), 4);
+    let ids: BTreeSet<_> = m
+        .edges()
+        .filter(|(_, e)| e.curve.is_arc())
+        .map(|(_, e)| e.curve_id)
+        .collect();
+    assert_eq!(ids.len(), 1);
+    clean(&m);
+}
+
+#[test]
+fn a_line_through_both_seams_still_splits_the_circle() {
+    // The seams are at the centre ± the plane's u (y here): a straight edge
+    // joins the same two vertices as both arcs.
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    seg(&mut m, (0.0, -1.0), (0.0, 1.0));
+    let a = areas(&m);
+    assert_eq!(a.len(), 2);
+    assert!(a.iter().all(|x| (x - PI / 2.0).abs() < 1e-9), "{a:?}");
+    clean(&m);
+}
+
+#[test]
+fn a_line_ending_on_a_circle_splits_the_arc() {
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    seg(&mut m, (3.0, 0.0), (1.0, 0.0));
+    assert_eq!(
+        (m.vertex_count(), arcs(&m).len(), m.face_count()),
+        (4, 3, 1)
+    );
+    // A chord from there splits the face.
+    seg(&mut m, (1.0, 0.0), (-1.0, 0.0));
+    let a = areas(&m);
+    assert_eq!(a.len(), 2);
+    assert!(a.iter().all(|x| (x - PI / 2.0).abs() < 1e-9), "{a:?}");
+    clean(&m);
+}
+
+#[test]
+fn a_circle_across_lines_splits_them_and_their_faces() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 10.0, 10.0, 0.0);
+    // Centred on the left side: half inside the square, half out.
+    circle(&mut m, DVec3::new(0.0, 5.0, 0.0), 2.0);
+    let a = areas(&m);
+    assert_eq!(a.len(), 3, "{a:?}");
+    assert!((a[0] - 2.0 * PI).abs() < 1e-9 && (a[1] - 2.0 * PI).abs() < 1e-9);
+    assert!((a[2] - (100.0 - 2.0 * PI)).abs() < 1e-9);
+    clean(&m);
+}
+
+#[test]
+fn two_overlapping_circles_make_three_faces() {
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    circle(&mut m, DVec3::new(1.0, 0.0, 0.0), 1.0);
+    let a = areas(&m);
+    assert_eq!(a.len(), 3, "{a:?}");
+    let lens = 2.0 * PI / 3.0 - 3f64.sqrt() / 2.0;
+    assert!(a.iter().any(|x| (x - lens).abs() < 1e-9), "{a:?}");
+    assert!((sum(&a) - (2.0 * PI - lens)).abs() < 1e-9);
+    clean(&m);
+}
+
+#[test]
+fn touching_circles_and_lines_share_one_vertex() {
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    // Touching from outside at (1, 0), off the seams.
+    circle(&mut m, DVec3::new(2.0, 0.0, 0.0), 1.0);
+    assert_eq!((m.vertex_count(), m.face_count()), (5, 2));
+    // A line touching the first circle at (-1, 0).
+    seg(&mut m, (-1.0, -2.0), (-1.0, 2.0));
+    assert_eq!((m.vertex_count(), m.face_count()), (8, 2));
+    let a = areas(&m);
+    assert!(a.iter().all(|x| (x - PI).abs() < 1e-9), "{a:?}");
+    clean(&m);
+}
+
+#[test]
+fn a_circle_drawn_again_over_a_cut_one_changes_nothing() {
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    seg(&mut m, (-2.0, 0.5), (2.0, 0.5));
+    let before = m.clone();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    assert_eq!(m, before);
+}
+
+#[test]
+fn circles_touching_inside_at_a_shared_seam_do_not_overlap() {
+    // Found by the property tests: the two circles meet at (6, 7), a seam
+    // of both, leaving it the same way.
+    let mut m = Model::new();
+    seg(&mut m, (0.0, 0.0), (7.0, 7.0));
+    circle(&mut m, DVec3::new(6.0, 5.0, 0.0), 2.0);
+    circle(&mut m, DVec3::new(6.0, 4.0, 0.0), 3.0);
+    clean(&m);
+    assert!((sum(&areas(&m)) - 9.0 * PI).abs() < 1e-9);
+}
+
+#[test]
+fn a_copy_moved_onto_its_circle_cuts_it_exactly() {
+    let mut m = Model::new();
+    circle(&mut m, DVec3::ZERO, 1.0);
+    let sel = prism_ops::Selection {
+        faces: m.faces().map(|(id, _)| id).collect(),
+        ..Default::default()
+    };
+    let copy = prism_ops::duplicate(&mut m, &sel);
+    let vs = copy.all_vertices(&m);
+    transform::translate(&mut m, &vs, DVec3::new(1.0, 0.0, 0.0));
+    let a = areas(&m);
+    assert_eq!(a.len(), 3, "{a:?}");
+    let lens = 2.0 * PI / 3.0 - 3f64.sqrt() / 2.0;
+    assert!((sum(&a) - (2.0 * PI - lens)).abs() < 1e-9, "{a:?}");
+    clean(&m);
+}
+
+#[test]
+fn lifting_a_corner_of_a_face_with_arcs_is_refused() {
+    // Found by the undo property test: the face cannot fold into flat
+    // pieces yet, so the move would leave its arcs out of its plane.
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
+    circle(&mut m, DVec3::new(4.0, 2.0, 0.0), 1.0);
+    let before = m.clone();
+    let corner = prism_ops::vertex_at(&m, DVec3::ZERO).expect("corner");
+    transform::translate(&mut m, &[corner].into(), DVec3::Z);
+    assert_eq!(m, before);
+    // Sliding it within the plane is fine.
+    transform::translate(&mut m, &[corner].into(), DVec3::new(-1.0, 0.0, 0.0));
+    assert_ne!(m, before);
+    clean(&m);
 }

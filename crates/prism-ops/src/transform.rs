@@ -41,13 +41,32 @@ pub fn scale(model: &mut Model, vs: &BTreeSet<VertexId>, centre: DVec3, k: DVec3
     apply(model, vs, &m);
 }
 
-/// Whether moving `vs` by `m` keeps every arc an arc: each arc with an end
-/// in `vs` has both there, and `m` scales evenly if any does.
+/// Whether moving `vs` by `m` keeps every arc an arc and its faces flat:
+/// each arc with an end in `vs` has both there, `m` scales evenly if any
+/// does, and a face with arcs that moves only in part stays in its plane
+/// (such a face cannot be folded into flat pieces yet).
 pub fn arcs_follow(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> bool {
-    model.edges().all(|(_, e)| {
+    let arcs_ok = model.edges().all(|(_, e)| {
         let (a, b) = (vs.contains(&e.a), vs.contains(&e.b));
         !e.curve.is_arc() || (!a && !b) || (a && b && e.curve.transformed(m).is_some())
-    })
+    });
+    let tol = model.tol();
+    arcs_ok
+        && model.faces().all(|(id, f)| {
+            let moved: Vec<VertexId> = f
+                .loops()
+                .flatten()
+                .copied()
+                .filter(|v| vs.contains(v))
+                .collect();
+            !model.face_has_arcs(id)
+                || moved.is_empty()
+                || moved.len() == f.loops().flatten().count()
+                || moved.iter().all(|v| {
+                    f.plane()
+                        .contains(m.transform_point3(model.vertex(*v)), &tol)
+                })
+        })
 }
 
 /// Send the arcs with both ends in `vs` through `m`.
@@ -167,7 +186,8 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
         .edge_ids()
         .any(|e| model.edge(e).is_some_and(|x| x.curve.is_arc()))
     {
-        // Arcs only move whole, so their faces stay flat: refit the plane.
+        // Faces with arcs only move whole or within their plane
+        // (`arcs_follow`), so they stay flat: refit the plane.
         model.edit_face(id, |f| f.surface = Surface::Plane(plane));
         return;
     }

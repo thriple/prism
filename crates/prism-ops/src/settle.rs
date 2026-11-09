@@ -14,12 +14,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use prism_geom::Curve;
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Plane, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 use crate::regions::{Fill, InsideTest, rebuild_plane};
-use crate::sticky::{crossing, on_segment_inside};
+use crate::sticky::{meet, on_curve_inside};
 
 /// After an edit that changed the touched vertices freely (Push/Pull).
 /// Overlapping faces are left for the solid rule; call [`dedupe_faces`]
@@ -99,6 +100,7 @@ fn around(c: Cell) -> impl Iterator<Item = Cell> {
 
 struct Seg {
     id: EdgeId,
+    curve: Curve,
     a: DVec3,
     b: DVec3,
     tag: Tag,
@@ -222,6 +224,7 @@ fn run(
                 let e = model.edge(*id).expect("edge");
                 Seg {
                     id: *id,
+                    curve: e.curve,
                     a: model.vertex(e.a),
                     b: model.vertex(e.b),
                     tag: combine(tag_of(&e.a), tag_of(&e.b)),
@@ -269,9 +272,16 @@ fn run(
 /// Where pairs of segments that could have changed cross or touch.
 fn meeting_points(segs: &[Seg], tol: &Tol) -> Vec<DVec3> {
     let pad = DVec3::splat(tol.dist);
+    // An arc's box is its whole circle's, which holds it.
     let boxes: Vec<(DVec3, DVec3)> = segs
         .iter()
-        .map(|s| (s.a.min(s.b) - pad, s.a.max(s.b) + pad))
+        .map(|s| match s.curve {
+            Curve::Arc { centre, radius, .. } => {
+                let r = DVec3::splat(radius) + pad;
+                (centre - r, centre + r)
+            }
+            Curve::Line => (s.a.min(s.b) - pad, s.a.max(s.b) + pad),
+        })
         .collect();
     let mut points = Vec::new();
     for (i, s) in segs.iter().enumerate() {
@@ -290,16 +300,14 @@ fn meeting_points(segs: &[Seg], tol: &Tol) -> Vec<DVec3> {
             if lo.0.cmpgt(hi.1).any() || hi.0.cmpgt(lo.1).any() {
                 continue;
             }
-            if let Some((_, q)) = crossing(s.a, s.b, t.a, t.b, tol) {
-                points.push(q);
-            }
+            points.extend(meet((s.curve, s.a, s.b), (t.curve, t.a, t.b), tol));
             for p in [t.a, t.b] {
-                if on_segment_inside(p, s.a, s.b, tol).is_some() {
+                if on_curve_inside(s.curve, s.a, s.b, p, tol) {
                     points.push(p);
                 }
             }
             for p in [s.a, s.b] {
-                if on_segment_inside(p, t.a, t.b, tol).is_some() {
+                if on_curve_inside(t.curve, t.a, t.b, p, tol) {
                     points.push(p);
                 }
             }
@@ -308,8 +316,9 @@ fn meeting_points(segs: &[Seg], tol: &Tol) -> Vec<DVec3> {
     points
 }
 
-/// A face's tag, outer loop in 2D, its vertices and its 2D box.
-type FlatFace = (Tag, Vec<DVec2>, Vec<VertexId>, (DVec2, DVec2));
+/// A face's tag, its outer vertices in 2D, the outer loop's polygon along
+/// its edges (arcs drawn), its outer vertices and its 2D box.
+type FlatFace = (Tag, Vec<DVec2>, Vec<DVec2>, Vec<VertexId>, (DVec2, DVec2));
 
 /// Whether a face that could have moved now has a corner strictly inside
 /// another face on the plane, or the other way round (a face moved wholly
@@ -330,16 +339,21 @@ fn contains_another(
                 .iter()
                 .map(|v| frame.to_2d(model.vertex(*v)))
                 .collect();
-            let lo = pts.iter().fold(DVec2::INFINITY, |a, p| a.min(*p));
-            let hi = pts.iter().fold(DVec2::NEG_INFINITY, |a, p| a.max(*p));
-            (face_tag(f), pts, f.outer.clone(), (lo, hi))
+            let poly: Vec<DVec2> = model
+                .loop_points(f, 0)
+                .iter()
+                .map(|p| frame.to_2d(*p))
+                .collect();
+            let lo = poly.iter().fold(DVec2::INFINITY, |a, p| a.min(*p));
+            let hi = poly.iter().fold(DVec2::NEG_INFINITY, |a, p| a.max(*p));
+            (face_tag(f), pts, poly, f.outer.clone(), (lo, hi))
         })
         .collect();
-    for (i, (ta, pa, va, ba)) in flat.iter().enumerate() {
+    for (i, (ta, pa, polya, va, ba)) in flat.iter().enumerate() {
         if *ta == Tag::Still {
             continue;
         }
-        for (j, (tb, pb, vb, bb)) in flat.iter().enumerate() {
+        for (j, (tb, pb, polyb, vb, bb)) in flat.iter().enumerate() {
             if i == j || !worth_checking(*ta, *tb) {
                 continue;
             }
@@ -349,11 +363,11 @@ fn contains_another(
             let inside = pa
                 .iter()
                 .zip(va)
-                .any(|(p, v)| !vb.contains(v) && point_in_polygon(*p, pb) == Inside::Inside);
+                .any(|(p, v)| !vb.contains(v) && point_in_polygon(*p, polyb) == Inside::Inside);
             let around = pb
                 .iter()
                 .zip(vb)
-                .any(|(p, v)| !va.contains(v) && point_in_polygon(*p, pa) == Inside::Inside);
+                .any(|(p, v)| !va.contains(v) && point_in_polygon(*p, polya) == Inside::Inside);
             if inside || around {
                 return true;
             }
@@ -374,7 +388,7 @@ fn split_at(model: &mut Model, p: DVec3, tol: &Tol) {
     let through: Vec<EdgeId> = model
         .edges()
         .filter(|(_, e)| !e.has(v))
-        .filter(|(_, e)| on_segment_inside(at, model.vertex(e.a), model.vertex(e.b), tol).is_some())
+        .filter(|(_, e)| on_curve_inside(e.curve, model.vertex(e.a), model.vertex(e.b), at, tol))
         .map(|(id, _)| id)
         .collect();
     for e in through {

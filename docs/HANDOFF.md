@@ -22,29 +22,28 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - `Command::Duplicate` was removed (it made CI hang);
   - Updates and MCP Server were added to the plan, right after View
     Settings.
-- **State:** `main` = session branch. Last push `383f6f8` (2a and a
-  split_edge fix); its CI was still running at the compaction, so check it
-  first (all jobs, Windows included). Nothing uncommitted.
+- **State:** `main` = session branch. Last push: Exact Curves 2b
+  (crossings). Check its CI first (all jobs, Windows included).
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves part 1 is built** (brief 22: faces name their edges, file
   schema 3 / geometry layout 2; NOTES has what is left for part 2).
-- **Exact Curves part 2** is briefed (brief 23, four steps). Step 2a is
-  built (arcs in the core). **Next: step 2b** (exact line–arc and arc–arc
-  crossings; points split arcs). Where to start for 2b:
-  - `prism-ops/src/sticky.rs`: `insert_point` and `add_segment`'s
-    crossings skip arcs (`!e.curve.is_arc()`): add exact line–arc
-    crossings there (quadratic in the arc's plane, inside its sweep);
-    `add_circle` needs arc–arc and arc–line crossings against what is
-    there before it adds its arcs;
-  - `Model::split_edge` already splits arcs into two arcs of one circle;
-  - face finding already traces arcs (tangent, then curvature), so once
-    edges are split, faces should follow;
-  - remove the "until 2b" property-test limit (circles on a grid apart)
-    and let random circles cross rectangles and lines;
-  - brief 23 lists the tests (line across a circle: two faces; two
-    overlapping circles: three).
-- **Exact Curves conventions (2a):** `Curve::Arc` runs counter-clockwise
+- **Exact Curves part 2** is briefed (brief 23, four steps). Steps 2a
+  (arcs in the core) and 2b (exact crossings) are built. **Next: step 2c**
+  (picking, inference, Eraser, Model Health). Where to start for 2c:
+  - picking and hover already use drawn points (`prism-view/src/pick.rs`,
+    `prism-tools/src/select.rs`); selecting an arc should take every edge
+    with its `curve_id`, and the Eraser the whole curve;
+  - inference is `prism-infer` (`Kind::Midpoint`, `Kind::OnEdge`): add arc
+    ends, centre (while hovering the arc), arc midpoints, circle quadrants,
+    and "on arc" with `Curve::closest_point`;
+  - Model Health: list arcs whose ends left their circle, and repair by
+    moving the ends back (`circle_distance`);
+  - tools should say why a move was refused (an arc would bend, or a face
+    with arcs would fold); brief 23 says 2c/2d.
+- **Exact Curves conventions (2a, 2b):** crossings go through
+  `sticky::meet` / `on_curve_inside` (exact for lines and arcs), never the
+  straight-only `crossing` alone; `Curve::Arc` runs counter-clockwise
   about its axis from the edge's `a` to `b`; use `add_curve_edge` (never
   `add_edge`) for arcs; edit face loops with `edit_face` or `Face::reverse`
   so edges stay with their sides; polygons for faces come from

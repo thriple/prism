@@ -14,9 +14,9 @@ use proptest::prelude::*;
 enum Op {
     Rect(i32, i32, i32, i32),
     Line(i32, i32, i32, i32),
-    /// A unit circle on a grid off to the side, clear of everything else
-    /// (lines do not cut circles until Exact Curves 2b).
-    Circle(i32, i32),
+    /// A circle about a grid point, with a radius of 1 to 3, crossing the
+    /// rectangles, lines and other circles.
+    Circle(i32, i32, i32),
 }
 
 fn rect() -> impl Strategy<Value = Op> {
@@ -26,7 +26,7 @@ fn rect() -> impl Strategy<Value = Op> {
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         3 => rect(),
-        1 => (0..4i32, 0..4i32).prop_map(|(i, j)| Op::Circle(i, j)),
+        1 => (0..10i32, 0..10i32, 1..4i32).prop_map(|(i, j, r)| Op::Circle(i, j, r)),
         1 => (0..10i32, 0..10i32, 0..10i32, 0..10i32).prop_filter("a line has length", |(a, b, c, d)| (a, b) != (c, d)).prop_map(|(a, b, c, d)| Op::Line(a, b, c, d)),
     ]
 }
@@ -48,9 +48,9 @@ fn apply(m: &mut Model, op: &Op, k: f64) {
             let q = DVec3::new(f64::from(c), f64::from(d), 0.0) * k;
             prism_ops::add_segment(m, p, q);
         }
-        Op::Circle(i, j) => {
-            let c = DVec3::new(100.0 + 3.0 * f64::from(i), 3.0 * f64::from(j), 0.0) * k;
-            prism_ops::add_circle(m, c, DVec3::Z, k);
+        Op::Circle(i, j, r) => {
+            let c = DVec3::new(f64::from(i), f64::from(j), 0.0) * k;
+            prism_ops::add_circle(m, c, DVec3::Z, f64::from(r) * k);
         }
     }
 }
@@ -199,5 +199,40 @@ fn scale_does_not_matter_regression_half_step_area() {
         let m = build(&ops, k);
         assert_eq!(m.face_count(), base.face_count());
         assert!(same_areas(&areas(&m, k), &areas(&base, 1.0)), "at {k}");
+    }
+}
+
+/// Found when circles began to cross things (Exact Curves 2b): two circles
+/// touching inside at a seam made a thin face whose sample point fell where
+/// the drawn arcs touch.
+#[test]
+fn circles_touching_inside_regression() {
+    let ops = [
+        Op::Line(0, 0, 7, 7),
+        Op::Circle(6, 5, 2),
+        Op::Circle(6, 4, 3),
+    ];
+    let p = check::problems(&build(&ops, 1.0));
+    assert!(p.is_empty(), "{p:?}");
+}
+
+/// Found with the one above: the topology differed between scales.
+#[test]
+fn circles_and_lines_at_every_scale_regression() {
+    let ops = [
+        Op::Circle(4, 2, 2),
+        Op::Line(1, 2, 6, 7),
+        Op::Circle(6, 5, 2),
+        Op::Rect(4, 2, 5, 5),
+    ];
+    let base = build(&ops, 1.0);
+    assert!(check::problems(&base).is_empty());
+    for k in [1e-4, 1e3] {
+        let m = build(&ops, k);
+        assert_eq!(
+            (m.vertex_count(), m.edge_count(), m.face_count()),
+            (base.vertex_count(), base.edge_count(), base.face_count()),
+            "at {k}"
+        );
     }
 }

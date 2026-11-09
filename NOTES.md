@@ -1272,8 +1272,8 @@ and inference, 2d the Circle and Polygon tools).
   (DECISIONS #32).
 - **Refused until their part, changing nothing:** Push/Pull (part 4),
   Offset (part 3) and Intersect Faces (part 4) on faces with arcs.
-- **Until 2b:** straight-edge crossing and on-edge tests skip arcs, so a
-  line drawn across a circle does not cut it yet.
+- **Until 2b:** straight-edge crossing and on-edge tests skipped arcs (2b
+  added the crossings).
 - **Model check:** arc ends on their circle, a proper radius and axis, an
   arc's axis along the normal of each face using it; a loop of two sides
   is fine when one is an arc. Drawing the same circle twice changes
@@ -1293,3 +1293,45 @@ and inference, 2d the Circle and Polygon tools).
   a face using an edge that was gone. It now splits every run. Push/Pull's
   sliding step has the same first-run-only habit; not seen failing, left
   as is.
+
+## Exact Curves (part 2, step 2b): crossings
+- **Exact crossings** (`prism-geom`): `circle_line` and `circle_circle`
+  (the quadratic in the circle's plane, or a circle through another
+  plane), `circle_distance`, and `Curve::closest_point`. The tolerance
+  decides touching: a tangent line or circle meets at one point.
+- **Sticky geometry:** a point landing on an arc splits it
+  (`insert_point`); a segment is cut where it crosses arcs (up to two per
+  arc, and an arc sharing an end with it can still cross it); a circle is
+  cut where it meets lines and arcs, and made of arcs between every vertex
+  on it, all with one new curve id. Pieces already there (the same arc
+  between the same points) are not added again.
+- **Straight edge and arc between the same two points:** `add_segment`
+  now looks for a straight edge there (`line_between`), not any edge, so a
+  diameter through both seams is drawn. The topology check now flags only
+  repeated straight edges (it flagged a line next to an arc).
+- **Face finding with tangent edges:** half-edges that leave a vertex the
+  same way within tolerance (circles touching inside, a line along an arc)
+  sort by curvature; before, rounding noise in their tangents decided.
+- **Interior points** are now ranked by the box that fits there, not the
+  widest scan gap: a thin face between two touching circles took a point
+  where the drawn arcs touch, so the overlap check misfired. The drawn
+  polygons of two arcs that touch can still cross near the touching point
+  (equal angle steps); exact point-in-face for arcs comes with adaptive
+  tessellation (part 4).
+- **The coplanar rule after edits** (`settle`) knew only straight edges:
+  it cut arcs at their chords' crossings, off their circle. It now uses
+  exact crossings and on-arc tests, an arc's box is its circle's, and a
+  face's containment test uses its drawn outline.
+- **Moves refused:** a face with arcs that moves only in part must stay in
+  its plane (it cannot fold into flat pieces yet); lifting a corner of a
+  square with a circle crossing it now changes nothing. Found by the undo
+  property test once it drew a circle.
+- **Tests:** a line across a circle, through both seams, ending on it; a
+  circle across a square; two overlapping circles; touching circles and a
+  tangent line; drawing a cut circle again; a moved copy overlapping its
+  circle; the refused lift. The property tests draw circles of radius 1-3
+  anywhere on the grid, crossing everything (two regressions kept), and
+  the undo property test draws a circle across both squares.
+- Checked in the app (Xvfb): two circles across a square and a line open
+  as twelve faces, drawn smooth.
+- **Not yet:** the tools still do not say why a move was refused (2c/2d).

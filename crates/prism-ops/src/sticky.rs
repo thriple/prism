@@ -4,9 +4,11 @@
 
 use std::collections::BTreeSet;
 
-use prism_geom::Curve;
+use std::f64::consts::TAU;
+
+use prism_geom::{Curve, circle_circle, circle_distance, circle_line};
 use prism_math::{DVec3, Plane, Tol};
-use prism_topo::{EdgeId, FaceId, Model, VertexId};
+use prism_topo::{Edge, EdgeId, FaceId, Model, VertexId};
 
 use crate::regions::{Fill, rebuild_plane};
 
@@ -43,6 +45,69 @@ pub fn on_segment_inside(p: DVec3, a: DVec3, b: DVec3, tol: &Tol) -> Option<f64>
     (p.distance(foot) < tol.dist && t * len > tol.dist && (1.0 - t) * len > tol.dist).then_some(t)
 }
 
+/// Whether `p` lies on the edge `e`, clear of both its ends.
+fn on_edge_inside(model: &Model, e: &Edge, p: DVec3, tol: &Tol) -> bool {
+    on_curve_inside(e.curve, model.vertex(e.a), model.vertex(e.b), p, tol)
+}
+
+/// Whether `p` lies on `curve` from `a` to `b`, clear of both ends.
+pub(crate) fn on_curve_inside(curve: Curve, a: DVec3, b: DVec3, p: DVec3, tol: &Tol) -> bool {
+    match curve {
+        Curve::Line => on_segment_inside(p, a, b, tol).is_some(),
+        Curve::Arc { .. } => {
+            let c = curve.closest_point(a, b, p);
+            c.distance(p) < tol.dist && c.distance(a) > tol.dist && c.distance(b) > tol.dist
+        }
+    }
+}
+
+/// Where two curves (each with its ends) cross, clear of all four ends.
+pub(crate) fn meet(
+    (c1, a1, b1): (Curve, DVec3, DVec3),
+    (c2, a2, b2): (Curve, DVec3, DVec3),
+    tol: &Tol,
+) -> Vec<DVec3> {
+    let pts = match (c1, c2) {
+        (Curve::Line, Curve::Line) => {
+            return crossing(a1, b1, a2, b2, tol)
+                .map(|(_, q)| q)
+                .into_iter()
+                .collect();
+        }
+        (
+            Curve::Arc {
+                centre,
+                axis,
+                radius,
+            },
+            Curve::Line,
+        ) => circle_line(centre, axis, radius, a2, b2, tol.dist),
+        (
+            Curve::Line,
+            Curve::Arc {
+                centre,
+                axis,
+                radius,
+            },
+        ) => circle_line(centre, axis, radius, a1, b1, tol.dist),
+        (
+            Curve::Arc {
+                centre: p,
+                axis: n,
+                radius: r,
+            },
+            Curve::Arc {
+                centre: q,
+                axis: m,
+                radius: s,
+            },
+        ) => circle_circle((p, n, r), (q, m, s), tol.dist),
+    };
+    pts.into_iter()
+        .filter(|x| on_curve_inside(c1, a1, b1, *x, tol) && on_curve_inside(c2, a2, b2, *x, tol))
+        .collect()
+}
+
 /// The vertex at `p`: an existing one within tolerance, or a new one that
 /// splits the edge it lands on.
 pub fn insert_point(model: &mut Model, p: DVec3, tol: &Tol) -> VertexId {
@@ -54,11 +119,9 @@ pub fn insert_point(model: &mut Model, p: DVec3, tol: &Tol) -> VertexId {
     if let Some((id, _)) = near {
         return id;
     }
-    // Only straight edges until Exact Curves 2b splits arcs too.
     let on_edge = model
         .edges()
-        .filter(|(_, e)| !e.curve.is_arc())
-        .find(|(_, e)| on_segment_inside(p, model.vertex(e.a), model.vertex(e.b), tol).is_some())
+        .find(|(_, e)| on_edge_inside(model, e, p, tol))
         .map(|(id, _)| id);
     let id = model.add_vertex(p);
     if let Some(e) = on_edge {
@@ -83,7 +146,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
         .filter_map(|(id, v)| on_segment_inside(v, pa, pb, &tol).map(|t| (t, id)))
         .collect();
 
-    // Crossings with edges that do not touch the ends.
+    // Crossings with straight edges that do not touch the ends.
     let crossings: Vec<(EdgeId, f64, DVec3)> = model
         .edges()
         .filter(|(_, e)| !e.has(a) && !e.has(b) && !e.curve.is_arc())
@@ -108,6 +171,33 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
         };
         cuts.push((s, id));
     }
+    // Crossings with arcs: up to two each, and an arc sharing an end with
+    // the segment can still cross it elsewhere.
+    let arc_points: Vec<DVec3> = {
+        let model = &*model;
+        model
+            .edges()
+            .flat_map(|(_, e)| {
+                let pts = match e.curve {
+                    Curve::Arc {
+                        centre,
+                        axis,
+                        radius,
+                    } => circle_line(centre, axis, radius, pa, pb, tol.dist),
+                    Curve::Line => Vec::new(),
+                };
+                pts.into_iter().filter(move |x| {
+                    on_edge_inside(model, e, *x, &tol)
+                        && on_segment_inside(*x, pa, pb, &tol).is_some()
+                })
+            })
+            .collect()
+    };
+    let d = pb - pa;
+    for point in arc_points {
+        let id = insert_point(model, point, &tol);
+        cuts.push(((point - pa).dot(d) / d.length_squared(), id));
+    }
     cuts.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
     cuts.dedup_by_key(|c| c.1);
 
@@ -117,7 +207,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
         .collect();
     let mut added = Vec::new();
     for w in chain.windows(2) {
-        if model.edge_between(w[0], w[1]).is_none()
+        if model.line_between(w[0], w[1]).is_none()
             && let Some(e) = model.add_edge(w[0], w[1])
         {
             added.push(e);
@@ -138,10 +228,12 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     }
 }
 
-/// Add an exact circle about `centre` in the plane with `normal`: two half
-/// arcs between two seam points, sharing one curve id. The plane's faces are
-/// rebuilt as for a segment, so a circle on its own becomes a face, and one
-/// inside a face also makes a hole in it.
+/// Add an exact circle about `centre` in the plane with `normal`: arcs
+/// sharing one curve id, between two seam points and every point where it
+/// meets edges already there (which it splits). The plane's faces are
+/// rebuilt as for a segment, so a circle on its own becomes a face, one
+/// inside a face also makes a hole in it, and one across edges splits the
+/// faces they bound.
 pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) -> Added {
     let n = normal.normalize_or_zero();
     if n == DVec3::ZERO
@@ -166,6 +258,47 @@ pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) 
         axis: n,
         radius,
     };
+    // Split the edges the circle crosses.
+    let points: Vec<DVec3> = {
+        let model = &*model;
+        model
+            .edges()
+            .flat_map(|(_, e)| {
+                let pts = match e.curve {
+                    Curve::Line => circle_line(
+                        centre,
+                        n,
+                        radius,
+                        model.vertex(e.a),
+                        model.vertex(e.b),
+                        tol.dist,
+                    ),
+                    Curve::Arc {
+                        centre: c,
+                        axis,
+                        radius: r,
+                    } => circle_circle((centre, n, radius), (c, axis, r), tol.dist),
+                };
+                pts.into_iter()
+                    .filter(move |x| on_edge_inside(model, e, *x, &tol))
+            })
+            .collect()
+    };
+    for x in points {
+        insert_point(model, x, &tol);
+    }
+    // Every vertex on the circle, counter-clockwise from the seam.
+    let v = n.cross(u);
+    let angle = |x: DVec3| {
+        let w = x - centre;
+        w.dot(v).atan2(w.dot(u)).rem_euclid(TAU)
+    };
+    let mut on: Vec<(f64, VertexId)> = model
+        .vertices()
+        .filter(|(id, x)| *id == a || *id == b || circle_distance(centre, n, radius, *x) < tol.dist)
+        .map(|(id, x)| (angle(x), id))
+        .collect();
+    on.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
     // The same arc drawn again is the one already there.
     let same = |m: &Model, x: VertexId, y: VertexId| {
         let want = if x < y { arc } else { arc.reversed() };
@@ -189,14 +322,14 @@ pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) 
                 }
         })
     };
-    if same(model, a, b) && same(model, b, a) {
+    let missing: Vec<(VertexId, VertexId)> = (0..on.len())
+        .map(|i| (on[i].1, on[(i + 1) % on.len()].1))
+        .filter(|&(x, y)| !same(model, x, y))
+        .collect();
+    if missing.is_empty() {
         return Added::default();
     }
     let cid = model.new_curve_id();
-    let missing: Vec<(VertexId, VertexId)> = [(a, b), (b, a)]
-        .into_iter()
-        .filter(|&(x, y)| !same(model, x, y))
-        .collect();
     let added: Vec<EdgeId> = missing
         .into_iter()
         .filter_map(|(x, y)| model.add_curve_edge(x, y, arc, Some(cid)))
