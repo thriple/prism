@@ -1722,6 +1722,26 @@ impl Session {
                 size: fb.woken_size,
             });
         }
+        // The centre of an arc that is hovered or woken, to be snapped to.
+        let arcs = self.mem.woken.iter().map(|w| w.key).chain(
+            self.inference
+                .as_ref()
+                .filter(|i| matches!(i.kind, Kind::OnArc | Kind::Midpoint | Kind::Quadrant))
+                .and_then(|i| i.key),
+        );
+        for k in arcs {
+            if let prism_infer::Key::Edge(e) | prism_infer::Key::Mid(e) = k
+                && let Some(prism_geom::Curve::Arc { centre, .. }) =
+                    self.scene.edge(e).map(|e| e.curve)
+            {
+                o.marks.push(Mark {
+                    at: centre,
+                    shape: Shape::Cross,
+                    color: fb.woken,
+                    size: fb.woken_size,
+                });
+            }
+        }
         let Some(i) = &self.inference else {
             return o;
         };
@@ -1796,8 +1816,9 @@ impl Session {
         // The snap: its target, glyph and label.
         let glyph_color = match i.kind {
             Kind::Endpoint => fb.endpoint,
-            Kind::Midpoint => fb.midpoint,
-            Kind::OnEdge => fb.on_edge,
+            Kind::Midpoint | Kind::Quadrant => fb.midpoint,
+            Kind::Centre => fb.endpoint,
+            Kind::OnEdge | Kind::OnArc => fb.on_edge,
             Kind::OnFace => fb.on_face,
             Kind::OnGround => fb.on_ground,
             Kind::Intersection => fb.intersection,
@@ -1808,22 +1829,27 @@ impl Session {
         };
         let color = i.axis.map_or(glyph_color, axis_color);
         if let Some(e) = i.edge.and_then(|e| self.scene.edge(e))
-            && matches!(i.kind, Kind::OnEdge | Kind::Midpoint)
+            && matches!(
+                i.kind,
+                Kind::OnEdge | Kind::OnArc | Kind::Midpoint | Kind::Quadrant
+            )
         {
-            o.lines.push(Line {
-                a: e.a,
-                b: e.b,
-                color: color.with_alpha(alpha(fb.target_glow_alpha)),
-                width: fb.target_glow_width,
-                dash: [0.0, 0.0],
-            });
-            o.lines.push(Line {
-                a: e.a,
-                b: e.b,
-                color,
-                width: fb.target_width,
-                dash: [0.0, 0.0],
-            });
+            for (a, b) in e.segments() {
+                o.lines.push(Line {
+                    a,
+                    b,
+                    color: color.with_alpha(alpha(fb.target_glow_alpha)),
+                    width: fb.target_glow_width,
+                    dash: [0.0, 0.0],
+                });
+                o.lines.push(Line {
+                    a,
+                    b,
+                    color,
+                    width: fb.target_width,
+                    dash: [0.0, 0.0],
+                });
+            }
         }
         if i.vertex.is_some() {
             o.marks.push(Mark {
@@ -1835,8 +1861,9 @@ impl Session {
         }
         let shape = match i.kind {
             Kind::Endpoint | Kind::Free | Kind::Guide => Shape::Circle,
-            Kind::Midpoint => Shape::Triangle,
-            Kind::OnEdge => Shape::Square,
+            Kind::Midpoint | Kind::Quadrant => Shape::Triangle,
+            Kind::Centre => Shape::Ring,
+            Kind::OnEdge | Kind::OnArc => Shape::Square,
             Kind::OnFace | Kind::OnGround => Shape::Diamond,
             Kind::Intersection | Kind::GuideCross | Kind::GuidePoint => Shape::Cross,
         };

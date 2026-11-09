@@ -33,7 +33,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
   schema 3 / geometry layout 2; NOTES has what is left for part 2).
 - **Exact Curves part 2** is briefed (brief 23, four steps). Steps 2a
   (arcs in the core) and 2b (exact crossings) are built. **Next: step 2c**
-  (picking, inference, Eraser, Model Health). Where to start for 2c:
+  (picking, inference, Eraser, Model Health). 2c parts 1 (whole curves:
+  select, Eraser) and 2 (arc snaps) are built; next 2c part 3 (Model
+  Health), then part 4 (say why a move was refused). Where to start for 2c:
   - picking and hover already use drawn points (`prism-view/src/pick.rs`,
     `prism-tools/src/select.rs`); selecting an arc should take every edge
     with its `curve_id`, and the Eraser the whole curve;

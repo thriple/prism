@@ -1351,3 +1351,17 @@ and inference, 2d the Circle and Polygon tools).
   a click still takes the whole circle. SketchUp may split the curve
   there; left as the brief says (whole curve) until the owner decides.
 - **Box select** still takes only the pieces it touches or holds.
+- **Part 2, snapping to arcs** (`prism-infer`): an arc's midpoint is on
+  the curve; "On Arc" lands exactly on it (`Curve::closest_point`);
+  quadrants (Kind::Quadrant) where they lie on an arc and are not already
+  an end or a midpoint; the centre (Kind::Centre) once the arc is hovered
+  or woken (a woken arc casts no guides, only its centre); guides meet
+  arcs on the circle (`circle_line`), not on the chord. Scene edges carry
+  their curve. The tools draw the arc highlight along the curve and a
+  cross at the centre of a hovered or woken arc.
+- Not checked by eye in the app yet (needs a hover); the owner should try
+  it. Glyphs: Centre a ring in the endpoint colour, Quadrant a triangle in
+  the midpoint colour.
+- **Disk:** the build cache filled the session's disk (a linker bus
+  error); deleting `target/debug/incremental` and building with
+  `CARGO_INCREMENTAL=0` fixed it.

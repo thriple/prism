@@ -2225,6 +2225,7 @@ dependencies = [
 name = "prism-infer"
 version = "0.0.1"
 dependencies = [
+ "prism-geom",
  "prism-math",
  "prism-ops",
  "prism-topo",
@@ -2308,6 +2309,7 @@ dependencies = [
 name = "prism-view"
 version = "0.0.1"
 dependencies = [
+ "prism-geom",
  "prism-math",
  "prism-ops",
  "prism-topo",

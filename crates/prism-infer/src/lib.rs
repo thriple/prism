@@ -13,7 +13,8 @@
 
 use std::collections::BTreeSet;
 
-use prism_math::{DVec2, DVec3};
+use prism_geom::{Curve, circle_line};
+use prism_math::{DVec2, DVec3, Plane};
 use prism_topo::{EdgeId, FaceId, Guide as StoredGuide, GuideId, VertexId};
 use prism_view::{Scene, View};
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,12 @@ pub enum Kind {
     Endpoint,
     Midpoint,
     OnEdge,
+    /// On an arc, at the closest point.
+    OnArc,
+    /// An arc's centre (offered once the arc is hovered).
+    Centre,
+    /// A circle's quarter points (where they lie on the arc).
+    Quadrant,
     OnFace,
     OnGround,
     Intersection,
@@ -68,10 +75,12 @@ impl Kind {
             Kind::Endpoint => (6.0, 14.0),
             Kind::GuidePoint => (5.8, 14.0),
             Kind::GuideCross => (5.5, 12.0),
+            Kind::Centre => (5.2, 12.0),
             Kind::Midpoint => (5.0, 12.0),
+            Kind::Quadrant => (4.8, 12.0),
             Kind::Intersection => (4.6, 12.0),
             Kind::Guide => (3.3, 8.0),
-            Kind::OnEdge => (3.0, 9.0),
+            Kind::OnEdge | Kind::OnArc => (3.0, 9.0),
             Kind::OnFace => (1.0, 0.0),
             Kind::OnGround => (0.8, 0.0),
             Kind::Free => (0.0, 0.0),
@@ -83,6 +92,9 @@ impl Kind {
             Kind::Endpoint => "Endpoint",
             Kind::Midpoint => "Midpoint",
             Kind::OnEdge => "On Edge",
+            Kind::OnArc => "On Arc",
+            Kind::Centre => "Centre",
+            Kind::Quadrant => "Quadrant",
             Kind::OnFace => "On Face",
             Kind::OnGround => "On Ground",
             Kind::Intersection => "Intersection",
@@ -99,6 +111,8 @@ impl Kind {
             self,
             Kind::Endpoint
                 | Kind::Midpoint
+                | Kind::Centre
+                | Kind::Quadrant
                 | Kind::Intersection
                 | Kind::GuideCross
                 | Kind::GuidePoint
@@ -109,7 +123,13 @@ impl Kind {
     pub fn wakes(self) -> bool {
         matches!(
             self,
-            Kind::Endpoint | Kind::Midpoint | Kind::OnEdge | Kind::GuidePoint
+            Kind::Endpoint
+                | Kind::Midpoint
+                | Kind::OnEdge
+                | Kind::OnArc
+                | Kind::Centre
+                | Kind::Quadrant
+                | Kind::GuidePoint
         )
     }
 }
@@ -175,6 +195,9 @@ pub enum Key {
     GuidePoint(GuideId),
     Mid(EdgeId),
     Edge(EdgeId),
+    /// An arc's centre, and a quadrant (0 to 3) on it.
+    Centre(EdgeId),
+    Quadrant(EdgeId, u8),
     Face(FaceId),
     Ground,
     Guide(GuideSource),
@@ -357,7 +380,8 @@ pub fn guides(ctx: &Context, mem: &Memory) -> Vec<Guide> {
         }
     }
     for w in &mem.woken {
-        if w.edge_dir.is_none() {
+        // A woken arc only offers its centre (no guides).
+        if w.edge_dir.is_none() && !matches!(w.key, Key::Edge(_)) {
             for a in 0..3u8 {
                 out.push(Guide {
                     source: GuideSource::Woken(w.serial, a),
@@ -451,6 +475,64 @@ pub fn infer(
     }
     for e in &scene.edges {
         if ctx.exclude.contains(&e.va) || ctx.exclude.contains(&e.vb) {
+            continue;
+        }
+        if let Curve::Arc {
+            centre,
+            axis,
+            radius,
+        } = e.curve
+        {
+            let mut c = blank(Kind::Midpoint, Key::Mid(e.id));
+            c.edge = Some(e.id);
+            push(
+                Kind::Midpoint,
+                e.curve.point(e.a, e.b, 0.5),
+                Key::Mid(e.id),
+                true,
+                c.clone(),
+            );
+            // On the arc: the closest drawn piece, then exactly onto it.
+            let near = e
+                .segments()
+                .filter_map(|(a, b)| {
+                    let (s, t, _) = closest(o, dir, a, b - a)?;
+                    let p = a.lerp(b, t.clamp(0.0, 1.0));
+                    let (q, _) = view.to_screen(p)?;
+                    (s > 0.0).then(|| (q.distance(cursor), p))
+                })
+                .min_by(|x, y| x.0.total_cmp(&y.0));
+            if let Some((_, p)) = near {
+                let mut c = c.clone();
+                c.kind = Kind::OnArc;
+                c.key = Key::Edge(e.id);
+                push(
+                    Kind::OnArc,
+                    e.curve.closest_point(e.a, e.b, p),
+                    Key::Edge(e.id),
+                    true,
+                    c.clone(),
+                );
+            }
+            let f = Plane::new(centre, axis).frame();
+            for (k, q) in [f.u, f.v, -f.u, -f.v].into_iter().enumerate() {
+                let q = centre + q * radius;
+                if e.curve.closest_point(e.a, e.b, q).distance(q) <= tol {
+                    let key = Key::Quadrant(e.id, k as u8);
+                    let mut c = c.clone();
+                    c.kind = Kind::Quadrant;
+                    c.key = key;
+                    push(Kind::Quadrant, q, key, true, c);
+                }
+            }
+            // The centre, while the arc is hovered or woken.
+            let hovered = |k: Key| k == Key::Edge(e.id) || k == Key::Mid(e.id);
+            if prev.is_some_and(hovered) || mem.woken.iter().any(|w| hovered(w.key)) {
+                let key = Key::Centre(e.id);
+                let mut c = blank(Kind::Centre, key);
+                c.edge = Some(e.id);
+                push(Kind::Centre, centre, key, false, c);
+            }
             continue;
         }
         let u = e.b - e.a;
@@ -574,6 +656,30 @@ pub fn infer(
     for g in &gl {
         for e in &scene.edges {
             if ctx.exclude.contains(&e.va) || ctx.exclude.contains(&e.vb) {
+                continue;
+            }
+            if let Curve::Arc {
+                centre,
+                axis,
+                radius,
+            } = e.curve
+            {
+                // Where the guide meets the arc, exactly.
+                for p in circle_line(centre, axis, radius, g.origin, g.origin + g.dir, tol) {
+                    let s = (p - g.origin).dot(g.dir);
+                    if e.curve.closest_point(e.a, e.b, p).distance(p) <= tol
+                        && p.distance(e.a) > tol
+                        && p.distance(e.b) > tol
+                        && s.abs() < reach
+                        && within(g, s)
+                    {
+                        let key = Key::Intersection(g.source, e.id);
+                        let mut c = blank(Kind::Intersection, key);
+                        c.guides = vec![*g];
+                        c.edge = Some(e.id);
+                        push(Kind::Intersection, p, key, true, c);
+                    }
+                }
                 continue;
             }
             let u = e.b - e.a;

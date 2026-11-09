@@ -116,7 +116,9 @@ impl Session {
             let snapped = self
                 .inference
                 .as_ref()
-                .filter(|i| i.kind.is_point() || matches!(i.kind, Kind::OnEdge | Kind::Guide))
+                .filter(|i| {
+                    i.kind.is_point() || matches!(i.kind, Kind::OnEdge | Kind::OnArc | Kind::Guide)
+                })
                 .map(|i| i.point - *n * (i.point - *origin).dot(*n));
             // A snapped point is where the new loop goes; a free cursor
             // moves it by how far it has moved from the first click.

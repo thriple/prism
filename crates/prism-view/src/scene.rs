@@ -109,6 +109,8 @@ pub struct SceneEdge {
     pub b: DVec3,
     /// An arc's drawn points between `a` and `b` (empty for a line).
     pub mid: Vec<DVec3>,
+    /// The exact curve, walked from `a` to `b`.
+    pub curve: prism_geom::Curve,
     /// The first two faces' normals; `None` where there are fewer faces.
     pub normals: [Option<DVec3>; 2],
     /// The first two faces that use it.
@@ -278,6 +280,7 @@ impl Scene {
                 a: model.vertex(e.a),
                 b: model.vertex(e.b),
                 mid: e.curve.inner_points(model.vertex(e.a), model.vertex(e.b)),
+                curve: e.curve,
                 normals: [n(0), n(1)],
                 faces: [fid(0), fid(1)],
                 faded: false,
