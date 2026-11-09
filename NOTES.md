@@ -1402,3 +1402,31 @@ and inference, 2d the Circle and Polygon tools).
   (an arrow key picks the plane). Not checked by eye in the app; brief 23's
   acceptance asks the owner to draw circles over MCP in a build and move
   them.
+
+## Exact Curves (part 3, step 3a): the Arc tools
+
+- **Core:** `prism_ops::add_arc` (from a start point, counter-clockwise
+  about the normal by a sweep) and `add_pie`; `add_circle` is now
+  `add_arc` with a full turn (two halves, as before). Arcs cut and are cut
+  by what they cross, like circles. `prism_geom::arc_through` (three
+  points), `arc_bulge` (two points and a bulge), `bulge_for_radius`.
+  `Command::Arc { centre, normal, radius, start, sweep, pie }`; inside a
+  group a mirror turns it about the opposite normal.
+- **Tools** (`prism-tools/src/session/arcs.rs`): `arc.2` (and `tool.arc`,
+  A): start, end, bulge, typed bulge or `2r`, a magenta half circle within
+  8 px; `arc.3`: three points; `arc.c`: centre, start, end, typed radius
+  then angle; `arc.p`: the same, closed with the two radius lines. All in
+  `GREYED_TOOLS`: greyed in menus, reachable over MCP `use_tool` (its
+  description lists them). New style colour `half_circle`.
+- **Fixed:** on a drawing plane, a guide along the plane's normal (the
+  blue axis from the last click on the ground) is one point, so the
+  cursor ignored the plane there and the shape collapsed. Circle, Polygon
+  and the Arc tools now ignore such guides (`plane_point`).
+- **Fixed (found by the undo property test with a pie):** lifting a corner
+  of a face with holes flattens it by moving its points, which took an arc
+  end off its circle. Such a move is now refused when the face touches an
+  arc's end (`arcs_refusal`).
+- Tests: arcs and pies in the core, each tool by clicks and typing, each
+  over MCP with `get_geometry`, random arcs and pies in the property tests
+  (3000 cases run once), a pie in the undo property test (1500 cases).
+- Not checked by eye in the app.

@@ -2066,3 +2066,93 @@ fn the_polygon_tool_takes_a_side_count_and_its_sides_are_one_curve() {
     assert_eq!(d.s.selection().edges.len(), 8);
     valid(&d);
 }
+
+// ---------- The Arc tools (brief 24, step 3a) ----------
+
+/// Each arc in the model: its centre, radius and sweep.
+fn arc_list(d: &Driver) -> Vec<(DVec3, f64, f64)> {
+    let m = d.s.model();
+    m.edges()
+        .filter_map(|(_, e)| match e.curve {
+            prism_geom::Curve::Arc { centre, radius, .. } => {
+                Some((centre, radius, e.curve.sweep(m.vertex(e.a), m.vertex(e.b))))
+            }
+            prism_geom::Curve::Line => None,
+        })
+        .collect()
+}
+
+fn has_arc(d: &Driver, centre: DVec3, radius: f64, sweep: f64) {
+    let all = arc_list(d);
+    assert!(
+        all.iter().any(|(c, r, s)| c.distance(centre) < 1e-9
+            && (r - radius).abs() < 1e-9
+            && (s - sweep).abs() < 1e-9),
+        "no arc about {centre} of radius {radius} and sweep {sweep}: {all:?}"
+    );
+}
+
+/// Clicks with an arc tool on the ground (Up picks the ground plane).
+fn arc_clicks(d: &mut Driver, tool: &str, pts: &[DVec3]) {
+    d.tool(tool);
+    d.send(Input::Key { key: Key::Up });
+    for p in pts {
+        d.click(*p);
+    }
+}
+
+#[test]
+fn the_two_point_arc_by_clicks_bulge_and_radius() {
+    use prism_tools::session::ARC;
+    use std::f64::consts::PI;
+    let mut d = Driver::empty();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    // A bulge of half the chord: a half circle.
+    arc_clicks(&mut d, ARC, &[p(0.0, 0.0), p(2.0, 0.0), p(1.0, 1.0)]);
+    has_arc(&d, p(1.0, 0.0), 1.0, PI);
+    // A typed bulge of 0.5 on a chord of 2: radius 1.25.
+    arc_clicks(&mut d, ARC, &[p(4.0, 0.0), p(6.0, 0.0)]);
+    d.hover(p(5.0, 0.3));
+    d.typed("0.5");
+    has_arc(&d, p(5.0, -0.75), 1.25, 2.0 * (0.8f64).asin());
+    // A typed radius.
+    arc_clicks(&mut d, ARC, &[p(8.0, 0.0), p(10.0, 0.0)]);
+    d.hover(p(9.0, 0.2));
+    d.typed("2r");
+    let h = 2.0 - 3.0f64.sqrt();
+    has_arc(&d, p(9.0, h - 2.0), 2.0, 2.0 * (0.5f64).asin());
+    assert_eq!(arc_list(&d).len(), 3);
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(arc_list(&d).len(), 2, "each arc is one step");
+}
+
+#[test]
+fn the_three_point_centre_and_pie_arcs() {
+    use prism_tools::session::{ARC_CENTRE, ARC3, PIE};
+    use std::f64::consts::PI;
+    let mut d = Driver::empty();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    arc_clicks(&mut d, ARC3, &[p(0.0, 3.0), p(1.0, 4.0), p(2.0, 3.0)]);
+    has_arc(&d, p(1.0, 3.0), 1.0, PI);
+    // Centre, start, then a quarter turn round.
+    arc_clicks(&mut d, ARC_CENTRE, &[p(5.0, 1.0), p(6.0, 1.0)]);
+    d.hover(p(5.7, 1.7));
+    d.click(p(5.0, 2.0));
+    has_arc(&d, p(5.0, 1.0), 1.0, PI / 2.0);
+    // Typed: the radius after the centre, then the angle.
+    arc_clicks(&mut d, ARC_CENTRE, &[p(8.0, 1.0)]);
+    d.hover(p(8.5, 1.0));
+    d.typed("1.5");
+    d.hover(p(8.5, 2.0));
+    d.typed("60");
+    has_arc(&d, p(8.0, 1.0), 1.5, PI / 3.0);
+    assert_eq!(d.faces(), 0, "open arcs make no face");
+    // A pie closes into a face.
+    arc_clicks(&mut d, PIE, &[p(5.0, 5.0), p(6.0, 5.0)]);
+    d.hover(p(5.7, 5.7));
+    d.click(p(5.0, 6.0));
+    assert_eq!(d.faces(), 1);
+    same(&areas(&d), &[PI / 4.0]);
+    valid(&d);
+}

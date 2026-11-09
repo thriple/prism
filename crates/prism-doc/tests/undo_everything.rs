@@ -65,6 +65,15 @@ fn every_kind(d: &Document) -> Vec<Command> {
             normal: DVec3::Z,
             radius: 1.5,
         },
+        // A pie across both squares (Exact Curves 3a).
+        Command::Arc {
+            centre: DVec3::new(2.0, 1.0, 0.0),
+            normal: DVec3::Z,
+            radius: 2.0,
+            start: DVec3::new(4.0, 1.0, 0.0),
+            sweep: 2.0,
+            pie: true,
+        },
     ];
     // A standing rectangle (on the plane x = 5).
     out.push(Command::Loop {
@@ -168,7 +177,7 @@ fn every_kind(d: &Document) -> Vec<Command> {
 fn undo_and_redo_of_every_operation_are_exact() {
     let base = setup();
     let kinds = every_kind(&base);
-    assert_eq!(kinds.len(), 18, "one of each kind");
+    assert_eq!(kinds.len(), 19, "one of each kind");
     for c in kinds {
         let mut d = base.clone();
         let before = d.model().geometry_json();
@@ -189,7 +198,7 @@ proptest! {
     /// Any sequence of commands, undone all the way and redone, ends exactly
     /// where it was.
     #[test]
-    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..18, 1..6)) {
+    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..19, 1..6)) {
         let mut d = setup();
         let start = d.model().geometry_json();
         let mut ran = 0;

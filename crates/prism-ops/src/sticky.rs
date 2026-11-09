@@ -276,19 +276,80 @@ pub fn add_polygon(model: &mut Model, points: &[DVec3]) {
 /// faces they bound.
 pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) -> Added {
     let n = normal.normalize_or_zero();
-    if n == DVec3::ZERO
-        || radius.is_nan()
-        || radius <= 0.0
-        || !centre.is_finite()
-        || !radius.is_finite()
-    {
+    if n == DVec3::ZERO {
         return Added::default();
     }
+    let u = Plane::new(centre, n).frame().u;
+    add_arc_from(model, centre, n, radius, u, TAU)
+}
+
+/// Add an arc of the circle about `centre` (unit `normal`, `radius`), from
+/// `start` (projected onto the circle) counter-clockwise about `normal` by
+/// `sweep` radians. A sweep of a full turn (or more) is a circle. Like a
+/// segment, it cuts and is cut by what it crosses, and closes faces. The
+/// pieces share one new curve id.
+pub fn add_arc(
+    model: &mut Model,
+    centre: DVec3,
+    normal: DVec3,
+    radius: f64,
+    start: DVec3,
+    sweep: f64,
+) -> Added {
+    let n = normal.normalize_or_zero();
+    let w = start - centre;
+    let u = (w - n * w.dot(n)).normalize_or_zero();
+    if n == DVec3::ZERO || u == DVec3::ZERO || sweep.is_nan() || sweep <= 0.0 {
+        return Added::default();
+    }
+    add_arc_from(model, centre, n, radius, u, sweep.min(TAU))
+}
+
+/// A pie: [`add_arc`] and the two radius lines from `centre` to its ends.
+pub fn add_pie(
+    model: &mut Model,
+    centre: DVec3,
+    normal: DVec3,
+    radius: f64,
+    start: DVec3,
+    sweep: f64,
+) -> Added {
+    let mut all = add_arc(model, centre, normal, radius, start, sweep);
+    if all.edges.is_empty() || sweep >= TAU {
+        return all;
+    }
+    let n = normal.normalize_or_zero();
+    let w = start - centre;
+    let u = (w - n * w.dot(n)).normalize_or_zero();
+    let v = n.cross(u);
+    for t in [0.0, sweep] {
+        let r = add_segment(model, centre, centre + (u * t.cos() + v * t.sin()) * radius);
+        all.edges.extend(r.edges);
+        all.faces.extend(r.faces);
+    }
+    all.faces.retain(|f| model.face(*f).is_some());
+    all
+}
+
+/// [`add_arc`] with the start direction `u` (unit, in the plane).
+fn add_arc_from(
+    model: &mut Model,
+    centre: DVec3,
+    n: DVec3,
+    radius: f64,
+    u: DVec3,
+    sweep: f64,
+) -> Added {
+    if radius.is_nan() || radius <= 0.0 || !centre.is_finite() || !radius.is_finite() {
+        return Added::default();
+    }
+    let full = sweep >= TAU;
     let plane = Plane::new(centre, n);
-    let u = plane.frame().u;
-    let (p, q) = (centre + u * radius, centre - u * radius);
+    let v = n.cross(u);
+    let at = |t: f64| centre + (u * t.cos() + v * t.sin()) * radius;
+    let (p, q) = (at(0.0), at(if full { TAU / 2.0 } else { sweep }));
     let tol = tol_with(model, &[p, q]);
-    if radius <= tol.dist {
+    if radius <= tol.dist || p.distance(q) <= tol.dist && !full {
         return Added::default();
     }
     let a = insert_point(model, p, &tol);
@@ -298,7 +359,14 @@ pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) 
         axis: n,
         radius,
     };
-    // Split the edges the circle crosses.
+    // The angle about the centre from the start.
+    let angle = |x: DVec3| {
+        let w = x - centre;
+        w.dot(v).atan2(w.dot(u)).rem_euclid(TAU)
+    };
+    let (pa, pb) = (model.vertex(a), model.vertex(b));
+    let on_this = |x: DVec3| full || on_curve_inside(arc, pa, pb, x, &tol);
+    // Split the edges the arc crosses.
     let points: Vec<DVec3> = {
         let model = &*model;
         model
@@ -322,23 +390,35 @@ pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) 
                 pts.into_iter()
                     .filter(move |x| on_edge_inside(model, e, *x, &tol))
             })
+            .filter(|x| on_this(*x))
             .collect()
     };
     for x in points {
         insert_point(model, x, &tol);
     }
-    // Every vertex on the circle, counter-clockwise from the seam.
-    let v = n.cross(u);
-    let angle = |x: DVec3| {
-        let w = x - centre;
-        w.dot(v).atan2(w.dot(u)).rem_euclid(TAU)
-    };
+    // Every vertex on the arc, counter-clockwise from the start.
     let mut on: Vec<(f64, VertexId)> = model
         .vertices()
-        .filter(|(id, x)| *id == a || *id == b || circle_distance(centre, n, radius, *x) < tol.dist)
-        .map(|(id, x)| (angle(x), id))
+        .filter(|(id, x)| {
+            *id == a
+                || *id == b
+                || (circle_distance(centre, n, radius, *x) < tol.dist && on_this(*x))
+        })
+        .map(|(id, x)| {
+            (
+                if id == a {
+                    0.0
+                } else if id == b && !full {
+                    sweep
+                } else {
+                    angle(x)
+                },
+                id,
+            )
+        })
         .collect();
     on.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+    on.dedup_by_key(|x| x.1);
     // The same arc drawn again is the one already there.
     let same = |m: &Model, x: VertexId, y: VertexId| {
         let want = if x < y { arc } else { arc.reversed() };
@@ -362,9 +442,14 @@ pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) 
                 }
         })
     };
-    let missing: Vec<(VertexId, VertexId)> = (0..on.len())
+    let pieces = if full {
+        on.len()
+    } else {
+        on.len().saturating_sub(1)
+    };
+    let missing: Vec<(VertexId, VertexId)> = (0..pieces)
         .map(|i| (on[i].1, on[(i + 1) % on.len()].1))
-        .filter(|&(x, y)| !same(model, x, y))
+        .filter(|&(x, y)| x != y && !same(model, x, y))
         .collect();
     if missing.is_empty() {
         return Added::default();

@@ -368,3 +368,65 @@ fn model_health_finds_arcs_off_their_circle_and_repairs_them() {
     clean(&m);
     assert!((areas(&m)[0] - PI).abs() < 1e-9);
 }
+
+// ---------- Arcs (brief 24, step 3a) ----------
+
+#[test]
+fn an_arc_alone_is_one_exact_edge_and_a_chord_closes_it() {
+    let mut m = Model::new();
+    let r = prism_ops::add_arc(
+        &mut m,
+        DVec3::ZERO,
+        DVec3::Z,
+        2.0,
+        DVec3::new(2.0, 0.0, 0.0),
+        PI,
+    );
+    assert_eq!(r.edges.len(), 1);
+    assert_eq!(m.face_count(), 0);
+    let e = m.edge(r.edges[0]).unwrap();
+    assert!((e.curve.sweep(m.vertex(e.a), m.vertex(e.b)) - PI).abs() < 1e-12);
+    assert_eq!(arcs(&m), vec![(DVec3::ZERO, 2.0)]);
+    prism_ops::add_segment(
+        &mut m,
+        DVec3::new(2.0, 0.0, 0.0),
+        DVec3::new(-2.0, 0.0, 0.0),
+    );
+    assert_eq!(m.face_count(), 1);
+    assert!(
+        (areas(&m)[0] - 2.0 * PI).abs() < 1e-9,
+        "half of a disc of radius 2"
+    );
+    clean(&m);
+}
+
+#[test]
+fn a_pie_is_a_face_and_an_arc_is_cut_where_a_line_crosses_it() {
+    let mut m = Model::new();
+    prism_ops::add_pie(&mut m, DVec3::ZERO, DVec3::Z, 1.0, DVec3::X, PI / 2.0);
+    assert_eq!(m.face_count(), 1);
+    assert!((areas(&m)[0] - PI / 4.0).abs() < 1e-9);
+    // A line across the arc splits the pie in two.
+    prism_ops::add_segment(&mut m, DVec3::ZERO, DVec3::new(2.0, 2.0, 0.0));
+    assert_eq!(m.face_count(), 2);
+    let a = areas(&m);
+    assert!(
+        (a[0] - PI / 8.0).abs() < 1e-9 && (a[1] - PI / 8.0).abs() < 1e-9,
+        "{a:?}"
+    );
+    assert_eq!(arcs(&m).len(), 2, "the arc in two pieces");
+    clean(&m);
+}
+
+#[test]
+fn an_arc_ends_on_lines_it_reaches_and_is_not_drawn_twice() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, -2.0, -2.0, 2.0, 2.0, 0.0);
+    // Three quarters of a turn, crossing nothing, inside the square.
+    let r = prism_ops::add_arc(&mut m, DVec3::ZERO, DVec3::Z, 1.0, DVec3::X, 1.5 * PI);
+    assert_eq!(r.edges.len(), 1);
+    assert_eq!(m.face_count(), 1, "an open arc splits nothing");
+    let again = prism_ops::add_arc(&mut m, DVec3::ZERO, DVec3::Z, 1.0, DVec3::X, 1.5 * PI);
+    assert!(again.edges.is_empty(), "the same arc again adds nothing");
+    clean(&m);
+}

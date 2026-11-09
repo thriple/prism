@@ -222,6 +222,63 @@ pub fn circle_distance(centre: DVec3, axis: DVec3, radius: f64, p: DVec3) -> f64
     ((w - axis * h).length() - radius).hypot(h)
 }
 
+/// An arc as drawn: its circle, and the sweep counter-clockwise about
+/// `normal` from its start.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ArcSpec {
+    pub centre: DVec3,
+    pub normal: DVec3,
+    pub radius: f64,
+    pub sweep: f64,
+}
+
+/// The arc from `a` through `m` to `b`. None if the three points are in a
+/// line (or two are the same), within `eps`.
+pub fn arc_through(a: DVec3, m: DVec3, b: DVec3, eps: f64) -> Option<ArcSpec> {
+    let (u, w) = (m - a, b - a);
+    let n = u.cross(w);
+    let nl = n.length();
+    if nl <= eps * u.length().max(w.length()) || u.length() <= eps || w.length() <= eps {
+        return None;
+    }
+    // The circumcentre, in the plane of the three points.
+    let centre =
+        a + (n.cross(u) * w.length_squared() + w.cross(n) * u.length_squared()) / (2.0 * nl * nl);
+    let normal = n / nl;
+    let radius = centre.distance(a);
+    let arc = Curve::Arc {
+        centre,
+        axis: normal,
+        radius,
+    };
+    Some(ArcSpec {
+        centre,
+        normal,
+        radius,
+        sweep: arc.sweep(a, b),
+    })
+}
+
+/// The arc from `a` to `b` in the plane with `normal`, bulging `bulge` from
+/// the chord's middle: positive to the left of `a`→`b` about `normal`. None
+/// if the chord or the bulge is shorter than `eps`.
+pub fn arc_bulge(a: DVec3, b: DVec3, normal: DVec3, bulge: f64, eps: f64) -> Option<ArcSpec> {
+    let d = b - a;
+    let n = normal.normalize_or_zero();
+    let left = n.cross(d).normalize_or_zero();
+    if d.length() <= eps || bulge.abs() <= eps || left == DVec3::ZERO {
+        return None;
+    }
+    arc_through(a, a.lerp(b, 0.5) + left * bulge, b, eps)
+}
+
+/// The bulge of the arc of `radius` on a chord of `chord` length: the
+/// shorter arc. None if the radius is less than half the chord.
+pub fn bulge_for_radius(chord: f64, radius: f64) -> Option<f64> {
+    let h = chord / 2.0;
+    (radius >= h).then(|| radius - (radius * radius - h * h).max(0.0).sqrt())
+}
+
 /// Where the circle about `centre` (unit `axis`, `radius`) meets the line
 /// through `p` and `q`: none, one (touching, or the line passing through
 /// its plane) or two points. `eps` is the model tolerance: it decides
@@ -341,6 +398,32 @@ impl Surface {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn arcs_through_three_points_and_by_bulge() {
+        use std::f64::consts::PI;
+        let (a, m, b) = (DVec3::X, DVec3::Y, -DVec3::X);
+        let s = arc_through(a, m, b, 1e-9).expect("an arc");
+        assert!(s.centre.length() < 1e-12 && (s.radius - 1.0).abs() < 1e-12);
+        assert!(s.normal.distance(DVec3::Z) < 1e-12);
+        assert!((s.sweep - PI).abs() < 1e-12);
+        // The other way round goes about -Z, still through m.
+        let s = arc_through(b, m, a, 1e-9).expect("an arc");
+        assert!(s.normal.distance(-DVec3::Z) < 1e-12 && (s.sweep - PI).abs() < 1e-12);
+        // Through a point on the far side: the long way, 3/2 of a half turn.
+        let s = arc_through(a, -DVec3::Y, DVec3::Y, 1e-9).expect("an arc");
+        assert!(s.normal.distance(-DVec3::Z) < 1e-12);
+        assert!((s.sweep - 1.5 * PI).abs() < 1e-12, "{}", s.sweep);
+        assert!(arc_through(a, DVec3::ZERO, b, 1e-9).is_none(), "in a line");
+        // A bulge of half the chord is a half circle.
+        let s = arc_bulge(a, b, DVec3::Z, -1.0, 1e-9).expect("an arc");
+        assert!(s.centre.length() < 1e-12 && (s.sweep - PI).abs() < 1e-12);
+        let s = arc_bulge(DVec3::ZERO, 2.0 * DVec3::X, DVec3::Z, 0.5, 1e-9).expect("an arc");
+        assert!((s.radius - 1.25).abs() < 1e-12, "{}", s.radius);
+        assert_eq!(bulge_for_radius(2.0, 1.25), Some(0.5));
+        assert_eq!(bulge_for_radius(2.0, 0.5), None);
+    }
+
     use super::*;
     use prism_math::DQuat;
     use std::f64::consts::PI;

@@ -54,8 +54,9 @@ pub const ARC_FACE_WOULD_FOLD: &str =
 
 /// Whether moving `vs` by `m` keeps every arc an arc and its faces flat:
 /// each arc with an end in `vs` has both there, `m` scales evenly if any
-/// does, and a face with arcs that moves only in part stays in its plane
-/// (such a face cannot be folded into flat pieces yet).
+/// does, and a face with arcs (or with holes and an arc's end) that moves
+/// only in part stays in its plane (such a face cannot be folded into flat
+/// pieces yet).
 pub fn arcs_follow(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> bool {
     arcs_refusal(model, vs, m).is_none()
 }
@@ -71,6 +72,13 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
         return Some(ARC_WOULD_BEND);
     }
     let tol = model.tol();
+    // Arc ends: a face with holes that bends is flattened by moving its
+    // points (`settle_face`), which would take these off their circles.
+    let arc_ends: BTreeSet<VertexId> = model
+        .edges()
+        .filter(|(_, e)| e.curve.is_arc())
+        .flat_map(|(_, e)| [e.a, e.b])
+        .collect();
     let flat = model.faces().all(|(id, f)| {
         let moved: Vec<VertexId> = f
             .loops()
@@ -78,7 +86,9 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
             .copied()
             .filter(|v| vs.contains(v))
             .collect();
-        !model.face_has_arcs(id)
+        let touches_arcs = model.face_has_arcs(id)
+            || (!f.holes.is_empty() && f.loops().flatten().any(|v| arc_ends.contains(v)));
+        !touches_arcs
             || moved.is_empty()
             || moved.len() == f.loops().flatten().count()
             || moved.iter().all(|v| {

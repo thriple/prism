@@ -39,6 +39,17 @@ pub enum Command {
         points: Vec<DVec3>,
     },
     /// An exact circle: two half arcs with one curve id (Exact Curves).
+    /// An arc (the Arc tools): from `start`, counter-clockwise about
+    /// `normal` by `sweep` radians, on the circle about `centre`. A pie also
+    /// has the two radius lines.
+    Arc {
+        centre: DVec3,
+        normal: DVec3,
+        radius: f64,
+        start: DVec3,
+        sweep: f64,
+        pie: bool,
+    },
     /// A polygon through `points` (the Polygon tool), its sides one curve.
     Polygon {
         points: Vec<DVec3>,
@@ -295,6 +306,8 @@ impl Command {
             Command::Loop { .. } => "Shape",
             Command::Circle { .. } => "Circle",
             Command::Polygon { .. } => "Polygon",
+            Command::Arc { pie: true, .. } => "Pie",
+            Command::Arc { .. } => "Arc",
             Command::Erase { .. } => "Erase",
             Command::PushPull { .. } => "Push/Pull",
             Command::Translate { .. } => "Move",
@@ -383,6 +396,25 @@ impl Command {
             Command::Polygon { points } => Command::Polygon {
                 points: points.iter().map(|v| p(*v)).collect(),
             },
+            Command::Arc {
+                centre,
+                normal,
+                radius,
+                start,
+                sweep,
+                pie,
+            } => {
+                // A mirror turns the arc the other way about its normal.
+                let flip = to_local.matrix3.determinant().signum();
+                Command::Arc {
+                    centre: p(*centre),
+                    normal: (dir(*normal) * flip).normalize_or_zero(),
+                    radius: dir(Plane::new(*centre, *normal).frame().u * *radius).length(),
+                    start: p(*start),
+                    sweep: *sweep,
+                    pie: *pie,
+                }
+            }
             Command::PushPull {
                 face,
                 distance,
@@ -589,6 +621,20 @@ impl Command {
                 prism_ops::add_circle(m, *centre, *normal, *radius);
             }
             Command::Polygon { points } => prism_ops::add_polygon(m, points),
+            Command::Arc {
+                centre,
+                normal,
+                radius,
+                start,
+                sweep,
+                pie,
+            } => {
+                if *pie {
+                    prism_ops::add_pie(m, *centre, *normal, *radius, *start, *sweep);
+                } else {
+                    prism_ops::add_arc(m, *centre, *normal, *radius, *start, *sweep);
+                }
+            }
             Command::Erase { selection } => prism_ops::remove(m, selection),
             Command::PushPull {
                 face,

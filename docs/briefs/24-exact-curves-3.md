@@ -5,7 +5,7 @@
 **Read first:** brief 23 and its NOTES sections; `docs/research/exact-curves.md`; PLAN 1.1 point 10, the Arc row of the tool table, and "The arc tool turns cyan when the arc is tangent and magenta for a half-circle"; DECISIONS #20 and #32.
 
 ## Steps (each one is tested, documented and pushed on its own)
-- **3a. The Arc tools:** 2-point, 3-point, centre and pie.
+- **3a. The Arc tools:** 2-point, 3-point, centre and pie. *(Built.)*
 - **3b. Tangent inference:** tangent guides from arcs, and arcs that continue tangent from an edge.
 - **3c. Offset with arcs:** Offset of faces whose loops have arcs.
 - **3d. Corner fillets:** double-click a corner with the Arc tool.

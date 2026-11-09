@@ -17,6 +17,9 @@ enum Op {
     /// A circle about a grid point, with a radius of 1 to 3, crossing the
     /// rectangles, lines and other circles.
     Circle(i32, i32, i32),
+    /// An arc about a grid point (radius 1 to 3), starting at a multiple of
+    /// 45° and sweeping 1 to 15 eighths of a turn; a pie if the flag is set.
+    Arc(i32, i32, i32, i32, i32, bool),
 }
 
 fn rect() -> impl Strategy<Value = Op> {
@@ -27,6 +30,8 @@ fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         3 => rect(),
         1 => (0..10i32, 0..10i32, 1..4i32).prop_map(|(i, j, r)| Op::Circle(i, j, r)),
+        1 => (0..10i32, 0..10i32, 1..4i32, 0..8i32, 1..16i32, any::<bool>())
+            .prop_map(|(i, j, r, a, s, pie)| Op::Arc(i, j, r, a, s, pie)),
         1 => (0..10i32, 0..10i32, 0..10i32, 0..10i32).prop_filter("a line has length", |(a, b, c, d)| (a, b) != (c, d)).prop_map(|(a, b, c, d)| Op::Line(a, b, c, d)),
     ]
 }
@@ -51,6 +56,17 @@ fn apply(m: &mut Model, op: &Op, k: f64) {
         Op::Circle(i, j, r) => {
             let c = DVec3::new(f64::from(i), f64::from(j), 0.0) * k;
             prism_ops::add_circle(m, c, DVec3::Z, f64::from(r) * k);
+        }
+        Op::Arc(i, j, r, a, s, pie) => {
+            let c = DVec3::new(f64::from(i), f64::from(j), 0.0) * k;
+            let t = f64::from(a) * std::f64::consts::FRAC_PI_4;
+            let start = c + DVec3::new(t.cos(), t.sin(), 0.0) * f64::from(r) * k;
+            let sweep = f64::from(s) * std::f64::consts::FRAC_PI_4;
+            if pie {
+                prism_ops::add_pie(m, c, DVec3::Z, f64::from(r) * k, start, sweep);
+            } else {
+                prism_ops::add_arc(m, c, DVec3::Z, f64::from(r) * k, start, sweep);
+            }
         }
     }
 }
@@ -113,7 +129,7 @@ proptest! {
     #[test]
     fn area_is_conserved(rects in prop::collection::vec(rect(), 1..6)) {
         let m = build(&rects, 1.0);
-        let r: Vec<_> = rects.iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) | Op::Circle(..) => unreachable!() }).collect();
+        let r: Vec<_> = rects.iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) | Op::Circle(..) | Op::Arc(..) => unreachable!() }).collect();
         for &(x0, y0, x1, y1) in &r {
             for x in x0..x1 {
                 for y in y0..y1 {
@@ -130,7 +146,7 @@ proptest! {
     #[test]
     fn overlapping_rectangles_cover_exactly_their_union(a in rect(), b in rect()) {
         let m = build(&[a.clone(), b.clone()], 1.0);
-        let r: Vec<_> = [a, b].iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) | Op::Circle(..) => unreachable!() }).collect();
+        let r: Vec<_> = [a, b].iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) | Op::Circle(..) | Op::Arc(..) => unreachable!() }).collect();
         let total: f64 = m.faces().map(|(id, _)| m.face_area(id)).sum();
         prop_assert!((total - union_area(&r)).abs() < 1e-6, "faces cover {} but the rectangles cover {}", total, union_area(&r));
     }

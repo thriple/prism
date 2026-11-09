@@ -585,6 +585,63 @@ mod tests {
     }
 
     #[test]
+    fn use_tool_draws_each_kind_of_arc() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        for id in ["arc.2", "arc.3", "arc.c", "arc.p", "tool.arc"] {
+            assert!(
+                !h.chrome.enabled(id),
+                "{id} greyed until Exact Curves is done"
+            );
+        }
+        let steps = [
+            (
+                "arc.2",
+                json!([{"lock": "blue"}, {"click": [0, 0, 0]}, {"click": [1, 0, 0]}, {"move": [0.5, 0.2, 0]}, {"type": "0.5"}]),
+            ),
+            (
+                "arc.3",
+                json!([{"lock": "blue"}, {"click": [0, 1, 0]}, {"click": [0.5, 1.5, 0]}, {"click": [1, 1, 0]}]),
+            ),
+            (
+                "arc.c",
+                json!([{"lock": "blue"}, {"click": [-1, 0, 0]}, {"move": [-0.5, 0, 0]}, {"type": "0.5"}, {"move": [-1, 0.5, 0]}, {"type": "90"}]),
+            ),
+            (
+                "arc.p",
+                json!([{"lock": "blue"}, {"click": [-1, 1, 0]}, {"click": [-0.5, 1, 0]}, {"move": [-0.65, 1.35, 0]}, {"click": [-1, 1.5, 0]}]),
+            ),
+        ];
+        for (tool, s) in steps {
+            value(h.call("use_tool", &json!({"tool": tool, "steps": s})));
+        }
+        let g = value(h.call("get_geometry", &json!({})));
+        let arcs: Vec<&Value> = g["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e.get("arc").is_some())
+            .collect();
+        let has = |c: [f64; 3]| {
+            arcs.iter()
+                .any(|e| e["arc"]["centre"] == json!(c) && e["arc"]["radius"] == json!(0.5))
+        };
+        assert_eq!(arcs.len(), 4, "{g}");
+        assert!(has([0.5, 0.0, 0.0]), "the half circle: {g}");
+        assert!(has([0.5, 1.0, 0.0]), "through three points: {g}");
+        assert!(has([-1.0, 0.0, 0.0]), "by centre: {g}");
+        assert!(has([-1.0, 1.0, 0.0]), "the pie: {g}");
+        assert_eq!(g["faces_total"], 1, "the pie is a face");
+    }
+
+    #[test]
     fn geometry_lists_faces_up_to_a_limit() {
         let (mut chrome, mut viewport, mut files) = parts(prism_tools::scenes::cube());
         let (mut tabs, mut tool) = (Vec::new(), "tool.select");

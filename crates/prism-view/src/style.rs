@@ -127,6 +127,8 @@ pub struct Feedback {
     pub free: Rgba,
     /// Parallel guides and woken edges.
     pub parallel: Rgba,
+    /// An arc preview that is a half circle.
+    pub half_circle: Rgba,
     /// Woken points' diamonds.
     pub woken: Rgba,
     pub glyph_size: f32,
@@ -169,6 +171,7 @@ impl Default for Feedback {
             guide_cross: Rgba::rgb(0xb2, 0x1f, 0xc2),
             free: Rgba::rgb(0x6b, 0x72, 0x80),
             parallel: Rgba::rgb(0xb2, 0x1f, 0xc2),
+            half_circle: Rgba::rgb(0xd1, 0x2a, 0xb0),
             woken: Rgba::rgb(0x3d, 0x40, 0x46),
             glyph_size: 6.0,
             woken_size: 7.0,

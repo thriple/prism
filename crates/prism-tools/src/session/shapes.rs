@@ -9,14 +9,22 @@ use prism_math::{DVec2, DVec3, Plane};
 use prism_view::View;
 use prism_view::overlay::{Label, Line, Overlay};
 
-use super::{Session, rect_point};
+use super::{Session, plane_point};
 
 pub const CIRCLE: &str = "tool.circle";
 pub const POLYGON: &str = "tool.polygon";
 
 /// Built, but greyed in menus, toolbars and the dock until Exact Curves is
 /// done (owner, 2026-11-09). Only MCP `use_tool` reaches them.
-pub const GREYED_TOOLS: [&str; 2] = [CIRCLE, POLYGON];
+pub const GREYED_TOOLS: [&str; 7] = [
+    CIRCLE,
+    POLYGON,
+    super::arcs::ARC,
+    super::arcs::ARC2,
+    super::arcs::ARC3,
+    super::arcs::ARC_CENTRE,
+    super::arcs::PIE,
+];
 
 /// A polygon's sides when none were typed.
 pub const DEFAULT_SIDES: u32 = 6;
@@ -107,7 +115,7 @@ impl Session {
         let (Some(op), Some(i)) = (&mut self.shape, &self.inference) else {
             return;
         };
-        op.at = rect_point(&self.scene, view, s, i, op.centre, op.normal);
+        op.at = plane_point(&self.scene, view, s, i, op.centre, op.normal);
     }
 
     fn tiny_at(&self, p: DVec3) -> f64 {

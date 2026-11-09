@@ -25,12 +25,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::select::box_select;
 
+mod arcs;
 mod construct;
 mod edit;
 mod groups;
 mod health;
 mod shapes;
 use crate::units::NumberFormat;
+pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
@@ -277,6 +279,8 @@ pub struct Session {
     /// The circle or polygon being drawn, the last radius, and the
     /// polygon's side count.
     shape: Option<shapes::ShapeOp>,
+    /// The arc being drawn (the Arc tools).
+    arc: Option<arcs::ArcOp>,
     shape_radius: Option<f64>,
     sides: u32,
     last_op: Option<LastOp>,
@@ -383,6 +387,7 @@ impl Session {
             rect: None,
             rect_memory: None,
             shape: None,
+            arc: None,
             shape_radius: None,
             sides: shapes::DEFAULT_SIDES,
             last_op: None,
@@ -477,6 +482,7 @@ impl Session {
         self.line_start.is_some()
             || self.rect.is_some()
             || self.shape.is_some()
+            || self.arc.is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
     }
@@ -528,6 +534,7 @@ impl Session {
         self.tool == LINE
             || self.tool == RECT
             || shapes::is_shape(&self.tool)
+            || arcs::is_arc(&self.tool)
             || matches!(
                 self.tool.as_str(),
                 PUSH | MOVE | ROTATE | SCALE | OFFSET | TAPE | PROTRACTOR
@@ -540,6 +547,8 @@ impl Session {
         let (label, value) = if let Some((l, v)) = self.edit_measurement() {
             (l, v)
         } else if let Some((l, v)) = self.shape_measurement() {
+            (l, v)
+        } else if let Some((l, v)) = self.arc_measurement() {
             (l, v)
         } else if let (Some(start), Some(i)) = (self.line_start, &self.inference) {
             ("Length", nf.show(start.distance(i.point)))
@@ -579,6 +588,9 @@ impl Session {
             return h;
         }
         if let Some(h) = self.shape_hint() {
+            return h;
+        }
+        if let Some(h) = self.arc_hint() {
             return h;
         }
         match self.tool.as_str() {
@@ -776,6 +788,7 @@ impl Session {
         self.line_start = None;
         self.rect = None;
         self.shape = None;
+        self.arc = None;
         self.boxing = None;
         self.typed.clear();
         self.lock = Lock::None;
@@ -1111,6 +1124,7 @@ impl Session {
         self.tool == LINE
             || self.tool == RECT
             || shapes::is_shape(&self.tool)
+            || arcs::is_arc(&self.tool)
             || self.edit_wants_inference()
     }
 
@@ -1127,6 +1141,11 @@ impl Session {
             },
             CIRCLE | POLYGON => Context {
                 start: self.shape.map(|r| r.centre),
+                no_lock: true,
+                ..Default::default()
+            },
+            t if arcs::is_arc(t) => Context {
+                start: self.arc.as_ref().and_then(|a| a.pts.last().copied()),
                 no_lock: true,
                 ..Default::default()
             },
@@ -1231,6 +1250,7 @@ impl Session {
                 self.dirty = true;
             }
             self.shape_hover(s, &view);
+            self.arc_hover(s, &view);
             if is_edit(&self.tool) {
                 self.edit_hover(s, &view);
             }
@@ -1309,6 +1329,7 @@ impl Session {
                     let n = self.clicks.press(self.time, s);
                     self.shape_press(s, n);
                 }
+                t if arcs::is_arc(t) => self.arc_press(s),
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
                     self.update_hover(s);
@@ -1636,7 +1657,7 @@ impl Session {
             self.edit_enter(&text);
             return;
         }
-        if self.shape_enter(&text) {
+        if self.shape_enter(&text) || self.arc_enter(&text) {
             return;
         }
         if !text.is_empty() && self.edit_retype(&text) {
@@ -1854,6 +1875,7 @@ impl Session {
             });
         }
         self.shape_overlay(&mut o);
+        self.arc_overlay(&mut o);
         // The snap: its target, glyph and label.
         let glyph_color = match i.kind {
             Kind::Endpoint => fb.endpoint,
@@ -1977,6 +1999,26 @@ pub fn rect_basis(n: DVec3) -> (DVec3, DVec3) {
 
 /// Where the rectangle's far corner goes: a snapped point projected onto
 /// its plane, otherwise the cursor's ray meeting the plane.
+/// [`rect_point`] for tools drawn on a plane through `start` with normal
+/// `n`, ignoring guides along the normal (on the plane each is one point).
+fn plane_point(
+    scene: &Scene,
+    view: &View,
+    s: DVec2,
+    i: &Inference,
+    start: DVec3,
+    n: DVec3,
+) -> DVec3 {
+    let along_normal =
+        i.kind == Kind::Guide && i.guides.first().is_some_and(|g| g.dir.dot(n).abs() > 0.99);
+    if along_normal {
+        let mut free = i.clone();
+        free.kind = Kind::Free;
+        return rect_point(scene, view, s, &free, start, n);
+    }
+    rect_point(scene, view, s, i, start, n)
+}
+
 fn rect_point(
     scene: &Scene,
     view: &View,
