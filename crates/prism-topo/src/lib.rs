@@ -598,7 +598,29 @@ impl Model {
     /// Give each loop of `face` its edges: an edge it already names that
     /// joins the same two vertices is kept, else the edge between them.
     fn link(&self, face: &mut Face) {
-        let old = std::mem::take(&mut face.edges);
+        let mut old = std::mem::take(&mut face.edges);
+        // A point repeated next to itself (a loop closed back onto its
+        // start) names no edge: drop the repeat, and the side it made.
+        let mut drop_repeats = |k: usize, l: &mut Vec<VertexId>| {
+            let mut i = 0;
+            while l.len() > 1 && i < l.len() {
+                let j = (i + 1) % l.len();
+                if l[i] == l[j] {
+                    l.remove(j);
+                    if let Some(le) = old.get_mut(k)
+                        && i < le.len()
+                    {
+                        le.remove(i);
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+        };
+        drop_repeats(0, &mut face.outer);
+        for (k, h) in face.holes.iter_mut().enumerate() {
+            drop_repeats(k + 1, h);
+        }
         let named: BTreeMap<(VertexId, VertexId), EdgeId> = old
             .iter()
             .flatten()

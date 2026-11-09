@@ -1705,3 +1705,26 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   edge, each refusal, the default size, a property test of random rounds
   on random boxes (3000 cases run once), undo and redo, the session tool
   (clicks, typing, Ctrl, a refused size), MCP.
+
+## Fixes from the undo property test (2026-11-09, after 5a)
+
+- **macOS CI failed** on a random sequence: a pie, two offsets, an array.
+  The second offset drew an arc 2⁻¹⁸ m off the pie's own circle (its
+  validity check only looks at the face's own loops); the array made the
+  model bigger, so its relative tolerance grew past that gap, and the
+  coplanar rule merged the two arcs' ends, leaving one off its circle.
+  Fix: an arc drawn within ten tolerances of an existing circle (same
+  centre and axis) lands on it exactly, as points snap to vertices.
+- **Loops closed back onto their start** (found at 3000 cases): rebuilding
+  a plane after a rotate gave a loop whose last point repeated its first,
+  naming an edge from a point to itself. A face's loops now drop a point
+  repeated next to itself when linked.
+- **Still open (older, not fixed): Move of one corner of a face with a
+  hole.** Moving the outer square's corner up refits that face's plane
+  and moves the points of its hole, which a neighbouring face shares, so
+  that face (the ring inside, whose own hole stays) is left not planar;
+  later edits then build odd faces from it (a duplicate face after a
+  rotate, arcs off their circles). The undo property test only checks
+  bookkeeping, so it finds this now and then (about 1 in 1000 cases),
+  and CI can fail on it at random. It needs its own fix: Move should
+  fold, or move the shared hole's neighbour with it, or refuse.

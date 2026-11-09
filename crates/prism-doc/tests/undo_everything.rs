@@ -422,3 +422,40 @@ fn rounding_edges_undoes_exactly() {
     d.redo();
     assert_eq!(d.model().to_json(), after);
 }
+
+/// Found by CI on macOS: a pie offset twice, then arrayed. The second
+/// offset drew an arc a few micrometres off the pie's own circle; once the
+/// array made the model (and its tolerance) bigger, the coplanar rule
+/// merged their ends and left an arc's end off its circle. An arc drawn
+/// that close to an existing circle now lands on it.
+#[test]
+fn a_pie_offset_twice_then_arrayed_keeps_its_arcs_whole() {
+    let mut d = setup();
+    for p in [3usize, 13, 14, 11] {
+        let options = every_kind(&d);
+        if let Some(c) = options.get(p % options.len()) {
+            let name = c.name();
+            d.run(c.clone());
+            let problems = d.model().bookkeeping_problems();
+            assert!(problems.is_empty(), "{name}: {problems:?}");
+        }
+    }
+}
+
+/// Found at 3000 cases: an offset, one corner moved up, a rectangle, then
+/// everything rotated. Rebuilding a plane closed two loops back onto
+/// their first point, which named an edge from a point to itself. A face's
+/// loops now drop a point repeated next to itself.
+#[test]
+fn a_loop_closed_back_onto_its_start_names_no_empty_edge() {
+    let mut d = setup();
+    for p in [12usize, 9, 1, 15] {
+        let options = every_kind(&d);
+        if let Some(c) = options.get(p % options.len()) {
+            let name = c.name();
+            d.run(c.clone());
+            let problems = d.model().bookkeeping_problems();
+            assert!(problems.is_empty(), "{name}: {problems:?}");
+        }
+    }
+}

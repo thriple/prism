@@ -351,6 +351,29 @@ fn add_arc_from(
         return Added::default();
     }
     let full = sweep >= TAU;
+    // Almost on an existing arc's circle (same centre and axis, radius
+    // within ten tolerances, a near miss): on it exactly, as a point near
+    // a vertex lands on it. Otherwise the two would lie a hair apart, and
+    // merge badly once the model grows and its tolerance with it.
+    let (centre, radius) = {
+        let near = tol_with(model, &[centre]).dist * 10.0;
+        model
+            .edges()
+            .find_map(|(_, e)| match e.curve {
+                Curve::Arc {
+                    centre: c,
+                    axis,
+                    radius: r,
+                } if c.distance(centre) < near
+                    && 1.0 - axis.dot(n).abs() < 1e-12
+                    && (r - radius).abs() < near =>
+                {
+                    Some((c, r))
+                }
+                _ => None,
+            })
+            .unwrap_or((centre, radius))
+    };
     let plane = Plane::new(centre, n);
     let v = n.cross(u);
     let at = |t: f64| centre + (u * t.cos() + v * t.sin()) * radius;
