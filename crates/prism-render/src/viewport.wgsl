@@ -44,6 +44,9 @@ struct Draw {
 @group(1) @binding(0) var<uniform> d: Draw;
 // Lines only: which face is nearest at each pixel, and its depth.
 @group(2) @binding(0) var ids: texture_2d<u32>;
+// Lines only: that face's plane, as bits: normal xyz and offset, relative
+// to the eye.
+@group(2) @binding(1) var planes: texture_2d<u32>;
 
 
 fn rel(hi: vec3<f32>, lo: vec3<f32>) -> vec3<f32> {
@@ -103,12 +106,15 @@ struct FaceOut {
     @location(0) normal: vec3<f32>,
     @location(1) @interpolate(flat) face: u32,
     @location(2) @interpolate(flat) faded: u32,
+    // The point relative to the eye (for the face's plane in the id pass).
+    @location(3) r: vec3<f32>,
 };
 
 @vertex
 fn face_vs(v: FaceIn) -> FaceOut {
     var o: FaceOut;
-    o.pos = g.view_proj * vec4<f32>(rel(v.hi, v.lo), 1.0);
+    o.r = rel(v.hi, v.lo);
+    o.pos = g.view_proj * vec4<f32>(o.r, 1.0);
     o.normal = v.normal;
     o.face = v.face;
     o.faded = v.faded;
@@ -134,10 +140,20 @@ fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4
 }
 
 // A second pass over the faces, with the depth test "equal", writes which
-// face won each pixel and its depth. The lines test themselves against it.
+// face won each pixel, its depth and its plane. The lines test themselves
+// against it.
+struct IdOut {
+    @location(0) id: vec2<u32>,
+    @location(1) plane: vec4<u32>,
+};
+
 @fragment
-fn id_fs(in: FaceOut) -> @location(0) vec2<u32> {
-    return vec2<u32>(in.face, bitcast<u32>(in.pos.z));
+fn id_fs(in: FaceOut) -> IdOut {
+    var o: IdOut;
+    o.id = vec2<u32>(in.face, bitcast<u32>(in.pos.z));
+    let n = normalize(in.normal);
+    o.plane = vec4<u32>(bitcast<vec3<u32>>(n), bitcast<u32>(dot(n, in.r)));
+    return o;
 }
 
 // A tint over faces already drawn (hover, selection): plain or stipple.
@@ -169,6 +185,7 @@ fn shadow_vs(v: FaceIn) -> FaceOut {
     var o: FaceOut;
     o.pos = g.view_proj * vec4<f32>(r, 1.0);
     o.normal = v.normal;
+    o.r = r;
     return o;
 }
 
@@ -193,7 +210,7 @@ struct LineIn {
     @location(7) shape: vec3<f32>,
     @location(8) flags: u32,
     // The faces this edge belongs to (numbered from 1; 0 for none).
-    @location(9) faces: vec4<u32>,
+    @location(9) faces: vec2<u32>,
 };
 
 // Flags.
@@ -210,6 +227,10 @@ const NO_TEST: u32 = 128u;
 const MARK: u32 = 256u;
 // A line may be this fraction of its depth behind a face and still show.
 const DEPTH_SLACK: f32 = 5e-7;
+// A line lies in a face's plane when both its ends are within this
+// fraction of their distance from the eye (2 mm at 1 km; f32 rounding is
+// about 100 times smaller).
+const PLANE_SLACK: f32 = 2e-6;
 
 struct LineOut {
     @builtin(position) pos: vec4<f32>,
@@ -218,12 +239,15 @@ struct LineOut {
     @location(1) geo: vec4<f32>,
     // dash px, gap px
     @location(2) dash: vec2<f32>,
-    @location(3) @interpolate(flat) faces: vec4<u32>,
+    @location(3) @interpolate(flat) faces: vec2<u32>,
     @location(4) @interpolate(flat) flags: u32,
     // Depth at each end.
     @location(5) @interpolate(flat) ends: vec2<f32>,
     // The line's direction on screen.
     @location(6) @interpolate(flat) dir: vec2<f32>,
+    // Its ends relative to the eye.
+    @location(7) @interpolate(flat) ra: vec3<f32>,
+    @location(8) @interpolate(flat) rb: vec3<f32>,
 };
 
 fn to_px(c: vec4<f32>) -> vec2<f32> {
@@ -236,6 +260,8 @@ fn line_vs(@builtin(vertex_index) vi: u32, l: LineIn) -> LineOut {
     var o: LineOut;
     let ra = rel(l.a_hi, l.a_lo);
     let rb = rel(l.b_hi, l.b_lo);
+    o.ra = ra;
+    o.rb = rb;
     var ca = g.view_proj * vec4<f32>(ra, 1.0);
     var cb = g.view_proj * vec4<f32>(rb, 1.0);
     // Clip at the near plane (clip w is the distance along the view).
@@ -379,7 +405,18 @@ fn line_visible(in: LineOut) -> bool {
     let k = vec2<i32>(floor(pc));
     let t = face_at(k);
     let face = t.x;
-    if (face == 0u || any(vec4<u32>(face) == in.faces)) {
+    if (face == 0u || face == in.faces.x || face == in.faces.y) {
+        return true;
+    }
+    // A face never hides a line lying in its own plane, however many faces
+    // share the line (owner feedback, 2026-11-09). Not the ground grid and
+    // axes: they sit behind faces lying on the ground.
+    let pl = textureLoad(planes, clamp(k, vec2<i32>(0), vec2<i32>(textureDimensions(planes)) - 1), 0);
+    let n = bitcast<vec3<f32>>(pl.xyz);
+    let off = bitcast<f32>(pl.w);
+    if ((in.flags & PUSH_BACK) == 0u
+        && abs(dot(n, in.ra) - off) <= PLANE_SLACK * length(in.ra)
+        && abs(dot(n, in.rb) - off) <= PLANE_SLACK * length(in.rb)) {
         return true;
     }
     if ((in.flags & POINT) != 0u) {

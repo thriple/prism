@@ -14,9 +14,6 @@ use prism_topo::{EdgeId, FaceId, Guide, GuideId, Model, VertexId};
 
 use crate::tess::triangulate;
 
-/// How many of an edge's faces it keeps: none of them hides the edge.
-/// Two for a plain edge; four where two solids touch along a corner line.
-pub const EDGE_FACES: usize = 4;
 /// One face, ready for picking and drawing.
 #[derive(Clone, Debug)]
 pub struct SceneFace {
@@ -112,8 +109,8 @@ pub struct SceneEdge {
     pub b: DVec3,
     /// The first two faces' normals; `None` where there are fewer faces.
     pub normals: [Option<DVec3>; 2],
-    /// The first faces that use it (up to [`EDGE_FACES`]).
-    pub faces: [Option<FaceId>; EDGE_FACES],
+    /// The first two faces that use it.
+    pub faces: [Option<FaceId>; 2],
     /// Drawn faded: outside the open group.
     pub faded: bool,
 }
@@ -249,7 +246,7 @@ impl Scene {
                 a: model.vertex(e.a),
                 b: model.vertex(e.b),
                 normals: [n(0), n(1)],
-                faces: std::array::from_fn(fid),
+                faces: [fid(0), fid(1)],
                 faded: false,
             });
         }

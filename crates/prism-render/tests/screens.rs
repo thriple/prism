@@ -661,3 +661,57 @@ fn an_edge_shared_by_two_touching_boxes_is_drawn_whole() {
         );
     }
 }
+
+/// A face never hides a line lying in its own plane, at any angle: lines
+/// drawn on a big floor seen from just above it are whole, not broken up
+/// (the general rule behind the owner's z-fighting corner line, 2026-11-09).
+/// The ground grid still hides under the floor.
+#[test]
+fn lines_on_a_face_seen_edge_on_are_drawn_whole() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let style = Style::default();
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, -200.0, -200.0, 200.0, 200.0, 0.0);
+    let cam = Camera {
+        eye: DVec3::new(0.0, -10.0, 0.3),
+        target: DVec3::new(0.0, 40.0, 0.0),
+    };
+    let scene = prism_view::Scene::build(&m);
+    g.renderer.resize(&g.device, 640, 400);
+    g.renderer.set_scene(&g.device, &scene, &style);
+    g.renderer
+        .set_highlight(&g.device, &scene, &Highlight::default(), &style);
+    let line = |x: f64| prism_view::overlay::Line {
+        a: DVec3::new(x, 0.0, 0.0),
+        b: DVec3::new(x, 150.0, 0.0),
+        color: style.edge,
+        width: 2.0,
+        dash: [0.0, 0.0],
+    };
+    let o = prism_view::overlay::Overlay {
+        tested: vec![line(-3.0), line(3.0)],
+        ..Default::default()
+    };
+    g.renderer.set_overlay(&g.device, &o);
+    let img = g.draw(cam, 640, 400, 1.0, &style, scene.bounds);
+    img.save("lines-on-floor");
+    for x in [-3.0, 3.0] {
+        let mut missing = Vec::new();
+        for k in 0..30 {
+            let y = 0.5 + f64::from(k) * 0.5;
+            let (px, py) = cam_px(&cam, DVec3::new(x, y, 0.0));
+            let drawn = (px.saturating_sub(1)..=px + 1)
+                .flat_map(|px| (py.saturating_sub(1)..=py + 1).map(move |py| (px, py)))
+                .any(|(px, py)| img.at(px, py)[0] < 120);
+            if !drawn {
+                missing.push(y);
+            }
+        }
+        assert!(missing.is_empty(), "line x = {x} broken at y = {missing:?}");
+    }
+    // The grid's own lines stay under the floor: away from the two lines,
+    // the floor in the foreground is plain.
+    let (px, py) = cam_px(&cam, DVec3::new(-1.5, 2.0, 0.0));
+    let floor = img.at(px, py);
+    assert!(floor[0] > 200, "the floor is plain there: {floor:?}");
+}

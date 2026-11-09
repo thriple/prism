@@ -35,6 +35,8 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// Where faces are drawn: the face's number (from 1) and its depth.
 pub const ID_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg32Uint;
+/// The nearest face's plane at each pixel, as bits (normal and offset).
+const PLANE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Uint;
 /// Back faces (seen from behind) are pushed back by a few float steps, so
 /// a front face always wins a tie with a back face along a shared edge.
 const BACK_BIAS_CONSTANT: i32 = -100;
@@ -92,7 +94,7 @@ pub struct LineInstance {
     /// Width, dash and gap, in points.
     shape: [f32; 3],
     flags: u32,
-    faces: [u32; prism_view::scene::EDGE_FACES],
+    faces: [u32; 2],
 }
 
 const HAS_N1: u32 = 1;
@@ -124,7 +126,7 @@ impl LineInstance {
             color: color.0,
             shape: [width, 0.0, 0.0],
             flags: 0,
-            faces: [0; prism_view::scene::EDGE_FACES],
+            faces: [0, 0],
         }
     }
 
@@ -189,7 +191,7 @@ pub fn view_proj(view: &View, near: f64) -> glam::DMat4 {
     proj * look
 }
 
-fn face_numbers<const N: usize>(scene: &Scene, faces: [Option<prism_topo::FaceId>; N]) -> [u32; N] {
+fn face_numbers(scene: &Scene, faces: [Option<prism_topo::FaceId>; 2]) -> [u32; 2] {
     faces.map(|f| {
         f.and_then(|f| scene.face_index.get(&f))
             .map_or(0, |i| *i as u32 + 1)
@@ -209,6 +211,7 @@ struct Target {
     color_view: wgpu::TextureView,
     ids: wgpu::Texture,
     ids_view: wgpu::TextureView,
+    planes_view: wgpu::TextureView,
     depth_view: wgpu::TextureView,
     ids_group: wgpu::BindGroup,
 }
@@ -374,8 +377,8 @@ impl Renderer {
             .collect();
         let ids_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("face ids"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
+            entries: &[0, 1].map(|binding| wgpu::BindGroupLayoutEntry {
+                binding,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Uint,
@@ -383,7 +386,7 @@ impl Renderer {
                     multisampled: false,
                 },
                 count: None,
-            }],
+            }),
         });
         let faces_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("viewport faces"),
@@ -407,7 +410,7 @@ impl Renderer {
             attributes: &wgpu::vertex_attr_array![
                 0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3,
                 4 => Float32x3, 5 => Float32x3, 6 => Unorm8x4, 7 => Float32x3, 8 => Uint32,
-                9 => Uint32x4
+                9 => Uint32x2
             ],
         };
         let tri_layout = wgpu::VertexBufferLayout {
@@ -440,16 +443,18 @@ impl Renderer {
                         compare: Option<wgpu::CompareFunction>,
                         write: bool,
                         bias: wgpu::DepthBiasState| {
-            let format = if fs == "id_fs" {
-                ID_FORMAT
-            } else {
-                COLOR_FORMAT
+            let target = |format| {
+                Some(wgpu::ColorTargetState {
+                    format,
+                    blend,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })
             };
-            let targets = [Some(wgpu::ColorTargetState {
-                format,
-                blend,
-                write_mask: wgpu::ColorWrites::ALL,
-            })];
+            let targets: Vec<_> = if fs == "id_fs" {
+                vec![target(ID_FORMAT), target(PLANE_FORMAT)]
+            } else {
+                vec![target(COLOR_FORMAT)]
+            };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(if compare.is_some() {
@@ -733,19 +738,39 @@ impl Renderer {
             view_formats: &[],
         });
         let ids_view = ids.create_view(&Default::default());
+        let planes_view = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("viewport face planes"),
+                size: extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: PLANE_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
         let ids_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("face ids"),
             layout: &self.ids_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&ids_view),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&ids_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&planes_view),
+                },
+            ],
         });
         self.target = Some(Target {
             size,
             color_view: color.create_view(&Default::default()),
             depth_view: depth.create_view(&Default::default()),
             ids_view,
+            planes_view,
             ids_group,
             ids,
             color,
@@ -1111,15 +1136,17 @@ impl Renderer {
         // Which face is in front at each pixel, for the lines.
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("viewport face ids"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target.ids_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &[&target.ids_view, &target.planes_view].map(|view| {
+                Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+            }),
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &target.depth_view,
                 depth_ops: Some(wgpu::Operations {

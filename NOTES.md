@@ -917,14 +917,19 @@ the export note (prism-ops).
 
 ## Owner feedback, 2026-11-09 (corner line, profiles)
 - **Shared corner line z-fought:** two boxes touching along a corner line
-  share one edge with four faces (two walls of each). The scene kept only
-  an edge's first two faces, and the renderer lets an edge show through
-  only its own faces, so the other two walls hid it in dashes on the
-  owner's GPU (not on Mesa here, where the depths come out exact). Edges
-  now keep up to four faces (`scene::EDGE_FACES`). The geometry was
-  already right: one shared line, split where one box rises above the
-  other (tests in `prism-view/tests/corner.rs`). Left over: an edge with
-  five or more faces can still be hidden by the extra ones.
+  share one edge with four faces (two walls of each). The renderer let an
+  edge show through only its first two faces, so the other two hid it in
+  dashes on the owner's GPU. A first fix kept four faces per edge; the
+  owner asked for a general rule (exploded rotated copies can put dozens
+  of faces on one line). Rule now: **a face never hides a line lying in
+  its own plane.** The face-id pass also writes each pixel's face plane
+  (normal and offset from the eye, as bits, in a second Rgba32Uint target),
+  and a line whose two ends are on that plane (within 2e-6 of their
+  distance) is shown. It also fixes lines on a face seen nearly edge on,
+  which broke up before. The ground grid and axes are left out (they sit
+  under faces on the ground). Lines behind a thin wall stay hidden. The
+  geometry was already right: one shared line, split where one box rises
+  above the other (`prism-view/tests/corner.rs`).
 - **Profile lines** are now spelled out in PLAN 1.14 and named in the View
   Settings chunk (next). They already work in the renderer, off by default
   (Help > debug panel, "Profile lines").

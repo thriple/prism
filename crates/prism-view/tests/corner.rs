@@ -4,7 +4,6 @@
 
 use prism_math::DVec3;
 use prism_topo::Model;
-use prism_view::Scene;
 
 /// Boxes 2 m wide, touching along the line x = y = 2; the second `h2` tall.
 fn touching(h2: f64) -> Model {
@@ -33,24 +32,12 @@ fn corner_edges(m: &Model) -> Vec<(f64, f64, usize)> {
     out
 }
 
-/// One shared corner line, and the scene keeps all four of its faces so
-/// none of them hides it (it z-fought on the owner's GPU).
+/// One shared corner line with four faces (the renderer draws it whole:
+/// see `lines_on_a_face_seen_edge_on_are_drawn_whole` in prism-render).
 #[test]
-fn the_shared_corner_line_keeps_all_its_faces() {
+fn touching_boxes_share_one_corner_line() {
     let m = touching(2.0);
     assert_eq!(corner_edges(&m), [(0.0, 2.0, 4)]);
-    let s = Scene::build(&m);
-    let e = s
-        .edges
-        .iter()
-        .find(|e| {
-            (e.a.x - 2.0).abs() < 1e-9
-                && (e.a.y - 2.0).abs() < 1e-9
-                && (e.b.x - 2.0).abs() < 1e-9
-                && (e.b.y - 2.0).abs() < 1e-9
-        })
-        .expect("corner edge");
-    assert_eq!(e.faces.iter().flatten().count(), 4);
 }
 
 /// When one box is taller, the corner line splits where the lower one
