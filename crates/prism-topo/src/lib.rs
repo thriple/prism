@@ -53,6 +53,17 @@ pub struct Edge {
     /// picked, moved and erased together.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub curve_id: Option<CurveId>,
+    /// Not drawn: a hidden line (Exact Curves 4c). The seams of a curved
+    /// surface are soft.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub soft: bool,
+    /// Shading runs smoothly across it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub smooth: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Edge {
@@ -405,6 +416,14 @@ impl Model {
         }
     }
 
+    /// Soften and smooth an edge, or not (Exact Curves 4c).
+    pub fn set_soft(&mut self, e: EdgeId, soft: bool, smooth: bool) {
+        if let Some(x) = self.edges.get_mut(&e) {
+            x.soft = soft;
+            x.smooth = smooth;
+        }
+    }
+
     /// Set the curve id of an edge (a polygon's straight edges share one).
     pub fn set_curve_id(&mut self, e: EdgeId, curve_id: Option<CurveId>) {
         if let Some(x) = self.edges.get_mut(&e) {
@@ -442,6 +461,8 @@ impl Model {
                 b,
                 curve,
                 curve_id,
+                soft: false,
+                smooth: false,
             },
         );
         id
@@ -512,6 +533,10 @@ impl Model {
             }
             (first, second)
         };
+        // Both halves keep the edge's look.
+        for h in [first, second] {
+            self.set_soft(h, e.soft, e.smooth);
+        }
         for face in self.faces.values_mut() {
             let Face {
                 outer,
@@ -846,7 +871,9 @@ impl Model {
                 let cid = e
                     .curve_id
                     .map(|c| *cmap.entry(c).or_insert_with(|| self.new_curve_id()));
-                emap.insert(old, self.push_edge(*a, *b, e.curve, cid));
+                let id = self.push_edge(*a, *b, e.curve, cid);
+                self.set_soft(id, e.soft, e.smooth);
+                emap.insert(old, id);
             }
         }
         let map = |l: &[VertexId]| l.iter().filter_map(|v| vmap.get(v).copied()).collect();

@@ -7,7 +7,7 @@
 ## Steps (each one is tested, documented and pushed on its own)
 - **4a. Curved surfaces in the core:** the cylinder surface; every planar-only operation works, refuses or skips. No visible change. *(Built.)*
 - **4b. Cylinders from Push/Pull:** pulling a face with arcs; shading and picking of cylinder faces. *(Built.)*
-- **4c. Soften and smooth:** edge flags, the drawing, the Eraser with Ctrl, Edit > Soften/Smooth, picking a whole smooth surface.
+- **4c. Soften and smooth:** edge flags, the drawing, the Eraser with Ctrl, Edit > Soften/Smooth, picking a whole smooth surface. *(Built.)*
 - **4d. Push/Pull on a cylinder:** a new radius.
 
 ## Requirements by step
@@ -37,7 +37,7 @@
 - **Eraser with Ctrl** softens and smooths instead of erasing; Ctrl+Shift unsoftens.
 - **Edit > Soften/Smooth** (`edit.soften`) softens and smooths the selected edges, or unsoftens them if all are soft already. It is active from this step (DECISIONS #20).
 - **Picking:** a click on a face of a smooth surface picks every face joined to it by soft edges, as one.
-- Files keep the flags.
+- Files keep the flags (geometry layout 4, schema 5).
 
 ### 4d. Push/Pull on a cylinder
 - Push/Pull on a cylinder face (or a whole smooth cylinder) changes its radius: the cylinder stays round, about the same axis, and the arcs of the caps follow with it.

@@ -347,7 +347,9 @@ pub struct Session {
 
 impl Session {
     pub fn new(doc: Document) -> Self {
-        let scene = Scene::build(doc.model());
+        let mut scene = Scene::build(doc.model());
+        // Soft edges are hidden until View > Hidden Geometry shows them.
+        scene.drop_soft();
         let mut s = Self {
             edit: None,
             preview: None,
@@ -1069,6 +1071,17 @@ impl Session {
                     self.run(Command::ReverseFaces { faces });
                 }
             }
+            // Edit > Soften/Smooth (Exact Curves 4c): the selected edges,
+            // or plain again if all of them are soft already.
+            "edit.soften" => {
+                let edges = self.selection.edges.clone();
+                if !edges.is_empty() {
+                    let m = self.work_model();
+                    let soft = !edges.iter().all(|e| m.edge(*e).is_some_and(|x| x.soft));
+                    self.cancel();
+                    self.run(Command::Soften { edges, soft });
+                }
+            }
             "edit.orient" => {
                 let faces =
                     (!self.selection.faces.is_empty()).then(|| self.selection.faces.clone());
@@ -1346,7 +1359,7 @@ impl Session {
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
                     self.update_hover(s);
-                    self.edit_press(s, n);
+                    self.edit_press(s, n, shift, ctrl);
                     self.refresh();
                 }
                 _ => {}

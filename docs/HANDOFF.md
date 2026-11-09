@@ -31,9 +31,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves: parts 1, 2 and 3 are built** (briefs 22, 23, 24; NOTES
   has a section per step). **Part 4 is under way** (brief 25, steps
-  4a–4d): 4a and 4b are built (`Surface::Cylinder`, `plane()` is an
-  `Option`; Push/Pull makes cylinders, shaded and picked). Next is 4c:
-  soften and smooth (edge flags, Eraser with Ctrl, Edit > Soften/Smooth).
+  4a–4d): 4a, 4b and 4c are built (`Surface::Cylinder`, `plane()` is an
+  `Option`; Push/Pull makes cylinders, shaded and picked; soft and smooth
+  edges, file schema 5). Next is 4d: Push/Pull on a cylinder face gives
+  it a new radius, the caps' arcs following.
   - The curve tools (`GREYED_TOOLS` in `prism-tools/src/session/shapes.rs`:
     Circle, Polygon, `tool.arc`, `arc.2`, `arc.3`, `arc.c`, `arc.p`) are
     built but greyed in menus; only MCP `use_tool` reaches them.

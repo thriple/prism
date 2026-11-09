@@ -286,3 +286,16 @@ fn cylinders_round_trip_exactly() {
         2
     );
 }
+
+/// Soft and smooth edges are kept (Exact Curves 4c).
+#[test]
+fn soft_edges_round_trip() {
+    let mut m = Model::new();
+    prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    let f = m.faces().next().map(|(id, _)| id).expect("a disc");
+    prism_ops::push_pull(&mut m, f, 1.0, false);
+    assert_eq!(m.edges().filter(|(_, e)| e.soft && e.smooth).count(), 2);
+    let c = Contents::with_model(m.clone(), Settings::default());
+    let back = read(&write(&c, "test")).expect("opens");
+    assert_eq!(back.model().to_json(), m.to_json());
+}

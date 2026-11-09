@@ -84,6 +84,9 @@ pub(super) enum EditOp {
     Erase {
         edges: BTreeSet<EdgeId>,
         guides: BTreeSet<GuideId>,
+        /// Ctrl: soften the edges instead (true); Ctrl+Shift: unsoften
+        /// them (false). Exact Curves 4c.
+        soften: Option<bool>,
     },
     Offset {
         face: FaceId,
@@ -275,7 +278,13 @@ impl Session {
                     Some(Hit::Edge(e)) => self.work_model().curve_edges(e),
                     _ => Vec::new(),
                 };
-                if let Some(EditOp::Erase { edges, guides }) = &mut self.edit {
+                if let Some(EditOp::Erase {
+                    edges,
+                    guides,
+                    soften,
+                }) = &mut self.edit
+                {
+                    let g = if soften.is_some() { None } else { g };
                     let mut more = false;
                     for e in curve {
                         more |= edges.insert(e);
@@ -677,7 +686,7 @@ impl Session {
     }
 
     /// A left press with an edit tool.
-    pub(super) fn edit_press(&mut self, s: DVec2, n_clicks: u32) {
+    pub(super) fn edit_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
         match self.tool.as_str() {
             PUSH => self.push_press(s, n_clicks),
             ERASE => {
@@ -685,8 +694,18 @@ impl Session {
                 if let Some(Hit::Edge(e)) = self.hover.map(|p| p.hit) {
                     edges.extend(self.work_model().curve_edges(e));
                 }
-                let guides = self.hover_guide.into_iter().collect();
-                self.edit = Some(EditOp::Erase { edges, guides });
+                let soften = ctrl.then_some(!shift);
+                // Softening leaves guides alone.
+                let guides = if soften.is_some() {
+                    BTreeSet::new()
+                } else {
+                    self.hover_guide.into_iter().collect()
+                };
+                self.edit = Some(EditOp::Erase {
+                    edges,
+                    guides,
+                    soften,
+                });
                 self.overlay_dirty = true;
             }
             OFFSET => self.offset_press(s, n_clicks),
@@ -702,15 +721,29 @@ impl Session {
     pub(super) fn edit_release(&mut self, s: DVec2) {
         let view = self.view();
         match &mut self.edit {
-            Some(EditOp::Erase { edges, guides }) => {
+            Some(EditOp::Erase {
+                edges,
+                guides,
+                soften,
+            }) => {
+                let soften = *soften;
                 let selection = Selection {
                     edges: std::mem::take(edges),
                     guides: std::mem::take(guides),
                     ..Default::default()
                 };
                 self.edit = None;
-                if !selection.is_empty() {
-                    self.run(Command::Erase { selection });
+                match soften {
+                    Some(soft) if !selection.edges.is_empty() => {
+                        self.run(Command::Soften {
+                            edges: selection.edges,
+                            soft,
+                        });
+                    }
+                    None if !selection.is_empty() => {
+                        self.run(Command::Erase { selection });
+                    }
+                    _ => {}
                 }
                 self.overlay_dirty = true;
             }
@@ -1242,7 +1275,9 @@ impl Session {
                 "Move to scale about the centre · click to finish · type a factor + Enter · Esc cancels"
             }
             (SCALE, None) => "Click a point to scale from (about the selection's centre)",
-            (ERASE, _) => "Click or drag over edges to erase them (with the faces they bound)",
+            (ERASE, _) => {
+                "Click or drag over edges to erase them (with the faces they bound) · Ctrl softens · Ctrl+Shift unsoftens"
+            }
             _ => return None,
         })
     }

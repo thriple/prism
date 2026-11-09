@@ -180,6 +180,9 @@ pub struct SceneEdge {
     pub faded: bool,
     /// A hidden object shown by View > Hidden Geometry: drawn dashed.
     pub ghost: bool,
+    /// A soft edge (Exact Curves 4c): drawn as a ghost, and left out of
+    /// the scene unless View > Hidden Geometry is on ([`Scene::drop_soft`]).
+    pub soft: bool,
 }
 
 impl SceneEdge {
@@ -355,11 +358,87 @@ impl Scene {
                 normals: [n(0), n(1)],
                 faces: [fid(0), fid(1)],
                 faded: false,
-                ghost: false,
+                ghost: e.soft,
+                soft: e.soft,
             });
         }
+        s.smooth_normals(model, &edge_faces);
         s.vertices = model.vertices().collect();
         s
+    }
+
+    /// Leave soft edges out: nothing draws, picks or snaps to them (View >
+    /// Hidden Geometry keeps them, drawn as ghosts).
+    pub fn drop_soft(&mut self) {
+        if !self.edges.iter().any(|e| e.soft) {
+            return;
+        }
+        self.edges.retain(|e| !e.soft);
+        self.edge_index = self
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.id, i))
+            .collect();
+    }
+
+    /// Shading runs across smooth edges: where faces meet along one, their
+    /// points there share one normal, the average of theirs.
+    fn smooth_normals(&mut self, model: &Model, edge_faces: &BTreeMap<EdgeId, Vec<FaceId>>) {
+        // Points of each face, by exact position.
+        let key = |p: DVec3| p.to_array().map(f64::to_bits);
+        let mut at: BTreeMap<(usize, [u64; 3]), Vec<usize>> = BTreeMap::new();
+        let mut parent: Vec<usize> = (0..self.mesh.positions.len()).collect();
+        fn root(parent: &mut [usize], i: usize) -> usize {
+            let mut r = i;
+            while parent[r] != r {
+                r = parent[r];
+            }
+            parent[i] = r;
+            r
+        }
+        let mut any = false;
+        for (id, e) in model.edges().filter(|(_, e)| e.smooth) {
+            let Some([fa, fb]) = edge_faces.get(&id).and_then(|f| {
+                let fa = *self.face_index.get(f.first()?)?;
+                let fb = *self.face_index.get(f.get(1)?)?;
+                Some([fa, fb])
+            }) else {
+                continue;
+            };
+            if at.is_empty() {
+                for (i, (p, f)) in self.mesh.positions.iter().zip(&self.mesh.faces).enumerate() {
+                    at.entry((*f as usize, key(*p))).or_default().push(i);
+                }
+            }
+            let (pa, pb) = (model.vertex(e.a), model.vertex(e.b));
+            let pts = std::iter::once(pa)
+                .chain(e.curve.inner_points(pa, pb))
+                .chain(std::iter::once(pb));
+            for p in pts {
+                let k = key(p);
+                let (Some(xs), Some(ys)) = (at.get(&(fa, k)), at.get(&(fb, k))) else {
+                    continue;
+                };
+                for &x in xs.iter().chain(ys) {
+                    let (rx, r0) = (root(&mut parent, x), root(&mut parent, xs[0]));
+                    parent[rx] = r0;
+                    any = true;
+                }
+            }
+        }
+        if !any {
+            return;
+        }
+        let mut sum: BTreeMap<usize, DVec3> = BTreeMap::new();
+        for i in 0..parent.len() {
+            let r = root(&mut parent, i);
+            *sum.entry(r).or_default() += self.mesh.normals[i];
+        }
+        for i in 0..parent.len() {
+            let r = root(&mut parent, i);
+            self.mesh.normals[i] = sum[&r].normalize_or_zero();
+        }
     }
 
     /// A curved face: its loops unrolled, triangulated so every triangle

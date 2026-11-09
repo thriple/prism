@@ -187,6 +187,9 @@ impl Session {
         for p in &pieces {
             scene.merge(p.scene.clone(), p.owner, p.faded);
         }
+        if !self.view.hidden {
+            scene.drop_soft();
+        }
         Built {
             scene,
             owners,
@@ -213,6 +216,9 @@ impl Session {
     pub(super) fn compose(&self, mut own: Scene) -> Scene {
         for p in &self.pieces {
             own.merge(p.scene.clone(), p.owner, p.faded);
+        }
+        if !self.view.hidden {
+            own.drop_soft();
         }
         own
     }

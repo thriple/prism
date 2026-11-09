@@ -11,8 +11,9 @@ use crate::FileError;
 
 /// The geometry layout this version writes. Layout 2 (Exact Curves part 1)
 /// adds each loop's edges; a layout 1 file finds them when read. Layout 3
-/// (part 2) adds arcs and curve ids.
-pub const VERSION: u32 = 3;
+/// (part 2) adds arcs and curve ids. Layout 4 (part 4) adds soft and
+/// smooth edges.
+pub const VERSION: u32 = 4;
 
 type P = [f64; 3];
 
@@ -104,6 +105,17 @@ struct EdgeV3 {
     curve_id: Option<u32>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct EdgeV4 {
+    id: u32,
+    a: u32,
+    b: u32,
+    curve: CurveV3,
+    curve_id: Option<u32>,
+    soft: bool,
+    smooth: bool,
+}
+
 /// Layout 3: as layout 2, and edges may be arcs and share curve ids.
 #[derive(Serialize, Deserialize)]
 struct GeometryV3 {
@@ -113,6 +125,42 @@ struct GeometryV3 {
     guides: Vec<(u32, GuideV1)>,
     /// Vertex, edge, face, guide and curve counters.
     counters: [u32; 5],
+}
+
+/// Layout 4: as layout 3, and edges may be soft and smooth (Exact Curves
+/// part 4). Cylinder faces came with layout 3 (old files have none).
+#[derive(Serialize, Deserialize)]
+struct GeometryV4 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV4>,
+    faces: Vec<FaceV2>,
+    guides: Vec<(u32, GuideV1)>,
+    /// Vertex, edge, face, guide and curve counters.
+    counters: [u32; 5],
+}
+
+impl From<GeometryV3> for GeometryV4 {
+    fn from(g: GeometryV3) -> GeometryV4 {
+        GeometryV4 {
+            vertices: g.vertices,
+            edges: g
+                .edges
+                .into_iter()
+                .map(|e| EdgeV4 {
+                    id: e.id,
+                    a: e.a,
+                    b: e.b,
+                    curve: e.curve,
+                    curve_id: e.curve_id,
+                    soft: false,
+                    smooth: false,
+                })
+                .collect(),
+            faces: g.faces,
+            guides: g.guides,
+            counters: g.counters,
+        }
+    }
 }
 
 impl From<GeometryV2> for GeometryV3 {
@@ -178,12 +226,12 @@ fn ids(l: &[VertexId]) -> Vec<u32> {
 
 pub fn encode(m: &Model) -> Vec<u8> {
     let parts = m.to_parts();
-    let g = GeometryV3 {
+    let g = GeometryV4 {
         vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
         edges: parts
             .edges
             .iter()
-            .map(|(id, e)| EdgeV3 {
+            .map(|(id, e)| EdgeV4 {
                 id: id.0,
                 a: e.a.0,
                 b: e.b.0,
@@ -200,6 +248,8 @@ pub fn encode(m: &Model) -> Vec<u8> {
                     },
                 },
                 curve_id: e.curve_id.map(|c| c.0),
+                soft: e.soft,
+                smooth: e.smooth,
             })
             .collect(),
         faces: parts
@@ -255,12 +305,16 @@ pub fn encode(m: &Model) -> Vec<u8> {
 
 pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
     let bad = |e: postcard::Error| FileError::Damaged(format!("geometry: {e}"));
-    let g: GeometryV3 = match version {
-        1 => GeometryV2::from(postcard::from_bytes::<GeometryV1>(bytes).map_err(bad)?).into(),
-        2 => postcard::from_bytes::<GeometryV2>(bytes)
+    let g: GeometryV4 = match version {
+        1 => GeometryV3::from(GeometryV2::from(
+            postcard::from_bytes::<GeometryV1>(bytes).map_err(bad)?,
+        ))
+        .into(),
+        2 => GeometryV3::from(postcard::from_bytes::<GeometryV2>(bytes).map_err(bad)?).into(),
+        3 => postcard::from_bytes::<GeometryV3>(bytes)
             .map_err(bad)?
             .into(),
-        3 => postcard::from_bytes(bytes).map_err(bad)?,
+        4 => postcard::from_bytes(bytes).map_err(bad)?,
         _ => {
             return Err(FileError::Damaged(format!(
                 "unknown geometry layout {version}"
@@ -296,6 +350,8 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                             },
                         },
                         curve_id: e.curve_id.map(CurveId),
+                        soft: e.soft,
+                        smooth: e.smooth,
                     },
                 )
             })

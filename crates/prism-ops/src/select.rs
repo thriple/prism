@@ -274,15 +274,17 @@ fn copy_edge(
     let cid = e
         .curve_id
         .map(|c| *cmap.entry(c).or_insert_with(|| to.new_curve_id()));
-    if e.curve.is_arc() {
+    let id = if e.curve.is_arc() {
         // `a` and `b` stand for the edge's own `a` and `b`, so the arc runs
         // from `a` to `b` as before.
-        to.add_curve_edge(a, b, e.curve, cid)
+        to.add_curve_edge(a, b, e.curve, cid)?
     } else {
         let id = to.add_edge(a, b)?;
         to.set_curve_id(id, cid);
-        Some(id)
-    }
+        id
+    };
+    to.set_soft(id, e.soft, e.smooth);
+    Some(id)
 }
 
 /// A face with its vertices and edges swapped for their copies.
@@ -371,6 +373,34 @@ pub fn take(model: &mut Model, sel: &Selection) -> Model {
     for v in &verts {
         if !on_edges.contains(v) && !used_verts.contains(v) {
             model.remove_vertex(*v);
+        }
+    }
+    out
+}
+
+/// The faces of the smooth surface `face` is on: it and every face joined
+/// to it through soft edges (Exact Curves 4c). Just `face` when none are.
+pub fn surface(model: &Model, face: FaceId) -> BTreeSet<FaceId> {
+    let mut out: BTreeSet<FaceId> = [face].into();
+    if model.face(face).is_none() {
+        return BTreeSet::new();
+    }
+    if !model.edges().any(|(_, e)| e.soft) {
+        return out;
+    }
+    let edge_faces = model.edge_faces();
+    let mut todo = vec![face];
+    while let Some(f) = todo.pop() {
+        let Some(x) = model.face(f) else { continue };
+        for e in x.edge_ids() {
+            if !model.edge(e).is_some_and(|x| x.soft) {
+                continue;
+            }
+            for g in edge_faces.get(&e).into_iter().flatten() {
+                if out.insert(*g) {
+                    todo.push(*g);
+                }
+            }
         }
     }
     out

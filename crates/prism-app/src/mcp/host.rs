@@ -291,6 +291,14 @@ impl AppHost<'_> {
                 if let Some(cid) = e.curve_id {
                     j["curve"] = json!(cid.0);
                 }
+                // Exact Curves 4c: soft edges are not drawn; shading runs
+                // across smooth ones.
+                if e.soft {
+                    j["soft"] = json!(true);
+                }
+                if e.smooth {
+                    j["smooth"] = json!(true);
+                }
                 j
             })
             .collect();
@@ -690,6 +698,25 @@ mod tests {
             assert_eq!(f["cylinder"]["axis"], json!([0.0, 0.0, 1.0]));
             assert_eq!(f["cylinder"]["outward"], true);
         }
+        // Its two seams are soft and smooth (Exact Curves 4c).
+        let soft = |g: &Value| -> usize {
+            g["edges"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|e| e["soft"] == true && e["smooth"] == true)
+                .count()
+        };
+        assert_eq!(soft(&g), 2, "{g}");
+        // Edit > Soften/Smooth reaches run_action: a top edge picked and
+        // softened.
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.select", "steps": [{"click": [0.5, 0, 1.5]}]}),
+        ));
+        let r = value(h.call("run_action", &json!({"id": "edit.soften"})));
+        let g = value(h.call("get_geometry", &json!({})));
+        assert_eq!(soft(&g), 4, "the top circle's two halves too: {r}");
     }
 
     #[test]

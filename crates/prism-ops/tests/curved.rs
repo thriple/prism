@@ -355,3 +355,63 @@ fn a_rounded_rectangle_pulled_has_flat_and_curved_sides() {
     let h = prism_ops::health::check(&m);
     assert_eq!((h.watertight, h.leaky), (1, 0));
 }
+
+// ---------- Soften and smooth (Exact Curves 4c) ----------
+
+fn soft_edges(m: &Model) -> Vec<EdgeId> {
+    m.edges()
+        .filter(|(_, e)| e.soft)
+        .map(|(id, _)| id)
+        .collect()
+}
+
+#[test]
+fn a_pulled_disc_has_soft_smooth_seams_and_one_surface() {
+    use prism_ops::pushpull::push_pull;
+    let (mut m, f) = disc(1.0);
+    push_pull(&mut m, f, 1.0, false);
+    let soft = soft_edges(&m);
+    assert_eq!(soft.len(), 2, "the two seams");
+    for e in &soft {
+        let e = m.edge(*e).unwrap();
+        assert!(e.smooth && !e.curve.is_arc());
+    }
+    let s = sides(&m);
+    assert_eq!(
+        prism_ops::select::surface(&m, s[0]),
+        s.iter().copied().collect()
+    );
+    assert_eq!(
+        prism_ops::select::surface(&m, f).len(),
+        1,
+        "a cap is its own"
+    );
+    // Lengthened, the seams stay soft; split, both halves stay soft.
+    push_pull(&mut m, f, 0.5, false);
+    assert_eq!(soft_edges(&m).len(), 2);
+    let seam = m.edge(soft_edges(&m)[0]).unwrap();
+    let mid = m.vertex(seam.a).lerp(m.vertex(seam.b), 0.5);
+    let tol = m.tol();
+    prism_ops::insert_point(&mut m, mid, &tol);
+    assert_eq!(soft_edges(&m).len(), 3);
+    clean(&m);
+}
+
+#[test]
+fn a_rounded_rectangle_softens_only_where_its_walls_meet_smoothly() {
+    use prism_ops::pushpull::push_pull;
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 2.0, 0.0);
+    for c in [DVec3::ZERO, DVec3::new(4.0, 0.0, 0.0)] {
+        assert!(prism_ops::fillet::fillet(&mut m, c, 0.5));
+    }
+    let f = m.faces().next().map(|(id, _)| id).expect("the face");
+    let up = m.face(f).unwrap().plane().unwrap().normal.z;
+    push_pull(&mut m, f, up, false);
+    // Each rounded corner meets its two flat walls without a crease; the
+    // two square corners stay sharp.
+    assert_eq!(soft_edges(&m).len(), 4);
+    let side = sides(&m)[0];
+    // Left, arc, bottom, arc, right: all the walls but the top.
+    assert_eq!(prism_ops::select::surface(&m, side).len(), 5);
+}

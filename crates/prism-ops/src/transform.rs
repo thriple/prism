@@ -384,13 +384,12 @@ fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
         if (ma, mb) != (a, b) {
             let e = model.edge(id).copied();
             model.remove_edge(id);
-            match e {
-                Some(e) if e.curve.is_arc() => {
-                    model.add_curve_edge(ma, mb, e.curve, e.curve_id);
-                }
-                _ => {
-                    model.add_edge(ma, mb);
-                }
+            let made = match e {
+                Some(e) if e.curve.is_arc() => model.add_curve_edge(ma, mb, e.curve, e.curve_id),
+                _ => model.add_edge(ma, mb),
+            };
+            if let (Some(id), Some(e)) = (made, e) {
+                model.set_soft(id, e.soft, e.smooth);
             }
         }
     }

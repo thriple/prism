@@ -118,6 +118,12 @@ pub enum Command {
     OrientFaces {
         faces: Option<BTreeSet<FaceId>>,
     },
+    /// Soften and smooth these edges, or (with `soft` false) make them
+    /// plain again (Exact Curves 4c).
+    Soften {
+        edges: BTreeSet<prism_topo::EdgeId>,
+        soft: bool,
+    },
     /// Turn these faces round.
     ReverseFaces {
         faces: BTreeSet<FaceId>,
@@ -329,6 +335,8 @@ impl Command {
             Command::In { command, .. } => command.name(),
             Command::OrientFaces { .. } => "Orient Faces",
             Command::ReverseFaces { .. } => "Reverse Faces",
+            Command::Soften { soft: true, .. } => "Soften/Smooth",
+            Command::Soften { .. } => "Unsoften",
             Command::CleanEnvelope { .. } => "Clean Envelope",
             Command::RemoveStray => "Remove Stray Edges",
             Command::RepairArcs => "Repair Arcs",
@@ -716,6 +724,11 @@ impl Command {
                 prism_ops::health::orient(m, faces.as_ref());
             }
             Command::ReverseFaces { faces } => prism_ops::health::reverse(m, faces),
+            Command::Soften { edges, soft } => {
+                for e in edges {
+                    m.set_soft(*e, *soft, *soft);
+                }
+            }
             Command::CleanEnvelope { faces } => {
                 prism_ops::health::clean_envelope(m, faces.as_ref());
             }

@@ -186,6 +186,13 @@ fn every_kind(d: &Document) -> Vec<Command> {
         centre: DVec3::ZERO,
         factor: DVec3::new(2.0, 1.0, 0.5),
     });
+    // Exact Curves 4c (last, so the regressions below keep their picks).
+    if let Some((edge, e)) = m.edges().next() {
+        out.push(Command::Soften {
+            edges: [edge].into(),
+            soft: !e.soft,
+        });
+    }
     out
 }
 
@@ -193,7 +200,7 @@ fn every_kind(d: &Document) -> Vec<Command> {
 fn undo_and_redo_of_every_operation_are_exact() {
     let base = setup();
     let kinds = every_kind(&base);
-    assert_eq!(kinds.len(), 20, "one of each kind (no face has arcs yet)");
+    assert_eq!(kinds.len(), 21, "one of each kind (no face has arcs yet)");
     for c in kinds {
         let mut d = base.clone();
         let before = d.model().geometry_json();
@@ -214,7 +221,7 @@ proptest! {
     /// Any sequence of commands, undone all the way and redone, ends exactly
     /// where it was.
     #[test]
-    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..21, 1..6)) {
+    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..22, 1..6)) {
         let mut d = setup();
         let start = d.model().geometry_json();
         let mut ran = 0;

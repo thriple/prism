@@ -109,3 +109,80 @@ fn a_placed_cylinder_picks_like_one_built_there() {
         assert_eq!(hits, 12);
     }
 }
+
+// ---------- Soften and smooth (Exact Curves 4c) ----------
+
+#[test]
+fn soft_edges_are_ghosts_and_drop_out_unless_shown() {
+    let m = cylinder();
+    let mut s = Scene::build(&m);
+    let soft: Vec<_> = s.edges.iter().filter(|e| e.soft).collect();
+    assert_eq!(soft.len(), 2, "the seams");
+    assert!(soft.iter().all(|e| e.ghost), "drawn as hidden lines");
+    let n = s.edges.len();
+    s.drop_soft();
+    assert_eq!(s.edges.len(), n - 2);
+    for (i, e) in s.edges.iter().enumerate() {
+        assert_eq!(s.edge(e.id).map(|x| x.id), Some(e.id), "index {i} rebuilt");
+    }
+}
+
+#[test]
+fn shading_runs_across_a_smooth_edge() {
+    // Two squares folded along x = 1, smoothed there.
+    let mut m = Model::new();
+    let pts = |q: [(f64, f64, f64); 4]| q.map(|(x, y, z)| DVec3::new(x, y, z));
+    for loop_ in [
+        pts([
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ]),
+        pts([
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 1.0),
+            (2.0, 1.0, 1.0),
+            (1.0, 1.0, 0.0),
+        ]),
+    ] {
+        for i in 0..4 {
+            prism_ops::add_segment(&mut m, loop_[i], loop_[(i + 1) % 4]);
+        }
+    }
+    assert_eq!(m.face_count(), 2);
+    let fold = m
+        .edges()
+        .find(|(_, e)| m.vertex(e.a).x == 1.0 && m.vertex(e.b).x == 1.0)
+        .map(|(id, _)| id)
+        .expect("the fold");
+    let sharp = Scene::build(&m);
+    m.set_soft(fold, true, true);
+    let smooth = Scene::build(&m);
+    let at_fold = |s: &Scene| -> Vec<DVec3> {
+        s.mesh
+            .positions
+            .iter()
+            .zip(&s.mesh.normals)
+            .filter(|(p, _)| p.x == 1.0)
+            .map(|(_, n)| *n)
+            .collect()
+    };
+    let (a, b) = (at_fold(&sharp), at_fold(&smooth));
+    assert_eq!(a.len(), 4, "two points of each face");
+    assert!(a.iter().any(|n| n.distance(a[0]) > 0.1), "a crease");
+    for n in &b {
+        assert!(n.distance(b[0]) < 1e-12, "one normal along the fold");
+        assert!((n.length() - 1.0).abs() < 1e-12);
+    }
+    // Away from the fold, the faces keep their own normals.
+    let far = smooth
+        .mesh
+        .positions
+        .iter()
+        .zip(&smooth.mesh.normals)
+        .find(|(p, _)| p.x == 0.0)
+        .map(|(_, n)| *n)
+        .expect("a far corner");
+    assert!(far.cross(DVec3::Z).length() < 1e-12);
+}

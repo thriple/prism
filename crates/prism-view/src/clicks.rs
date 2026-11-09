@@ -57,12 +57,17 @@ pub fn click_select(model: &Model, hit: Option<Hit>, n: u32) -> Selection {
         Hit::Edge(e) => {
             sel.edges.extend(model.curve_edges(e));
         }
+        // A face of a smooth surface takes the whole surface.
         Hit::Face(f) => {
-            sel.faces.insert(f);
-            if n == 2
-                && let Some(face) = model.face(f)
-            {
-                sel.edges.extend(face.loop_edges(0).map(|s| s.edge));
+            sel.faces.extend(prism_ops::select::surface(model, f));
+            if n == 2 {
+                for face in sel.faces.iter().filter_map(|f| model.face(*f)) {
+                    sel.edges.extend(
+                        face.loop_edges(0)
+                            .map(|s| s.edge)
+                            .filter(|e| model.edge(*e).is_some_and(|x| !x.soft)),
+                    );
+                }
             }
         }
     }

@@ -177,6 +177,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Model Health.
         || id == "edit.revface"
         || id == "edit.orient"
+        // Exact Curves 4c.
+        || id == "edit.soften"
         // Part 3: hiding.
         || matches!(
             id,
@@ -258,7 +260,11 @@ impl Registry {
                         Some(n) => n.parse().map_or(When::Always, When::Recent),
                         None if matches!(
                             r.id,
-                            "isect.sel" | "edit.group" | "edit.comp" | "edit.revface"
+                            "isect.sel"
+                                | "edit.group"
+                                | "edit.comp"
+                                | "edit.revface"
+                                | "edit.soften"
                         ) =>
                         {
                             When::HasSelection

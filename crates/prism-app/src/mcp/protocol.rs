@@ -108,7 +108,7 @@ pub fn tools() -> Value {
         {
             "name": "get_geometry",
             "title": "List faces and edges",
-            "description": "The open group's faces (id, area in square metres, outer loop points, number of holes, and a flat face's unit normal or a curved face's `cylinder`: axis origin, unit axis, radius, and whether it faces outward) and edges (id, end points, length; an arc also gives its centre, axis and radius, and the edges of one circle, arc or polygon share a `curve` number), in world coordinates and metres. Up to `limit` of each (default 200); the totals are always given.",
+            "description": "The open group's faces (id, area in square metres, outer loop points, number of holes, and a flat face's unit normal or a curved face's `cylinder`: axis origin, unit axis, radius, and whether it faces outward) and edges (id, end points, length; an arc also gives its centre, axis and radius, and the edges of one circle, arc or polygon share a `curve` number; `soft` edges are not drawn and shading runs smoothly across `smooth` ones), in world coordinates and metres. Up to `limit` of each (default 200); the totals are always given.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

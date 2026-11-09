@@ -1585,3 +1585,44 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   and snapping on the side and one undo per pull; MCP; the undo property
   test pulls faces with arcs (1500 cases and 3000 for the model rules,
   run once).
+
+## Exact Curves (part 4, step 4c): soften and smooth
+
+- **Edge flags:** `Edge::soft` (not drawn) and `Edge::smooth` (shading
+  runs across), set with `Model::set_soft`. They survive splitting,
+  copying, merging and welding.
+- **Push/Pull softens its seams:** the lines along a curved wall's sides
+  are soft and smooth where the faces on both sides meet without a crease
+  (the two halves of a cylinder; a rounded corner and its flat
+  neighbours). Sharp corners stay plain.
+- **Drawing:** soft edges are left out of the scene (`Scene::drop_soft`),
+  so nothing draws, picks or snaps to them, unless View > Hidden Geometry
+  is on: then they are drawn as ghosts, like hidden objects. A new
+  session drops them too (it showed them until the first edit).
+- **Smooth shading:** where faces meet along a smooth edge, their mesh
+  points there share the average normal, so flat faces shade across too.
+  Points are matched by exact position (corners; an arc's inner points
+  are only matched where both faces compute them the same way).
+- **Eraser:** Ctrl softens and smooths instead of erasing; Ctrl+Shift
+  makes edges plain again (with Hidden Geometry on, to reach soft ones).
+  Guides are left alone while softening. The hint says so.
+- **Edit > Soften/Smooth** (`edit.soften`) is active (DECISIONS #20): it
+  softens the selected edges, or makes them plain if all are soft. It is
+  in the edge context menu already. `Command::Soften { edges, soft }`.
+- **Picking:** a click on a face of a smooth surface picks every face
+  joined to it by soft edges (`prism_ops::select::surface`); a
+  double-click adds their outlines, leaving out soft edges.
+- **Files:** geometry layout 4 (soft and smooth per edge), schema 5. The
+  golden files were rewritten; copies of the schema 4 ones are kept in
+  `docs/acceptance/files/schema-4` and open the same. A new golden file,
+  `cylinder.prism`, holds a pulled disc (curved faces, soft seams).
+- **MCP:** `get_geometry` marks edges `soft` and `smooth`; Edit >
+  Soften/Smooth reaches `run_action`.
+- Tests: soft seams of a disc and a rounded rectangle; a smooth surface
+  picks whole; flags kept through a split; the scene drops soft edges and
+  shows them as ghosts; shading across a smoothed fold; the file round
+  trip; the Eraser with Ctrl and Ctrl+Shift; Edit > Soften/Smooth; MCP;
+  Soften in the undo property test (600 cases run once).
+- Not built: an angle setting for Soften/Smooth (the brief leaves it for
+  later); profile lines along a curved surface's outline (the renderer
+  draws profiles only along edges).

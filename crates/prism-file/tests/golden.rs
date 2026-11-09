@@ -19,7 +19,22 @@ fn cases() -> Vec<(&'static str, Contents)> {
             dir: prism_math::DVec3::X,
         },
     });
+    // A disc pulled into a cylinder: curved faces, soft and smooth seams
+    // (schema 5).
+    let mut cylinder = prism_topo::Model::new();
+    prism_ops::add_circle(
+        &mut cylinder,
+        prism_math::DVec3::ZERO,
+        prism_math::DVec3::Z,
+        0.5,
+    );
+    let disc = cylinder.faces().next().map(|(id, _)| id).expect("a disc");
+    prism_ops::push_pull(&mut cylinder, disc, 1.25, false);
     vec![
+        (
+            "cylinder.prism",
+            Contents::with_model(cylinder, Settings::default()),
+        ),
         (
             "cube.prism",
             Contents::with_model(
@@ -180,11 +195,13 @@ fn golden_files_open_and_save_the_same() {
 
 /// Files saved before loops named their edges (schema 2, geometry layout 1)
 /// open with the same faces and edges, found from the loops. Files saved
-/// before arcs (schema 3, layout 2) open the same too.
+/// before arcs (schema 3, layout 2) open the same too, and so do files
+/// saved before soft edges (schema 4, layout 3).
 #[test]
-fn schema_2_and_3_files_open_as_now() {
+fn schema_2_to_4_files_open_as_now() {
     let mut seen = 0;
-    let older = ["schema-2", "schema-3"].map(|d| std::fs::read_dir(dir().join(d)).expect(d));
+    let older =
+        ["schema-2", "schema-3", "schema-4"].map(|d| std::fs::read_dir(dir().join(d)).expect(d));
     for e in older.into_iter().flatten() {
         let path = e.expect("entry").path();
         let old = read(&std::fs::read(&path).expect("read"))

@@ -293,6 +293,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
 
     // Walls: flat for a line, part of a cylinder for an arc.
     let mut walls = Vec::new();
+    let mut seams: Vec<EdgeId> = Vec::new();
     for side in f.sides() {
         let (u, w) = (side.from, side.to);
         if !walls_at.contains(&key(u, w)) {
@@ -316,6 +317,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         let (Some(up), Some(top), Some(down)) = (up, top, down) else {
             continue;
         };
+        seams.extend([up, down]);
         let cylinder = prism_geom::Cylinder {
             origin: centre,
             axis: n,
@@ -461,11 +463,35 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         }
     }
     walls.retain(|w| model.face(*w).is_some());
+    soften_seams(model, &seams);
 
     if new.is_empty() {
         Pulled::Stretched
     } else {
         Pulled::Extruded { walls }
+    }
+}
+
+/// The lines along a curved wall's sides are soft and smooth where the
+/// faces on both sides meet without a crease (two halves of a circle, a
+/// rounded corner's arc and its straight neighbours).
+fn soften_seams(model: &mut Model, seams: &[EdgeId]) {
+    let edge_faces = model.edge_faces();
+    for e in seams {
+        let (Some(edge), Some(fs)) = (model.edge(*e), edge_faces.get(e)) else {
+            continue;
+        };
+        let mid = model.vertex(edge.a).lerp(model.vertex(edge.b), 0.5);
+        let normals: Vec<DVec3> = fs
+            .iter()
+            .filter_map(|f| model.face(*f))
+            .map(|f| f.surface.normal_at(mid))
+            .collect();
+        if let [a, b] = normals.as_slice()
+            && a.dot(*b) > 1.0 - 1e-9
+        {
+            model.set_soft(*e, true, true);
+        }
     }
 }
 

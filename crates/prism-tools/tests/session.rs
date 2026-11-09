@@ -2295,9 +2295,9 @@ fn push_pull_makes_a_cylinder_that_picks_and_snaps() {
     );
     d.tool(SELECT);
     d.click(DVec3::new(0.6, -0.8, 1.2));
+    // The whole smooth side (step 4c).
     let picked: Vec<_> = d.s.selection().faces.iter().copied().collect();
-    assert_eq!(picked.len(), 1);
-    assert!(curved_faces(&d).contains(&picked[0]));
+    assert_eq!(picked, curved_faces(&d));
     // The cap pulled again lengthens it.
     d.tool(PUSH);
     d.click(DVec3::new(0.2, 0.2, 2.0));
@@ -2312,4 +2312,101 @@ fn push_pull_makes_a_cylinder_that_picks_and_snaps() {
     assert_eq!(d.faces(), 4);
     undo(&mut d);
     assert_eq!(d.faces(), 1);
+}
+
+// ---------- Soften and smooth (brief 25, step 4c) ----------
+
+fn soft_count(d: &Driver) -> usize {
+    d.s.model().edges().filter(|(_, e)| e.soft).count()
+}
+
+fn action(d: &mut Driver, id: &str) {
+    d.send(Input::Action { id: id.into() });
+}
+
+#[test]
+fn a_cylinders_seams_are_hidden_and_its_side_picks_whole() {
+    let mut doc = Document::new();
+    doc.run(prism_doc::Command::Circle {
+        centre: DVec3::ZERO,
+        normal: DVec3::Z,
+        radius: 1.0,
+    });
+    let f = doc.model().faces().next().map(|(id, _)| id).unwrap();
+    doc.run(prism_doc::Command::PushPull {
+        face: f,
+        distance: 2.0,
+        new_loop: false,
+    });
+    let mut d = Driver::new(doc);
+    d.look(Camera {
+        eye: DVec3::new(0.5, -6.0, 3.0),
+        target: DVec3::new(0.0, 0.0, 1.0),
+    });
+    assert_eq!(soft_count(&d), 2);
+    assert!(d.s.scene().edges.iter().all(|e| !e.soft), "not drawn");
+    d.tool(SELECT);
+    d.click(DVec3::new(0.6, -0.8, 1.2));
+    assert_eq!(d.s.selection().faces.len(), 2, "the whole side");
+    // View > Hidden Geometry shows them as ghosts.
+    action(&mut d, "view.hidden");
+    let ghosts: Vec<_> = d.s.scene().edges.iter().filter(|e| e.soft).collect();
+    assert_eq!(ghosts.len(), 2);
+    assert!(ghosts.iter().all(|e| e.ghost));
+}
+
+#[test]
+fn the_eraser_with_ctrl_softens_and_with_shift_unsoftens() {
+    use prism_tools::session::ERASE;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("1");
+    let faces = d.faces();
+    // An upright corner edge of the box.
+    let corner = DVec3::new(2.0, 0.0, 0.5);
+    d.tool(ERASE);
+    let s = d.screen(corner);
+    d.click_px(s, false, true);
+    assert_eq!(soft_count(&d), 1, "softened");
+    assert_eq!(d.faces(), faces, "nothing erased");
+    valid(&d);
+    assert!(
+        d.s.hint().contains("Ctrl softens"),
+        "the hint says so: {}",
+        d.s.hint()
+    );
+    // Hidden now; with Hidden Geometry shown, Ctrl+Shift makes it plain.
+    action(&mut d, "view.hidden");
+    d.click_px(s, true, true);
+    assert_eq!(soft_count(&d), 0, "unsoftened");
+    assert_eq!(d.faces(), faces);
+    undo(&mut d);
+    assert_eq!(soft_count(&d), 1, "one undo each");
+}
+
+#[test]
+fn edit_soften_toggles_the_selected_edges() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("1");
+    d.tool(SELECT);
+    d.click(DVec3::new(2.0, 0.0, 0.5));
+    assert_eq!(d.s.selection().edges.len(), 1);
+    action(&mut d, "edit.soften");
+    assert_eq!(soft_count(&d), 1);
+    assert!(
+        d.s.model()
+            .edges()
+            .filter(|(_, e)| e.soft)
+            .all(|(_, e)| e.smooth),
+        "smoothed too"
+    );
+    action(&mut d, "edit.soften");
+    assert_eq!(soft_count(&d), 0, "all soft: made plain again");
 }
