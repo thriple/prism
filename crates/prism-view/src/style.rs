@@ -106,6 +106,9 @@ pub struct Style {
     /// Edges along the red, green or blue axis drawn in that colour.
     pub lines_by_axis: bool,
     pub point_size: f32,
+    /// The ground shadow, and (with the sun) shadows cast on faces.
+    pub ground_shadow: bool,
+    pub face_shadows: bool,
     /// Inference and tool feedback.
     pub feedback: Feedback,
 }
@@ -277,6 +280,8 @@ impl Default for Style {
             show_ground: true,
             lines_by_axis: false,
             point_size: 4.0,
+            ground_shadow: true,
+            face_shadows: false,
             feedback: Feedback::default(),
         }
     }

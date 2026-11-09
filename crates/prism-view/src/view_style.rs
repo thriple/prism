@@ -52,6 +52,20 @@ pub struct ViewStyle {
     pub xray: bool,
     /// 0 to 1.
     pub xray_opacity: f32,
+    /// Lighting: the sun (else the default light), and shadows.
+    pub sun: bool,
+    pub shadows: bool,
+    /// When and where the sun is.
+    pub month: u32,
+    pub day: u32,
+    pub hours: f64,
+    pub utc_offset: f64,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub north: f64,
+    /// How strong the lit side is, and how bright the shaded side stays.
+    pub light: f32,
+    pub dark: f32,
 }
 
 impl Default for ViewStyle {
@@ -83,6 +97,18 @@ impl ViewStyle {
             face_style: FaceStyle::Shaded,
             xray: false,
             xray_opacity: 0.5,
+            sun: false,
+            shadows: true,
+            // Midsummer afternoon in Guam, where the owner is.
+            month: 6,
+            day: 21,
+            hours: 13.5,
+            utc_offset: 10.0,
+            latitude: 13.44,
+            longitude: 144.79,
+            north: 0.0,
+            light: 0.34,
+            dark: 0.66,
         };
         Some(match name {
             "Default" => base,
@@ -132,10 +158,29 @@ impl ViewStyle {
             FaceStyle::HiddenLine => {
                 s.face_front = PAPER;
                 s.face_back = PAPER;
-                s.ambient = 1.0;
-                s.diffuse = 0.0;
                 s.shadow_alpha = 0.0;
             }
+        }
+        s.diffuse = self.light;
+        s.ambient = self.dark;
+        s.ground_shadow = self.shadows;
+        s.face_shadows = false;
+        if self.sun {
+            let d = self.sun_direction();
+            if d.z > 0.0 {
+                s.light = d.to_array();
+                s.shadow_dir = (-d).to_array();
+                s.face_shadows = self.shadows;
+            } else {
+                // Night: no direct light and no shadows.
+                s.diffuse = 0.0;
+                s.ground_shadow = false;
+            }
+        }
+        if self.face_style == FaceStyle::HiddenLine {
+            s.ambient = 1.0;
+            s.diffuse = 0.0;
+            s.face_shadows = false;
         }
         if s.faces == FaceDraw::XRay {
             let a = crate::style::alpha(self.xray_opacity.clamp(0.0, 1.0));
@@ -143,6 +188,19 @@ impl ViewStyle {
             s.face_back = s.face_back.with_alpha(a);
         }
         s
+    }
+
+    /// The direction toward the sun (model coordinates).
+    pub fn sun_direction(&self) -> prism_math::DVec3 {
+        prism_math::sun::sun_direction(&prism_math::sun::SunPlace {
+            month: self.month,
+            day: self.day,
+            hours: self.hours,
+            utc_offset: self.utc_offset,
+            latitude: self.latitude,
+            longitude: self.longitude,
+            north: self.north,
+        })
     }
 
     /// Whether a View menu toggle is on.
@@ -156,6 +214,9 @@ impl ViewStyle {
             "view.grid" => self.grid,
             "view.guides" => self.guides,
             "view.xray" => self.xray,
+            "view.shadow" => self.shadows,
+            "light.sun" => self.sun,
+            "light.default" => !self.sun,
             _ => return None,
         })
     }
@@ -171,6 +232,12 @@ impl ViewStyle {
             "view.grid" => &mut self.grid,
             "view.guides" => &mut self.guides,
             "view.xray" => &mut self.xray,
+            "view.shadow" => &mut self.shadows,
+            // One or the other.
+            "light.sun" | "light.default" => {
+                self.sun = id == "light.sun";
+                return true;
+            }
             _ => return false,
         };
         *f = !*f;
@@ -179,7 +246,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 8] = [
+pub const TOGGLES: [&str; 11] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -188,6 +255,9 @@ pub const TOGGLES: [&str; 8] = [
     "view.grid",
     "view.guides",
     "view.xray",
+    "view.shadow",
+    "light.sun",
+    "light.default",
 ];
 
 #[cfg(test)]

@@ -30,6 +30,10 @@ struct Globals {
     shadow: vec4<f32>,
     // tile px (points), dot px (points)
     stipple: vec4<f32>,
+    // From the eye-relative model to the sun's shadow map.
+    light_vp: mat4x4<f32>,
+    // on (1 or 0), depth bias, one texel, unused
+    shadow_map: vec4<f32>,
 };
 
 // Per draw: a colour and how to use it.
@@ -47,6 +51,9 @@ struct Draw {
 // Lines only: that face's plane, as bits: normal xyz and offset, relative
 // to the eye.
 @group(2) @binding(1) var planes: texture_2d<u32>;
+// Faces only: the sun's shadow map.
+@group(3) @binding(0) var shadow_tex: texture_depth_2d;
+@group(3) @binding(1) var shadow_samp: sampler_comparison;
 
 
 fn rel(hi: vec3<f32>, lo: vec3<f32>) -> vec3<f32> {
@@ -121,6 +128,34 @@ fn face_vs(v: FaceIn) -> FaceOut {
     return o;
 }
 
+// The faces seen from the sun, for its shadow map.
+@vertex
+fn sun_vs(v: FaceIn) -> @builtin(position) vec4<f32> {
+    return g.light_vp * vec4<f32>(rel(v.hi, v.lo), 1.0);
+}
+
+// How much sun reaches the point `r` (relative to the eye): 1 in the open,
+// 0 in shadow, between at a shadow's soft edge.
+fn sun_lit(r: vec3<f32>) -> f32 {
+    if (g.shadow_map.x < 0.5) {
+        return 1.0;
+    }
+    let lp = g.light_vp * vec4<f32>(r, 1.0);
+    let uv = vec2<f32>(lp.x * 0.5 + 0.5, 0.5 - lp.y * 0.5);
+    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || lp.z > 1.0) {
+        return 1.0;
+    }
+    let z = lp.z - g.shadow_map.y;
+    var sum = 0.0;
+    for (var i = -1; i <= 1; i++) {
+        for (var j = -1; j <= 1; j++) {
+            let o = vec2<f32>(f32(i), f32(j)) * g.shadow_map.z;
+            sum += textureSampleCompareLevel(shadow_tex, shadow_samp, uv + o, z);
+        }
+    }
+    return sum / 9.0;
+}
+
 @fragment
 fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     var n = normalize(in.normal);
@@ -129,7 +164,7 @@ fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4
         n = -n;
         base = g.back;
     }
-    let sh = g.light.w + g.params.x * max(0.0, dot(n, g.light.xyz));
+    let sh = g.light.w + g.params.x * max(0.0, dot(n, g.light.xyz)) * sun_lit(in.r);
     var c = base.rgb * sh;
     // Outside the open group: washed out toward white, so the group stands
     // out (PLAN 1.2).

@@ -60,7 +60,17 @@ struct Globals {
     ground_bottom: [f32; 4],
     shadow: [f32; 4],
     stipple: [f32; 4],
+    /// From the eye-relative model to the sun's shadow map.
+    light_vp: [[f32; 4]; 4],
+    /// On (1 or 0), depth bias, one texel in the map, unused.
+    shadow_map: [f32; 4],
 }
+
+/// The sun's shadow map, in texels each way.
+const SHADOW_SIZE: u32 = 2048;
+/// How far a surface may be behind the depth in the map and still be lit,
+/// as a share of the map's depth range.
+const SHADOW_BIAS: f32 = 0.002;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -198,6 +208,36 @@ fn face_numbers(scene: &Scene, faces: [Option<prism_topo::FaceId>; 2]) -> [u32; 
     })
 }
 
+/// The sun's orthographic view of the box `lo`–`hi`, relative to `eye`,
+/// looking along `-light` (depth 0 nearest the sun).
+fn sun_view_proj(light: DVec3, lo: DVec3, hi: DVec3, eye: DVec3) -> prism_math::DMat4 {
+    let l = light.normalize_or(DVec3::Z);
+    let c = (lo + hi) * 0.5 - eye;
+    let r = (hi - lo).length().max(1e-9) * 0.5;
+    let up = if l.z.abs() > 0.99 { DVec3::Y } else { DVec3::Z };
+    // The sun's camera: at `p`, looking along `f`; x and y across the
+    // model's radius, depth from 0.5 r to 3.5 r mapped to 0..1.
+    let p = c + l * (2.0 * r);
+    let f = -l;
+    let right = f.cross(up).normalize();
+    let u = right.cross(f);
+    let (near, far) = (0.5 * r, 3.5 * r);
+    let rows = [
+        (right / r, -right.dot(p) / r),
+        (u / r, -u.dot(p) / r),
+        (f / (far - near), (-f.dot(p) - near) / (far - near)),
+    ];
+    let col = |k: usize| {
+        glam::DVec4::new(rows[0].0[k], rows[1].0[k], rows[2].0[k], 0.0)
+    };
+    prism_math::DMat4::from_cols(
+        col(0),
+        col(1),
+        col(2),
+        glam::DVec4::new(rows[0].1, rows[1].1, rows[2].1, 1.0),
+    )
+}
+
 /// What to show highlighted.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Highlight {
@@ -279,6 +319,10 @@ pub struct Renderer {
     bg: wgpu::RenderPipeline,
     shadow: wgpu::RenderPipeline,
     faces: [wgpu::RenderPipeline; 2],
+    /// The faces' depth seen from the sun, and what faces read it with.
+    shadow_map: wgpu::RenderPipeline,
+    shadow_view: wgpu::TextureView,
+    shadow_group: wgpu::BindGroup,
     /// Faces see-through (X-ray): blended over what is behind.
     xray: [wgpu::RenderPipeline; 2],
     tints: [wgpu::RenderPipeline; 2],
@@ -392,9 +436,79 @@ impl Renderer {
                 count: None,
             }),
         });
+        let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sun shadow map"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
+        });
+        let shadow_view = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("sun shadow map"),
+                size: wgpu::Extent3d {
+                    width: SHADOW_SIZE,
+                    height: SHADOW_SIZE,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sun shadow map"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        let shadow_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sun shadow map"),
+            layout: &shadow_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
+            ],
+        });
+        // Group 2 is the lines' face ids; faces read the shadow map at 3.
         let faces_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("viewport faces"),
-            bind_group_layouts: &[Some(&globals_layout), Some(&draw_layout)],
+            bind_group_layouts: &[
+                Some(&globals_layout),
+                Some(&draw_layout),
+                None,
+                Some(&shadow_layout),
+            ],
+            immediate_size: 0,
+        });
+        let sun_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sun shadow map"),
+            bind_group_layouts: &[Some(&globals_layout)],
             immediate_size: 0,
         });
         let lines_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -505,7 +619,38 @@ impl Renderer {
         let none = wgpu::DepthBiasState::default();
         let face_l = std::slice::from_ref(&face_layout);
         let line_l = std::slice::from_ref(&line_layout);
+        // Depth only, both sides of every face, pushed back a little so a
+        // face does not shadow itself.
+        let shadow_map = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sun shadow map"),
+            layout: Some(&sun_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("sun_vs"),
+                compilation_options: Default::default(),
+                buffers: &[Some(face_layout.clone())],
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
         Self {
+            shadow_map,
+            shadow_view,
+            shadow_group,
             bg: pipeline(
                 "sky and ground",
                 "bg_vs",
@@ -1070,6 +1215,11 @@ impl Renderer {
         let c = |c: Rgba| c.to_f32();
         let light = DVec3::from_array(s.light).normalize().as_vec3();
         let sd = DVec3::from_array(s.shadow_dir).normalize().as_vec3();
+        // The sun's view of the model, relative to the eye (PLAN 4).
+        let sun_vp = f
+            .bounds
+            .filter(|_| s.face_shadows && s.faces != FaceDraw::None)
+            .map(|(lo, hi)| sun_view_proj(DVec3::from_array(s.light), lo, hi, view.eye));
         let globals = Globals {
             view_proj: vp.to_cols_array_2d(),
             eye_hi: [eye_hi[0], eye_hi[1], eye_hi[2], 0.0],
@@ -1099,6 +1249,13 @@ impl Renderer {
             }),
             shadow: [sd.x, sd.y, sd.z, s.shadow_alpha],
             stipple: [s.stipple_tile, s.stipple_dot, 0.0, 0.0],
+            light_vp: sun_vp.map_or([[0.0; 4]; 4], |m| m.as_mat4().to_cols_array_2d()),
+            shadow_map: [
+                if sun_vp.is_some() { 1.0 } else { 0.0 },
+                SHADOW_BIAS,
+                1.0 / SHADOW_SIZE as f32,
+                0.0,
+            ],
         };
         queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
         let tint = |col: Rgba, a: f32, mode: f32| Draw {
@@ -1130,6 +1287,29 @@ impl Renderer {
             queue.write_buffer(&slot.buffer, 0, bytemuck::bytes_of(&d));
         }
 
+        if let (Some(_), Some(vb), Some(ib)) =
+            (sun_vp, &self.face_vertices, &self.face_indices.buffer)
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("sun shadow map"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.shadow_map);
+            pass.set_bind_group(0, &self.globals_group, &[]);
+            pass.set_vertex_buffer(0, vb.slice(..));
+            pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..self.face_indices.count, 0, 0..1);
+        }
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("viewport faces"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1153,6 +1333,7 @@ impl Renderer {
         });
         pass.set_bind_group(0, &self.globals_group, &[]);
         pass.set_bind_group(1, &self.draws[PLAIN].group, &[]);
+        pass.set_bind_group(3, &self.shadow_group, &[]);
         pass.set_pipeline(&self.bg);
         pass.draw(0..3, 0..1);
 
@@ -1226,6 +1407,7 @@ impl Renderer {
         {
             pass.set_bind_group(0, &self.globals_group, &[]);
             pass.set_bind_group(1, &self.draws[PLAIN].group, &[]);
+            pass.set_bind_group(3, &self.shadow_group, &[]);
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
             for p in &self.ids {

@@ -19,7 +19,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Groups & Components: briefs 12, 13, 14. Model Health: briefs 15, 16.
 - **State:** `main` = session branch = `16a4648`, CI green, web page
   updated. Nothing uncommitted.
-- **Next: View Settings part 2** (lighting and the sun, Show Hidden).
+- **Next: View Settings part 2** (the sun, shadows and Show Hidden).
   Part 1 is built (brief 17). Then Updates and MCP Server (the owner
   placed them right after View Settings), then the next rows of the PLAN
   6.0 table (see the standing rule below).
@@ -28,7 +28,8 @@ Updated 2026-11-09 (Guam), before a context compaction.
   Info, Tags and Model Health windows, and the Push/Pull cases they
   reported. None has been clicked through in the real app.
 - **Owner's standing instructions this session:** push tested work to
-  `main` (everyone on one branch); breaking chunks into parts is welcome;
+  `main` (everyone on one branch); breaking up XL chunks into parts is
+  welcome (owner's correction, 2026-11-09: XL chunks, not every chunk);
   "full auto" was on until Model Health was done.
 - **Standing rule (owner, 2026-11-08): follow the plan in order.** Build
   the chunks in the order of the PLAN 6.0 table, top to bottom: the next

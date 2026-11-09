@@ -6,6 +6,7 @@
 
 pub mod plane;
 pub mod predicates;
+pub mod sun;
 pub mod tol;
 pub mod units;
 
