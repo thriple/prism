@@ -25,8 +25,14 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **State:** `main` = session branch, CI green. Nothing uncommitted.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
-- **Next: Exact Curves** (the next PLAN 6.0 row; needs a brief), then the
-  rows after it (see the standing rule below).
+- **Next: Exact Curves part 1** (brief 22: loops list their edges, no
+  visible change). Exact Curves is 5 parts (owner, 2026-11-09); the design
+  is in `docs/research/exact-curves.md`. Curves that are not lines or arcs
+  fall back to fine segments, flagged (DECISIONS #32).
+- **Also done 2026-11-09:** Push/Pull stops at the first face in its way
+  (DECISIONS #31 changed); Ctrl/Alt/Option taps reach the tools (they never
+  did); the web wheel sorts scrolls by gesture. The owner should try all
+  three by hand.
 - **MCP Server** waits on the owner connecting Claude Code to it.
 - **MCP spec:** 2026-07-28 is the newest release (stateless, no
   `initialize`); the server speaks it and the older handshake. The spec
