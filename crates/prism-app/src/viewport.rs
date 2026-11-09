@@ -20,6 +20,27 @@ pub struct Viewport {
     now: f64,
     /// Sorts browser scrolls into wheel zooms and trackpad pans.
     wheel: WheelSort,
+    /// A modifier pressed alone, so far (a tap toggles copy or new loop).
+    tap: Option<Tap>,
+}
+
+/// A modifier that toggles a tool's mode when tapped on its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tap {
+    Ctrl,
+    Alt,
+}
+
+/// What tapping a modifier does: Ctrl copies (Move, Rotate) and Alt makes
+/// a new loop (Push/Pull) on Windows and Linux; on a Mac, Option does both
+/// (each tool uses its own) and Control does neither, as in SketchUp.
+fn tap_inputs(tap: Tap, mac: bool) -> Vec<Input> {
+    match (tap, mac) {
+        (Tap::Ctrl, false) => vec![Input::CtrlTap],
+        (Tap::Alt, false) => vec![Input::AltTap],
+        (Tap::Alt, true) => vec![Input::CtrlTap, Input::AltTap],
+        (Tap::Ctrl, true) => Vec::new(),
+    }
 }
 
 /// What the status bar shows from the viewport.
@@ -48,6 +69,7 @@ impl Viewport {
             held: false,
             now: 0.0,
             wheel: WheelSort::default(),
+            tap: None,
         }
     }
 
@@ -137,9 +159,32 @@ impl Viewport {
             });
             return false;
         }
+        // Ctrl, Alt or Option pressed and let go on their own.
+        let modifier = match code {
+            "ControlLeft" | "ControlRight" => Some(Tap::Ctrl),
+            "AltLeft" | "AltRight" => Some(Tap::Alt),
+            _ => None,
+        };
+        if let Some(m) = modifier {
+            if pressed {
+                self.tap = Some(m);
+            } else if self.tap.take() == Some(m) {
+                let mac = matches!(
+                    chrome.platform,
+                    crate::actions::keymap::Platform::Mac
+                        | crate::actions::keymap::Platform::Web { mac: true }
+                );
+                for input in tap_inputs(m, mac) {
+                    self.send(input);
+                }
+            }
+            return false;
+        }
         if !pressed {
             return false;
         }
+        // Any other key: the modifier was part of a shortcut.
+        self.tap = None;
         let key = match code {
             "Enter" | "NumpadEnter" => Some(Key::Enter),
             "Escape" => Some(Key::Escape),
@@ -218,6 +263,10 @@ impl Viewport {
                         PointerButton::Secondary => Button::Right,
                         _ => continue,
                     };
+                    if *pressed {
+                        // Ctrl-click and the like: not a tap.
+                        self.tap = None;
+                    }
                     if *pressed && rect.contains(*pos) && resp.hovered() {
                         self.held = true;
                         if b == Button::Left {
@@ -392,7 +441,16 @@ fn start() -> web_time::Instant {
 
 #[cfg(test)]
 mod tests {
-    use super::{Step, WheelSort, is_mouse_wheel};
+    use super::{Step, Tap, WheelSort, is_mouse_wheel, tap_inputs};
+    use prism_tools::Input;
+
+    #[test]
+    fn modifier_taps_per_platform() {
+        assert_eq!(tap_inputs(Tap::Ctrl, false), [Input::CtrlTap]);
+        assert_eq!(tap_inputs(Tap::Alt, false), [Input::AltTap]);
+        assert_eq!(tap_inputs(Tap::Alt, true), [Input::CtrlTap, Input::AltTap]);
+        assert!(tap_inputs(Tap::Ctrl, true).is_empty());
+    }
 
     #[test]
     fn a_wheel_gesture_zooms_from_its_first_small_step() {

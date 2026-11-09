@@ -40,6 +40,13 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let Some(f) = model.face(face).cloned() else {
         return Pulled::Nothing;
     };
+    // It stops at the first face in its way (Alt's new loop is not
+    // limited: the original loop stays behind).
+    let distance = if new_loop {
+        distance
+    } else {
+        crate::reach::limit(model, face, distance)
+    };
     if tol.is_zero(distance) {
         return Pulled::Nothing;
     }

@@ -216,9 +216,11 @@ fn pulling_a_block_into_another_joins_them() {
     assert_eq!(normal_at(&m, v(2.0, 1.0, 1.5)), v(1.0, 0.0, 0.0));
 }
 
-/// A box's side pulled right past a smaller block: the block is swallowed.
+/// A box's side pulled toward a smaller block stops at it and joins it
+/// (owner, 2026-11-09: Push/Pull never passes through a face; this used to
+/// swallow the block).
 #[test]
-fn a_pull_swallows_a_smaller_block() {
+fn a_pull_stops_at_a_smaller_block_and_joins_it() {
     let mut m = Model::new();
     block(&mut m, 0.0, 0.0, 2.0, 4.0, 3.0); // big
     block(&mut m, 3.0, 1.0, 4.0, 2.0, 1.0); // small, beside it
@@ -226,28 +228,29 @@ fn a_pull_swallows_a_smaller_block() {
     prism_ops::push_pull(&mut m, side, 3.0, false);
     assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
     closed(&m);
-    // Nothing of the small block is left inside (its footprint stays as
-    // edges on the floor, as in SketchUp).
+    // The side stopped at x = 3, flush with the block's near side.
+    assert_eq!(normal_at(&m, v(3.0, 3.0, 1.5)), v(1.0, 0.0, 0.0));
     assert!(
-        prism_ops::face_at(&m, v(3.5, 1.5, 1.0)).is_none(),
-        "its top"
+        prism_ops::face_at(&m, v(5.0, 3.0, 1.5)).is_none(),
+        "not past it"
     );
+    // The two joined: no wall left between them, and the block's far side
+    // is still there.
     assert!(
         prism_ops::face_at(&m, v(3.0, 1.5, 0.5)).is_none(),
-        "its side"
+        "no wall between"
     );
+    assert_eq!(normal_at(&m, v(4.0, 1.5, 0.5)), v(1.0, 0.0, 0.0));
+    // With Alt (new loop) it is not limited.
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 2.0, 4.0, 3.0);
+    block(&mut m, 3.0, 1.0, 4.0, 2.0, 1.0);
+    let side = prism_ops::face_at(&m, v(2.0, 3.0, 1.5)).expect("big's side");
+    prism_ops::push_pull(&mut m, side, 3.0, true);
     assert!(
-        prism_ops::face_at(&m, v(3.5, 1.0, 0.5)).is_none(),
-        "its front"
+        prism_ops::face_at(&m, v(5.0, 3.0, 1.5)).is_some(),
+        "out to x = 5"
     );
-    let faces_above_floor = m
-        .faces()
-        .filter(|(_, f)| {
-            let c = m.points(&f.outer).iter().copied().sum::<DVec3>() / f.outer.len() as f64;
-            c.x > 0.01 && c.x < 4.99 && c.y > 0.01 && c.y < 3.99 && c.z > 0.01 && c.z < 2.99
-        })
-        .count();
-    assert_eq!(faces_above_floor, 0, "no faces inside the box");
 }
 
 /// A lone rectangle and an open box are never touched by the rule.

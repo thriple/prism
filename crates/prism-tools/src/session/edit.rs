@@ -361,7 +361,33 @@ impl Session {
             t = 0.0;
         }
         *d = t;
+        self.stop_at_faces();
         self.update_preview();
+    }
+
+    /// Push/Pull stops at the first face in its way (owner, 2026-11-09),
+    /// and says so; Alt's new loop is not limited.
+    fn stop_at_faces(&mut self) {
+        let Some(EditOp::Push {
+            face,
+            p0,
+            n,
+            d,
+            new_loop: false,
+            ..
+        }) = self.edit.clone()
+        else {
+            return;
+        };
+        let lim = prism_ops::reach::limit(self.work_model(), face, d);
+        if (lim - d).abs() > self.scene.tol.dist
+            && let Some(EditOp::Push {
+                d: dd, snap: ss, ..
+            }) = &mut self.edit
+        {
+            *dd = lim;
+            *ss = Some(("Stops at Face".to_owned(), p0 + n * lim));
+        }
     }
 
     fn transform_drag(&mut self, s: DVec2, view: &View) {

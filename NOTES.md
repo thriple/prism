@@ -1179,3 +1179,21 @@ Brief: `docs/briefs/21-mcp-server.md`.
   trackpads (pixel scrolls) pass the same way and may wait up to three
   events (a few milliseconds) before panning.
 
+## Owner feedback, 2026-11-09 (Push/Pull stops at faces; Option on a Mac)
+- **Push/Pull never passes through a face** (DECISIONS #31, changed):
+  `prism_ops::reach::limit` finds how far a face can move before its sweep
+  first touches another face: another face's corner inside the swept
+  block, the moving face's corner reaching another face, edges crossing,
+  or a parallel face overlapping it; a neighbour sharing an edge that leans
+  over the path blocks at once. `push_pull` clamps to it unless Alt's new
+  loop is on, and the drag shows "Stops at Face" and the clamped distance.
+  Faces far from the swept block are skipped by their boxes. The test that
+  swallowed a smaller block now checks that the pull stops at it and joins
+  it; the tunnel test (pushed out through the back) still passes.
+- **Option did nothing on a Mac**, and neither did Alt or Ctrl anywhere:
+  the session had the toggles (`AltTap`, `CtrlTap`) but the app never sent
+  them. Now a modifier pressed and let go on its own (no other key or click
+  between) sends them: Ctrl copies and Alt makes a new loop on Windows and
+  Linux; Option does both on a Mac (each tool uses its own), as in
+  SketchUp. The status hints still say "Alt" on a Mac.
+
