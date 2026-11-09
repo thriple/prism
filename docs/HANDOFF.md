@@ -36,6 +36,12 @@ Updated 2026-11-09 (Guam), before a context compaction.
   did); the web wheel sorts scrolls by gesture. The owner should try all
   three by hand.
 - **MCP Server** waits on the owner connecting Claude Code to it.
+- **Window title** names the build ("Prism - Build N"), so the owner can see
+  an update took. Updates still needs a real try (install a build, push,
+  Check for Updates).
+- **Waiting on the owner to try by hand (2026-11-09):** Push/Pull stopping
+  at faces, Option/Alt/Ctrl taps, the web wheel, Toolbars part 2, ghosts,
+  Updates, MCP Server.
 - **MCP spec:** 2026-07-28 is the newest release (stateless, no
   `initialize`); the server speaks it and the older handshake. The spec
   site is blocked here; the spec repository on GitHub is reachable
