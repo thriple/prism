@@ -5,7 +5,7 @@
 use egui::{Area, Context, Id, Order, Pos2, Rect, ScrollArea, Sense, Ui, Vec2, pos2, vec2};
 use prism_ui::emboss;
 use prism_ui::theme::{self, color, depth, radius, size};
-use prism_ui::widgets::{SoftButton, ToolButton, menu, tooltip};
+use prism_ui::widgets::{SoftButton, ToolButton, tooltip};
 
 use super::{Chrome, MenuKind, Source};
 use crate::actions::keymap::{Chord, Mods, key_label};
@@ -196,6 +196,9 @@ pub fn hint(chord: Option<&Chord>) -> String {
 #[derive(Default)]
 struct Hits {
     hovered: Option<(Rect, &'static str, Rect)>,
+    /// The pointer is on a toolbar's space between its buttons: its name
+    /// shows as the tooltip (owner request: no labels, to save room).
+    bar: Option<(Rect, String, Rect)>,
     clicked: Option<&'static str>,
     /// A toolbar's title or grip was pressed: (name, its corner).
     grabbed: Option<(String, Pos2)>,
@@ -269,6 +272,14 @@ fn title_bar(ui: &mut Ui, name: &str, rect: Rect, corner: Pos2, hits: &mut Hits)
     );
 }
 
+/// The faint line between two toolbars in a dock.
+fn divider(ui: &Ui, a: Pos2, b: Pos2) {
+    ui.painter().line_segment(
+        [a, b],
+        egui::Stroke::new(size::EDGE_WIDTH, color::MUTED.gamma_multiply(0.35)),
+    );
+}
+
 /// The rounded box around a toolbar in edit mode.
 fn edit_box(ui: &Ui, rect: Rect) {
     ui.painter().rect_stroke(
@@ -333,13 +344,18 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context, left: Rect, top: Rect, ar
     if chrome.toolbars.editing {
         hits.hovered = None;
     }
-    let text = hits
-        .hovered
-        .map(|(_, id, _)| chrome.tip(id))
-        .unwrap_or_default();
-    // Beside the toolbar, level with the button, so it never covers the
-    // other buttons.
-    let anchor = hits.hovered.map(|(r, _, beside)| {
+    if chrome.toolbars.editing {
+        hits.bar = None;
+    }
+    // A button's tip, else the name of the toolbar under the pointer.
+    let (text, anchor) = match (&hits.hovered, &hits.bar) {
+        (Some((r, id, beside)), _) => (chrome.tip(id), Some((*r, *beside))),
+        (None, Some((r, name, beside))) => (name.clone(), Some((*r, *beside))),
+        (None, None) => (String::new(), None),
+    };
+    // Beside the toolbar, level with the button (or the toolbar), so it
+    // never covers the other buttons.
+    let anchor = anchor.map(|(r, beside)| {
         Rect::from_min_max(
             pos2(beside.left(), r.top()),
             pos2(beside.right(), r.bottom()),
@@ -407,8 +423,15 @@ fn show_left(chrome: &mut Chrome, ctx: &Context, rect: Rect, hits: &mut Hits) {
                 .show(&mut content, |ui| {
                     ui.spacing_mut().item_spacing = vec2(G, G);
                     for (i, name) in names.iter().enumerate() {
-                        if i > 0 {
+                        if i > 0 && editing {
                             ui.add_space(size::DOCK_GROUP_GAP);
+                        } else if i > 0 {
+                            // A divider between toolbars, in place of labels.
+                            let (d, _) = ui.allocate_exact_size(
+                                vec2(inner.width(), size::DOCK_GROUP_GAP),
+                                Sense::hover(),
+                            );
+                            divider(ui, d.left_center(), d.right_center());
                         }
                         let ids = ids_of(chrome, name);
                         let lines = lines_for(ids.len());
@@ -417,10 +440,11 @@ fn show_left(chrome: &mut Chrome, ctx: &Context, rect: Rect, hits: &mut Hits) {
                         if editing {
                             let (r, _) = ui.allocate_exact_size(vec2(w, TITLE), Sense::hover());
                             title_bar(ui, name, r, r.min, hits);
-                        } else {
-                            ui.label(menu::caps(name, color::MUTED));
                         }
                         let (r, _) = ui.allocate_exact_size(vec2(w, s.y), Sense::hover());
+                        if ui.rect_contains_pointer(r) {
+                            hits.bar = Some((r, name.clone(), rect));
+                        }
                         buttons(ui, chrome, ids, r, lines, true, G, rect, hits);
                         let whole = if editing {
                             Rect::from_min_max(r.min - vec2(0.0, TITLE + G), r.max)
@@ -451,8 +475,17 @@ fn show_top(chrome: &mut Chrome, ctx: &Context, rect: Rect, hits: &mut Hits) {
             if bg.secondary_clicked() {
                 hits.menu_at = bg.interact_pointer_pos();
             }
-            for (name, r) in &bars {
+            for (k, (name, r)) in bars.iter().enumerate() {
                 let r = r.translate(inner.min.to_vec2());
+                if ui.rect_contains_pointer(r) {
+                    hits.bar = Some((r, name.clone(), r));
+                }
+                // A divider before each toolbar that follows another on its
+                // line.
+                if !editing && k > 0 && bars[k - 1].1.top() == bars[k].1.top() {
+                    let x = r.left() - TOP_SPACING * 0.5;
+                    divider(ui, pos2(x, r.top()), pos2(x, r.bottom()));
+                }
                 let ids = ids_of(chrome, name);
                 let buttons_rect = if editing {
                     title_bar(ui, name, r, r.min, hits);
@@ -515,6 +548,9 @@ fn show_floating(chrome: &mut Chrome, ctx: &Context, hits: &mut Hits) {
             .fixed_pos(at)
             .show(ctx, |ui| {
                 let (r, bg) = ui.allocate_exact_size(size, Sense::click());
+                if ui.rect_contains_pointer(r) {
+                    hits.bar = Some((r, name.clone(), r));
+                }
                 let mut shapes = Vec::new();
                 emboss::floating(
                     &mut shapes,

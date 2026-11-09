@@ -1022,6 +1022,9 @@ Brief: `docs/briefs/19-toolbars.md` (owner request, built before Updates).
   it otherwise), and the frame asks for a redraw.
 - **New buttons:** a View toolbar with X-ray and Hidden Geometry (new
   icons).
+- **No labels** (owner, 2026-11-09): a toolbar's name is the tooltip over
+  its empty space (the kit's tooltip, as the buttons'), and faint dividers
+  separate toolbars in a dock, to save room.
 - **Left over (part 2):** the Toolbars window (View > Toolbars and Panels,
   still greyed) with drag-out, and reshaping a toolbar by dragging its
   edge. Docking on the right or bottom is not planned.

@@ -6,38 +6,53 @@ Written 2026-11-06, updated 2026-11-09 (Guam). Read `CLAUDE.md` first, as always
 Updated 2026-11-09 (Guam), before a context compaction.
 - **Built, in order:** Skeleton, Soft Theme, Actions & Keys, Core Model,
   Viewport, Inference & Drawing, Edit Tools (3 parts), Files & Formats
-  (3 parts), Groups & Components (3 parts), Model Health (2 parts). PLAN
+  (3 parts), Groups & Components (3 parts), Model Health (2 parts), View
+  Settings (2 parts, briefs 17 and 18), Toolbars part 1 (brief 19). PLAN
   6.0 has the details; NOTES has a section per part.
-- **This session (2026-11-08), in order:**
-  - Owner feedback on Push/Pull: edge by edge (an edge slides when its
-    other faces run along the push behind the face), the coplanar rule
-    after edits (DECISIONS #30), and the solid rule (DECISIONS #31: Push/
-    Pull on a closed solid is a boolean with the swept block). NOTES "The
-    solid rule" lists the rare random cases that still fail (pinched
-    loops; a push deeper than a neighbouring wall reaches).
-  - Offset snaps like Move.
-  - Groups & Components: briefs 12, 13, 14. Model Health: briefs 15, 16.
-- **State:** `main` = session branch = `16a4648`, CI green, web page
-  updated. Nothing uncommitted.
-- **Next: Toolbars part 2** (brief 19: the Toolbars window, reshaping;
-  the owner asked for toolbars after View Settings was built), then
-  Updates and MCP Server, then the next rows of the PLAN 6.0 table (see
-  the standing rule below).
-- **Waiting on the owner to try by hand:** groups and components (make,
-  select, open, close, explode, copy), the Components, Outliner, Entity
-  Info, Tags and Model Health windows, and the Push/Pull cases they
-  reported. None has been clicked through in the real app.
-- **Owner's standing instructions this session:** push tested work to
-  `main` (everyone on one branch); breaking up XL chunks into parts is
-  welcome (owner's correction, 2026-11-09: XL chunks, not every chunk),
-  and so is splitting any part, or researching first, when you are not
-  prepared enough to build it in one go; double-check work before
-  pushing (owner, 2026-11-09);
-  "full auto" was on until Model Health was done.
+- **Since the last compaction (2026-11-08 to 09), owner feedback fixed:**
+  - the plan was put in build order, with a standing rule to follow it;
+  - Move keeps a neighbour's straight edge straight;
+  - Offset goes through a snapped point;
+  - the group box follows Move and is padded when a group is open;
+  - double- and triple-click work inside groups, and Push/Pull and Offset
+    ignore closed groups;
+  - the side windows dock in a right-hand column;
+  - a face never hides a line in its own plane (general fix for
+    z-fighting corner lines);
+  - `Command::Duplicate` was removed (it made CI hang);
+  - Updates and MCP Server were added to the plan, right after View
+    Settings.
+- **State:** `main` = session branch, CI green. Nothing uncommitted.
+- **Next: Toolbars part 2** (brief 19: the Toolbars window, View >
+  Toolbars and Panels, with drag-out of closed toolbars; reshaping a
+  toolbar by dragging its edge). Then Updates, then MCP Server, then the
+  next rows of the PLAN 6.0 table (see the standing rule below).
+- **Toolbars, as the owner shaped them:** no name labels (the name is a
+  tooltip over a toolbar's empty space, the kit's tooltip), faint dividers
+  between toolbars; 1 button thick up to 5 tools, 2 from 6; a dock is as
+  thick as its thickest toolbar; the top dock takes no space when empty;
+  floating toolbars are tight. The owner wants them "more adaptable": part
+  2's reshaping is the next step.
+- **Waiting on the owner to try by hand:** the toolbars, View Settings
+  (styles, X-ray, the sun and shadows, Show Hidden), the side windows,
+  groups and components, Model Health, and the Push/Pull cases. The web
+  build has not been run since the face-plane render target was added
+  (WebGL2 should allow it; installing trunk here was blocked).
+- **Owner's standing instructions:** push tested work to `main` (everyone
+  on one branch); break up XL chunks into parts; split any part, or
+  research first, when not prepared enough to build it in one go;
+  double-check work before pushing.
 - **Standing rule (owner, 2026-11-08): follow the plan in order.** Build
   the chunks in the order of the PLAN 6.0 table, top to bottom: the next
   chunk is the first row not yet started. Do not ask which chunk is next.
-  Only the owner changes the order.
+  Only the owner changes the order (Toolbars was the owner's own request,
+  put before Updates).
+- **Checking UI here:** the app runs under Xvfb with Mesa
+  (`apt-get install -y mesa-vulkan-drivers xdotool libxkbcommon-x11-0`),
+  driven by `xdotool` and captured with `import -window root`. Set
+  `XDG_CONFIG_HOME` to a scratch folder so saved settings stay out of the
+  way. The app redraws only on change: move the mouse a little before a
+  capture.
 - **GPU tests here:** install Mesa's software Vulkan driver first
   (`apt-get install -y mesa-vulkan-drivers`), then run with
   `PRISM_REQUIRE_GPU=1`; without it they skip silently.
