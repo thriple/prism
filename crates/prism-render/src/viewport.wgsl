@@ -136,7 +136,8 @@ fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4
     if (in.faded != 0u) {
         c = mix(c, vec3<f32>(1.0, 1.0, 1.0), 0.6);
     }
-    return vec4<f32>(c, 1.0);
+    // Alpha is 1 except in X-ray, whose pipeline blends.
+    return vec4<f32>(c, base.a);
 }
 
 // A second pass over the faces, with the depth test "equal", writes which

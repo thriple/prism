@@ -296,8 +296,8 @@ pub struct Session {
     last_tape: Option<f64>,
     /// Tape Measure measures without making a guide (Ctrl).
     measure_only: bool,
-    /// View > Guides.
-    show_guides: bool,
+    /// What is shown and how (View Settings, PLAN 1.14); `style` follows it.
+    view: prism_view::ViewStyle,
     /// The guide under the Eraser.
     hover_guide: Option<prism_topo::GuideId>,
     /// The open group (empty at the root), and the selected groups in it.
@@ -330,7 +330,7 @@ impl Session {
             last_offset: None,
             last_tape: None,
             measure_only: false,
-            show_guides: true,
+            view: prism_view::ViewStyle::default(),
             hover_guide: None,
             ctx: Vec::new(),
             groups: BTreeSet::new(),
@@ -370,7 +370,7 @@ impl Session {
             inference: None,
             typed: String::new(),
             number: NumberFormat::default(),
-            style: Style::default(),
+            style: prism_view::ViewStyle::default().apply(&Style::default()),
             ease: true,
             reduce_motion: false,
             dirty: true,
@@ -407,7 +407,7 @@ impl Session {
     }
 
     fn set_preview(&mut self, m: Option<Model>) {
-        let scene = m.map(|m| self.compose(Scene::build_with(&m, self.show_guides)));
+        let scene = m.map(|m| self.compose(Scene::build_with(&m, self.view.guides)));
         self.set_preview_scene(scene);
     }
 
@@ -902,6 +902,39 @@ impl Session {
         true
     }
 
+    /// What is shown and how (View Settings).
+    pub fn view_style(&self) -> &prism_view::ViewStyle {
+        &self.view
+    }
+
+    /// Change the view style: the drawing style follows, and faces stop
+    /// hiding or being picked in X-ray and Wireframe.
+    pub fn set_view_style(&mut self, v: prism_view::ViewStyle) {
+        if v == self.view {
+            return;
+        }
+        let guides = v.guides != self.view.guides;
+        self.view = v;
+        self.style = self.view.apply(&Style::default());
+        if guides {
+            self.model_changed();
+        } else {
+            self.set_pick_flags();
+            self.version += 1;
+            self.highlight_dirty = true;
+            self.overlay_dirty = true;
+            self.dirty = true;
+        }
+        self.refresh();
+    }
+
+    /// Whether faces hide and can be picked, from the view style.
+    fn set_pick_flags(&mut self) {
+        use prism_view::style::FaceDraw;
+        self.scene.faces_hide = self.style.faces == FaceDraw::Solid;
+        self.scene.faces_pick = self.style.faces != FaceDraw::None;
+    }
+
     /// How lengths are shown (File > Document Settings).
     pub fn set_units(&mut self, units: prism_math::DisplayUnits) {
         if self.number.units != units {
@@ -1015,10 +1048,10 @@ impl Session {
                 self.run(Command::IntersectFaces { faces });
                 self.refresh();
             }
-            "view.guides" => {
-                self.show_guides = !self.show_guides;
-                self.model_changed();
-                self.refresh();
+            id if prism_view::view_style::TOGGLES.contains(&id) => {
+                let mut v = self.view.clone();
+                v.toggle(id);
+                self.set_view_style(v);
             }
             _ => {
                 if let Some(doc) = crate::scenes::by_action(id) {

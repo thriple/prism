@@ -27,7 +27,7 @@ use wgpu::util::DeviceExt;
 use crate::camera::{Camera, FOV_Y_DEG, View};
 use crate::pick::Hit;
 use crate::scene::Scene;
-use crate::style::{HiddenLines, Rgba, Style};
+use crate::style::{FaceDraw, HiddenLines, Rgba, Style};
 
 /// The texture format the viewport draws into (sRGB values, like the canvas).
 pub const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -279,6 +279,8 @@ pub struct Renderer {
     bg: wgpu::RenderPipeline,
     shadow: wgpu::RenderPipeline,
     faces: [wgpu::RenderPipeline; 2],
+    /// Faces see-through (X-ray): blended over what is behind.
+    xray: [wgpu::RenderPipeline; 2],
     tints: [wgpu::RenderPipeline; 2],
     ids: [wgpu::RenderPipeline; 2],
     line: wgpu::RenderPipeline,
@@ -288,6 +290,8 @@ pub struct Renderer {
     hover_faces: Indices,
     selected_faces: Indices,
     edges: Lines,
+    /// Every vertex as a dot (View > Show > Points).
+    points: Lines,
     grid: Lines,
     grid_style: Option<Style>,
     highlight_lines: Lines,
@@ -544,6 +548,28 @@ impl Renderer {
                     back_bias,
                 ),
             ],
+            xray: [
+                pipeline(
+                    "x-ray faces (front)",
+                    "face_vs",
+                    "face_fs",
+                    face_l,
+                    alpha,
+                    Some(C::Greater),
+                    true,
+                    face_bias,
+                ),
+                pipeline(
+                    "x-ray faces (back)",
+                    "face_vs",
+                    "face_fs",
+                    face_l,
+                    alpha,
+                    Some(C::Greater),
+                    true,
+                    back_bias,
+                ),
+            ],
             ids: [
                 pipeline(
                     "face ids (front)",
@@ -620,6 +646,7 @@ impl Renderer {
                 count: 0,
             },
             edges: Lines::empty(),
+            points: Lines::empty(),
             grid: Lines::empty(),
             grid_style: None,
             highlight_lines: Lines::empty(),
@@ -823,12 +850,18 @@ impl Renderer {
             .edges
             .iter()
             .map(|e| {
-                // Edges outside the open group are drawn faint.
-                let color = if e.faded {
-                    style.edge.with_alpha(style.faded_alpha)
-                } else {
-                    style.edge
-                };
+                // Along an axis, in its colour if asked; edges outside the
+                // open group faint.
+                let mut color = style.edge;
+                if style.lines_by_axis {
+                    let d = (e.b - e.a).normalize_or_zero();
+                    if let Some(i) = (0..3).find(|i| d[*i].abs() > 1.0 - 1e-9) {
+                        color = style.axes[i];
+                    }
+                }
+                if e.faded {
+                    color = color.with_alpha(style.faded_alpha);
+                }
                 let mut l = LineInstance::new(e.a, e.b, color, style.edge_width).flags(MODEL_EDGE);
                 if let Some(n) = e.normals[0] {
                     l.n1 = n.as_vec3().to_array();
@@ -843,6 +876,12 @@ impl Renderer {
             })
             .collect();
         self.edges.set(device, "edges", &edges);
+        let points: Vec<LineInstance> = scene
+            .vertices
+            .iter()
+            .map(|(_, p)| LineInstance::new(*p, *p, style.edge, style.point_size).flags(POINT))
+            .collect();
+        self.points.set(device, "points", &points);
     }
 
     /// Rebuild what is highlighted (when the hover or the selection changed).
@@ -927,7 +966,7 @@ impl Renderer {
             return;
         }
         let mut lines = Vec::new();
-        let n = style.grid_lines;
+        let n = if style.show_grid { style.grid_lines } else { 0 };
         let sp = style.grid_spacing;
         let step = style.grid_major_every.max(1);
         for k in -n..=n {
@@ -967,7 +1006,8 @@ impl Renderer {
         let l = style.axis_length;
         let pos = crate::style::alpha(style.axis_alpha);
         let neg = crate::style::alpha(style.axis_negative_alpha);
-        for (i, dir) in [DVec3::X, DVec3::Y, DVec3::Z].into_iter().enumerate() {
+        let axes = if style.show_axes { 3 } else { 0 };
+        for (i, dir) in [DVec3::X, DVec3::Y, DVec3::Z].into_iter().enumerate().take(axes) {
             let c = style.axes[i];
             lines.push(
                 LineInstance::new(DVec3::ZERO, dir * l, c.with_alpha(pos), style.axis_width)
@@ -1042,8 +1082,17 @@ impl Renderer {
             back: c(s.face_back),
             sky_top: c(s.sky_top),
             sky_horizon: c(s.sky_horizon),
-            ground_horizon: c(s.ground_near_horizon),
-            ground_bottom: c(s.ground_bottom),
+            // Without the ground, the sky fills the background.
+            ground_horizon: c(if s.show_ground {
+                s.ground_near_horizon
+            } else {
+                s.sky_horizon
+            }),
+            ground_bottom: c(if s.show_ground {
+                s.ground_bottom
+            } else {
+                s.sky_horizon
+            }),
             shadow: [sd.x, sd.y, sd.z, s.shadow_alpha],
             stipple: [s.stipple_tile, s.stipple_dot, 0.0, 0.0],
         };
@@ -1103,7 +1152,10 @@ impl Renderer {
         pass.set_pipeline(&self.bg);
         pass.draw(0..3, 0..1);
 
-        if let (Some(vb), Some(ib)) = (&self.face_vertices, &self.face_indices.buffer) {
+        let faces = (s.faces != FaceDraw::None)
+            .then_some(())
+            .and(self.face_vertices.as_ref().zip(self.face_indices.buffer.as_ref()));
+        if let Some((vb, ib)) = faces {
             pass.set_vertex_buffer(0, vb.slice(..));
             if f.shadow {
                 pass.set_pipeline(&self.shadow);
@@ -1111,7 +1163,12 @@ impl Renderer {
                 pass.draw_indexed(0..self.face_indices.count, 0, 0..1);
             }
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-            for p in &self.faces {
+            let pipes = if s.faces == FaceDraw::XRay {
+                &self.xray
+            } else {
+                &self.faces
+            };
+            for p in pipes {
                 pass.set_pipeline(p);
                 pass.draw_indexed(0..self.face_indices.count, 0, 0..1);
             }
@@ -1157,7 +1214,10 @@ impl Renderer {
             }),
             ..Default::default()
         });
-        if let (Some(vb), Some(ib)) = (&self.face_vertices, &self.face_indices.buffer) {
+        // Only solid faces hide lines (X-ray and Wireframe show them all).
+        if let (Some(vb), Some(ib), FaceDraw::Solid) =
+            (&self.face_vertices, &self.face_indices.buffer, s.faces)
+        {
             pass.set_bind_group(0, &self.globals_group, &[]);
             pass.set_bind_group(1, &self.draws[PLAIN].group, &[]);
             pass.set_vertex_buffer(0, vb.slice(..));
@@ -1187,11 +1247,16 @@ impl Renderer {
         pass.set_bind_group(2, &target.ids_group, &[]);
         pass.set_pipeline(&self.line);
         self.grid.draw(&mut pass);
-        self.edges.draw(&mut pass);
-        if s.hidden_lines != HiddenLines::Off {
-            pass.set_bind_group(1, &self.draws[HIDDEN].group, &[]);
+        if s.show_lines {
             self.edges.draw(&mut pass);
-            pass.set_bind_group(1, &self.draws[PLAIN].group, &[]);
+            if s.hidden_lines != HiddenLines::Off {
+                pass.set_bind_group(1, &self.draws[HIDDEN].group, &[]);
+                self.edges.draw(&mut pass);
+                pass.set_bind_group(1, &self.draws[PLAIN].group, &[]);
+            }
+        }
+        if s.show_points {
+            self.points.draw(&mut pass);
         }
         self.highlight_lines.draw(&mut pass);
         self.dots.draw(&mut pass);

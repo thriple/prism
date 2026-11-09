@@ -93,6 +93,7 @@ impl Session {
         self.owners = b.owners;
         self.pieces = b.pieces;
         self.scene = b.scene;
+        self.set_pick_flags();
     }
 
     /// The scene of an assembly, seen from the open group.
@@ -160,7 +161,7 @@ impl Session {
             });
         }
         let mut scene =
-            Scene::build_with(work.as_ref().unwrap_or(&asm.root().model), self.show_guides);
+            Scene::build_with(work.as_ref().unwrap_or(&asm.root().model), self.view.guides);
         for p in &pieces {
             scene.merge(p.scene.clone(), p.owner, p.faded);
         }

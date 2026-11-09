@@ -1778,3 +1778,52 @@ fn model_health_draws_open_edges_and_reversed_faces_in_the_model() {
     d.s.set_health_view(false);
     assert_eq!(red(&d), 0, "off when the panel closes");
 }
+
+// ---------- View Settings (part 1) ----------
+
+fn pulled_box(d: &mut Driver) {
+    rect_on_ground(d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    d.tool(SELECT);
+    act(d, "edit.desel");
+}
+
+/// In Wireframe faces are not drawn and cannot be picked.
+#[test]
+fn wireframe_faces_cannot_be_picked() {
+    let mut d = Driver::empty();
+    pulled_box(&mut d);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.selection().faces.len(), 1, "a shaded face picks");
+    act(&mut d, "edit.desel");
+    d.s.set_view_style(prism_view::ViewStyle::preset("Wireframe").unwrap());
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    assert!(d.s.selection().is_empty(), "{:?}", d.s.selection());
+}
+
+/// In X-ray a corner behind the box can be snapped to.
+#[test]
+fn xray_snaps_to_a_corner_behind_faces() {
+    let mut d = Driver::empty();
+    pulled_box(&mut d);
+    let eye = d.s.view().eye;
+    let hidden = [0.0, 2.0]
+        .iter()
+        .flat_map(|x| [0.0, 2.0].map(|y| DVec3::new(*x, y, 0.0)))
+        .find(|p| d.s.scene().occluded(eye, *p))
+        .expect("a bottom corner hidden behind the box");
+    d.tool(LINE);
+    d.hover(hidden);
+    let snapped = |d: &Driver| {
+        d.s.inference()
+            .is_some_and(|i| i.kind == prism_infer::Kind::Endpoint && i.point.distance(hidden) < 1e-9)
+    };
+    assert!(!snapped(&d), "hidden when shaded");
+    act(&mut d, "view.xray");
+    assert!(d.s.view_style().xray);
+    d.hover(hidden + DVec3::new(0.01, 0.0, 0.0));
+    d.hover(hidden);
+    assert!(snapped(&d), "{:?}", d.s.inference());
+}
