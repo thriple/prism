@@ -352,3 +352,42 @@ fn a_lone_face_pushed_back_makes_a_box() {
     assert!(h.reversed.is_empty(), "{h:?}");
     assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
 }
+
+/// The owner's wedge (session 5, 2026-11-09): a triangle drawn on a box's
+/// back plane, against its upright edge, pushed back along the box. The
+/// box's side faces the triangle, so that edge gets a wall (it used to
+/// slide, squashing the side and leaving the wedge open with two walls
+/// facing in). The triangle stays as the wedge's back.
+#[test]
+fn a_triangle_against_a_box_pushed_back_makes_a_closed_wedge() {
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 2.0, 2.0, 2.0);
+    poly(
+        &mut m,
+        &[v(2.0, 2.0, 0.0), v(2.0, 2.0, 2.0), v(6.0, 2.0, 0.0)],
+    );
+    let tri = prism_ops::face_at(&m, v(3.0, 2.0, 0.5)).expect("the triangle");
+    let n = m.face(tri).unwrap().plane().unwrap().normal;
+    prism_ops::push_pull(&mut m, tri, -2.0 * n.y, false);
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    closed(&m);
+    let h = prism_ops::health::check(&m);
+    assert_eq!((h.watertight, h.leaky), (1, 0));
+    assert!(h.reversed.is_empty(), "{h:?}");
+    assert_eq!(
+        normal_at(&m, v(3.0, 2.0, 0.5)),
+        v(0.0, 1.0, 0.0),
+        "the back"
+    );
+    assert_eq!(
+        normal_at(&m, v(3.0, 1.0, 0.0)),
+        v(0.0, 0.0, -1.0),
+        "the bottom"
+    );
+    assert!(
+        normal_at(&m, v(4.0, 1.0, 1.0)).z > 0.0,
+        "the slope faces up"
+    );
+    // The box's side is inside the joined solid now.
+    assert!(prism_ops::face_at(&m, v(2.0, 1.0, 1.0)).is_none());
+}

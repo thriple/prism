@@ -149,6 +149,27 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let pairs: Vec<(VertexId, VertexId)> = f.loops().flat_map(|l| loop_pairs(l)).collect();
     let mut standalone = true;
     let mut any_slide = false;
+    let mut any_open = false;
+    // Shares an edge with a face at an angle to it (drawn against a solid,
+    // not only beside faces on its own plane).
+    let mut against = false;
+    // A neighbour faces away from the pulled face across the edge (the
+    // walls under a box's top), not towards it (the side of another solid
+    // the face was drawn against).
+    let faces_away = |g: FaceId, edge: EdgeId, from: VertexId| {
+        let Some(e) = model.edge(edge) else {
+            return false;
+        };
+        let (ea, eb) = (model.vertex(e.a), model.vertex(e.b));
+        // Midway along the edge (on an arc, not its chord), and the way
+        // the face's loop walks it there.
+        let mid = e.curve.point(ea, eb, 0.5);
+        let walk = e.curve.start_tangent(mid, eb) * if from == e.a { 1.0 } else { -1.0 };
+        let inward = n.cross(walk);
+        model
+            .face(g)
+            .is_some_and(|g| g.surface.normal_at(mid).dot(inward) < tol.dist)
+    };
     let mut walls_at: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
     let mut slides: Vec<((VertexId, VertexId), Vec<FaceId>)> = Vec::new();
     for side in f.sides() {
@@ -158,12 +179,18 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             if line_behind(a) && line_behind(b) {
                 slides.push(((a, b), o));
             } else {
+                any_open = true;
                 walls_at.insert(key(a, b));
             }
             continue;
         }
         standalone = false;
-        if o.iter().all(|g| along(*g)) {
+        against |= o.iter().any(|g| {
+            model
+                .face(*g)
+                .is_some_and(|g| !g.plane().is_some_and(|p| tol.parallel(p.normal, n)))
+        });
+        if o.iter().all(|g| along(*g) && faces_away(*g, side.edge, a)) {
             any_slide = true;
             slides.push(((a, b), o));
         } else {
@@ -392,7 +419,11 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     if new_loop && !standalone {
         // Alt: the original boundary stays as a face.
         model.add_face(original(false));
-    } else if standalone {
+    } else if standalone || (any_open && against && !any_slide) {
+        // A face that extrudes whole keeps its base, so the solid is
+        // closed: a lone face, or one with free sides drawn against a
+        // solid (a triangle on a box's edge). A flat drawing pulled (a ring
+        // round another face) keeps none (DECISIONS #14).
         if distance > 0.0 {
             // A base facing the other way closes the solid.
             model.add_face(original(true));

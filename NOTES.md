@@ -1652,3 +1652,21 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   is refused; zero is refused; a property test of random radii; the
   session by clicks and typing, with undo; undo and redo in the document
   test (a new kind, last); MCP.
+
+## Fixes from the owner's session 5 (2026-11-09): a wedge on a box
+
+- **Push/Pull:** an edge slides only when its neighbour also faces away
+  from the pulled face across it (the walls under a box's top). A box's
+  side facing a triangle drawn against it now gets a wall instead: the
+  side used to be squashed flat, leaving the wedge open with two walls
+  facing in. This refines DECISIONS #30's "runs along the push behind the
+  face"; the owner should confirm.
+- **Push/Pull:** a face with free sides drawn against a solid keeps its
+  base when it extrudes whole, so the wedge is closed. A flat drawing (a
+  ring round another face) still keeps none (DECISIONS #14).
+- **Drawing:** a line drawn over a side of a flat loop with no face fills
+  it, as in SketchUp (it used to need a line across the opening).
+- Lines between coplanar faces after a pull stay (the stairs rule, "split,
+  never merged"); erasing one merges the faces. The owner asked to look at
+  the shape rules against SketchUp as a whole.
+- Tests: the wedge (`pushpull_feedback.rs`), retracing (`sticky.rs`).

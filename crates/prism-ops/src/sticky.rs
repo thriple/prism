@@ -213,10 +213,17 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
             added.push(e);
         }
     }
-    if added.is_empty() {
-        return Added::default();
-    }
-    let new: BTreeSet<EdgeId> = added.iter().copied().collect();
+    // Drawn over edges already there: they close faces as if new, so
+    // retracing a side of a flat loop with no face fills it (as in
+    // SketchUp).
+    let new: BTreeSet<EdgeId> = if added.is_empty() {
+        chain
+            .windows(2)
+            .filter_map(|w| model.line_between(w[0], w[1]))
+            .collect()
+    } else {
+        added.iter().copied().collect()
+    };
     let mut faces = Vec::new();
     for plane in candidate_planes(model, &chain, pa, pb, &tol) {
         faces.extend(rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0));
