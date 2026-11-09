@@ -386,6 +386,21 @@ impl Model {
         id
     }
 
+    /// Every edge of the curve `e` belongs to (a circle's arcs, a polygon's
+    /// sides), in id order; just `e` if it has no curve id.
+    pub fn curve_edges(&self, e: EdgeId) -> Vec<EdgeId> {
+        match self.edge(e).and_then(|x| x.curve_id) {
+            Some(c) => self
+                .edges
+                .iter()
+                .filter(|(_, x)| x.curve_id == Some(c))
+                .map(|(&id, _)| id)
+                .collect(),
+            None if self.edge(e).is_some() => vec![e],
+            None => Vec::new(),
+        }
+    }
+
     /// Set the curve id of an edge (a polygon's straight edges share one).
     pub fn set_curve_id(&mut self, e: EdgeId, curve_id: Option<CurveId>) {
         if let Some(x) = self.edges.get_mut(&e) {

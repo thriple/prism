@@ -1875,3 +1875,56 @@ fn lighting_menu_items_switch_the_sun() {
     act(&mut d, "light.default");
     assert!(!d.s.view_style().sun);
 }
+
+/// A 6 by 4 rectangle with a circle of radius 1 at (3, 2), and a line
+/// across the rectangle through the circle's seams.
+fn circle_in_a_rectangle() -> Driver {
+    use prism_doc::Command;
+    let mut doc = Document::new();
+    doc.run(Command::Rect {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 6.0,
+        y1: 4.0,
+        z: 0.0,
+    });
+    doc.run(Command::Circle {
+        centre: DVec3::new(3.0, 2.0, 0.0),
+        normal: DVec3::Z,
+        radius: 1.0,
+    });
+    doc.run(Command::Segment {
+        p: DVec3::new(3.0, 0.0, 0.0),
+        q: DVec3::new(3.0, 4.0, 0.0),
+    });
+    let mut d = Driver::new(doc);
+    d.look(Camera {
+        eye: DVec3::new(3.0, -4.0, 9.0),
+        target: DVec3::new(3.0, 2.0, 0.0),
+    });
+    d
+}
+
+#[test]
+fn a_click_on_an_arc_selects_its_whole_circle() {
+    let mut d = circle_in_a_rectangle();
+    assert_eq!(d.faces(), 4);
+    d.tool(SELECT);
+    d.click(DVec3::new(4.0, 2.0, 0.0));
+    let sel = d.s.selection().clone();
+    assert_eq!(sel.edges.len(), 2, "both halves of the circle");
+    for e in &sel.edges {
+        assert!(d.s.model().edge(*e).unwrap().curve.is_arc());
+    }
+}
+
+#[test]
+fn the_eraser_takes_the_whole_circle_and_the_faces_merge() {
+    let mut d = circle_in_a_rectangle();
+    d.tool(ERASE);
+    d.click(DVec3::new(4.0, 2.0, 0.0));
+    assert_eq!(d.faces(), 2, "the line still splits the rectangle");
+    assert!(d.s.model().edges().all(|(_, e)| !e.curve.is_arc()));
+    same(&areas(&d), &[12.0, 12.0]);
+    valid(&d);
+}

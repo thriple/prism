@@ -1339,3 +1339,15 @@ and inference, 2d the Circle and Polygon tools).
   at "Install trunk": the download from GitHub releases returned a 504
   page. If it happens again, make that step retry
   (`curl --fail --retry 5 --retry-all-errors`).
+
+## Exact Curves (part 2, step 2c): picking, inference, Model Health
+
+- **Part 1, whole curves:** a click on an arc (or any edge with a curve
+  id) selects every edge of its curve (`Model::curve_edges`); Shift and
+  Ctrl clicks follow, as they go through `click_select`. The Eraser picks
+  arcs along their drawn pieces, highlights the whole curve and erases it;
+  the faces it bounded merge.
+- **Open:** a line across a circle keeps all the pieces in one curve, so
+  a click still takes the whole circle. SketchUp may split the curve
+  there; left as the brief says (whole curve) until the owner decides.
+- **Box select** still takes only the pieces it touches or holds.

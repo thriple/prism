@@ -263,11 +263,14 @@ impl Session {
                     self.dirty = true;
                 }
                 self.set_hover_pick(h);
+                // The Eraser takes an arc's whole curve.
+                let curve = match h.map(|p| p.hit) {
+                    Some(Hit::Edge(e)) => self.work_model().curve_edges(e),
+                    _ => Vec::new(),
+                };
                 if let Some(EditOp::Erase { edges, guides }) = &mut self.edit {
                     let mut more = false;
-                    if let Some(p) = h
-                        && let Hit::Edge(e) = p.hit
-                    {
+                    for e in curve {
                         more |= edges.insert(e);
                     }
                     if let Some(g) = g {
@@ -650,7 +653,7 @@ impl Session {
             ERASE => {
                 let mut edges = BTreeSet::new();
                 if let Some(Hit::Edge(e)) = self.hover.map(|p| p.hit) {
-                    edges.insert(e);
+                    edges.extend(self.work_model().curve_edges(e));
                 }
                 let guides = self.hover_guide.into_iter().collect();
                 self.edit = Some(EditOp::Erase { edges, guides });
@@ -1311,28 +1314,37 @@ impl Session {
             }
             Some(EditOp::Erase { edges, .. }) => {
                 for e in edges.iter().filter_map(|e| self.scene.edge(*e)) {
-                    o.lines.push(Line {
-                        a: e.a,
-                        b: e.b,
-                        color: fb.erase,
-                        width: fb.target_width,
-                        dash: [0.0, 0.0],
-                    });
+                    for (a, b) in e.segments() {
+                        o.lines.push(Line {
+                            a,
+                            b,
+                            color: fb.erase,
+                            width: fb.target_width,
+                            dash: [0.0, 0.0],
+                        });
+                    }
                 }
             }
             _ => {}
         }
         if self.tool == ERASE
             && let Some(Hit::Edge(e)) = self.hover.map(|p| p.hit)
-            && let Some(e) = self.scene.edge(e)
         {
-            o.lines.push(Line {
-                a: e.a,
-                b: e.b,
-                color: fb.erase,
-                width: fb.target_width,
-                dash: [0.0, 0.0],
-            });
+            // The whole curve the Eraser would take.
+            for e in self.work_model().curve_edges(e) {
+                let Some(e) = self.scene.edge(e) else {
+                    continue;
+                };
+                for (a, b) in e.segments() {
+                    o.lines.push(Line {
+                        a,
+                        b,
+                        color: fb.erase,
+                        width: fb.target_width,
+                        dash: [0.0, 0.0],
+                    });
+                }
+            }
         }
         self.construct_overlay(o);
         // The protractor.
@@ -1482,20 +1494,23 @@ fn edge_pick(
         .iter()
         .filter(|e| !scene.edge_owner.contains_key(&e.id))
     {
-        let u = e.b - e.a;
-        let Some(t) = along_line(o, d, e.a, u) else {
-            continue;
-        };
-        let p = e.a + u * t.clamp(0.0, 1.0);
-        let Some((q, _)) = view.to_screen(p) else {
-            continue;
-        };
-        let dist = q.distance(s);
-        if dist < pick::EDGE_RADIUS * aperture
-            && best.is_none_or(|b| dist < b.0)
-            && !scene.occluded(view.eye, p)
-        {
-            best = Some((dist, e.id, p));
+        // An arc is picked along its drawn pieces.
+        for (a, b) in e.segments() {
+            let u = b - a;
+            let Some(t) = along_line(o, d, a, u) else {
+                continue;
+            };
+            let p = a + u * t.clamp(0.0, 1.0);
+            let Some((q, _)) = view.to_screen(p) else {
+                continue;
+            };
+            let dist = q.distance(s);
+            if dist < pick::EDGE_RADIUS * aperture
+                && best.is_none_or(|b| dist < b.0)
+                && !scene.occluded(view.eye, p)
+            {
+                best = Some((dist, e.id, p));
+            }
         }
     }
     best.map(|(_, id, p)| prism_view::Picked {

@@ -53,8 +53,9 @@ pub fn click_select(model: &Model, hit: Option<Hit>, n: u32) -> Selection {
         Hit::Vertex(v) => {
             sel.vertices.insert(v);
         }
+        // A click on an arc or a polygon side takes its whole curve.
         Hit::Edge(e) => {
-            sel.edges.insert(e);
+            sel.edges.extend(model.curve_edges(e));
         }
         Hit::Face(f) => {
             sel.faces.insert(f);
