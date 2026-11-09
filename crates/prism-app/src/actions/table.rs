@@ -1843,6 +1843,8 @@ pub const DOCK: &[(&str, &[&str])] = &[
             "cam.look",
         ],
     ),
+    // Owner request (brief 19): X-ray and Hidden Geometry get buttons.
+    ("View", &["view.xray", "view.hidden"]),
     (
         "Shapes",
         &[
@@ -1892,6 +1894,14 @@ pub const DOCK: &[(&str, &[&str])] = &[
 
 /// Icon drawings: the inside of a 24 x 24 SVG, stroked, no fill.
 pub const ICONS: &[(&str, &str)] = &[
+    (
+        "view.xray",
+        "<path d=\"M12 3l8 4.5v9L12 21l-8-4.5v-9z\"/><path d=\"M4 7.5l8 4.5 8-4.5M12 12v9\"/><path d=\"M12 3v9M4 16.5l8-4.5 8 4.5\" opacity=\".45\"/>",
+    ),
+    (
+        "view.hidden",
+        "<path d=\"M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z\"/><circle cx=\"12\" cy=\"12\" r=\"2.6\"/>",
+    ),
     (
         "tool.select",
         "<path d=\"M6 3l12 8-5.2 1.2L16 19l-2.6 1.2-3.2-6.8L6 17z\"/>",

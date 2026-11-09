@@ -20,6 +20,7 @@ mod recovery;
 pub mod settings;
 mod storage;
 mod tabs;
+pub mod toolbars;
 mod transfer;
 mod viewport;
 
