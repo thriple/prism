@@ -139,6 +139,11 @@ pub struct Scene {
     /// The guides, if they are shown (hidden guides are left out, so they
     /// cost nothing: PLAN 1.14).
     pub guides: Vec<(GuideId, Guide)>,
+    /// Whether faces hide what is behind them from picking and snapping
+    /// (not in X-ray or Wireframe), and whether they can be picked at all
+    /// (not in Wireframe). Set from the view style (PLAN 1.14).
+    pub faces_hide: bool,
+    pub faces_pick: bool,
     /// The model vertex of each mesh corner (for cheap rigid previews).
     pub mesh_vertex_ids: Vec<VertexId>,
     /// Who owns the faces, edges and points merged in from other models
@@ -172,6 +177,8 @@ impl Scene {
             face_owner: BTreeMap::new(),
             edge_owner: BTreeMap::new(),
             vertex_owner: BTreeMap::new(),
+            faces_hide: true,
+            faces_pick: true,
             guides: if show_guides {
                 model.guides().map(|(id, g)| (id, *g)).collect()
             } else {
@@ -539,6 +546,9 @@ impl Scene {
 
     /// The nearest face the ray hits, and how far along.
     pub fn ray_face(&self, o: DVec3, d: DVec3) -> Option<(FaceId, f64)> {
+        if !self.faces_pick {
+            return None;
+        }
         self.faces
             .iter()
             .filter_map(|f| f.hit(o, d).map(|t| (f.id, t)))
@@ -547,6 +557,9 @@ impl Scene {
 
     /// Whether something hides `p` from `eye`. Faces through `p` itself do not.
     pub fn occluded(&self, eye: DVec3, p: DVec3) -> bool {
+        if !self.faces_hide {
+            return false;
+        }
         let dv = p - eye;
         let len = dv.length();
         if len <= 0.0 {

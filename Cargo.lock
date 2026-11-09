@@ -2109,6 +2109,7 @@ dependencies = [
  "prism-ops",
  "prism-topo",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

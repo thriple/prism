@@ -12,3 +12,6 @@ prism-math.workspace = true
 prism-topo.workspace = true
 prism-ops.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

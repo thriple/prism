@@ -94,6 +94,18 @@ pub struct Style {
     pub hidden_lines: HiddenLines,
     pub hidden_alpha: f32,
     pub hidden_dash: [f32; 2],
+    /// How faces are drawn (from the view style, PLAN 1.14).
+    pub faces: FaceDraw,
+    pub show_lines: bool,
+    /// Every vertex as a small dot.
+    pub show_points: bool,
+    pub show_axes: bool,
+    pub show_grid: bool,
+    /// The ground gradient; without it the sky fills the background.
+    pub show_ground: bool,
+    /// Edges along the red, green or blue axis drawn in that colour.
+    pub lines_by_axis: bool,
+    pub point_size: f32,
     /// Inference and tool feedback.
     pub feedback: Feedback,
 }
@@ -179,7 +191,19 @@ impl Default for Feedback {
     }
 }
 
+/// How faces are drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FaceDraw {
+    /// Opaque, hiding what is behind.
+    Solid,
+    /// See-through (X-ray): every line shows, and faces hide nothing from
+    /// picking.
+    XRay,
+    /// Not drawn (Wireframe, or faces switched off): faces cannot be picked.
+    None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HiddenLines {
     Off,
     Dashed,
@@ -245,6 +269,14 @@ impl Default for Style {
             hidden_lines: HiddenLines::Off,
             hidden_alpha: 0.35,
             hidden_dash: [4.0, 4.0],
+            faces: FaceDraw::Solid,
+            show_lines: true,
+            show_points: false,
+            show_axes: true,
+            show_grid: true,
+            show_ground: true,
+            lines_by_axis: false,
+            point_size: 4.0,
             feedback: Feedback::default(),
         }
     }
