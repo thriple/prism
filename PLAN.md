@@ -341,7 +341,7 @@ Rules of thumb:
 | Push/Pull | Distance; **double-click repeats it** | Yes | Lock to the hovered height, so you can roam to match it | — | **Tap to toggle "new loop": the face boundary stays as a face and a new loop is extruded from it** | — |
 | Move | Vector; Enter repeats it on a new selection; array count | Yes | Lock inference | Copy | Allow auto-fold | Axis lock |
 | Rotate | Angle; Enter repeats it about the new selection's centre | Yes | **Snap the angle to 45° steps** while held | Copy | — | Up locks the protractor to the hovered face's plane (DECISIONS #18); Right and Left lock the axis to red or green; Down releases |
-| Scale | Factor | Yes | Toggle uniform scaling | About centre | — | — |
+| Scale | Factor; **a box round the selection (5% off it, as the group box) with grips**: corners scale evenly, edges two ways, faces one way; no inference (owner, 2026-11-09) | Yes | A face grip scales evenly; an edge grip each way | — | **About the centre** (tap to toggle; owner, 2026-11-09) | — |
 | Offset | Distance; **double-click repeats it** | Yes | — | — | — | — |
 | Follow Me | — | Yes | — | — | Follow a face's perimeter | — |
 | Fillet / Chamfer | Radius; **double-click an edge repeats it** | Yes | Include tangent-connected edges | Chamfer instead of fillet | — | — |

@@ -1727,3 +1727,28 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   (`HOLE_FACE_WOULD_FOLD`); a move that keeps it flat is fine. Folding
   faces with holes (auto-fold, Alt) is not built. The undo property test
   ran 9000 cases clean after this, and the core properties 3000.
+
+## The Scale tool's box and grips (owner, 2026-11-09)
+
+- **Asked for:** a box like the group box (5% off the selection) with
+  handles, Alt to scale about the centre, and no inference (it jumped
+  between an axis and the ground).
+- **Built (`session/scalebox.rs`):** with Scale, a click on something
+  picks it with what is connected (with nothing selected), and a dashed
+  box shows round the selection (and selected groups), 5% off it on
+  every axis it has size along; a flat selection keeps a flat box.
+  Grips sit at the corners (scale evenly), edge middles (scale both of
+  that edge's axes) and face middles (scale one axis). Dragging a grip
+  scales about the opposite grip, along the line from it through the
+  grip (no inference; within 2% of 1× snaps to 1×). Alt (a tap)
+  switches to scaling about the centre. Shift: a face grip scales
+  evenly; an edge grip scales each of its axes on its own. Typing a
+  factor + Enter applies it to the grip's axes; typing again after
+  changes the last scale. Where grips overlap on screen, the nearer wins.
+- PLAN 1.6's Scale row is updated (Ctrl was "about centre"; the owner
+  chose Alt).
+- **Later (owner):** locking an edge or point and scaling from two points
+  with inference; Shift on a corner grip (each axis on its own) is not
+  built; the box follows the world axes (a group's own axes later).
+- Tests: corner grip by typing, Alt about the centre, a face grip, a
+  drag along the anchor line with one undo, a cube's top grip.

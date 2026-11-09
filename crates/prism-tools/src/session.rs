@@ -31,6 +31,7 @@ mod edit;
 mod groups;
 mod health;
 mod round;
+mod scalebox;
 mod shapes;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
@@ -294,6 +295,10 @@ pub struct Session {
     round_size: Option<f64>,
     round_last: Option<(prism_topo::EdgeId, bool)>,
     round_notice: Option<&'static str>,
+    /// The Scale tool: the grip under the cursor, and whether it scales
+    /// about the centre (Alt).
+    scale_grip: Option<[u8; 3]>,
+    scale_centre: bool,
     shape_radius: Option<f64>,
     sides: u32,
     last_op: Option<LastOp>,
@@ -409,6 +414,8 @@ impl Session {
             round_size: None,
             round_last: None,
             round_notice: None,
+            scale_grip: None,
+            scale_centre: false,
             shape_radius: None,
             sides: shapes::DEFAULT_SIDES,
             last_op: None,
@@ -750,6 +757,7 @@ impl Session {
                 }
             }
             Input::CtrlTap => self.toggle_copy(),
+            Input::AltTap if self.tool == SCALE => self.toggle_scale_centre(),
             Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {
                 self.shift_held = false;
@@ -1215,17 +1223,6 @@ impl Session {
                         ..Default::default()
                     }
                 }
-                _ => Context {
-                    no_lock: true,
-                    ..Default::default()
-                },
-            },
-            SCALE => match &self.edit {
-                Some(EditOp::Scale { centre, verts, .. }) => Context {
-                    start: Some(*centre),
-                    exclude: verts.clone(),
-                    no_lock: true,
-                },
                 _ => Context {
                     no_lock: true,
                     ..Default::default()

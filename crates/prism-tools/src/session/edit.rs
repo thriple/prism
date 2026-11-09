@@ -33,10 +33,6 @@ const PUSH_ZERO: f64 = 6.0;
 const SOFT_STEP: f64 = std::f64::consts::PI / 12.0;
 const SOFT_REACH: f64 = 0.045;
 const SHIFT_STEP: f64 = std::f64::consts::PI / 4.0;
-/// Scale: clamp, and snap to 1 within this.
-const SCALE_MIN: f64 = 0.05;
-const SCALE_MAX: f64 = 20.0;
-const SCALE_SNAP: f64 = 0.02;
 /// Protractor radius on screen, in points.
 const PROTRACTOR_RADIUS: f64 = 80.0;
 /// A press that moves less than this before release is a click.
@@ -76,10 +72,14 @@ pub(super) enum EditOp {
         /// Where the centre was pressed, while the button is still down.
         pressed: Option<DVec2>,
     },
+    /// Scale by a grip of the box round the selection (`scalebox`).
     Scale {
-        centre: DVec3,
-        r0: f64,
-        k: f64,
+        /// Per axis 0, 1 or 2: low, middle or high on the box.
+        grip: [u8; 3],
+        /// The point it scales about.
+        anchor: DVec3,
+        /// The factor along each axis.
+        k: DVec3,
         verts: BTreeSet<VertexId>,
     },
     Erase {
@@ -141,7 +141,7 @@ pub(super) fn plane_point(view: &View, s: DVec2, c: DVec3, n: DVec3) -> Option<D
 }
 
 /// The closest point on the line `a + u t` to the ray: its parameter t.
-fn along_line(o: DVec3, d: DVec3, a: DVec3, u: DVec3) -> Option<f64> {
+pub(super) fn along_line(o: DVec3, d: DVec3, a: DVec3, u: DVec3) -> Option<f64> {
     let w = o - a;
     let (dd, du, uu) = (d.dot(d), d.dot(u), u.dot(u));
     let den = dd * uu - du * du;
@@ -153,15 +153,13 @@ fn along_line(o: DVec3, d: DVec3, a: DVec3, u: DVec3) -> Option<f64> {
 
 impl Session {
     pub(super) fn edit_wants_inference(&self) -> bool {
-        matches!(
-            self.tool.as_str(),
-            MOVE | ROTATE | SCALE | TAPE | PROTRACTOR
-        ) || (self.tool == OFFSET && matches!(self.edit, Some(EditOp::Offset { .. })))
+        matches!(self.tool.as_str(), MOVE | ROTATE | TAPE | PROTRACTOR)
+            || (self.tool == OFFSET && matches!(self.edit, Some(EditOp::Offset { .. })))
     }
 
     /// The selection a tool works on: the selection, or else (Move, Rotate)
     /// the item under the cursor, or (Scale) what is connected to it.
-    fn working_selection(&self, s: DVec2, connected: bool) -> Selection {
+    pub(super) fn working_selection(&self, s: DVec2, connected: bool) -> Selection {
         if !self.selection.is_empty() || !self.groups.is_empty() {
             return self.selection.clone();
         }
@@ -303,7 +301,17 @@ impl Session {
             OFFSET => self.offset_hover(s, view),
             TAPE => self.tape_drag(),
             PROTRACTOR => self.transform_drag(s, view),
-            MOVE | ROTATE | SCALE => {
+            SCALE => {
+                // What a click would pick shows while nothing is selected.
+                if self.edit.is_none() && self.selection.is_empty() && self.groups.is_empty() {
+                    let h = pick::pick(&self.scene, view, s, self.settings.aperture);
+                    self.set_hover_pick(h);
+                } else if self.hover.is_some() {
+                    self.set_hover_pick(None);
+                }
+                self.scale_hover(s, view);
+            }
+            MOVE | ROTATE => {
                 if self.edit.is_none() && self.selection.is_empty() {
                     let h = pick::pick(&self.scene, view, s, self.settings.aperture);
                     self.set_hover_pick(h);
@@ -462,14 +470,6 @@ impl Session {
                     *angle = a;
                 }
             }
-            Some(EditOp::Scale { centre, r0, k, .. }) => {
-                let mut f = (i.point.distance(*centre) / r0.max(f64::MIN_POSITIVE))
-                    .clamp(SCALE_MIN, SCALE_MAX);
-                if (f - 1.0).abs() < SCALE_SNAP {
-                    f = 1.0;
-                }
-                *k = f;
-            }
             _ => return,
         }
         self.update_preview();
@@ -597,9 +597,9 @@ impl Session {
                 axis: *normal,
                 angle: *angle,
             }),
-            EditOp::Scale { centre, k, .. } => Some(Change::Scale {
-                centre: *centre,
-                factor: DVec3::splat(*k),
+            EditOp::Scale { anchor, k, .. } => Some(Change::Scale {
+                centre: *anchor,
+                factor: *k,
             }),
             _ => None,
         }
@@ -670,16 +670,16 @@ impl Session {
                 self.with_groups(geometry, change, *copy)
             }
             EditOp::Scale {
-                centre, k, verts, ..
+                anchor, k, verts, ..
             } => {
                 let geometry = (!verts.is_empty()).then(|| Command::Scale {
                     vertices: verts.clone(),
-                    centre: *centre,
-                    factor: DVec3::splat(*k),
+                    centre: *anchor,
+                    factor: *k,
                 });
                 let change = Change::Scale {
-                    centre: *centre,
-                    factor: DVec3::splat(*k),
+                    centre: *anchor,
+                    factor: *k,
                 };
                 self.with_groups(geometry, change, false)
             }
@@ -933,45 +933,7 @@ impl Session {
         }
     }
 
-    fn scale_press(&mut self, s: DVec2) {
-        if self.edit.is_some() {
-            self.finish_edit();
-            return;
-        }
-        let groups = self.groups_for_tool(s);
-        let selection = self.working_selection(s, true);
-        if selection.is_empty() && !groups {
-            return;
-        }
-        let Some(i) = self.inference.clone() else {
-            return;
-        };
-        let m = self.work_model();
-        let verts = selection.all_vertices(m);
-        let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
-        for p in verts
-            .iter()
-            .map(|v| m.vertex(*v))
-            .chain(self.groups_corners())
-        {
-            lo = lo.min(p);
-            hi = hi.max(p);
-        }
-        let centre = lo.lerp(hi, 0.5);
-        let r0 = i.point.distance(centre);
-        if r0 <= self.scene.tol.dist {
-            return;
-        }
-        self.edit = Some(EditOp::Scale {
-            centre,
-            r0,
-            k: 1.0,
-            verts,
-        });
-        self.after_start();
-    }
-
-    fn after_start(&mut self) {
+    pub(super) fn after_start(&mut self) {
         self.last_op = None;
         self.lock = prism_infer::Lock::None;
         self.mem.clear();
@@ -1001,7 +963,7 @@ impl Session {
                 let still = match t {
                     EditOp::Move { delta, .. } => delta.length() <= self.scene.tol.dist,
                     EditOp::Rotate { angle, .. } => angle.abs() < 1e-12,
-                    EditOp::Scale { k, .. } => (*k - 1.0).abs() < 1e-12,
+                    EditOp::Scale { k, .. } => (*k - DVec3::ONE).abs().max_element() < 1e-12,
                     _ => true,
                 };
                 if !still
@@ -1106,13 +1068,14 @@ impl Session {
                 }
                 self.finish_edit();
             }
-            EditOp::Scale { .. } => {
+            EditOp::Scale { grip, .. } => {
                 let Ok(k) = text.trim().trim_end_matches(['x', '×']).parse::<f64>() else {
                     return true;
                 };
                 if k > 0.0 {
+                    let f = self.scale_factor(grip, k);
                     if let Some(EditOp::Scale { k: kk, .. }) = &mut self.edit {
-                        *kk = k;
+                        *kk = f;
                     }
                     self.finish_edit();
                 }
@@ -1196,14 +1159,14 @@ impl Session {
                         };
                         *angle = deg.to_radians();
                     }
-                    EditOp::Scale { k, .. } => {
+                    EditOp::Scale { k, grip, .. } => {
                         let Ok(f) = t.trim_end_matches(['x', '×']).parse::<f64>() else {
                             return true;
                         };
                         if f <= 0.0 {
                             return true;
                         }
-                        *k = f;
+                        *k = self.scale_factor(*grip, f);
                     }
                     _ => return false,
                 }
@@ -1237,7 +1200,7 @@ impl Session {
                 _,
             ) => ("Angle", format!("{:.1}°", angle.to_degrees())),
             (Some(EditOp::Rotate { .. }), _) => ("Angle", String::new()),
-            (Some(EditOp::Scale { k, .. }), _) => ("Scale", format!("{k:.3}×")),
+            (Some(EditOp::Scale { k, .. }), _) => ("Scale", show_factor(*k)),
             (None, Some(LastOp::Push { d, .. })) => ("Distance", nf.show(*d)),
             (None, Some(LastOp::Edit(EditOp::Move { delta, .. }))) => {
                 ("Distance", nf.show(delta.length()))
@@ -1245,7 +1208,7 @@ impl Session {
             (None, Some(LastOp::Edit(EditOp::Rotate { angle, .. }))) => {
                 ("Angle", format!("{:.1}°", angle.to_degrees()))
             }
-            (None, Some(LastOp::Edit(EditOp::Scale { k, .. }))) => ("Scale", format!("{k:.3}×")),
+            (None, Some(LastOp::Edit(EditOp::Scale { k, .. }))) => ("Scale", show_factor(*k)),
             (None, _) if self.tool == FILLET => self.round_measurement(),
             (None, _) if self.tool == PUSH => (
                 "Distance",
@@ -1282,9 +1245,11 @@ impl Session {
                 "Click the rotation centre · Up locks the protractor to the face under it, then move it anywhere · Right and Left lock red and green"
             }
             (SCALE, Some(_)) => {
-                "Move to scale about the centre · click to finish · type a factor + Enter · Esc cancels"
+                "Move to scale · click to finish · type a factor + Enter · Shift: a face grip scales evenly, an edge grip each way · Alt: about the centre · Esc cancels"
             }
-            (SCALE, None) => "Click a point to scale from (about the selection's centre)",
+            (SCALE, None) => {
+                "Drag a grip: corners scale evenly, edges two ways, faces one way · Alt toggles scaling about the centre · click something to pick it"
+            }
             (FILLET, _) => self.round_hint(),
             (ERASE, _) => {
                 "Click or drag over edges to erase them (with the faces they bound) · Ctrl softens · Ctrl+Shift unsoftens"
@@ -1295,6 +1260,9 @@ impl Session {
 
     /// What the edit tools draw over the model.
     pub(super) fn edit_overlay(&self, o: &mut Overlay) {
+        if self.tool == SCALE {
+            self.scale_overlay(o);
+        }
         let fb = &self.style.feedback;
         let view = self.view();
         let px = |p: DVec3| view.to_screen(p).map_or(0.0, |(_, d)| view.units_per_px(d));
@@ -1362,29 +1330,6 @@ impl Session {
                         if *copy { "Copy " } else { "" },
                         self.number.show(delta.length())
                     ),
-                    color: fb.pill,
-                });
-            }
-            Some(EditOp::Scale { centre, k, .. }) => {
-                if let Some(i) = &self.inference {
-                    o.lines.push(Line {
-                        a: *centre,
-                        b: i.point,
-                        color: fb.rubber_band,
-                        width: 1.4,
-                        dash: [4.0, 4.0],
-                    });
-                }
-                o.marks.push(Mark {
-                    at: *centre,
-                    shape: Shape::Circle,
-                    color: self.style.selected,
-                    size: 4.5,
-                });
-                o.labels.push(Label {
-                    at: *centre,
-                    offset: [12.0, -16.0],
-                    text: format!("× {k:.3}"),
                     color: fb.pill,
                 });
             }
@@ -1593,4 +1538,13 @@ pub(super) fn edge_pick(
         hit: Hit::Edge(id),
         point: p,
     })
+}
+
+/// A scale factor: one number when even, else one per axis.
+fn show_factor(k: DVec3) -> String {
+    if (k.x - k.y).abs() < 1e-9 && (k.y - k.z).abs() < 1e-9 {
+        format!("{:.3}×", k.x)
+    } else {
+        format!("{:.3}, {:.3}, {:.3}×", k.x, k.y, k.z)
+    }
 }

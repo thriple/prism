@@ -725,20 +725,64 @@ fn rotate_copy_is_one_step() {
     assert_eq!(d.faces(), 1);
 }
 
-#[test]
-fn scale_by_a_typed_factor() {
+fn has_point(d: &Driver, x: f64, y: f64) -> bool {
+    prism_ops::vertex_at(d.s.model(), DVec3::new(x, y, 0.0)).is_some()
+}
+
+/// A 2 m square on the ground, picked by clicking it with Scale (the box
+/// shows round it: flat, standing off 5%, so its grips are at -0.1 and
+/// 2.1).
+fn square_to_scale() -> Driver {
     let mut d = Driver::empty();
     rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
-    d.tool(SELECT);
-    d.click(DVec3::new(1.0, 1.0, 0.0));
     d.tool(SCALE);
-    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    assert!(!d.s.selection().faces.is_empty(), "a click picks it");
+    d
+}
+
+#[test]
+fn scale_by_a_corner_grip_and_a_typed_factor() {
+    let mut d = square_to_scale();
+    d.click(DVec3::new(2.1, 2.1, 0.0));
+    assert!(d.s.inference().is_none(), "no inference while scaling");
     d.typed("1.5");
-    assert!(
-        prism_ops::vertex_at(d.s.model(), DVec3::new(2.5, 2.5, 0.0)).is_some(),
-        "scaled about the centre"
-    );
-    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(-0.5, -0.5, 0.0)).is_some());
+    // About the opposite corner.
+    assert!(has_point(&d, 3.0, 3.0) && has_point(&d, 0.0, 0.0));
+    valid(&d);
+}
+
+#[test]
+fn alt_scales_about_the_centre() {
+    let mut d = square_to_scale();
+    d.send(Input::AltTap);
+    d.click(DVec3::new(2.1, 2.1, 0.0));
+    d.typed("1.5");
+    assert!(has_point(&d, 2.5, 2.5) && has_point(&d, -0.5, -0.5));
+}
+
+#[test]
+fn a_face_grip_scales_one_way() {
+    let mut d = square_to_scale();
+    d.click(DVec3::new(2.1, 1.0, 0.0));
+    d.typed("2");
+    assert!(has_point(&d, 4.0, 2.0) && has_point(&d, 0.0, 2.0), "x only");
+    assert!(!has_point(&d, 4.0, 4.0));
+}
+
+#[test]
+fn dragging_a_corner_grip_follows_the_line_from_the_anchor() {
+    let mut d = square_to_scale();
+    d.click(DVec3::new(2.1, 2.1, 0.0));
+    // Twice as far from the opposite grip (at -0.1, -0.1).
+    d.hover(DVec3::new(4.3, 4.3, 0.0));
+    let (label, value, _) = d.s.measurement();
+    assert_eq!(label, "Scale");
+    assert!(value.starts_with("2.000"), "{value}");
+    d.click(DVec3::new(4.3, 4.3, 0.0));
+    assert!(has_point(&d, 4.0, 4.0) && has_point(&d, 0.0, 0.0));
+    undo(&mut d);
+    assert!(has_point(&d, 2.0, 2.0), "one undo");
 }
 
 #[test]
@@ -2505,4 +2549,25 @@ fn the_fillet_tool_rounds_an_edge_and_ctrl_chamfers_one() {
     undo(&mut d);
     undo(&mut d);
     assert_eq!(d.faces(), faces, "one undo each");
+}
+
+#[test]
+fn a_cube_has_a_box_with_grips_all_round() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("2");
+    // A click with Scale picks the whole cube (what is connected).
+    d.tool(SCALE);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.selection().faces.len(), 6);
+    // The top face's grip, 5% above the cube: scales up only.
+    d.click(DVec3::new(1.0, 1.0, 2.1));
+    d.typed("1.5");
+    let (lo, hi) = d.s.model().bbox().expect("the cube");
+    assert!((hi.z - 3.0).abs() < 1e-9 && lo.z.abs() < 1e-9, "{lo} {hi}");
+    assert!((hi.x - 2.0).abs() < 1e-9);
+    valid(&d);
 }
