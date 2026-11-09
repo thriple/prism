@@ -1626,3 +1626,29 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
 - Not built: an angle setting for Soften/Smooth (the brief leaves it for
   later); profile lines along a curved surface's outline (the renderer
   draws profiles only along edges).
+
+## Exact Curves (part 4, step 4d): Push/Pull on a cylinder
+
+- **A new radius:** Push/Pull on a cylinder face changes its radius
+  (`prism_ops::radius`). Every face on the same cylinder joined to it by
+  shared points follows (both halves of a pulled disc, soft seams or
+  not). Points move straight out from the axis, and arcs round the axis
+  that touch them take the new radius, so the caps follow. The axis stays.
+- **The distance** is the change of radius along the face's normal: out
+  for a cylinder's outside, towards the axis for a hole's wall. The tool
+  pulls along the normal at the click (not at the face's first corner).
+- **Refused:** a radius of zero or less (`RADIUS_GONE`), and a cylinder
+  whose other neighbours would bend: only caps square to the axis and
+  arcs round it follow, so a rounded corner between flat sides is refused
+  (`CURVED_PULL`, reworded now that cylinders pull).
+  `pushpull::refusal` takes the distance now.
+- **Not built:** the new radius is not stopped by faces in its way
+  (`reach::limit` lets it through), nor cut into a solid it meets; Alt
+  (new loop) does nothing different on a cylinder; shrinking a cap that
+  holds other edges inside it is not checked for crossings.
+- **MCP:** nothing new; `use_tool` with `tool.push` reaches it (tested).
+- Tests: both halves and the caps follow, out and in, with the exact
+  volume; a hand-built cylinder; a hole's wall shrinks; a rounded corner
+  is refused; zero is refused; a property test of random radii; the
+  session by clicks and typing, with undo; undo and redo in the document
+  test (a new kind, last); MCP.

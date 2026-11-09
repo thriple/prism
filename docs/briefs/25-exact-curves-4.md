@@ -8,7 +8,7 @@
 - **4a. Curved surfaces in the core:** the cylinder surface; every planar-only operation works, refuses or skips. No visible change. *(Built.)*
 - **4b. Cylinders from Push/Pull:** pulling a face with arcs; shading and picking of cylinder faces. *(Built.)*
 - **4c. Soften and smooth:** edge flags, the drawing, the Eraser with Ctrl, Edit > Soften/Smooth, picking a whole smooth surface. *(Built.)*
-- **4d. Push/Pull on a cylinder:** a new radius.
+- **4d. Push/Pull on a cylinder:** a new radius. *(Built.)*
 
 ## Requirements by step
 
@@ -65,6 +65,6 @@
 - **Property tests:** random pulls of faces with arcs keep the model check clean, and undo restores the model.
 
 ## Acceptance
-- [ ] Every step: tests and CI green, NOTES updated, pushed.
+- [x] Every step: tests and CI green, NOTES updated, pushed.
 - [ ] In a build made by hand, a disc pulled over MCP looks round and smooth, with no seams drawn, and picks as one surface.
-- [ ] PLAN 6.0 updated.
+- [x] PLAN 6.0 updated.

@@ -15,6 +15,7 @@ pub mod health;
 pub mod intersect;
 pub mod offset;
 pub mod pushpull;
+pub mod radius;
 pub mod reach;
 mod regions;
 pub mod select;

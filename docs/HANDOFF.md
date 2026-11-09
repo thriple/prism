@@ -22,35 +22,28 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - `Command::Duplicate` was removed (it made CI hang);
   - Updates and MCP Server were added to the plan, right after View
     Settings.
-- **State:** `main` = session branch, clean, last code push 3e55e06
-  (Exact Curves 4c). CI and releases green on both branches through 4c. GitHub release downloads gave 504s in the Web build on
+- **State:** `main` = session branch, clean, last code push is Exact Curves 4d
+  (the commit after de21a5a). CI and releases green on both branches through 4c; check 4d's. GitHub release downloads gave 504s in the Web build on
   2026-11-09 (not our code): re-run; if it repeats, make the download
   steps retry (`curl --fail --retry`).
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
-- **Exact Curves: parts 1, 2 and 3 are built** (briefs 22, 23, 24; NOTES
-  has a section per step). **Part 4 is under way** (brief 25, steps
-  4a–4d): 4a, 4b and 4c are built (`Surface::Cylinder`, `plane()` is an
+- **Exact Curves: parts 1 to 4 are built** (briefs 22 to 25; NOTES
+  has a section per step). Part 4's steps
+  4a–4d are all built (`Surface::Cylinder`, `plane()` is an
   `Option`; Push/Pull makes cylinders, shaded and picked; soft and smooth
-  edges, file schema 5). Next is 4d: Push/Pull on a cylinder face gives
-  it a new radius, the caps' arcs following (brief 25 has the
-  requirements; the owner said to continue in order).
-  - Hints for 4d: `pushpull::refusal` refuses curved faces today
-    (`CURVED_PULL`); a click on a side picks the whole smooth surface
-    (`select::surface`), so the radius change should move every face of
-    it: each cylinder's radius, its arcs' radii (`set_curve`), and the
-    seam and arc-end vertices straight out from the axis. The Push/Pull
-    tool (`edit.rs` `push_press`) takes the face normal from
-    `SceneFace::normal`, which for a curved face is only the normal at
-    its first corner: use the radial direction at the clicked point.
-  - 4a–4c lessons: `Face::new` links edges by corners, which is wrong
+  edges, file schema 5; Push/Pull on a side changes the radius,
+  `prism_ops::radius`). Next is part 5 (Follow Me, fillet and chamfer):
+  write its brief first. The DECISIONS #32 fallback comes after part 5.
+  - Part 4 lessons: `Face::new` links edges by corners, which is wrong
     when two arcs join the same two points: make faces with
     `Face::with_edges`. Keep edge creation order in Push/Pull (recorded
     sessions compare edge ids). The test `Driver::look` starts a new
     session (no undo history), so set the camera first. The file is
     postcard: a new field needs a new geometry layout and schema
     (schema-N copies of the golden files, `PRISM_WRITE_GOLDEN=1`).
-  - Known gaps (NOTES 4a–4c): Push/Pull into a solid does not cut it when
+  - Known gaps (NOTES 4a–4d): a new radius is not stopped by faces in
+    its way; Push/Pull into a solid does not cut it when
     curved faces are involved (`Swept`/`keep_boundary` skipped);
     `reach::limit` meets curved faces only by corners and edges;
     tessellation is a fixed 128 steps per turn; no profile lines along a
@@ -58,12 +51,13 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - The curve tools (`GREYED_TOOLS` in `prism-tools/src/session/shapes.rs`:
     Circle, Polygon, `tool.arc`, `arc.2`, `arc.3`, `arc.c`, `arc.p`) are
     built but greyed in menus; only MCP `use_tool` reaches them.
-  - Push/Pull refuses curved faces (a new radius is 4d) and pulls that
-    would bend one (`CURVED_PULL`). `face_at` goes by corners (misses a
+  - Push/Pull refuses pulls that would bend a curved face, and a new
+    radius that would bend a neighbour (`CURVED_PULL`) or reach zero
+    (`RADIUS_GONE`). `face_at` goes by corners (misses a
     lone disc). A lone face pushed back now makes a box (it used to leave
     one face): the owner should try it.
-  - Not yet checked by eye in the app: cylinders from Push/Pull, soft
-    seams, Eraser Ctrl/Ctrl+Shift, Edit > Soften/Smooth, arc snaps,
+  - Not yet checked by eye in the app: cylinders from Push/Pull and a new
+    radius, soft seams, Eraser Ctrl/Ctrl+Shift, Edit > Soften/Smooth, arc snaps,
     tangents, the Arc tools,
     fillets, refusal hints. Briefs 23 and 24 ask the owner to try them over
     MCP in a build.

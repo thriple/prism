@@ -193,6 +193,14 @@ fn every_kind(d: &Document) -> Vec<Command> {
             soft: !e.soft,
         });
     }
+    // A cylinder face, given a new radius (Exact Curves 4d).
+    if let Some((face, _)) = m.faces().find(|(_, f)| f.is_curved()) {
+        out.push(Command::PushPull {
+            face,
+            distance: 0.25,
+            new_loop: false,
+        });
+    }
     out
 }
 
@@ -221,7 +229,7 @@ proptest! {
     /// Any sequence of commands, undone all the way and redone, ends exactly
     /// where it was.
     #[test]
-    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..22, 1..6)) {
+    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..23, 1..6)) {
         let mut d = setup();
         let start = d.model().geometry_json();
         let mut ran = 0;
@@ -319,4 +327,39 @@ fn pulling_faces_with_arcs_undoes_exactly() {
         d.redo();
         assert_eq!(d.model().to_json(), after);
     }
+}
+
+/// A cylinder's new radius undoes and redoes exactly (Exact Curves 4d).
+#[test]
+fn a_new_radius_undoes_exactly() {
+    let mut d = setup();
+    d.run(Command::Circle {
+        centre: DVec3::new(3.0, 2.0, 5.0),
+        normal: DVec3::Z,
+        radius: 1.5,
+    });
+    let m = d.model();
+    let disc = m
+        .faces()
+        .find(|(id, f)| m.face_has_arcs(*id) && f.plane().is_some_and(|p| p.origin.z > 4.0))
+        .map(|(id, _)| id)
+        .expect("the disc");
+    assert!(d.run(Command::PushPull {
+        face: disc,
+        distance: 1.0,
+        new_loop: false,
+    }));
+    let before = d.model().geometry_json();
+    let c = every_kind(&d)
+        .into_iter()
+        .find(|c| matches!(c, Command::PushPull { face, .. } if d.model().face(*face).is_some_and(|f| f.is_curved())))
+        .expect("a side to pull");
+    assert!(d.run(c), "a new radius");
+    let p = prism_ops::check::problems(d.model());
+    assert!(p.is_empty(), "{p:?}");
+    let after = d.model().to_json();
+    d.undo();
+    assert_eq!(d.model().geometry_json(), before);
+    d.redo();
+    assert_eq!(d.model().to_json(), after);
 }

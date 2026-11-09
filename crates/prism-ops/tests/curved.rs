@@ -189,7 +189,7 @@ fn bending_a_cylinder_is_refused() {
 }
 
 #[test]
-fn push_pull_and_offset_refuse_curved_faces_but_not_their_caps() {
+fn push_pull_refuses_a_radius_of_zero_and_offset_refuses_curved_faces() {
     let mut model = cylinder(1.0, 2.0);
     let side = sides(&model)[0];
     let cap = model
@@ -197,13 +197,16 @@ fn push_pull_and_offset_refuse_curved_faces_but_not_their_caps() {
         .find(|(_, f)| !f.is_curved())
         .map(|(id, _)| id)
         .expect("a cap");
-    use prism_ops::pushpull::{CURVED_PULL, Pulled, push_pull, refusal};
-    assert_eq!(refusal(&model, side), Some(CURVED_PULL));
+    use prism_ops::pushpull::{Pulled, push_pull, refusal};
+    use prism_ops::radius::RADIUS_GONE;
+    // A side takes a new radius (4d), but not zero or less.
+    assert_eq!(refusal(&model, side, 0.5), None);
+    assert_eq!(refusal(&model, side, -1.0), Some(RADIUS_GONE));
     // A cap pulls along its sides: they only stretch (4b).
-    assert_eq!(refusal(&model, cap), None);
+    assert_eq!(refusal(&model, cap, 0.5), None);
     let before = model.clone();
     assert!(matches!(
-        push_pull(&mut model, side, 0.5, false),
+        push_pull(&mut model, side, -1.5, false),
         Pulled::Nothing
     ));
     assert_eq!(prism_ops::offset::offset(&mut model, side, 0.1), None);
@@ -308,7 +311,7 @@ fn pulling_a_cylinders_cap_again_lengthens_it() {
     };
     push_pull(&mut m, f, d, false);
     let cap = f;
-    assert_eq!(refusal(&m, cap), None, "the sides run along the pull");
+    assert_eq!(refusal(&m, cap, d), None, "the sides run along the pull");
     let more = d * 0.5;
     assert_eq!(push_pull(&mut m, cap, more, false), Pulled::Stretched);
     clean(&m);
@@ -414,4 +417,130 @@ fn a_rounded_rectangle_softens_only_where_its_walls_meet_smoothly() {
     let side = sides(&m)[0];
     // Left, arc, bottom, arc, right: all the walls but the top.
     assert_eq!(prism_ops::select::surface(&m, side).len(), 5);
+}
+
+// ---------- A new radius (Exact Curves 4d) ----------
+
+/// Every arc's radius and every point's distance from the Z axis.
+fn radii(m: &Model) -> (Vec<f64>, Vec<f64>) {
+    let arcs = m
+        .edges()
+        .filter_map(|(_, e)| match e.curve {
+            Curve::Arc { radius, .. } => Some(radius),
+            Curve::Line => None,
+        })
+        .collect();
+    let points = m.vertices().map(|(_, p)| p.truncate().length()).collect();
+    (arcs, points)
+}
+
+#[test]
+fn pulling_a_cylinders_side_gives_it_a_new_radius() {
+    use prism_ops::pushpull::{Pulled, push_pull};
+    for (d, r) in [(0.5, 2.0), (-1.0, 0.5)] {
+        let (mut m, f) = disc(1.5);
+        let up = m.face(f).unwrap().plane().unwrap().normal.z;
+        push_pull(&mut m, f, 2.0 * up, false);
+        let side = sides(&m)[0];
+        assert_eq!(push_pull(&mut m, side, d, false), Pulled::Stretched);
+        clean(&m);
+        assert_eq!(m.face_count(), 4, "the same faces");
+        for s in sides(&m) {
+            let c = cylinder_of(&m, s);
+            assert!((c.radius - r).abs() < 1e-12, "both halves follow");
+            assert!(c.origin.truncate().length() < 1e-12, "the same axis");
+            assert!((m.face_area(s) - PI * r * 2.0).abs() < 1e-9);
+        }
+        let (arcs, points) = radii(&m);
+        assert!(arcs.iter().chain(&points).all(|x| (x - r).abs() < 1e-12));
+        assert!((volume(&m) - PI * r * r * 2.0).abs() < 1e-9);
+        let h = prism_ops::health::check(&m);
+        assert_eq!((h.watertight, h.leaky), (1, 0));
+    }
+}
+
+#[test]
+fn a_hand_built_cylinders_side_takes_a_new_radius() {
+    let mut m = cylinder(1.0, 2.0);
+    let side = sides(&m)[0];
+    assert!(prism_ops::radius::apply(&mut m, side, 0.25));
+    clean(&m);
+    for s in sides(&m) {
+        assert!((cylinder_of(&m, s).radius - 1.25).abs() < 1e-12);
+    }
+}
+
+#[test]
+fn a_holes_wall_pulled_towards_its_axis_shrinks() {
+    use prism_ops::pushpull::{Pulled, push_pull, refusal};
+    use prism_ops::radius::RADIUS_GONE;
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, -3.0, -3.0, 3.0, 3.0, 0.0);
+    add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    let ring = m
+        .faces()
+        .find(|(_, f)| !f.holes.is_empty())
+        .map(|(id, _)| id)
+        .expect("the ring");
+    let up = m.face(ring).unwrap().plane().unwrap().normal.z;
+    push_pull(&mut m, ring, up, false);
+    clean(&m);
+    let wall = sides(&m)[0];
+    assert!(!cylinder_of(&m, wall).outward, "a hole's wall faces in");
+    // Along its normal is towards the axis: smaller.
+    assert_eq!(refusal(&m, wall, 1.0), Some(RADIUS_GONE));
+    assert_eq!(push_pull(&mut m, wall, 0.25, false), Pulled::Stretched);
+    clean(&m);
+    for s in sides(&m) {
+        assert!((cylinder_of(&m, s).radius - 0.75).abs() < 1e-12);
+    }
+}
+
+#[test]
+fn a_rounded_corner_cannot_take_a_new_radius() {
+    use prism_ops::pushpull::{CURVED_PULL, refusal};
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 2.0, 0.0);
+    assert!(prism_ops::fillet::fillet(&mut m, DVec3::ZERO, 0.5));
+    let f = m.faces().next().map(|(id, _)| id).expect("the face");
+    let up = m.face(f).unwrap().plane().unwrap().normal.z;
+    prism_ops::pushpull::push_pull(&mut m, f, up, false);
+    let corner = sides(&m)[0];
+    // Its flat sides beside it would bend.
+    assert_eq!(refusal(&m, corner, 0.1), Some(CURVED_PULL));
+}
+
+// Property tests run natively only (proptest is a native dev-dependency).
+#[cfg(not(target_arch = "wasm32"))]
+mod random {
+    use super::*;
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig { cases: 64, ..Default::default() })]
+
+        /// Any change of radius on a pulled disc either is refused (zero or
+        /// less) or keeps the model clean and exact, with every point and arc
+        /// at the new radius.
+        #[test]
+        fn any_new_radius_is_clean_or_refused(r in 0.1..5.0f64, h in 0.1..5.0f64, d in -6.0..6.0f64) {
+            use prism_ops::pushpull::push_pull;
+            let (mut m, f) = disc(r);
+            let up = m.face(f).unwrap().plane().unwrap().normal.z;
+            push_pull(&mut m, f, h * up, false);
+            let before = m.to_json();
+            let side = sides(&m)[0];
+            let refused = prism_ops::pushpull::refusal(&m, side, d).is_some();
+            let changed = prism_ops::radius::apply(&mut m, side, d);
+            proptest::prop_assert_eq!(changed, !refused && d.abs() > m.tol().dist);
+            if changed {
+                proptest::prop_assert_eq!(check::problems(&m), Vec::<String>::new());
+                let (arcs, points) = radii(&m);
+                let k = r + d;
+                proptest::prop_assert!(arcs.iter().chain(&points).all(|x| (x - k).abs() < 1e-9 * k.max(1.0)));
+            } else {
+                proptest::prop_assert_eq!(m.to_json(), before);
+                proptest::prop_assert!(refused == (r + d <= m.tol().dist));
+            }
+        }
+    }
 }

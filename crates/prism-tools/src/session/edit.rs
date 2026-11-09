@@ -809,10 +809,16 @@ impl Session {
         else {
             return;
         };
-        let n = self.scene.face(face).map_or(DVec3::Z, |f| f.normal);
+        let p0 = o + dir * t;
+        // A cylinder face pulls straight out from its axis at the click
+        // (a new radius).
+        let n = self.scene.face(face).map_or(DVec3::Z, |f| match &f.curved {
+            Some(c) => c.cylinder.normal_at(p0),
+            None => f.normal,
+        });
         self.edit = Some(EditOp::Push {
             face,
-            p0: o + dir * t,
+            p0,
             n,
             d: 0.0,
             new_loop: self.alt_loop,

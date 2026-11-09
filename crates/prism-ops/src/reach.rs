@@ -21,7 +21,8 @@ pub fn limit(model: &Model, face: FaceId, distance: f64) -> f64 {
     }
     let sign = distance.signum();
     let Some(&plane) = f.plane() else {
-        return 0.0;
+        // A cylinder's new radius is not stopped by faces in its way yet.
+        return distance;
     };
     let dir = plane.normal * sign;
     let origin = plane.origin;

@@ -35,19 +35,18 @@ fn key(a: VertexId, b: VertexId) -> (VertexId, VertexId) {
     (a.min(b), a.max(b))
 }
 
-/// Said when Push/Pull is asked to pull a curved face, or a face whose
-/// pull would bend a curved face beside it.
-pub const CURVED_PULL: &str =
-    "Curved faces cannot be pulled yet, nor faces that would bend one beside them.";
+/// Said when a pull would bend a curved face beside the pulled face, or a
+/// face or arc beside a pulled cylinder.
+pub const CURVED_PULL: &str = "This pull would bend a curved face, or a face beside a cylinder.";
 
-/// Why `face` cannot be pulled yet, if it cannot. A face beside a curved
-/// face can be pulled when the curved face runs along the pull (the cap of
-/// a cylinder), so it only stretches.
-pub fn refusal(model: &Model, face: FaceId) -> Option<&'static str> {
+/// Why pulling `face` by `distance` is refused, if it is. A curved face
+/// takes a new radius ([`crate::radius`]). A face beside a curved face can
+/// be pulled when the curved face runs along the pull (the cap of a
+/// cylinder), so it only stretches.
+pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static str> {
     let f = model.face(face)?;
     let Some(plane) = f.plane() else {
-        // A new radius: Exact Curves 4d.
-        return Some(CURVED_PULL);
+        return crate::radius::refusal(model, face, distance);
     };
     let tol = model.tol();
     let bends = model.faces().any(|(g, x)| {
@@ -63,12 +62,21 @@ pub fn refusal(model: &Model, face: FaceId) -> Option<&'static str> {
     bends.then_some(CURVED_PULL)
 }
 
+/// Pull `face` by `distance` along its normal. A curved face takes a new
+/// radius instead (Alt's new loop does not apply to it).
 pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool) -> Pulled {
     let tol = model.tol();
     let Some(f) = model.face(face).cloned() else {
         return Pulled::Nothing;
     };
-    if refusal(model, face).is_some() {
+    if f.is_curved() {
+        return if crate::radius::apply(model, face, distance) {
+            Pulled::Stretched
+        } else {
+            Pulled::Nothing
+        };
+    }
+    if refusal(model, face, distance).is_some() {
         return Pulled::Nothing;
     }
     let Some(&plane) = f.plane() else {

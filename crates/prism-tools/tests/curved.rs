@@ -1,4 +1,4 @@
-//! What the tools say about curved faces (Exact Curves 4a): the reasons
+//! What the tools say about curved faces (Exact Curves 4a, 4d): the reasons
 //! edits are refused come from `Command::refusal`.
 
 use prism_doc::Command;
@@ -28,10 +28,10 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
         (
             Command::PushPull {
                 face: side,
-                distance: 0.5,
+                distance: -1.0,
                 new_loop: false,
             },
-            prism_ops::pushpull::CURVED_PULL,
+            prism_ops::radius::RADIUS_GONE,
         ),
         (
             Command::Translate {

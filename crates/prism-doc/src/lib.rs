@@ -597,7 +597,9 @@ impl Command {
     pub fn refusal(&self, m: &Model) -> Option<&'static str> {
         use prism_ops::transform::{arcs_refusal, scaling, turn};
         match self {
-            Command::PushPull { face, .. } => prism_ops::pushpull::refusal(m, *face),
+            Command::PushPull { face, distance, .. } => {
+                prism_ops::pushpull::refusal(m, *face, *distance)
+            }
             Command::Fillet { corner, radius } => prism_ops::fillet::refusal(m, *corner, *radius),
             Command::Offset { face, .. } if m.face(*face).is_some_and(|f| f.is_curved()) => {
                 Some(prism_ops::offset::CURVED_OFFSET)

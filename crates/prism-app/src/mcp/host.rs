@@ -717,6 +717,20 @@ mod tests {
         let r = value(h.call("run_action", &json!({"id": "edit.soften"})));
         let g = value(h.call("get_geometry", &json!({})));
         assert_eq!(soft(&g), 4, "the top circle's two halves too: {r}");
+        // Push/Pull on the side gives a new radius (Exact Curves 4d).
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.push", "steps": [{"click": [0.3, -0.4, 0.75]}, {"move": [0.45, -0.6, 0.75]}, {"type": "0.25"}]}),
+        ));
+        assert_eq!(r["model"]["faces"], 4, "{r}");
+        let g = value(h.call("get_geometry", &json!({})));
+        let radii: Vec<&Value> = g["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|f| f["cylinder"].get("radius"))
+            .collect();
+        assert_eq!(radii, [&json!(0.75), &json!(0.75)], "{g}");
     }
 
     #[test]

@@ -2314,6 +2314,52 @@ fn push_pull_makes_a_cylinder_that_picks_and_snaps() {
     assert_eq!(d.faces(), 1);
 }
 
+#[test]
+fn push_pull_on_a_cylinders_side_gives_it_a_new_radius() {
+    use prism_tools::session::CIRCLE;
+    let mut d = Driver::empty();
+    d.look(Camera {
+        eye: DVec3::new(0.5, -6.0, 3.0),
+        target: DVec3::new(0.0, 0.0, 1.0),
+    });
+    d.tool(CIRCLE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    d.tool(PUSH);
+    d.click(DVec3::new(0.2, 0.2, 0.0));
+    d.hover(DVec3::new(0.2, 0.2, 0.5));
+    d.typed("2");
+    // The side, pulled out from the axis by clicks...
+    d.click(DVec3::new(0.6, -0.8, 1.2));
+    d.hover(DVec3::new(0.9, -1.2, 1.2));
+    d.click(DVec3::new(0.9, -1.2, 1.2));
+    let r = |d: &Driver| -> Vec<f64> {
+        d.s.model()
+            .faces()
+            .filter_map(|(_, f)| match f.surface {
+                prism_geom::Surface::Cylinder(c) => Some(c.radius),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(d.faces(), 4, "the same faces");
+    assert!(r(&d).iter().all(|x| (x - 1.5).abs() < 1e-6), "{:?}", r(&d));
+    valid(&d);
+    // ...and back in by typing.
+    d.click(DVec3::new(0.9, -1.2, 1.2));
+    d.hover(DVec3::new(0.6, -0.8, 1.2));
+    d.typed("1");
+    assert!(r(&d).iter().all(|x| (x - 0.5).abs() < 1e-9), "{:?}", r(&d));
+    valid(&d);
+    // A radius of zero or less is refused.
+    d.click(DVec3::new(0.3, -0.4, 1.2));
+    d.hover(DVec3::new(0.15, -0.2, 1.2));
+    d.typed("1");
+    assert!(r(&d).iter().all(|x| (x - 0.5).abs() < 1e-9), "{:?}", r(&d));
+    undo(&mut d);
+    assert!(r(&d).iter().all(|x| (x - 1.5).abs() < 1e-6));
+}
+
 // ---------- Soften and smooth (brief 25, step 4c) ----------
 
 fn soft_count(d: &Driver) -> usize {
