@@ -609,7 +609,7 @@ impl ApplicationHandler<UserEvent> for App {
         }
 
         #[allow(unused_mut)]
-        let mut attributes = Window::default_attributes().with_title("Prism");
+        let mut attributes = Window::default_attributes().with_title(crate::files::app_name());
         #[cfg(not(target_arch = "wasm32"))]
         {
             attributes = attributes.with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0));

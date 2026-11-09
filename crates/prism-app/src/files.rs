@@ -196,11 +196,12 @@ impl Files {
             .collect()
     }
 
-    /// The window title: "house.prism • — Prism" while unsaved.
+    /// The window title: "house.prism • — Prism - Build 120" while
+    /// unsaved. The build shows whether an update took (owner, 2026-11-09).
     pub fn title(&self, s: &Session) -> String {
         let name = self.name.as_deref().unwrap_or("Untitled");
         let dot = if self.dirty(s) { " •" } else { "" };
-        format!("{name}{dot} — Prism")
+        format!("{name}{dot} — {}", app_name())
     }
 
     /// The title, if it changed since last asked.
@@ -592,9 +593,26 @@ impl Files {
     }
 }
 
+/// "Prism - Build 120", or "Prism - Local build" for one made by hand.
+pub fn app_name() -> String {
+    match crate::update::this_build() {
+        Some(n) => format!("Prism - Build {n}"),
+        None => "Prism - Local build".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The title names the build, so an update shows (tests are local builds).
+    #[test]
+    fn the_title_names_the_build() {
+        let s = Session::new(Document::new());
+        let f = Files::new(&s, 1);
+        assert_eq!(f.title(&s), "Untitled — Prism - Local build");
+        assert_eq!(app_name(), "Prism - Local build");
+    }
 
     /// The view style is saved with the file, and a file without one opens
     /// with Default (View Settings, PLAN 1.14).

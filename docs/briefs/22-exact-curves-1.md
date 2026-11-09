@@ -11,6 +11,8 @@
 4. Curved faces: cylinders from Push/Pull, shading and picking, soften and smooth.
 5. Follow Me along lines and arcs; fillet and chamfer on planar edges.
 
+**Greyed until done (owner, 2026-11-09):** the curve tools (Circle, Polygon, the Arc tools, Follow Me, fillet, chamfer, soften and smooth) stay greyed in menus, toolbars and releases until all five parts are finished, even where a part has built one. Each part is tried through tests, the MCP server and builds made by hand.
+
 ## Requirements
 - **Topology (`prism-topo`):**
   - A face keeps its vertex loops (`outer`, `holes`) and gains the matching edges: edge `i` of a loop joins vertex `i` to vertex `i + 1`.

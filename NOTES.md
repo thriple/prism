@@ -1197,3 +1197,11 @@ Brief: `docs/briefs/21-mcp-server.md`.
   Linux; Option does both on a Mac (each tool uses its own), as in
   SketchUp. The status hints still say "Alt" on a Mac.
 
+## Owner feedback, 2026-11-09 (build in the title; curve tools greyed)
+- **The window title names the build:** "Untitled — Prism - Build 120"
+  ("Prism - Local build" for a build made by hand), so a successful
+  update shows. `files::app_name()`, also the window's first title.
+- **Curve tools stay greyed until Exact Curves is finished** (all five
+  parts), even where a part has built one. Written into brief 22 and the
+  PLAN row.
+

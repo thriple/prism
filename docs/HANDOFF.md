@@ -28,7 +28,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **Next: Exact Curves part 1** (brief 22: loops list their edges, no
   visible change). Exact Curves is 5 parts (owner, 2026-11-09); the design
   is in `docs/research/exact-curves.md`. Curves that are not lines or arcs
-  fall back to fine segments, flagged (DECISIONS #32).
+  fall back to fine segments, flagged (DECISIONS #32), built after part 5.
+  The curve tools stay greyed in releases until all five parts are done
+  (owner, 2026-11-09).
 - **Also done 2026-11-09:** Push/Pull stops at the first face in its way
   (DECISIONS #31 changed); Ctrl/Alt/Option taps reach the tools (they never
   did); the web wheel sorts scrolls by gesture. The owner should try all
