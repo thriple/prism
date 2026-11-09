@@ -22,14 +22,33 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - `Command::Duplicate` was removed (it made CI hang);
   - Updates and MCP Server were added to the plan, right after View
     Settings.
-- **State:** `main` = session branch, CI green. Nothing uncommitted.
+- **State:** `main` = session branch. Last push `383f6f8` (2a and a
+  split_edge fix); its CI was still running at the compaction, so check it
+  first (all jobs, Windows included). Nothing uncommitted.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves part 1 is built** (brief 22: faces name their edges, file
   schema 3 / geometry layout 2; NOTES has what is left for part 2).
 - **Exact Curves part 2** is briefed (brief 23, four steps). Step 2a is
   built (arcs in the core). **Next: step 2b** (exact line–arc and arc–arc
-  crossings; points split arcs). Exact Curves is 5 parts (owner, 2026-11-09); the design
+  crossings; points split arcs). Where to start for 2b:
+  - `prism-ops/src/sticky.rs`: `insert_point` and `add_segment`'s
+    crossings skip arcs (`!e.curve.is_arc()`): add exact line–arc
+    crossings there (quadratic in the arc's plane, inside its sweep);
+    `add_circle` needs arc–arc and arc–line crossings against what is
+    there before it adds its arcs;
+  - `Model::split_edge` already splits arcs into two arcs of one circle;
+  - face finding already traces arcs (tangent, then curvature), so once
+    edges are split, faces should follow;
+  - remove the "until 2b" property-test limit (circles on a grid apart)
+    and let random circles cross rectangles and lines;
+  - brief 23 lists the tests (line across a circle: two faces; two
+    overlapping circles: three).
+- **Exact Curves conventions (2a):** `Curve::Arc` runs counter-clockwise
+  about its axis from the edge's `a` to `b`; use `add_curve_edge` (never
+  `add_edge`) for arcs; edit face loops with `edit_face` or `Face::reverse`
+  so edges stay with their sides; polygons for faces come from
+  `loop_points`, not the vertices. Exact Curves is 5 parts (owner, 2026-11-09); the design
   is in `docs/research/exact-curves.md`. Curves that are not lines or arcs
   fall back to fine segments, flagged (DECISIONS #32), built after part 5.
   The curve tools stay greyed in releases until all five parts are done
