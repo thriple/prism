@@ -204,3 +204,124 @@ fn the_distance_through_a_point_follows_the_mitred_loop() {
     assert!((at(6.0, 5.0) + 2.0).abs() < 1e-9, "{}", at(6.0, 5.0));
     assert!((at(-1.0, -1.5) + 1.5).abs() < 1e-9);
 }
+
+// ---------- Faces with arcs (brief 24, step 3c) ----------
+
+use std::f64::consts::{FRAC_PI_2, PI};
+
+fn p(x: f64, y: f64) -> DVec3 {
+    DVec3::new(x, y, 0.0)
+}
+
+/// Each arc's centre and radius.
+fn arcs(m: &Model) -> Vec<(DVec3, f64)> {
+    m.edges()
+        .filter_map(|(_, e)| match e.curve {
+            prism_geom::Curve::Arc { centre, radius, .. } => Some((centre, radius)),
+            prism_geom::Curve::Line => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_disc_offsets_to_a_concentric_circle_both_ways() {
+    for d in [0.5, -0.5] {
+        let mut m = Model::new();
+        prism_ops::add_circle(&mut m, p(0.0, 0.0), DVec3::Z, 2.0);
+        // (face_at goes by corners, and a disc has only its two seams.)
+        let (f, _) = m.faces().next().expect("the disc");
+        assert_eq!(offset::offset(&mut m, f, d), Some(d));
+        let r = 2.0 - d;
+        assert!(
+            arcs(&m)
+                .iter()
+                .any(|(c, rr)| c.length() < 1e-12 && (rr - r).abs() < 1e-12)
+        );
+        let (small, big) = if d > 0.0 { (r, 2.0) } else { (2.0, r) };
+        close(&areas(&m), &{
+            let mut a = vec![PI * small * small, PI * (big * big - small * small)];
+            a.sort_by(f64::total_cmp);
+            a
+        });
+        ok(&m);
+    }
+}
+
+/// A 4 by 2 rectangle with corners rounded to `r`.
+fn rounded(m: &mut Model, r: f64) {
+    let (w, h) = (4.0, 2.0);
+    prism_ops::add_segment(m, p(r, 0.0), p(w - r, 0.0));
+    prism_ops::add_segment(m, p(w, r), p(w, h - r));
+    prism_ops::add_segment(m, p(w - r, h), p(r, h));
+    prism_ops::add_segment(m, p(0.0, h - r), p(0.0, r));
+    for (c, s) in [
+        (p(w - r, r), p(w - r, 0.0)),
+        (p(w - r, h - r), p(w, h - r)),
+        (p(r, h - r), p(r, h)),
+        (p(r, r), p(0.0, r)),
+    ] {
+        prism_ops::add_arc(m, c, DVec3::Z, r, s, FRAC_PI_2);
+    }
+}
+
+fn rounded_area(w: f64, h: f64, r: f64) -> f64 {
+    w * h - (4.0 - PI) * r * r
+}
+
+#[test]
+fn a_rounded_rectangle_offsets_with_smaller_corners_then_sharp_ones() {
+    let mut m = Model::new();
+    rounded(&mut m, 0.5);
+    assert_eq!(m.face_count(), 1);
+    close(&areas(&m), &[rounded_area(4.0, 2.0, 0.5)]);
+    let f = face(&m, 2.0, 1.0);
+    assert_eq!(offset::offset(&mut m, f, 0.25), Some(0.25));
+    let inner = rounded_area(3.5, 1.5, 0.25);
+    close(&areas(&m), &{
+        let mut a = vec![inner, rounded_area(4.0, 2.0, 0.5) - inner];
+        a.sort_by(f64::total_cmp);
+        a
+    });
+    assert_eq!(
+        arcs(&m)
+            .iter()
+            .filter(|(_, r)| (r - 0.25).abs() < 1e-12)
+            .count(),
+        4
+    );
+    ok(&m);
+    // Past the corner radius the corners shrink away: a sharp rectangle.
+    let mut m = Model::new();
+    rounded(&mut m, 0.5);
+    let f = face(&m, 2.0, 1.0);
+    assert_eq!(offset::offset(&mut m, f, 0.75), Some(0.75));
+    close(&areas(&m), &[2.5 * 0.5, rounded_area(4.0, 2.0, 0.5) - 1.25]);
+    ok(&m);
+}
+
+#[test]
+fn a_bite_out_of_a_square_offsets_to_a_bigger_bite() {
+    let mut m = Model::new();
+    prism_ops::add_segment(&mut m, p(0.0, 0.0), p(1.0, 0.0));
+    prism_ops::add_segment(&mut m, p(3.0, 0.0), p(4.0, 0.0));
+    prism_ops::add_segment(&mut m, p(4.0, 0.0), p(4.0, 4.0));
+    prism_ops::add_segment(&mut m, p(4.0, 4.0), p(0.0, 4.0));
+    prism_ops::add_segment(&mut m, p(0.0, 4.0), p(0.0, 0.0));
+    // A half circle into the square, from (1, 0) over the top to (3, 0).
+    prism_ops::add_arc(&mut m, p(2.0, 0.0), DVec3::Z, 1.0, p(3.0, 0.0), PI);
+    assert_eq!(m.face_count(), 1);
+    close(&areas(&m), &[16.0 - PI / 2.0]);
+    let f = face(&m, 2.0, 3.0);
+    assert_eq!(offset::offset(&mut m, f, 0.25), Some(0.25));
+    // Inside: the 3.5 square from 0.25, less the circle of radius 1.25 above
+    // y = 0.25.
+    let (r, h) = (1.25f64, 0.25f64);
+    let segment = r * r * (h / r).acos() - h * (r * r - h * h).sqrt();
+    let inner = 3.5 * 3.5 - segment;
+    close(&areas(&m), &{
+        let mut a = vec![inner, 16.0 - PI / 2.0 - inner];
+        a.sort_by(f64::total_cmp);
+        a
+    });
+    ok(&m);
+}

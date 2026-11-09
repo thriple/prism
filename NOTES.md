@@ -1445,3 +1445,24 @@ and inference, 2d the Circle and Polygon tools).
 - Tests: the guide at three scales; a line tangent off an arc end; a
   2-point arc tangent to a line (exact centre).
 - Not checked by eye in the app.
+
+## Exact Curves (part 3, step 3c): Offset with arcs
+
+- **Offset of faces with arcs** (`prism-ops/src/offset.rs`,
+  `offset_arc_loops`): each loop as pieces (lines and arcs, walked with the
+  face on the left); a line moves sideways, an arc keeps its centre and
+  its radius changes by the distance; neighbours join exactly where their
+  offsets meet (line–line, `circle_line`, `circle_circle`). An arc whose
+  radius would reach zero is dropped and its neighbours join directly (a
+  rounded rectangle offset past its corner radius has sharp corners).
+  Otherwise the distance shrinks to the largest valid one, as before.
+  New arcs are added with `add_arc`. Faces without arcs use the old code,
+  unchanged.
+- `distance_through` and `signed_distance` follow arcs too (the Offset
+  tool's hover). The 2a refusal and its 2c message are gone.
+- Tests: a disc both ways; a rounded rectangle in, and past its corners;
+  a square with a half-circle bite (exact areas); the Offset tool on a disc
+  by a click and by typing; the undo property test reaches Offset on faces
+  with arcs (1500 cases run once).
+- `face_at` still goes by a face's corners, so it misses a lone disc
+  (two seams); exact point-in-face for arcs is part 4's.

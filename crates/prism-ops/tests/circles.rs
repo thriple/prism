@@ -177,12 +177,11 @@ fn copies_and_groups_keep_arcs() {
 }
 
 #[test]
-fn push_pull_and_offset_wait_for_their_parts() {
+fn push_pull_waits_for_its_part() {
     let mut m = Model::new();
     circle(&mut m, DVec3::ZERO, 1.0);
     let before = m.clone();
     prism_ops::push_pull(&mut m, FaceId(0), 1.0, false);
-    assert_eq!(prism_ops::offset::offset(&mut m, FaceId(0), 0.1), None);
     assert_eq!(m, before);
 }
 

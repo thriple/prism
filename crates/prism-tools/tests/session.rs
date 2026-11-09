@@ -1959,10 +1959,8 @@ fn model_health_repairs_an_arc_off_its_circle_with_undo() {
 
 #[test]
 fn refused_edits_of_arcs_say_why() {
-    use prism_ops::offset::ARC_FACE_OFFSET;
     use prism_ops::pushpull::ARC_FACE_PULL;
     use prism_ops::transform::{ARC_FACE_WOULD_FOLD, ARC_WOULD_BEND};
-    use prism_tools::session::OFFSET;
     let mut d = circle_in_a_rectangle();
     let before = d.s.model().clone();
     // A seam moved on its own would bend both halves of the circle.
@@ -1985,16 +1983,11 @@ fn refused_edits_of_arcs_say_why() {
     d.hover(DVec3::new(6.0, 4.0, 1.0));
     assert_eq!(d.s.hint(), ARC_FACE_WOULD_FOLD);
     d.send(Input::Key { key: Key::Escape });
-    // Push/Pull and Offset on a half of the disc.
+    // Push/Pull on a half of the disc.
     d.tool(PUSH);
     d.click(DVec3::new(3.5, 2.5, 0.0));
     d.hover(DVec3::new(3.5, 2.5, 0.5));
     assert_eq!(d.s.hint(), ARC_FACE_PULL);
-    d.send(Input::Key { key: Key::Escape });
-    d.tool(OFFSET);
-    d.click(DVec3::new(3.5, 2.5, 0.0));
-    d.hover(DVec3::new(3.6, 2.3, 0.0));
-    assert_eq!(d.s.hint(), ARC_FACE_OFFSET);
     d.send(Input::Key { key: Key::Escape });
     assert_eq!(d.s.model(), &before, "nothing changed");
 }
@@ -2201,5 +2194,32 @@ fn a_two_point_arc_snaps_tangent_to_the_line_it_starts_from() {
     d.hover(tangent_mid + DVec3::new(0.03, 0.03, 0.0));
     d.click(tangent_mid + DVec3::new(0.03, 0.03, 0.0));
     has_arc(&d, p(2.0, 2.0), 1.0, PI / 2.0);
+    valid(&d);
+}
+
+// ---------- Offset with arcs (brief 24, step 3c) ----------
+
+#[test]
+fn offset_of_a_disc_by_a_click_and_by_typing() {
+    use prism_tools::session::{CIRCLE, OFFSET};
+    let mut d = Driver::empty();
+    d.tool(CIRCLE);
+    d.send(Input::Key { key: Key::Up });
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    d.click(DVec3::new(5.0, 2.0, 0.0));
+    assert_eq!(d.faces(), 1);
+    // Click on the disc, then 0.5 towards its middle: 0.5 in.
+    d.tool(OFFSET);
+    d.click(DVec3::new(3.0, 3.5, 0.0));
+    d.click(DVec3::new(3.0, 3.0, 0.0));
+    assert_eq!(d.faces(), 2);
+    has_arc(&d, DVec3::new(3.0, 2.0, 0.0), 1.5, std::f64::consts::PI);
+    undo(&mut d);
+    // Typed: 0.25 in (the way the cursor went).
+    d.click(DVec3::new(3.0, 3.2, 0.0));
+    d.hover(DVec3::new(3.0, 3.0, 0.0));
+    d.typed("0.25");
+    assert_eq!(d.faces(), 2);
+    has_arc(&d, DVec3::new(3.0, 2.0, 0.0), 1.75, std::f64::consts::PI);
     valid(&d);
 }

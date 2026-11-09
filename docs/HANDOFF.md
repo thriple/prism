@@ -38,7 +38,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   circle, Repair) and 4 (refused edits say why, in the status bar) are
   built. **2d is built too: Exact Curves part 2 is done.** Part 3 is
   briefed (brief 24: 3a Arc tools, 3b tangents, 3c Offset with arcs, 3d
-  fillets). **3a and 3b are built; next is 3c** (Offset with arcs).
+  fillets). **3a, 3b and 3c are built; next is 3d** (corner fillets).
   The notes below were the starting points for 2c: Where to start for 2c:
   - picking and hover already use drawn points (`prism-view/src/pick.rs`,
     `prism-tools/src/select.rs`); selecting an arc should take every edge
