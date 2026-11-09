@@ -1260,6 +1260,14 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "",
         when: "",
     },
+    // Updates (brief 20): not in the prototype.
+    RawAction {
+        id: "help.update",
+        name: "Check for Updates…",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
     RawAction {
         id: "help.about",
         name: "About Prism",
@@ -1803,6 +1811,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("help.record"),
             Item::Action("help.pen"),
             Item::Separator,
+            Item::Action("help.update"),
             Item::Action("help.about"),
         ],
     ),

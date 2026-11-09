@@ -1065,3 +1065,36 @@ Brief: `docs/briefs/19-toolbars.md`.
   Hidden Lines is set to Faint. With Hidden Lines Off they are dashed too
   (assumed: otherwise Show Hidden would show nothing by default).
 
+## Updates
+Brief: `docs/briefs/20-updates.md` (PLAN 3.1 decision 8, owner request).
+- **Published:** the release workflow writes `update.json` (build number,
+  commit, each zip's SHA-256) into every release. Prism reads it from the
+  fixed "latest" link: no GitHub API, no rate limit.
+- **Help > Check for Updates…** (`help.update`) opens a window: "Build M
+  is available" with Download and Install, progress while downloading,
+  then "Installed build M. Restart Prism to use it." Builds made by hand
+  ("local"), Linux and the web build say why there is nothing to do.
+- **Code:** `prism-app/src/update.rs`. The check and the download run on a
+  thread (`Updater`, status behind a mutex); the window only reads it.
+  HTTPS through `ureq` with `native-tls` and the system's certificates
+  (Schannel, Security framework); `HTTPS_PROXY` is honoured. New
+  dependencies: ureq, native-tls (through ureq), sha2.
+- **Swap:** Windows renames the running `Prism.exe` to `Prism.old.exe` and
+  writes the new one in its place (deleted at the next start). macOS
+  unpacks the new `Prism.app` into `.prism-update` beside the old one
+  (keeping file modes), swaps the bundles and deletes the leftovers. If the
+  new one cannot go in, the old one is put back. Renames retry for a
+  second (virus scanners hold new files). Running from App Translocation is
+  refused with a "move Prism.app first" message.
+- **Tests:** manifest and build numbers, checksums, unpacking (modes, no
+  paths outside the folder), the swap and its undo, both installs, and the
+  whole check-download-install flow against a local HTTP server. They run
+  on Windows and macOS in CI too. An ignored test reaches GitHub over
+  HTTPS (passes here through the proxy).
+- **Not tried yet:** a real update on Windows or macOS. It can only be
+  tried once a release with `update.json` exists and a newer one follows
+  it: the first build after this one has none to update to. Updating from
+  an older build than this one is not possible (they have no updater).
+- **Left out:** checking at start, a Restart Now button (needs the quit
+  path that asks to save), signature checks (once builds are signed).
+

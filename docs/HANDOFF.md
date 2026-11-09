@@ -7,7 +7,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **Built, in order:** Skeleton, Soft Theme, Actions & Keys, Core Model,
   Viewport, Inference & Drawing, Edit Tools (3 parts), Files & Formats
   (3 parts), Groups & Components (3 parts), Model Health (2 parts), View
-  Settings (2 parts, briefs 17 and 18), Toolbars (2 parts, brief 19). PLAN
+  Settings (2 parts, briefs 17 and 18), Toolbars (2 parts, brief 19), Updates (brief 20). PLAN
   6.0 has the details; NOTES has a section per part.
 - **Since the last compaction (2026-11-08 to 09), owner feedback fixed:**
   - the plan was put in build order, with a standing rule to follow it;
@@ -25,9 +25,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **State:** `main` = session branch, CI green. Nothing uncommitted.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
-- **Next: Updates** (PLAN 3.1 decision 8; needs a brief), then MCP
-  Server, then the next rows of the PLAN 6.0 table (see the standing
-  rule below).
+- **Next: MCP Server** (PLAN section 8 decision 6; needs a brief), then
+  the next rows of the PLAN 6.0 table (see the standing rule below).
+- **Updates** needs a real try: install a release build, push something,
+  then Help > Check for Updates once the new release is out.
 - **Toolbars, as the owner shaped them:** no name labels (the name is a
   tooltip over a toolbar's empty space, the kit's tooltip), faint dividers
   between toolbars; 1 button thick up to 5 tools, 2 from 6; a dock is as

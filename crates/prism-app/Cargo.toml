@@ -27,12 +27,15 @@ prism-file.workspace = true
 web-time = "1.1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json.workspace = true
+zip.workspace = true
+sha2 = "0.10"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.11"
 pollster = "1.0.1"
 # Open and save dialogs. On Linux (CI) the xdg-portal backend is pure Rust.
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+ureq = { version = "3.5", default-features = false, features = ["native-tls-no-default"] }
 
 # One running Prism: later starts hand their files over (brief 11).
 # "0BSD OR Apache-2.0": we use it under Apache-2.0.

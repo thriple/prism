@@ -81,6 +81,15 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      - name: Write update.json (the build number and each zip's SHA-256, for Help > Check for Updates)
+        run: |
+          cd assets
+          jq -n --argjson build "${{ github.run_number }}" --arg commit "$GITHUB_SHA" \
+            --arg win "$(sha256sum Prism-windows.zip | cut -d' ' -f1)" \
+            --arg mac "$(sha256sum Prism-macos.zip | cut -d' ' -f1)" \
+            '{build: $build, commit: $commit, files: {"Prism-windows.zip": $win, "Prism-macos.zip": $mac}}' \
+            > update.json
+          cat update.json
       - name: Write the release notes
         run: |
           {
@@ -98,7 +107,7 @@ jobs:
           gh release delete "$BUILD_TAG" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
           # GitHub now and then refuses a release with a 403; try again before failing.
           for try in 1 2 3 4; do
-            gh release create "$BUILD_TAG" assets/*.zip \
+            gh release create "$BUILD_TAG" assets/*.zip assets/update.json \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Prism build ${{ github.run_number }}" \
@@ -113,7 +122,7 @@ jobs:
         run: |
           gh release delete "$RELEASE" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
           for try in 1 2 3 4; do
-            gh release create "$RELEASE" assets/*.zip \
+            gh release create "$RELEASE" assets/*.zip assets/update.json \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Prism ($RELEASE)" \

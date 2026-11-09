@@ -12,6 +12,7 @@ mod hotkeys;
 mod menus;
 mod palette;
 mod toolbar_list;
+mod updates;
 
 use std::collections::{HashMap, HashSet};
 
@@ -116,6 +117,9 @@ pub struct Chrome {
     pub(crate) side_rect: Option<egui::Rect>,
     /// Where the toolbars are, edit mode, and one being dragged (brief 19).
     pub(crate) toolbars: dock::Toolbars,
+    /// Help > Check for Updates: its window, and the check (brief 20).
+    pub(crate) updates_open: bool,
+    pub(crate) updater: crate::update::Updater,
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
@@ -197,6 +201,8 @@ impl Chrome {
                 &Registry::new().dock().iter().map(|(n, _)| *n).collect::<Vec<_>>(),
             )),
             hotkeys: None,
+            updates_open: false,
+            updater: Default::default(),
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
             recent: Vec::new(),
@@ -360,6 +366,10 @@ impl Chrome {
                     "win.health" => self.panels.health = true,
                     "view.edittoolbars" => self.toolbars.editing = true,
                     "view.toolbars" => self.toolbars.window = true,
+                    "help.update" => {
+                        self.updates_open = true;
+                        self.updater.check();
+                    }
                     "view.resettoolbars" => {
                         let names = dock::names(self);
                         self.toolbars.layout = crate::toolbars::Layout::default_for(&names);
@@ -390,6 +400,7 @@ impl Chrome {
             || self.hotkeys.is_some()
             || self.toolbars.editing
             || self.toolbars.window
+            || self.updates_open
     }
 
     /// Whether a window is docked in the side column. These windows do
@@ -406,6 +417,8 @@ impl Chrome {
             self.toolbars.editing = false;
         } else if self.toolbars.window {
             self.toolbars.window = false;
+        } else if self.updates_open {
+            self.updates_open = false;
         } else if self.palette.is_some() {
             self.palette = None;
         } else if let Some(h) = &mut self.hotkeys {
@@ -500,6 +513,7 @@ impl Chrome {
         hotkeys::show(self, ctx);
         panels::show(self, ctx);
         toolbar_list::show(self, ctx);
+        updates::show(self, ctx);
         layout
     }
 }
@@ -620,6 +634,18 @@ mod tests {
         assert!(c.toolbars.window && c.ui_open());
         assert!(c.key(&press("Escape"), false));
         assert!(!c.toolbars.window);
+    }
+
+    #[test]
+    fn check_for_updates_opens_its_window() {
+        let mut c = chrome();
+        assert!(c.enabled("help.update"));
+        c.run("help.update", Source::Menu);
+        assert!(c.updates_open);
+        // Tests are builds made by hand: nothing to compare with.
+        assert_eq!(c.updater.status(), crate::update::Status::Local);
+        assert!(c.key(&press("Escape"), false));
+        assert!(!c.updates_open);
     }
 
     #[test]

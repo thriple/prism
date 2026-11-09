@@ -63,3 +63,6 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 | quick-xml | 0.42 | prism-file | MIT | Yes | Reading 3MF's XML (we write 3MF ourselves, DECISIONS #25) |
 | interprocess | 2.4 | prism-app (Windows and Linux) | 0BSD OR Apache-2.0 (used under Apache-2.0) | Not used on the web | A later start hands its files to the running Prism (brief 11) |
 | objc2, objc2-foundation | 0.6, 0.3 | prism-app (macOS only) | MIT | Not used on the web | The Apple event for double-clicked files (winit does not pass it on) |
+| ureq | 3.5 | prism-app (native only) | MIT OR Apache-2.0 | Not used on the web | Downloads updates (brief 20). Default features off; `native-tls-no-default`, so the system's TLS and certificates are used |
+| native-tls | 0.2 | prism-app (native only, through ureq) | MIT OR Apache-2.0 | Not used on the web | Schannel on Windows, Security framework on macOS, OpenSSL on Linux (CI only) |
+| sha2 | 0.10 | prism-app | MIT OR Apache-2.0 | Yes | Checks a downloaded update against its published SHA-256 |

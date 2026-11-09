@@ -22,6 +22,7 @@ mod storage;
 mod tabs;
 pub mod toolbars;
 mod transfer;
+pub mod update;
 mod viewport;
 
 pub use app::run;

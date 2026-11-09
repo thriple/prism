@@ -30,6 +30,9 @@ pub fn run() {
     if crate::instance::claim(&start_files()) {
         return;
     }
+    // What an earlier update left behind (brief 20).
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::update::clean_up();
     #[cfg(not(target_arch = "wasm32"))]
     {
         let proxy = event_loop.create_proxy();
