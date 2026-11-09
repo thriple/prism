@@ -128,6 +128,10 @@ fn valid(before: &[Vec<DVec2>], after: &[Vec<DVec2>], gap: f64) -> bool {
 /// if that would make an invalid outline. None if the face has no valid
 /// offset at all.
 pub fn offset_loops(model: &Model, face: FaceId, distance: f64) -> Option<(Vec<Vec<DVec3>>, f64)> {
+    // Offsets of arcs come with Exact Curves part 3.
+    if model.face_has_arcs(face) {
+        return None;
+    }
     let (flat, loops) = flat_loops(model, face)?;
     let tol = model.tol();
     let gap = tol.dist * 10.0;

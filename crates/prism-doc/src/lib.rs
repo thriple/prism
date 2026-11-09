@@ -13,7 +13,7 @@ pub mod assembly;
 pub use assembly::{
     Assembly, Attributes, DefId, Definition, Instance, InstanceId, Placed, ROOT, Tag, TagId,
 };
-use prism_math::{DAffine3, DQuat, DVec3};
+use prism_math::{DAffine3, DQuat, DVec3, Plane};
 use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
 use prism_topo::{FaceId, Guide, Model, VertexId};
@@ -37,6 +37,12 @@ pub enum Command {
     /// rectangle on any plane).
     Loop {
         points: Vec<DVec3>,
+    },
+    /// An exact circle: two half arcs with one curve id (Exact Curves).
+    Circle {
+        centre: DVec3,
+        normal: DVec3,
+        radius: f64,
     },
     Erase {
         selection: Selection,
@@ -281,6 +287,7 @@ impl Command {
             Command::Rect { .. } => "Rectangle",
             Command::Loop { points } if points.len() == 4 => "Rectangle",
             Command::Loop { .. } => "Shape",
+            Command::Circle { .. } => "Circle",
             Command::Erase { .. } => "Erase",
             Command::PushPull { .. } => "Push/Pull",
             Command::Translate { .. } => "Move",
@@ -349,6 +356,19 @@ impl Command {
                 .map(p)
                 .collect(),
             },
+            Command::Circle {
+                centre,
+                normal,
+                radius,
+            } => {
+                let n = dir(*normal);
+                let side = Plane::new(*centre, *normal).frame().u * *radius;
+                Command::Circle {
+                    centre: p(*centre),
+                    normal: n.normalize_or_zero(),
+                    radius: dir(side).length(),
+                }
+            }
             Command::Loop { points } => Command::Loop {
                 points: points.iter().map(|v| p(*v)).collect(),
             },
@@ -520,6 +540,13 @@ impl Command {
                 for i in 0..points.len() {
                     prism_ops::add_segment(m, points[i], points[(i + 1) % points.len()]);
                 }
+            }
+            Command::Circle {
+                centre,
+                normal,
+                radius,
+            } => {
+                prism_ops::add_circle(m, *centre, *normal, *radius);
             }
             Command::Erase { selection } => prism_ops::remove(m, selection),
             Command::PushPull {

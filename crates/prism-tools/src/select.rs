@@ -80,13 +80,21 @@ pub fn box_select(scene: &Scene, view: &View, lo: DVec2, hi: DVec2, crossing: bo
         }
     }
     for e in &scene.edges {
-        let (Some(a), Some(b)) = (scr(e.a), scr(e.b)) else {
+        // Arcs by their drawn pieces: crossing needs one to touch, window
+        // needs all inside.
+        let pieces: Option<Vec<(DVec2, DVec2)>> = e
+            .segments()
+            .map(|(a, b)| Some((scr(a)?, scr(b)?)))
+            .collect();
+        let Some(pieces) = pieces else {
             continue;
         };
         let hit = if crossing {
-            touches(a, b, lo, hi)
+            pieces.iter().any(|(a, b)| touches(*a, *b, lo, hi))
         } else {
-            inside(a, lo, hi) && inside(b, lo, hi)
+            pieces
+                .iter()
+                .all(|(a, b)| inside(*a, lo, hi) && inside(*b, lo, hi))
         };
         if hit {
             out.edges.insert(e.id);

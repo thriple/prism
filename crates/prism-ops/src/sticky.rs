@@ -4,6 +4,7 @@
 
 use std::collections::BTreeSet;
 
+use prism_geom::Curve;
 use prism_math::{DVec3, Plane, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
@@ -53,8 +54,10 @@ pub fn insert_point(model: &mut Model, p: DVec3, tol: &Tol) -> VertexId {
     if let Some((id, _)) = near {
         return id;
     }
+    // Only straight edges until Exact Curves 2b splits arcs too.
     let on_edge = model
         .edges()
+        .filter(|(_, e)| !e.curve.is_arc())
         .find(|(_, e)| on_segment_inside(p, model.vertex(e.a), model.vertex(e.b), tol).is_some())
         .map(|(id, _)| id);
     let id = model.add_vertex(p);
@@ -83,7 +86,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     // Crossings with edges that do not touch the ends.
     let crossings: Vec<(EdgeId, f64, DVec3)> = model
         .edges()
-        .filter(|(_, e)| !e.has(a) && !e.has(b))
+        .filter(|(_, e)| !e.has(a) && !e.has(b) && !e.curve.is_arc())
         .filter_map(|(id, e)| {
             let (c, d) = (model.vertex(e.a), model.vertex(e.b));
             crossing(pa, pb, c, d, &tol).map(|(s, point)| (id, s, point))
@@ -128,6 +131,78 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     for plane in candidate_planes(model, &chain, pa, pb, &tol) {
         faces.extend(rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0));
     }
+    faces.retain(|f| model.face(*f).is_some());
+    Added {
+        edges: added,
+        faces,
+    }
+}
+
+/// Add an exact circle about `centre` in the plane with `normal`: two half
+/// arcs between two seam points, sharing one curve id. The plane's faces are
+/// rebuilt as for a segment, so a circle on its own becomes a face, and one
+/// inside a face also makes a hole in it.
+pub fn add_circle(model: &mut Model, centre: DVec3, normal: DVec3, radius: f64) -> Added {
+    let n = normal.normalize_or_zero();
+    if n == DVec3::ZERO
+        || radius.is_nan()
+        || radius <= 0.0
+        || !centre.is_finite()
+        || !radius.is_finite()
+    {
+        return Added::default();
+    }
+    let plane = Plane::new(centre, n);
+    let u = plane.frame().u;
+    let (p, q) = (centre + u * radius, centre - u * radius);
+    let tol = tol_with(model, &[p, q]);
+    if radius <= tol.dist {
+        return Added::default();
+    }
+    let a = insert_point(model, p, &tol);
+    let b = insert_point(model, q, &tol);
+    let arc = Curve::Arc {
+        centre,
+        axis: n,
+        radius,
+    };
+    // The same arc drawn again is the one already there.
+    let same = |m: &Model, x: VertexId, y: VertexId| {
+        let want = if x < y { arc } else { arc.reversed() };
+        m.edges().any(|(_, e)| {
+            e.a == x.min(y)
+                && e.b == x.max(y)
+                && match (e.curve, want) {
+                    (
+                        Curve::Arc {
+                            centre: c1,
+                            axis: a1,
+                            radius: r1,
+                        },
+                        Curve::Arc {
+                            centre: c2,
+                            axis: a2,
+                            radius: r2,
+                        },
+                    ) => tol.same_point(c1, c2) && a1.dot(a2) > 0.0 && (r1 - r2).abs() < tol.dist,
+                    _ => false,
+                }
+        })
+    };
+    if same(model, a, b) && same(model, b, a) {
+        return Added::default();
+    }
+    let cid = model.new_curve_id();
+    let missing: Vec<(VertexId, VertexId)> = [(a, b), (b, a)]
+        .into_iter()
+        .filter(|&(x, y)| !same(model, x, y))
+        .collect();
+    let added: Vec<EdgeId> = missing
+        .into_iter()
+        .filter_map(|(x, y)| model.add_curve_edge(x, y, arc, Some(cid)))
+        .collect();
+    let new: BTreeSet<EdgeId> = added.iter().copied().collect();
+    let mut faces = rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0);
     faces.retain(|f| model.face(*f).is_some());
     Added {
         edges: added,
@@ -196,6 +271,12 @@ fn candidate_planes(
     for v in chain {
         let at = model.vertex(*v);
         for (_, e) in model.edges().filter(|(_, e)| e.has(*v)) {
+            if let Some(pl) = e.curve.plane() {
+                if pl.contains(pa, tol) && pl.contains(pb, tol) {
+                    push(pl);
+                }
+                continue;
+            }
             let side = model.vertex(e.other(*v)) - at;
             if side.length() > tol.dist && !tol.parallel(dir, side.normalize()) {
                 push(Plane::new(at, dir.cross(side)));

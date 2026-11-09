@@ -1242,3 +1242,47 @@ Brief: `docs/briefs/21-mcp-server.md`.
   - face finding (`regions`), Model Health's orientation (`runs`) and the
     reach rule still key edges by their two vertices. They are right for
     straight edges and need edge ids when arcs come.
+
+## Exact Curves (part 2, step 2a): arcs in the core
+Brief 23 splits part 2 into four steps (2a core, 2b crossings, 2c picking
+and inference, 2d the Circle and Polygon tools).
+- **Arcs:** `Curve::Arc { centre, axis, radius }`, running counter-clockwise
+  about the axis from the edge's `a` to `b`. A circle is two half arcs
+  between two seam points with one `CurveId` (a new id kind with its own
+  counter). Arcs are never merged with lines: `add_edge` reuses only a
+  straight edge (`line_between`); arcs come in with `add_curve_edge`.
+  Splitting an arc gives two arcs of the same circle and curve.
+- **Drawn points:** `Model::edge_points` and `loop_points` give an arc's
+  points at 128 even steps per turn (`prism_geom::SEGMENTS_PER_TURN`).
+  Faces are triangulated and picked from them, and edges drawn and box
+  selected by their pieces. Adaptive tessellation is part 4.
+- **Exact area:** `face_area` adds each arc's circular segment to the
+  polygon of the vertices (a circle of radius 1 has area π to 1e-12).
+- **Face finding traces edges** (`regions`): half-edges at a vertex are
+  sorted by their tangent, then curvature; regions keep their edges, so a
+  circle's two halves make a face. Every existing test passed unchanged
+  after this rewrite.
+- **Faces turn round with their edges:** `Face::reverse`. Linking now tries
+  the edge named at the same side first, so a circle's halves stay apart.
+- **Transforms** work on an affine: arcs with both ends moving go through
+  it exactly. A move that would bend an arc (one end only, or an uneven
+  scale) changes nothing, for now; the tools do not say why yet (2c/2d).
+  `affine` (placing groups) with an uneven scale leaves arcs approximate
+  and the model check reports them: a known gap until the segment fallback
+  (DECISIONS #32).
+- **Refused until their part, changing nothing:** Push/Pull (part 4),
+  Offset (part 3) and Intersect Faces (part 4) on faces with arcs.
+- **Until 2b:** straight-edge crossing and on-edge tests skip arcs, so a
+  line drawn across a circle does not cut it yet.
+- **Model check:** arc ends on their circle, a proper radius and axis, an
+  arc's axis along the normal of each face using it; a loop of two sides
+  is fine when one is an arc. Drawing the same circle twice changes
+  nothing. The property tests now add circles too (on a grid, clear of the
+  rectangles until 2b).
+- **Files:** schema 4, geometry layout 3 (arcs and curve ids). The schema 3
+  golden files are kept in `docs/acceptance/files/schema-3/`; a new golden
+  file has a circle in a plate.
+- **MCP:** `get_geometry` gives an arc's centre, axis and radius, and a
+  `curve` number shared by the edges of one curve.
+- Checked in the app (Xvfb): the circle file opens, and the circle is drawn
+  smooth and unbroken.

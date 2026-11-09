@@ -14,6 +14,9 @@ use proptest::prelude::*;
 enum Op {
     Rect(i32, i32, i32, i32),
     Line(i32, i32, i32, i32),
+    /// A unit circle on a grid off to the side, clear of everything else
+    /// (lines do not cut circles until Exact Curves 2b).
+    Circle(i32, i32),
 }
 
 fn rect() -> impl Strategy<Value = Op> {
@@ -23,6 +26,7 @@ fn rect() -> impl Strategy<Value = Op> {
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         3 => rect(),
+        1 => (0..4i32, 0..4i32).prop_map(|(i, j)| Op::Circle(i, j)),
         1 => (0..10i32, 0..10i32, 0..10i32, 0..10i32).prop_filter("a line has length", |(a, b, c, d)| (a, b) != (c, d)).prop_map(|(a, b, c, d)| Op::Line(a, b, c, d)),
     ]
 }
@@ -43,6 +47,10 @@ fn apply(m: &mut Model, op: &Op, k: f64) {
             let p = DVec3::new(f64::from(a), f64::from(b), 0.0) * k;
             let q = DVec3::new(f64::from(c), f64::from(d), 0.0) * k;
             prism_ops::add_segment(m, p, q);
+        }
+        Op::Circle(i, j) => {
+            let c = DVec3::new(100.0 + 3.0 * f64::from(i), 3.0 * f64::from(j), 0.0) * k;
+            prism_ops::add_circle(m, c, DVec3::Z, k);
         }
     }
 }
@@ -105,7 +113,7 @@ proptest! {
     #[test]
     fn area_is_conserved(rects in prop::collection::vec(rect(), 1..6)) {
         let m = build(&rects, 1.0);
-        let r: Vec<_> = rects.iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) => unreachable!() }).collect();
+        let r: Vec<_> = rects.iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) | Op::Circle(..) => unreachable!() }).collect();
         for &(x0, y0, x1, y1) in &r {
             for x in x0..x1 {
                 for y in y0..y1 {
@@ -122,7 +130,7 @@ proptest! {
     #[test]
     fn overlapping_rectangles_cover_exactly_their_union(a in rect(), b in rect()) {
         let m = build(&[a.clone(), b.clone()], 1.0);
-        let r: Vec<_> = [a, b].iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) => unreachable!() }).collect();
+        let r: Vec<_> = [a, b].iter().map(|o| match o { Op::Rect(a, b, c, d) => (*a, *b, *c, *d), Op::Line(..) | Op::Circle(..) => unreachable!() }).collect();
         let total: f64 = m.faces().map(|(id, _)| m.face_area(id)).sum();
         prop_assert!((total - union_area(&r)).abs() < 1e-6, "faces cover {} but the rectangles cover {}", total, union_area(&r));
     }

@@ -54,19 +54,22 @@ pub fn pick(scene: &Scene, view: &View, s: DVec2, aperture: f64) -> Option<Picke
     let (o, dir) = view.ray(s);
     let mut best: Option<(f64, EdgeId, DVec3)> = None;
     for e in &scene.edges {
-        let Some(t) = closest_on_segment(o, dir, e.a, e.b) else {
-            continue;
-        };
-        let p = e.a.lerp(e.b, t);
-        let Some((q, _)) = view.to_screen(p) else {
-            continue;
-        };
-        let d = q.distance(s);
-        if d < re
-            && best.is_none_or(|b| d < b.0 || (d == b.0 && e.id < b.1))
-            && !scene.occluded(view.eye, p)
-        {
-            best = Some((d, e.id, p));
+        // An arc is picked along its drawn pieces.
+        for (a, b) in e.segments() {
+            let Some(t) = closest_on_segment(o, dir, a, b) else {
+                continue;
+            };
+            let p = a.lerp(b, t);
+            let Some((q, _)) = view.to_screen(p) else {
+                continue;
+            };
+            let d = q.distance(s);
+            if d < re
+                && best.is_none_or(|b| d < b.0 || (d == b.0 && e.id < b.1))
+                && !scene.occluded(view.eye, p)
+            {
+                best = Some((d, e.id, p));
+            }
         }
     }
     if let Some((_, id, p)) = best {

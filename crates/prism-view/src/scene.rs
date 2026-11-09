@@ -107,6 +107,8 @@ pub struct SceneEdge {
     pub vb: VertexId,
     pub a: DVec3,
     pub b: DVec3,
+    /// An arc's drawn points between `a` and `b` (empty for a line).
+    pub mid: Vec<DVec3>,
     /// The first two faces' normals; `None` where there are fewer faces.
     pub normals: [Option<DVec3>; 2],
     /// The first two faces that use it.
@@ -115,6 +117,16 @@ pub struct SceneEdge {
     pub faded: bool,
     /// A hidden object shown by View > Hidden Geometry: drawn dashed.
     pub ghost: bool,
+}
+
+impl SceneEdge {
+    /// The straight pieces it is drawn and picked with, from `a` to `b`.
+    pub fn segments(&self) -> impl Iterator<Item = (DVec3, DVec3)> + '_ {
+        let pts = std::iter::once(self.a)
+            .chain(self.mid.iter().copied())
+            .chain(std::iter::once(self.b));
+        pts.clone().zip(pts.skip(1))
+    }
 }
 
 /// The display triangles of all faces: one vertex per face corner, so every
@@ -197,7 +209,23 @@ impl Scene {
                 // Keep u × v along the face's own normal.
                 (frame.v, frame.u)
             };
-            let pts: Vec<DVec3> = f.loops().flatten().map(|v| model.vertex(*v)).collect();
+            // Arcs give their drawn points; each point belongs to the vertex
+            // its side starts at (for moving previews).
+            let loops = model.face_loop_points(f);
+            let pts: Vec<DVec3> = loops.iter().flatten().copied().collect();
+            let mut owners: Vec<VertexId> = Vec::with_capacity(pts.len());
+            for (k, l) in f.loops().enumerate() {
+                let edges = f.loop_edge_ids(k);
+                for (i, v) in l.iter().enumerate() {
+                    owners.push(*v);
+                    let inner = edges.get(i).and_then(|e| model.edge(*e)).map_or(0, |e| {
+                        e.curve
+                            .inner_points(model.vertex(e.a), model.vertex(e.b))
+                            .len()
+                    });
+                    owners.extend(std::iter::repeat_n(*v, inner));
+                }
+            }
             let (mut lo, mut hi) = (pts[0], pts[0]);
             for p in &pts {
                 lo = lo.min(*p);
@@ -216,20 +244,15 @@ impl Scene {
                 tris: 0..0,
                 faded: false,
             };
-            face.outer = f
-                .outer
+            face.outer = loops[0].iter().map(|p| face.to_2d(*p)).collect();
+            face.holes = loops[1..]
                 .iter()
-                .map(|v| face.to_2d(model.vertex(*v)))
-                .collect();
-            face.holes = f
-                .holes
-                .iter()
-                .map(|h| h.iter().map(|v| face.to_2d(model.vertex(*v))).collect())
+                .map(|h| h.iter().map(|p| face.to_2d(*p)).collect())
                 .collect();
             let start = s.mesh.indices.len() as u32;
             let base = s.mesh.positions.len() as u32;
             s.mesh.positions.extend_from_slice(&pts);
-            s.mesh_vertex_ids.extend(f.loops().flatten().copied());
+            s.mesh_vertex_ids.extend(owners);
             s.mesh
                 .normals
                 .extend(std::iter::repeat_n(plane.normal, pts.len()));
@@ -254,6 +277,7 @@ impl Scene {
                 vb: e.b,
                 a: model.vertex(e.a),
                 b: model.vertex(e.b),
+                mid: e.curve.inner_points(model.vertex(e.a), model.vertex(e.b)),
                 normals: [n(0), n(1)],
                 faces: [fid(0), fid(1)],
                 faded: false,
@@ -282,6 +306,9 @@ impl Scene {
                 (true, true) => {
                     e.a = f(e.a);
                     e.b = f(e.b);
+                    for q in &mut e.mid {
+                        *q = f(*q);
+                    }
                     for n in e.normals.iter_mut().flatten() {
                         *n = nf(*n);
                     }
@@ -482,6 +509,9 @@ impl Scene {
         for e in &mut s.edges {
             e.a = p(e.a);
             e.b = p(e.b);
+            for q in &mut e.mid {
+                *q = p(*q);
+            }
             for n in e.normals.iter_mut().flatten() {
                 *n = dir(*n);
             }

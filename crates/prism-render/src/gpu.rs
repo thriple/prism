@@ -992,11 +992,11 @@ impl Renderer {
         let edges: Vec<LineInstance> = scene
             .edges
             .iter()
-            .map(|e| {
+            .flat_map(|e| {
                 // Along an axis, in its colour if asked; edges outside the
                 // open group faint.
                 let mut color = style.edge;
-                if style.lines_by_axis {
+                if style.lines_by_axis && e.mid.is_empty() {
                     let d = (e.b - e.a).normalize_or_zero();
                     if let Some(i) = (0..3).find(|i| d[*i].abs() > 1.0 - 1e-9) {
                         color = style.axes[i];
@@ -1012,20 +1012,26 @@ impl Renderer {
                         .edge
                         .with_alpha(crate::style::alpha(style.hidden_alpha));
                 }
-                let mut l = LineInstance::new(e.a, e.b, color, style.edge_width).flags(MODEL_EDGE);
-                if e.ghost && style.hidden_lines != HiddenLines::Faint {
-                    l = l.dashed(style.hidden_dash);
-                }
-                if let Some(n) = e.normals[0] {
-                    l.n1 = n.as_vec3().to_array();
-                    l.flags |= HAS_N1;
-                }
-                if let Some(n) = e.normals[1] {
-                    l.n2 = n.as_vec3().to_array();
-                    l.flags |= HAS_N2;
-                }
-                l.faces = face_numbers(scene, e.faces);
-                l
+                // An arc is drawn as its pieces.
+                e.segments()
+                    .map(|(a, b)| {
+                        let mut l =
+                            LineInstance::new(a, b, color, style.edge_width).flags(MODEL_EDGE);
+                        if e.ghost && style.hidden_lines != HiddenLines::Faint {
+                            l = l.dashed(style.hidden_dash);
+                        }
+                        if let Some(n) = e.normals[0] {
+                            l.n1 = n.as_vec3().to_array();
+                            l.flags |= HAS_N1;
+                        }
+                        if let Some(n) = e.normals[1] {
+                            l.n2 = n.as_vec3().to_array();
+                            l.flags |= HAS_N2;
+                        }
+                        l.faces = face_numbers(scene, e.faces);
+                        l
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect();
         self.edges.set(device, "edges", &edges);
@@ -1068,18 +1074,22 @@ impl Renderer {
             &tris(&mut h.selection.faces.iter().copied()),
         );
         let mut lines = Vec::new();
-        let edge_line = |id, color| {
-            scene.edge(id).map(|e| {
-                let mut l = LineInstance::new(e.a, e.b, color, style.highlight_width);
-                l.faces = face_numbers(scene, e.faces);
-                l
+        let edge_line = |id, color| -> Vec<LineInstance> {
+            scene.edge(id).map_or(Vec::new(), |e| {
+                e.segments()
+                    .map(|(a, b)| {
+                        let mut l = LineInstance::new(a, b, color, style.highlight_width);
+                        l.faces = face_numbers(scene, e.faces);
+                        l
+                    })
+                    .collect()
             })
         };
         lines.extend(
             h.selection
                 .edges
                 .iter()
-                .filter_map(|e| edge_line(*e, style.selected)),
+                .flat_map(|e| edge_line(*e, style.selected)),
         );
         if let Some(Hit::Edge(e)) = h.hover {
             lines.extend(edge_line(e, style.hover));

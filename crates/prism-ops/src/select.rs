@@ -244,11 +244,12 @@ pub fn duplicate(model: &mut Model, sel: &Selection) -> Selection {
     }
     let mut out = Selection::default();
     let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
+    let mut cmap = BTreeMap::new();
     for e in edges {
         let Some(ed) = model.edge(e).copied() else {
             continue;
         };
-        if let Some(c) = model.add_edge(map[&ed.a], map[&ed.b]) {
+        if let Some(c) = copy_edge(model, &ed, map[&ed.a], map[&ed.b], &mut cmap) {
             out.edges.insert(c);
             emap.insert(e, c);
         }
@@ -258,6 +259,30 @@ pub fn duplicate(model: &mut Model, sel: &Selection) -> Selection {
         out.faces.insert(model.add_face(copy_face(&f, &map, &emap)));
     }
     out
+}
+
+/// Copy edge `e` between `a` and `b` (its ends' copies) into `to`: a line
+/// is reused if there, an arc keeps its curve, and a curve id gets a new
+/// one per curve (in `cmap`).
+fn copy_edge(
+    to: &mut Model,
+    e: &prism_topo::Edge,
+    a: VertexId,
+    b: VertexId,
+    cmap: &mut BTreeMap<prism_topo::CurveId, prism_topo::CurveId>,
+) -> Option<EdgeId> {
+    let cid = e
+        .curve_id
+        .map(|c| *cmap.entry(c).or_insert_with(|| to.new_curve_id()));
+    if e.curve.is_arc() {
+        // `a` and `b` stand for the edge's own `a` and `b`, so the arc runs
+        // from `a` to `b` as before.
+        to.add_curve_edge(a, b, e.curve, cid)
+    } else {
+        let id = to.add_edge(a, b)?;
+        to.set_curve_id(id, cid);
+        Some(id)
+    }
 }
 
 /// A face with its vertices and edges swapped for their copies.
@@ -307,9 +332,10 @@ pub fn take(model: &mut Model, sel: &Selection) -> Model {
         .map(|v| (*v, out.add_vertex(model.vertex(*v))))
         .collect();
     let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
+    let mut cmap = BTreeMap::new();
     for e in &edges {
         if let Some(ed) = model.edge(*e)
-            && let Some(c) = out.add_edge(vmap[&ed.a], vmap[&ed.b])
+            && let Some(c) = copy_edge(&mut out, ed, vmap[&ed.a], vmap[&ed.b], &mut cmap)
         {
             emap.insert(*e, c);
         }

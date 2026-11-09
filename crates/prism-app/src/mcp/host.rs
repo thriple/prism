@@ -251,12 +251,32 @@ impl AppHost<'_> {
                     t.transform_point3(m.vertex(e.a)),
                     t.transform_point3(m.vertex(e.b)),
                 );
-                json!({
+                // An arc as placed in the world (an even group scale keeps
+                // it an arc).
+                let c = e.curve.transformed(&t).unwrap_or(e.curve);
+                let mut j = json!({
                     "id": id.0,
                     "a": point(a),
                     "b": point(b),
-                    "length": round(a.distance(b)),
-                })
+                    "length": round(c.length(a, b)),
+                });
+                if let prism_geom::Curve::Arc {
+                    centre,
+                    axis,
+                    radius,
+                } = c
+                {
+                    j["arc"] = json!({
+                        "centre": point(centre),
+                        "axis": [round(axis.x), round(axis.y), round(axis.z)],
+                        "radius": round(radius),
+                        "runs": "counter-clockwise about the axis from a to b",
+                    });
+                }
+                if let Some(cid) = e.curve_id {
+                    j["curve"] = json!(cid.0);
+                }
+                j
             })
             .collect();
         json!({

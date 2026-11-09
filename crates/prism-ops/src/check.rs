@@ -3,7 +3,7 @@
 
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, Tol};
-use prism_topo::{FaceId, Model, VertexId};
+use prism_topo::{FaceId, Model};
 
 use crate::regions::{interior_point, same_cycle};
 
@@ -23,8 +23,10 @@ fn loops_2d(model: &Model, f: FaceId) -> Vec<Vec<DVec2>> {
         return vec![];
     };
     let fr = face.plane().frame();
-    face.loops()
-        .map(|l| l.iter().map(|v| fr.to_2d(model.vertex(*v))).collect())
+    model
+        .face_loop_points(face)
+        .iter()
+        .map(|l| l.iter().map(|p| fr.to_2d(*p)).collect())
         .collect()
 }
 
@@ -45,16 +47,12 @@ pub fn no_overlaps(model: &Model, tol: &Tol) -> Vec<String> {
             if g == f || !gg.plane().same_surface(ff.plane(), tol) {
                 continue;
             }
-            let gf = gg.plane().frame();
-            let q = gf.to_2d(p3);
-            let poly = |l: &[VertexId]| -> Vec<DVec2> {
-                l.iter().map(|v| gf.to_2d(model.vertex(*v))).collect()
-            };
-            if point_in_polygon(q, &poly(&gg.outer)) == Inside::Inside
-                && gg
-                    .holes
+            let q = gg.plane().frame().to_2d(p3);
+            let polys = loops_2d(model, g);
+            if point_in_polygon(q, &polys[0]) == Inside::Inside
+                && polys[1..]
                     .iter()
-                    .all(|h| point_in_polygon(q, &poly(h)) == Inside::Outside)
+                    .all(|h| point_in_polygon(q, h) == Inside::Outside)
             {
                 out.push(format!("faces {f:?} and {g:?} overlap"));
             }
@@ -77,7 +75,7 @@ pub fn no_duplicates(model: &Model, tol: &Tol) -> Vec<String> {
     let fs: Vec<_> = model.faces().collect();
     for (i, (a, fa)) in fs.iter().enumerate() {
         for (b, fb) in &fs[i + 1..] {
-            if same_cycle(&fa.outer, &fb.outer) {
+            if same_cycle(fa.loop_edge_ids(0), fb.loop_edge_ids(0)) {
                 out.push(format!("faces {a:?} and {b:?} have the same loop"));
             }
         }
@@ -125,7 +123,7 @@ pub fn planar(model: &Model, tol: &Tol) -> Vec<String> {
         {
             out.push(format!("face {id:?} is not planar"));
         }
-        let n = prism_math::newell(&model.points(&f.outer));
+        let n = prism_math::newell(&model.loop_points(f, 0));
         if n.dot(pl.normal) <= 0.0 {
             out.push(format!("face {id:?} winds against its normal"));
         }

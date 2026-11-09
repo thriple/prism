@@ -441,6 +441,14 @@ impl Model {
         out
     }
 
+    /// Whether a face has an arc in any loop.
+    pub fn face_has_arcs(&self, id: FaceId) -> bool {
+        self.face(id).is_some_and(|f| {
+            f.edge_ids()
+                .any(|e| self.edges.get(&e).is_some_and(|x| x.curve.is_arc()))
+        })
+    }
+
     /// Whether any edge is an arc.
     pub fn has_arcs(&self) -> bool {
         self.edges.values().any(|e| e.curve.is_arc())
@@ -890,7 +898,7 @@ impl Model {
                 radius,
             } = e.curve
             {
-                if !(radius > tol.dist) || (axis.length() - 1.0).abs() > 1e-9 {
+                if radius.is_nan() || radius <= tol.dist || (axis.length() - 1.0).abs() > 1e-9 {
                     out.push(format!("arc {id:?} has no proper radius or axis"));
                 }
                 for v in [e.a, e.b] {
@@ -925,7 +933,13 @@ impl Model {
                 ));
             }
             for (k, l) in f.loops().enumerate() {
-                if l.len() < 3 {
+                // Two sides make a loop only when one is an arc (half a
+                // circle closed by its diameter, or a whole circle).
+                let curved = f
+                    .loop_edge_ids(k)
+                    .iter()
+                    .any(|e| self.edges.get(e).is_some_and(|x| x.curve.is_arc()));
+                if l.len() < 3 && !(l.len() == 2 && curved) {
                     out.push(format!("face {id:?} has a loop of {} vertices", l.len()));
                 }
                 let named = f.loop_edge_ids(k);

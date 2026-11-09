@@ -196,6 +196,8 @@ pub fn all_crossings(m: &Model, only: Option<&BTreeSet<FaceId>>) -> Vec<(DVec3, 
     let tol = m.tol();
     let faces: Vec<(FaceId, Flat)> = m
         .faces()
+        // Faces with arcs cross other faces in curves: Exact Curves part 4.
+        .filter(|(id, _)| !m.face_has_arcs(*id))
         .filter_map(|(id, _)| Flat::of(m, id).map(|f| (id, f)))
         .collect();
     let mut out = Vec::new();

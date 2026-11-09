@@ -61,7 +61,25 @@ fn cases() -> Vec<(&'static str, Contents)> {
                 settings: Settings::default(),
             },
         ),
+        (
+            "circle-in-a-plate.prism",
+            Contents::with_model(circle_in_a_plate(), Settings::default()),
+        ),
     ]
+}
+
+/// A square plate with an exact circle in it: a hole and a disc (Exact
+/// Curves part 2).
+fn circle_in_a_plate() -> prism_topo::Model {
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
+    prism_ops::add_circle(
+        &mut m,
+        prism_math::DVec3::new(2.0, 2.0, 0.0),
+        prism_math::DVec3::Z,
+        1.0,
+    );
+    m
 }
 
 /// A box made into a component "Box", with two linked copies, one made
@@ -160,9 +178,9 @@ fn golden_files_open_and_save_the_same() {
     assert!(seen >= 3, "the golden files are there");
 }
 
-/// Files saved before loops named their edges (schema 2, geometry layout
-/// 1) open with the same faces and edges, found from the loops; files
-/// saved before arcs (schema 3, layout 2) open the same too.
+/// Files saved before loops named their edges (schema 2, geometry layout 1)
+/// open with the same faces and edges, found from the loops. Files saved
+/// before arcs (schema 3, layout 2) open the same too.
 #[test]
 fn schema_2_and_3_files_open_as_now() {
     let mut seen = 0;

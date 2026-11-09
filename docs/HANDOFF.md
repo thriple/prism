@@ -27,8 +27,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves part 1 is built** (brief 22: faces name their edges, file
   schema 3 / geometry layout 2; NOTES has what is left for part 2).
-- **Next: Exact Curves part 2** (arcs and circles in the core, Circle and
-  Polygon; needs a brief). Exact Curves is 5 parts (owner, 2026-11-09); the design
+- **Exact Curves part 2** is briefed (brief 23, four steps). Step 2a is
+  built (arcs in the core). **Next: step 2b** (exact line–arc and arc–arc
+  crossings; points split arcs). Exact Curves is 5 parts (owner, 2026-11-09); the design
   is in `docs/research/exact-curves.md`. Curves that are not lines or arcs
   fall back to fine segments, flagged (DECISIONS #32), built after part 5.
   The curve tools stay greyed in releases until all five parts are done

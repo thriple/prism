@@ -24,4 +24,4 @@ pub mod transform;
 
 pub use pushpull::push_pull;
 pub use select::{Selection, connected, duplicate, remove};
-pub use sticky::{add_rect, add_segment, face_at, insert_point, vertex_at};
+pub use sticky::{add_circle, add_rect, add_segment, face_at, insert_point, vertex_at};

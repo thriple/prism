@@ -40,6 +40,10 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let Some(f) = model.face(face).cloned() else {
         return Pulled::Nothing;
     };
+    // Faces with arcs make curved walls: Exact Curves part 4.
+    if model.face_has_arcs(face) {
+        return Pulled::Nothing;
+    }
     // It stops at the first face in its way (Alt's new loop is not
     // limited: the original loop stays behind).
     let distance = if new_loop {

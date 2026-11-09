@@ -108,7 +108,7 @@ pub fn tools() -> Value {
         {
             "name": "get_geometry",
             "title": "List faces and edges",
-            "description": "The open group's faces (id, unit normal, area in square metres, outer loop points, number of holes) and edges (id, end points, length), in world coordinates and metres. Up to `limit` of each (default 200); the totals are always given.",
+            "description": "The open group's faces (id, unit normal, area in square metres, outer loop points, number of holes) and edges (id, end points, length; an arc also gives its centre, axis and radius, and the edges of one circle, arc or polygon share a `curve` number), in world coordinates and metres. Up to `limit` of each (default 200); the totals are always given.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

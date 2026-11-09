@@ -32,7 +32,7 @@ Part 2 is too big for one go, so it is built in four steps:
   - sampling to a polyline within a chord error.
 - `prism-topo`:
   - `Edge` gains `curve_id: Option<CurveId>`;
-  - `Model::edge_points(e)` gives an edge's points from one end to the other, finely enough that the error is below the model tolerance;
+  - `Model::edge_points(e)` gives an edge's points from one end to the other (128 even steps per full turn for now; adaptive by screen error is part 4);
   - `loop_points(face, k)` gives a loop's points along its edges (the polygon used by point-in-face, interior points and tessellation);
   - `face_area` is exact for arcs (the polygon of the vertices plus each arc's circular segment, signed).
 - The model check:
@@ -49,7 +49,7 @@ Part 2 is too big for one go, so it is built in four steps:
   - faces bounded by arcs are tessellated from `loop_points`;
   - fine enough for now (adaptive tessellation by screen error is part 4).
 - Files: geometry layout 3 stores arcs and curve ids, schema 4; layout 1 and 2 files still open.
-- MCP: `get_geometry` lists each edge's curve (line, or arc with its centre, axis and radius) and curve id.
+- MCP: `get_geometry` lists each edge's curve (line, or arc with its centre, axis and radius) and curve id. (Its test comes with 2d, when a tool can draw a circle over MCP.)
 
 ### 2b. Crossings
 - Exact crossings:
