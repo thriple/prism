@@ -1,27 +1,74 @@
 //! Faces in one plane, rebuilt from the plane's edges.
 //!
 //! All edges in the plane form a planar graph (edges are already split where
-//! they cross). Tracing it with half-edges sorted by angle gives every atomic
-//! region: an outer loop, and the outer boundaries of the islands inside it
-//! as holes. A region becomes a face when an existing face covered it, or
+//! they cross). Tracing it with half-edges sorted by the direction they
+//! leave each vertex (an arc's tangent; curvature breaks ties) gives every
+//! atomic region: an outer loop, and the outer boundaries of the islands
+//! inside it as holes. Regions are kept as edges, since two arcs can join
+//! the same two vertices (a circle). A region becomes a face when an existing face covered it, or
 //! when its outer loop uses an edge that was just added (a newly closed
 //! loop). Faces whose region did not change keep their ids.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_geom::Surface;
+use prism_geom::{Curve, Surface};
 use prism_math::plane::Frame;
 use prism_math::predicates::{Inside, orient2d, point_in_polygon, signed_area2};
 use prism_math::{DVec2, DVec3, Plane, Tol};
-use prism_topo::{EdgeId, Face, FaceId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
+
+/// One side of a traced loop: leaving `from` along `edge`.
+type Side = (VertexId, EdgeId);
 
 /// One region of the plane's graph.
 #[derive(Clone, Debug)]
 struct Region {
     /// Counter-clockwise about the frame's normal.
-    outer: Vec<VertexId>,
+    outer: Vec<Side>,
     /// Clockwise about the frame's normal.
-    holes: Vec<Vec<VertexId>>,
+    holes: Vec<Vec<Side>>,
+    /// The polygons of the loops in the frame (arcs as their drawn points).
+    polys: Vec<Vec<DVec2>>,
+}
+
+impl Region {
+    fn loops(&self) -> impl Iterator<Item = &Vec<Side>> {
+        std::iter::once(&self.outer).chain(self.holes.iter())
+    }
+
+    fn edges(&self) -> impl Iterator<Item = EdgeId> + '_ {
+        self.loops().flatten().map(|s| s.1)
+    }
+}
+
+/// The points of a loop of sides in the frame: each side's start and, for
+/// an arc, its drawn points in walking order.
+fn side_polygon(model: &Model, frame: &Frame, sides: &[Side]) -> Vec<DVec2> {
+    let mut out = Vec::new();
+    for (from, e) in sides {
+        let p = model.vertex(*from);
+        out.push(frame.to_2d(p));
+        if let Some(ed) = model.edge(*e)
+            && ed.curve.is_arc()
+        {
+            let (pa, pb) = (model.vertex(ed.a), model.vertex(ed.b));
+            let mut inner = ed.curve.inner_points(pa, pb);
+            if *from != ed.a {
+                inner.reverse();
+            }
+            out.extend(inner.into_iter().map(|q| frame.to_2d(q)));
+        }
+    }
+    out
+}
+
+/// A face's loops as polygons in the frame.
+fn face_polys(model: &Model, f: &Face, frame: &Frame) -> Vec<Vec<DVec2>> {
+    model
+        .face_loop_points(f)
+        .iter()
+        .map(|l| l.iter().map(|p| frame.to_2d(*p)).collect())
+        .collect()
 }
 
 /// Whether a point is inside the solid an edit makes (None: cannot tell).
@@ -55,9 +102,16 @@ pub(crate) fn rebuild_plane(
         .filter(|(_, p)| plane.contains(*p, tol))
         .map(|(id, p)| (id, frame.to_2d(p)))
         .collect();
+    // Arcs belong to the plane only when they lie in it.
     let edges: Vec<(EdgeId, VertexId, VertexId)> = model
         .edges()
         .filter(|(_, e)| on.contains_key(&e.a) && on.contains_key(&e.b))
+        .filter(|(_, e)| match e.curve {
+            Curve::Line => true,
+            Curve::Arc { centre, axis, .. } => {
+                plane.contains(centre, tol) && tol.parallel(axis, plane.normal)
+            }
+        })
         .map(|(id, e)| (id, e.a, e.b))
         .collect();
     let old: Vec<FaceId> = model
@@ -68,37 +122,26 @@ pub(crate) fn rebuild_plane(
         .map(|(id, _)| id)
         .collect();
 
-    let regions = trace(&on, &edges, tol);
+    let regions = trace(model, &frame, &on, &edges, tol);
     // Each old face's box in the plane, so a region only tests the faces
     // that could cover it (a ground plane can hold thousands).
     let old_boxes: Vec<(FaceId, DVec2, DVec2)> = old
         .iter()
         .filter_map(|f| {
             let face = model.face(*f)?;
-            let pts: Vec<DVec2> = face.outer.iter().map(|v| on[v]).collect();
+            let pts: Vec<DVec2> = face_polys(model, face, &frame).swap_remove(0);
             let lo = pts.iter().fold(DVec2::INFINITY, |a, p| a.min(*p));
             let hi = pts.iter().fold(DVec2::NEG_INFINITY, |a, p| a.max(*p));
             Some((*f, lo, hi))
         })
         .collect();
-    // The plane's edges by their ends (looking one up in the model scans
-    // every edge).
-    let by_ends: BTreeMap<(VertexId, VertexId), EdgeId> = edges
-        .iter()
-        .map(|(id, a, b)| ((*a.min(b), *a.max(b)), *id))
-        .collect();
-    let edge_of = |a: VertexId, b: VertexId| by_ends.get(&(a.min(b), a.max(b))).copied();
 
     // Decide which regions are faces, and which way each faces.
     let mut keep: BTreeSet<FaceId> = BTreeSet::new();
     let mut made_faces: Vec<Face> = Vec::new();
     let mut openings: Vec<&Region> = Vec::new();
     for r in &regions {
-        let loops: Vec<Vec<DVec2>> = std::iter::once(&r.outer)
-            .chain(r.holes.iter())
-            .map(|l| l.iter().map(|v| on[v]).collect())
-            .collect();
-        let Some(sample) = interior_point(&loops) else {
+        let Some(sample) = interior_point(&r.polys) else {
             continue;
         };
         let covers: Vec<FaceId> = old_boxes
@@ -121,8 +164,7 @@ pub(crate) fn rebuild_plane(
                 continue;
             }
         }
-        let closes = loop_pairs(&r.outer)
-            .any(|(a, b)| edge_of(a, b).is_some_and(|e| new_edges.contains(&e)));
+        let closes = r.outer.iter().any(|(_, e)| new_edges.contains(e));
         if parent.is_none() && (closing || !closes) {
             match fill {
                 Fill::Closing(Some(inside)) => {
@@ -138,7 +180,9 @@ pub(crate) fn rebuild_plane(
                         made_faces.push(make_face(model, r, &frame, b));
                     }
                 }
-                Fill::Closing(None) if uses_edge(r, new_edges, &edge_of) => openings.push(r),
+                Fill::Closing(None) if r.edges().any(|e| new_edges.contains(&e)) => {
+                    openings.push(r)
+                }
                 _ => {}
             }
             continue;
@@ -164,29 +208,24 @@ pub(crate) fn rebuild_plane(
     }
 
     if !openings.is_empty() {
-        let mut chosen: Vec<Vec<Vec<VertexId>>> = keep
+        // The edges of the faces chosen so far, once per side.
+        let mut chosen: Vec<EdgeId> = keep
             .iter()
             .filter_map(|f| model.face(*f))
-            .map(|f| f.loops().cloned().collect())
+            .flat_map(|f| f.edge_ids().collect::<Vec<_>>())
             .chain(
                 made_faces
                     .iter()
-                    .map(|f| f.loops().cloned().collect::<Vec<_>>()),
+                    .flat_map(|f| f.edge_ids().collect::<Vec<_>>()),
             )
             .collect();
         let others = other_faces(model, &old);
         // One opening filled can make the next one an opening, so repeat.
         loop {
             let found = openings.iter().position(|r| {
-                region_loops(r).flat_map(|l| loop_pairs(l)).all(|(a, b)| {
-                    let key = (a.min(b), a.max(b));
-                    let beside = others.get(&key).map_or(0, |d| d.len());
-                    let inside = chosen
-                        .iter()
-                        .flatten()
-                        .flat_map(|l| loop_pairs(l))
-                        .filter(|(x, y)| (*x.min(y), *x.max(y)) == key)
-                        .count();
+                r.edges().all(|e| {
+                    let beside = others.get(&e).map_or(0, |d| d.len());
+                    let inside = chosen.iter().filter(|x| **x == e).count();
                     beside + inside == 1
                 })
             });
@@ -194,19 +233,19 @@ pub(crate) fn rebuild_plane(
             let r = openings.remove(i);
             // Face the way that agrees with the faces around it: across a
             // shared edge, neighbours run the edge in opposite directions.
-            let votes: i32 = region_loops(r)
-                .flat_map(|l| loop_pairs(l))
-                .map(|(a, b)| {
-                    let key = (a.min(b), a.max(b));
-                    others.get(&key).map_or(0, |dirs| {
+            let votes: i32 = r
+                .loops()
+                .flatten()
+                .map(|(from, e)| {
+                    others.get(e).map_or(0, |dirs| {
                         dirs.iter()
-                            .map(|from| if *from == a { -1 } else { 1 })
+                            .map(|x| if x == from { -1 } else { 1 })
                             .sum::<i32>()
                     })
                 })
                 .sum();
             let face = make_face(model, r, &frame, votes >= 0);
-            chosen.push(face.loops().cloned().collect());
+            chosen.extend(face.edge_ids());
             made_faces.push(face);
         }
     }
@@ -219,31 +258,16 @@ pub(crate) fn rebuild_plane(
     made_faces.into_iter().map(|f| model.add_face(f)).collect()
 }
 
-fn region_loops(r: &Region) -> impl Iterator<Item = &Vec<VertexId>> {
-    std::iter::once(&r.outer).chain(r.holes.iter())
-}
-
-/// Whether any loop of the region runs along one of `edges`.
-fn uses_edge(
-    r: &Region,
-    edges: &BTreeSet<EdgeId>,
-    edge_of: &impl Fn(VertexId, VertexId) -> Option<EdgeId>,
-) -> bool {
-    region_loops(r)
-        .flat_map(|l| loop_pairs(l))
-        .any(|(a, b)| edge_of(a, b).is_some_and(|e| edges.contains(&e)))
-}
-
-/// For each edge (as a sorted vertex pair), the start vertex of each run
-/// along it by a face that is not one of `except`.
-fn other_faces(model: &Model, except: &[FaceId]) -> BTreeMap<(VertexId, VertexId), Vec<VertexId>> {
-    let mut out: BTreeMap<(VertexId, VertexId), Vec<VertexId>> = BTreeMap::new();
+/// For each edge, the start vertex of each run along it by a face that is
+/// not one of `except`.
+fn other_faces(model: &Model, except: &[FaceId]) -> BTreeMap<EdgeId, Vec<VertexId>> {
+    let mut out: BTreeMap<EdgeId, Vec<VertexId>> = BTreeMap::new();
     for (id, f) in model.faces() {
         if except.contains(&id) {
             continue;
         }
-        for (a, b) in f.loops().flat_map(|l| loop_pairs(l)) {
-            out.entry((a.min(b), a.max(b))).or_default().push(a);
+        for s in f.sides() {
+            out.entry(s.edge).or_default().push(s.from);
         }
     }
     out
@@ -251,43 +275,45 @@ fn other_faces(model: &Model, except: &[FaceId]) -> BTreeMap<(VertexId, VertexId
 
 /// Build a face from a region, facing along the frame normal if `up`.
 fn make_face(model: &Model, r: &Region, frame: &Frame, up: bool) -> Face {
-    let (mut outer, mut holes) = (r.outer.clone(), r.holes.clone());
-    if !up {
-        outer.reverse();
-        for h in &mut holes {
-            h.reverse();
-        }
-    }
+    let verts = |l: &[Side]| -> Vec<VertexId> { l.iter().map(|s| s.0).collect() };
+    let outer = verts(&r.outer);
     let pts = model.points(&outer);
     let centroid = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
-    let normal = if up { frame.normal } else { -frame.normal };
-    Face::new(outer, holes, Surface::Plane(Plane::new(centroid, normal)))
+    let mut f = Face::with_edges(
+        outer,
+        r.holes.iter().map(|h| verts(h)).collect(),
+        Surface::Plane(Plane::new(centroid, frame.normal)),
+        r.loops().map(|l| l.iter().map(|s| s.1).collect()).collect(),
+    );
+    if !up {
+        f.reverse();
+    }
+    f
 }
 
 /// Which way a coplanar face sharing an edge with the region faces, if any.
 fn neighbour_facing(model: &Model, old: &[FaceId], r: &Region, frame: &Frame) -> Option<bool> {
-    let pairs: BTreeSet<(VertexId, VertexId)> = loop_pairs(&r.outer)
-        .map(|(a, b)| (a.min(b), a.max(b)))
-        .collect();
+    let edges: BTreeSet<EdgeId> = r.outer.iter().map(|s| s.1).collect();
     old.iter().find_map(|f| {
         let face = model.face(*f)?;
-        let shares = face
-            .loops()
-            .any(|l| loop_pairs(l).any(|(a, b)| pairs.contains(&(a.min(b), a.max(b)))));
+        let shares = face.edge_ids().any(|e| edges.contains(&e));
         shares.then(|| face.plane().normal.dot(frame.normal) > 0.0)
     })
 }
 
-/// Whether a face has exactly the region's loops (any start, either way round).
+/// Whether a face has exactly the region's loops (the same edges, any
+/// start, either way round).
 fn same_region(face: Option<&Face>, r: &Region) -> bool {
     let Some(f) = face else { return false };
-    if !same_cycle(&f.outer, &r.outer) || f.holes.len() != r.holes.len() {
+    let edges = |l: &[Side]| -> Vec<EdgeId> { l.iter().map(|s| s.1).collect() };
+    if !same_cycle(f.loop_edge_ids(0), &edges(&r.outer)) || f.holes.len() != r.holes.len() {
         return false;
     }
     let mut used = vec![false; r.holes.len()];
-    f.holes.iter().all(|h| {
+    (1..=f.holes.len()).all(|k| {
+        let h = f.loop_edge_ids(k);
         r.holes.iter().enumerate().any(|(i, rh)| {
-            if !used[i] && same_cycle(h, rh) {
+            if !used[i] && same_cycle(h, &edges(rh)) {
                 used[i] = true;
                 true
             } else {
@@ -298,17 +324,18 @@ fn same_region(face: Option<&Face>, r: &Region) -> bool {
 }
 
 /// Whether two loops are the same cycle, from any start and in either direction.
-pub(crate) fn same_cycle(a: &[VertexId], b: &[VertexId]) -> bool {
+pub(crate) fn same_cycle<T: PartialEq>(a: &[T], b: &[T]) -> bool {
     if a.len() != b.len() || a.is_empty() {
         return false;
     }
     let n = a.len();
-    let Some(start) = b.iter().position(|v| *v == a[0]) else {
-        return false;
-    };
-    let fwd = (0..n).all(|i| a[i] == b[(start + i) % n]);
-    let back = (0..n).all(|i| a[i] == b[(start + n - i) % n]);
-    fwd || back
+    // An edge can appear twice in a loop (a line into an island), so try
+    // every start that matches.
+    (0..n).filter(|&start| b[start] == a[0]).any(|start| {
+        let fwd = (0..n).all(|i| a[i] == b[(start + i) % n]);
+        let back = (0..n).all(|i| a[i] == b[(start + n - i) % n]);
+        fwd || back
+    })
 }
 
 /// Whether the 2D point (in `frame`) is inside a face: in its outer loop and
@@ -317,51 +344,85 @@ fn face_contains_2d(model: &Model, f: FaceId, frame: &Frame, p: DVec2) -> bool {
     let Some(face) = model.face(f) else {
         return false;
     };
-    let poly = |l: &[VertexId]| -> Vec<DVec2> {
-        l.iter().map(|v| frame.to_2d(model.vertex(*v))).collect()
-    };
-    point_in_polygon(p, &poly(&face.outer)) == Inside::Inside
-        && face
-            .holes
+    let polys = face_polys(model, face, frame);
+    point_in_polygon(p, &polys[0]) == Inside::Inside
+        && polys[1..]
             .iter()
-            .all(|h| point_in_polygon(p, &poly(h)) == Inside::Outside)
+            .all(|h| point_in_polygon(p, h) == Inside::Outside)
 }
 
 /// Trace the planar graph into regions.
 fn trace(
+    model: &Model,
+    frame: &Frame,
     on: &BTreeMap<VertexId, DVec2>,
     edges: &[(EdgeId, VertexId, VertexId)],
     tol: &Tol,
 ) -> Vec<Region> {
-    // Neighbours of each vertex, sorted counter-clockwise by direction.
-    let mut around: BTreeMap<VertexId, Vec<VertexId>> = BTreeMap::new();
-    for (_, a, b) in edges {
-        around.entry(*a).or_default().push(*b);
-        around.entry(*b).or_default().push(*a);
+    // How each half-edge leaves its start: a point along its direction
+    // there (the far end for a line, so lines compare exactly), and its
+    // curvature turning left (0 for a line).
+    let leave = |e: EdgeId, from: VertexId, to: VertexId| -> (DVec2, f64) {
+        let o = on[&from];
+        let Some(ed) = model.edge(e) else {
+            return (on[&to], 0.0);
+        };
+        match ed.curve {
+            Curve::Line => (on[&to], 0.0),
+            c @ Curve::Arc { axis, radius, .. } => {
+                let (pa, pb) = (model.vertex(ed.a), model.vertex(ed.b));
+                let (c, p, q) = if from == ed.a {
+                    (c, pa, pb)
+                } else {
+                    (c.reversed(), pb, pa)
+                };
+                let t = c.start_tangent(p, q);
+                let t2 = DVec2::new(t.dot(frame.u), t.dot(frame.v));
+                let turn = if from == ed.a { axis } else { -axis };
+                (o + t2 * radius, turn.dot(frame.normal).signum() / radius)
+            }
+        }
+    };
+    // Half-edges leaving each vertex, sorted counter-clockwise by direction,
+    // then by curvature (curving left is further round).
+    let mut around: BTreeMap<VertexId, Vec<(EdgeId, VertexId, DVec2, f64)>> = BTreeMap::new();
+    for (e, a, b) in edges {
+        let (pa, ka) = leave(*e, *a, *b);
+        let (pb, kb) = leave(*e, *b, *a);
+        around.entry(*a).or_default().push((*e, *b, pa, ka));
+        around.entry(*b).or_default().push((*e, *a, pb, kb));
     }
     for (v, list) in around.iter_mut() {
         let o = on[v];
-        list.sort_by(|x, y| ccw_order(o, on[x], on[y]));
+        list.sort_by(|x, y| {
+            ccw_order(o, x.2, y.2)
+                .then(x.3.total_cmp(&y.3))
+                .then(x.0.cmp(&y.0))
+        });
     }
 
-    // Each half-edge u→v continues to the edge just clockwise of v→u at v,
-    // which keeps the region on its left.
-    let mut seen: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
-    let mut cycles: Vec<Vec<VertexId>> = Vec::new();
+    // Each half-edge u→v continues to the half-edge just clockwise of v→u
+    // at v, which keeps the region on its left.
+    let mut seen: BTreeSet<(EdgeId, VertexId)> = BTreeSet::new();
+    let mut cycles: Vec<Vec<Side>> = Vec::new();
     for (u, list) in &around {
-        for v in list {
-            if seen.contains(&(*u, *v)) {
+        for (e, v, _, _) in list {
+            if seen.contains(&(*e, *u)) {
                 continue;
             }
             let mut cycle = Vec::new();
-            let (mut a, mut b) = (*u, *v);
-            while seen.insert((a, b)) {
-                cycle.push(a);
-                let at_b = &around[&b];
-                let i = at_b.iter().position(|x| *x == a).unwrap_or(0);
-                let next = at_b[(i + at_b.len() - 1) % at_b.len()];
-                a = b;
-                b = next;
+            let (mut from, mut edge, mut to) = (*u, *e, *v);
+            while seen.insert((edge, from)) {
+                cycle.push((from, edge));
+                let at = &around[&to];
+                let i = at
+                    .iter()
+                    .position(|x| x.0 == edge && x.1 == from)
+                    .unwrap_or(0);
+                let next = at[(i + at.len() - 1) % at.len()];
+                from = to;
+                edge = next.0;
+                to = next.1;
             }
             cycles.push(cycle);
         }
@@ -369,27 +430,27 @@ fn trace(
 
     // Bounded regions wind counter-clockwise; the outside of each connected
     // piece winds clockwise and is a hole of whichever region contains it.
-    let mut outers: Vec<(Vec<VertexId>, Vec<DVec2>, f64)> = Vec::new();
-    let mut islands: Vec<Vec<VertexId>> = Vec::new();
+    let mut outers: Vec<(Vec<Side>, Vec<DVec2>, f64)> = Vec::new();
+    let mut islands: Vec<(Vec<Side>, Vec<DVec2>)> = Vec::new();
     for c in cycles {
-        let pts: Vec<DVec2> = c.iter().map(|v| on[v]).collect();
-        let area = signed_area2(&pts) * 0.5;
+        let area = signed_area2(&side_polygon(model, frame, &c)) * 0.5;
         let clean = remove_spurs(c);
-        if clean.len() < 3 {
+        if clean.len() < 2 {
             continue;
         }
+        let poly = side_polygon(model, frame, &clean);
         if area > tol.area() {
-            let poly = clean.iter().map(|v| on[v]).collect();
             outers.push((clean, poly, area));
         } else if area < -tol.area() {
-            islands.push(clean);
+            islands.push((clean, poly));
         }
     }
     let mut regions: Vec<Region> = outers
         .iter()
-        .map(|(l, _, _)| Region {
+        .map(|(l, poly, _)| Region {
             outer: l.clone(),
             holes: vec![],
+            polys: vec![poly.clone()],
         })
         .collect();
     let boxes: Vec<(DVec2, DVec2)> = outers
@@ -400,19 +461,21 @@ fn trace(
             (lo, hi)
         })
         .collect();
-    for island in islands {
-        let probe = on[&island[0]];
+    for (island, poly) in islands {
+        let first = island[0].0;
+        let probe = on[&first];
         let host = outers
             .iter()
             .enumerate()
             .filter(|(i, _)| probe.cmpge(boxes[*i].0).all() && probe.cmple(boxes[*i].1).all())
             .filter(|(_, (l, poly, _))| {
-                !l.contains(&island[0]) && point_in_polygon(probe, poly) == Inside::Inside
+                !l.iter().any(|s| s.0 == first) && point_in_polygon(probe, poly) == Inside::Inside
             })
             .min_by(|a, b| a.1.2.total_cmp(&b.1.2))
             .map(|(i, _)| i);
         if let Some(i) = host {
             regions[i].holes.push(island);
+            regions[i].polys.push(poly);
         }
     }
     regions
@@ -441,18 +504,18 @@ fn ccw_order(o: DVec2, p: DVec2, q: DVec2) -> std::cmp::Ordering {
     }
 }
 
-/// Remove back-and-forth visits along loose edges inside a region
-/// (…, x, y, x, … becomes …, x, …).
-fn remove_spurs(mut c: Vec<VertexId>) -> Vec<VertexId> {
+/// Remove back-and-forth visits along loose edges inside a region (a side
+/// along an edge straight followed by the way back along the same edge).
+fn remove_spurs(mut c: Vec<Side>) -> Vec<Side> {
     loop {
         let n = c.len();
-        if n < 3 {
+        if n < 2 {
             return c;
         }
-        let spur = (0..n).find(|&i| c[(i + n - 1) % n] == c[(i + 1) % n]);
+        let spur = (0..n).find(|&i| c[i].1 == c[(i + 1) % n].1);
         match spur {
             Some(i) => {
-                // Drop c[i] and the repeated c[i+1].
+                // Drop side i and the way back, side i+1.
                 let j = (i + 1) % n;
                 let (first, second) = if i < j { (j, i) } else { (i, j) };
                 c.remove(first);
@@ -529,11 +592,20 @@ mod tests {
     #[test]
     fn spurs_are_removed() {
         let v = |i| VertexId(i);
+        let e = |i| EdgeId(i);
+        // 0 -a- 1 -b- 2 -c(spur)- 9 -c- 2 -d- 3 ...
+        let c = vec![
+            (v(0), e(0)),
+            (v(1), e(1)),
+            (v(2), e(2)),
+            (v(9), e(2)),
+            (v(2), e(3)),
+        ];
         assert_eq!(
-            remove_spurs(vec![v(0), v(1), v(2), v(9), v(2), v(3)]),
-            vec![v(0), v(1), v(2), v(3)]
+            remove_spurs(c),
+            vec![(v(0), e(0)), (v(1), e(1)), (v(2), e(3))]
         );
-        assert_eq!(remove_spurs(vec![v(0), v(1), v(0), v(2)]).len(), 2);
+        assert!(remove_spurs(vec![(v(0), e(0)), (v(1), e(0))]).is_empty());
     }
 
     #[test]

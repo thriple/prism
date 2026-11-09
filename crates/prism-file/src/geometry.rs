@@ -3,15 +3,16 @@
 use prism_geom::{Curve, Surface};
 use prism_math::{DVec3, Plane};
 use prism_topo::{
-    Counters, Edge, EdgeId, Face, FaceId, Guide, GuideId, Model, ModelParts, VertexId,
+    Counters, CurveId, Edge, EdgeId, Face, FaceId, Guide, GuideId, Model, ModelParts, VertexId,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::FileError;
 
 /// The geometry layout this version writes. Layout 2 (Exact Curves part 1)
-/// adds each loop's edges; a layout 1 file finds them when read.
-pub const VERSION: u32 = 2;
+/// adds each loop's edges; a layout 1 file finds them when read. Layout 3
+/// (part 2) adds arcs and curve ids.
+pub const VERSION: u32 = 3;
 
 type P = [f64; 3];
 
@@ -78,6 +79,62 @@ struct GeometryV2 {
     counters: [u32; 4],
 }
 
+#[derive(Serialize, Deserialize)]
+enum CurveV3 {
+    Line,
+    Arc { centre: P, axis: P, radius: f64 },
+}
+
+#[derive(Serialize, Deserialize)]
+struct EdgeV3 {
+    id: u32,
+    a: u32,
+    b: u32,
+    curve: CurveV3,
+    curve_id: Option<u32>,
+}
+
+/// Layout 3: as layout 2, and edges may be arcs and share curve ids.
+#[derive(Serialize, Deserialize)]
+struct GeometryV3 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV3>,
+    faces: Vec<FaceV2>,
+    guides: Vec<(u32, GuideV1)>,
+    /// Vertex, edge, face, guide and curve counters.
+    counters: [u32; 5],
+}
+
+impl From<GeometryV2> for GeometryV3 {
+    fn from(g: GeometryV2) -> GeometryV3 {
+        GeometryV3 {
+            vertices: g.vertices,
+            edges: g
+                .edges
+                .into_iter()
+                .map(|e| EdgeV3 {
+                    id: e.id,
+                    a: e.a,
+                    b: e.b,
+                    curve: match e.curve {
+                        CurveV1::Line => CurveV3::Line,
+                    },
+                    curve_id: None,
+                })
+                .collect(),
+            faces: g.faces,
+            guides: g.guides,
+            counters: [
+                g.counters[0],
+                g.counters[1],
+                g.counters[2],
+                g.counters[3],
+                0,
+            ],
+        }
+    }
+}
+
 impl From<GeometryV1> for GeometryV2 {
     /// No loop edges: they are found when the model is put together.
     fn from(g: GeometryV1) -> GeometryV2 {
@@ -111,18 +168,28 @@ fn ids(l: &[VertexId]) -> Vec<u32> {
 
 pub fn encode(m: &Model) -> Vec<u8> {
     let parts = m.to_parts();
-    let g = GeometryV2 {
+    let g = GeometryV3 {
         vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
         edges: parts
             .edges
             .iter()
-            .map(|(id, e)| EdgeV1 {
+            .map(|(id, e)| EdgeV3 {
                 id: id.0,
                 a: e.a.0,
                 b: e.b.0,
                 curve: match e.curve {
-                    Curve::Line => CurveV1::Line,
+                    Curve::Line => CurveV3::Line,
+                    Curve::Arc {
+                        centre,
+                        axis,
+                        radius,
+                    } => CurveV3::Arc {
+                        centre: p(centre),
+                        axis: p(axis),
+                        radius,
+                    },
                 },
+                curve_id: e.curve_id.map(|c| c.0),
             })
             .collect(),
         faces: parts
@@ -164,6 +231,7 @@ pub fn encode(m: &Model) -> Vec<u8> {
             parts.counters.edge,
             parts.counters.face,
             parts.counters.guide,
+            parts.counters.curve,
         ],
     };
     postcard::to_allocvec(&g).unwrap_or_default()
@@ -171,11 +239,12 @@ pub fn encode(m: &Model) -> Vec<u8> {
 
 pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
     let bad = |e: postcard::Error| FileError::Damaged(format!("geometry: {e}"));
-    let g: GeometryV2 = match version {
-        1 => postcard::from_bytes::<GeometryV1>(bytes)
+    let g: GeometryV3 = match version {
+        1 => GeometryV2::from(postcard::from_bytes::<GeometryV1>(bytes).map_err(bad)?).into(),
+        2 => postcard::from_bytes::<GeometryV2>(bytes)
             .map_err(bad)?
             .into(),
-        2 => postcard::from_bytes(bytes).map_err(bad)?,
+        3 => postcard::from_bytes(bytes).map_err(bad)?,
         _ => {
             return Err(FileError::Damaged(format!(
                 "unknown geometry layout {version}"
@@ -199,8 +268,18 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                         a: v(e.a),
                         b: v(e.b),
                         curve: match e.curve {
-                            CurveV1::Line => Curve::Line,
+                            CurveV3::Line => Curve::Line,
+                            CurveV3::Arc {
+                                centre,
+                                axis,
+                                radius,
+                            } => Curve::Arc {
+                                centre: DVec3::from_array(centre),
+                                axis: DVec3::from_array(axis),
+                                radius,
+                            },
                         },
+                        curve_id: e.curve_id.map(CurveId),
                     },
                 )
             })
@@ -254,6 +333,7 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             edge: g.counters[1],
             face: g.counters[2],
             guide: g.counters[3],
+            curve: g.counters[4],
         },
     };
     Model::from_parts(parts).map_err(|e| FileError::Damaged(format!("geometry: {e}")))

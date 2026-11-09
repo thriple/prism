@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_geom::Surface;
 use prism_math::{DVec2, DVec3, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
 
@@ -484,14 +483,7 @@ fn tiny(model: &Model, tol: &Tol) -> Found {
 
 /// Turn a face round.
 fn flip(model: &mut Model, id: FaceId) {
-    model.edit_face(id, |f| {
-        f.outer.reverse();
-        for h in &mut f.holes {
-            h.reverse();
-        }
-        let p = f.plane().flipped();
-        f.surface = Surface::Plane(p);
-    });
+    model.edit_face(id, |f| f.reverse());
 }
 
 /// Orient Faces: turn round every face the reversed check finds, or only

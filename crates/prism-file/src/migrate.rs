@@ -49,6 +49,9 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             // Schema 3 writes geometry layout 2; layout 1 entries are read
             // by finding each loop's edges (`geometry::decode`).
             2 => raw,
+            // Schema 4 writes geometry layout 3 (arcs); older layouts are
+            // read as they are.
+            3 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

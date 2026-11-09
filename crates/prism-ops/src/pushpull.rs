@@ -261,11 +261,8 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         } else {
             // Pushed back: the moved face now faces the other way, and the
             // original stays as the cap.
-            model.edit_face(face, |g| {
-                g.outer.reverse();
-                g.holes.iter_mut().for_each(|h| h.reverse());
-                g.surface = Surface::Plane(moved_plane.flipped());
-            });
+            // (Its surface is the moved plane, which turns round too.)
+            model.edit_face(face, |g| g.reverse());
             model.add_face(original(false));
         }
     }

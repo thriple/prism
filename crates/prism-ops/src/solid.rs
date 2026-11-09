@@ -286,14 +286,7 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
         }
     }
     for id in backwards {
-        model.edit_face(id, |f| {
-            f.outer.reverse();
-            for h in &mut f.holes {
-                h.reverse();
-            }
-            let flipped = f.plane().flipped();
-            f.surface = prism_geom::Surface::Plane(flipped);
-        });
+        model.edit_face(id, |f| f.reverse());
     }
 
     // 4. Remove them, and the edges and points only they used.

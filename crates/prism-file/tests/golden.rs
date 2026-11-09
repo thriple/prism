@@ -161,11 +161,13 @@ fn golden_files_open_and_save_the_same() {
 }
 
 /// Files saved before loops named their edges (schema 2, geometry layout
-/// 1) open with the same faces and edges, found from the loops.
+/// 1) open with the same faces and edges, found from the loops; files
+/// saved before arcs (schema 3, layout 2) open the same too.
 #[test]
-fn schema_2_files_open_with_their_edges() {
+fn schema_2_and_3_files_open_as_now() {
     let mut seen = 0;
-    for e in std::fs::read_dir(dir().join("schema-2")).expect("docs/acceptance/files/schema-2") {
+    let older = ["schema-2", "schema-3"].map(|d| std::fs::read_dir(dir().join(d)).expect(d));
+    for e in older.into_iter().flatten() {
         let path = e.expect("entry").path();
         let old = read(&std::fs::read(&path).expect("read"))
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -176,7 +178,7 @@ fn schema_2_files_open_with_their_edges() {
         assert_eq!(write(&old, APP), write(&new, APP), "{}", path.display());
         seen += 1;
     }
-    assert!(seen >= 5);
+    assert!(seen >= 10);
 }
 
 /// Files saved before groups (schema 1) still open, as they were.

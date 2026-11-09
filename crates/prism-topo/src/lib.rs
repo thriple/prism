@@ -25,6 +25,7 @@ id!(VertexId);
 id!(EdgeId);
 id!(FaceId);
 id!(GuideId);
+id!(CurveId);
 
 /// A guide: a construction line or point the tools make (Tape Measure,
 /// Protractor). Guides are not geometry: they bound no face and edges do
@@ -41,12 +42,17 @@ pub enum Guide {
     },
 }
 
-/// An edge between two vertices. `a` is always the smaller id.
+/// An edge between two vertices. `a` is always the smaller id; an arc runs
+/// from `a` to `b` (counter-clockwise about its axis).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Edge {
     pub a: VertexId,
     pub b: VertexId,
     pub curve: Curve,
+    /// The edges of one circle, arc or polygon share a curve id: they are
+    /// picked, moved and erased together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_id: Option<CurveId>,
 }
 
 impl Edge {
@@ -160,6 +166,33 @@ impl Face {
         self.sides().map(|s| s.edge)
     }
 
+    /// Turn the face round: every loop runs the other way, with its edges,
+    /// and the surface flips.
+    pub fn reverse(&mut self) {
+        let Face {
+            outer,
+            holes,
+            edges,
+            surface,
+        } = self;
+        for (k, l) in std::iter::once(outer).chain(holes.iter_mut()).enumerate() {
+            l.reverse();
+            // Side i joined l[i] to l[i+1]; walked back, side i joins the
+            // old l[n-1-i] to l[n-2-i], which was side n-2-i.
+            if let Some(le) = edges.get_mut(k)
+                && le.len() == l.len()
+            {
+                let n = le.len();
+                let old = le.clone();
+                for (i, e) in le.iter_mut().enumerate() {
+                    *e = old[(2 * n - 2 - i) % n];
+                }
+            }
+        }
+        let Surface::Plane(p) = *surface;
+        *surface = Surface::Plane(p.flipped());
+    }
+
     pub fn uses_edge(&self, e: EdgeId) -> bool {
         self.edges.iter().flatten().any(|x| *x == e)
     }
@@ -188,6 +221,8 @@ pub struct Model {
     next_face: u32,
     #[serde(default, skip_serializing_if = "is_zero")]
     next_guide: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    next_curve: u32,
 }
 
 /// The model as saved in JSON (undo journals, schema 0 files). Faces saved
@@ -204,6 +239,8 @@ struct ModelData {
     next_face: u32,
     #[serde(default)]
     next_guide: u32,
+    #[serde(default)]
+    next_curve: u32,
 }
 
 impl TryFrom<ModelData> for Model {
@@ -219,6 +256,7 @@ impl TryFrom<ModelData> for Model {
             next_edge: d.next_edge,
             next_face: d.next_face,
             next_guide: d.next_guide,
+            next_curve: d.next_curve,
         };
         m.link_unlinked()?;
         Ok(m)
@@ -243,6 +281,8 @@ pub struct Counters {
     pub face: u32,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub guide: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub curve: u32,
 }
 
 impl Model {
@@ -297,27 +337,25 @@ impl Model {
             .map(|(id, _)| *id)
     }
 
-    /// Join two vertices with a straight edge; an existing edge is reused.
-    /// None if `a` and `b` are the same vertex.
+    /// The straight edge joining `a` and `b`, if there is one.
+    pub fn line_between(&self, a: VertexId, b: VertexId) -> Option<EdgeId> {
+        let (a, b) = if a < b { (a, b) } else { (b, a) };
+        self.edges
+            .iter()
+            .find(|(_, e)| e.a == a && e.b == b && !e.curve.is_arc())
+            .map(|(id, _)| *id)
+    }
+
+    /// Join two vertices with a straight edge; an existing straight edge is
+    /// reused. None if `a` and `b` are the same vertex.
     pub fn add_edge(&mut self, a: VertexId, b: VertexId) -> Option<EdgeId> {
         if a == b {
             return None;
         }
-        if let Some(id) = self.edge_between(a, b) {
+        if let Some(id) = self.line_between(a, b) {
             return Some(id);
         }
-        let (a, b) = if a < b { (a, b) } else { (b, a) };
-        let id = EdgeId(self.next_edge);
-        self.next_edge += 1;
-        self.edges.insert(
-            id,
-            Edge {
-                a,
-                b,
-                curve: Curve::Line,
-            },
-        );
-        Some(id)
+        Some(self.push_edge(a, b, Curve::Line, None))
     }
 
     /// Join two vertices with a new straight edge, without looking for an
@@ -325,7 +363,57 @@ impl Model {
     /// sure the edge is not there yet and `a` and `b` differ.
     pub fn add_new_edge(&mut self, a: VertexId, b: VertexId) -> EdgeId {
         debug_assert!(a != b);
-        let (a, b) = if a < b { (a, b) } else { (b, a) };
+        self.push_edge(a, b, Curve::Line, None)
+    }
+
+    /// Join two vertices with `curve` walked from `a` to `b` (an arc), as a
+    /// new edge: several arcs may join the same two vertices (a circle's two
+    /// halves). None if `a` and `b` are the same vertex.
+    pub fn add_curve_edge(
+        &mut self,
+        a: VertexId,
+        b: VertexId,
+        curve: Curve,
+        curve_id: Option<CurveId>,
+    ) -> Option<EdgeId> {
+        (a != b).then(|| self.push_edge(a, b, curve, curve_id))
+    }
+
+    /// A new id for a curve (a circle, arc or polygon).
+    pub fn new_curve_id(&mut self) -> CurveId {
+        let id = CurveId(self.next_curve);
+        self.next_curve += 1;
+        id
+    }
+
+    /// Set the curve id of an edge (a polygon's straight edges share one).
+    pub fn set_curve_id(&mut self, e: EdgeId, curve_id: Option<CurveId>) {
+        if let Some(x) = self.edges.get_mut(&e) {
+            x.curve_id = curve_id;
+        }
+    }
+
+    /// Change the curve of an edge, given walked from `a` to `b` (after a
+    /// transform).
+    pub fn set_curve(&mut self, e: EdgeId, curve: Curve) {
+        if let Some(x) = self.edges.get_mut(&e) {
+            x.curve = curve;
+        }
+    }
+
+    /// Store an edge with its ends in order (an arc turns round with them).
+    fn push_edge(
+        &mut self,
+        a: VertexId,
+        b: VertexId,
+        curve: Curve,
+        curve_id: Option<CurveId>,
+    ) -> EdgeId {
+        let (a, b, curve) = if a < b {
+            (a, b, curve)
+        } else {
+            (b, a, curve.reversed())
+        };
         let id = EdgeId(self.next_edge);
         self.next_edge += 1;
         self.edges.insert(
@@ -333,10 +421,29 @@ impl Model {
             Edge {
                 a,
                 b,
-                curve: Curve::Line,
+                curve,
+                curve_id,
             },
         );
         id
+    }
+
+    /// The points along an edge from `a` to `b`, both ends included (the
+    /// drawn points of an arc).
+    pub fn edge_points(&self, id: EdgeId) -> Vec<DVec3> {
+        let Some(e) = self.edges.get(&id) else {
+            return Vec::new();
+        };
+        let (pa, pb) = (self.vertex(e.a), self.vertex(e.b));
+        let mut out = vec![pa];
+        out.extend(e.curve.inner_points(pa, pb));
+        out.push(pb);
+        out
+    }
+
+    /// Whether any edge is an arc.
+    pub fn has_arcs(&self) -> bool {
+        self.edges.values().any(|e| e.curve.is_arc())
     }
 
     pub fn edge(&self, id: EdgeId) -> Option<&Edge> {
@@ -360,9 +467,24 @@ impl Model {
     /// new edges.
     pub fn split_edge(&mut self, id: EdgeId, mid: VertexId) -> Option<(EdgeId, EdgeId)> {
         let e = *self.edges.get(&id)?;
+        if mid == e.a || mid == e.b {
+            return None;
+        }
         self.edges.remove(&id);
-        let first = self.add_edge(e.a, mid)?;
-        let second = self.add_edge(mid, e.b)?;
+        // Arcs split into two arcs of the same circle and curve.
+        let (first, second) = if e.curve.is_arc() {
+            (
+                self.push_edge(e.a, mid, e.curve, e.curve_id),
+                self.push_edge(mid, e.b, e.curve, e.curve_id),
+            )
+        } else {
+            let first = self.add_edge(e.a, mid)?;
+            let second = self.add_edge(mid, e.b)?;
+            for h in [first, second] {
+                self.set_curve_id(h, e.curve_id);
+            }
+            (first, second)
+        };
         for face in self.faces.values_mut() {
             let Face {
                 outer,
@@ -421,21 +543,35 @@ impl Model {
     /// Give each loop of `face` its edges: an edge it already names that
     /// joins the same two vertices is kept, else the edge between them.
     fn link(&self, face: &mut Face) {
-        let named: BTreeMap<(VertexId, VertexId), EdgeId> = std::mem::take(&mut face.edges)
-            .into_iter()
+        let old = std::mem::take(&mut face.edges);
+        let named: BTreeMap<(VertexId, VertexId), EdgeId> = old
+            .iter()
             .flatten()
-            .filter_map(|e| self.edges.get(&e).map(|x| ((x.a, x.b), e)))
+            .filter_map(|e| self.edges.get(e).map(|x| ((x.a, x.b), *e)))
             .collect();
-        let find = |a: VertexId, b: VertexId| {
-            named
-                .get(&(a.min(b), a.max(b)))
-                .copied()
-                .or_else(|| self.edge_between(a, b))
-                .unwrap_or(NO_EDGE)
+        let joins = |e: EdgeId, a: VertexId, b: VertexId| {
+            self.edges.get(&e).is_some_and(|x| x.has(a) && x.has(b))
         };
         face.edges = face
             .loops()
-            .map(|l| loop_pairs(l).map(|(a, b)| find(a, b)).collect())
+            .enumerate()
+            .map(|(k, l)| {
+                loop_pairs(l)
+                    .enumerate()
+                    .map(|(i, (a, b))| {
+                        // The edge named at this side, then one named
+                        // elsewhere, then a straight edge, then any.
+                        old.get(k)
+                            .and_then(|le| le.get(i))
+                            .copied()
+                            .filter(|e| joins(*e, a, b))
+                            .or_else(|| named.get(&(a.min(b), a.max(b))).copied())
+                            .or_else(|| self.line_between(a, b))
+                            .or_else(|| self.edge_between(a, b))
+                            .unwrap_or(NO_EDGE)
+                    })
+                    .collect()
+            })
             .collect();
     }
 
@@ -479,11 +615,65 @@ impl Model {
         l.iter().map(|v| self.vertex(*v)).collect()
     }
 
-    /// A face's area: its outer loop minus its holes.
+    /// A face's area: its outer loop minus its holes, exact for arcs.
     pub fn face_area(&self, id: FaceId) -> f64 {
         let Some(f) = self.face(id) else { return 0.0 };
-        let area = |l: &[VertexId]| newell(&self.points(l)).length() * 0.5;
-        area(&f.outer) - f.holes.iter().map(|h| area(h)).sum::<f64>()
+        let n = f.plane().normal;
+        let area = |k: usize, l: &[VertexId]| {
+            let poly = newell(&self.points(l)).dot(n) * 0.5;
+            let bulges: f64 = f
+                .loop_edges(k)
+                .filter_map(|s| {
+                    let e = self.edge(s.edge)?;
+                    let (p, q) = (self.vertex(s.from), self.vertex(s.to));
+                    let c = if s.from == e.a {
+                        e.curve
+                    } else {
+                        e.curve.reversed()
+                    };
+                    Some(c.bulge_area(p, q, n))
+                })
+                .sum();
+            (poly + bulges).abs()
+        };
+        area(0, &f.outer)
+            - f.holes
+                .iter()
+                .enumerate()
+                .map(|(i, h)| area(i + 1, h))
+                .sum::<f64>()
+    }
+
+    /// The points of loop `k` of a face, walking its edges (arcs give their
+    /// drawn points): the polygon to test points and triangulate with.
+    pub fn loop_points(&self, f: &Face, k: usize) -> Vec<DVec3> {
+        let Some(l) = f.loops().nth(k) else {
+            return Vec::new();
+        };
+        let ids = f.loop_edge_ids(k);
+        let mut out = Vec::with_capacity(l.len());
+        for (i, v) in l.iter().enumerate() {
+            out.push(self.vertex(*v));
+            let Some(e) = ids.get(i).and_then(|id| self.edges.get(id)) else {
+                continue;
+            };
+            if e.curve.is_arc() {
+                let (pa, pb) = (self.vertex(e.a), self.vertex(e.b));
+                let mut inner = e.curve.inner_points(pa, pb);
+                if *v != e.a {
+                    inner.reverse();
+                }
+                out.extend(inner);
+            }
+        }
+        out
+    }
+
+    /// Each loop's points (`loop_points`), the outer loop first.
+    pub fn face_loop_points(&self, f: &Face) -> Vec<Vec<DVec3>> {
+        (0..=f.holes.len())
+            .map(|k| self.loop_points(f, k))
+            .collect()
     }
 
     /// For every edge, the faces whose loops use it.
@@ -542,6 +732,7 @@ impl Model {
             edge: self.next_edge,
             face: self.next_face,
             guide: self.next_guide,
+            curve: self.next_curve,
         }
     }
 
@@ -551,6 +742,7 @@ impl Model {
         self.next_edge = self.next_edge.max(c.edge);
         self.next_face = self.next_face.max(c.face);
         self.next_guide = self.next_guide.max(c.guide);
+        self.next_curve = self.next_curve.max(c.curve);
     }
 
     /// Add everything in `other` beside what is here, with new ids (an
@@ -561,16 +753,16 @@ impl Model {
             vmap.insert(id, self.add_vertex(p));
         }
         let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
+        let mut cmap: BTreeMap<CurveId, CurveId> = BTreeMap::new();
         for (old, e) in other.edges() {
             // The vertices are all new, so the edges cannot be here yet.
             if let (Some(a), Some(b)) = (vmap.get(&e.a), vmap.get(&e.b))
                 && a != b
             {
-                let id = self.add_new_edge(*a, *b);
-                emap.insert(old, id);
-                if let Some(ne) = self.edges.get_mut(&id) {
-                    ne.curve = e.curve;
-                }
+                let cid = e
+                    .curve_id
+                    .map(|c| *cmap.entry(c).or_insert_with(|| self.new_curve_id()));
+                emap.insert(old, self.push_edge(*a, *b, e.curve, cid));
             }
         }
         let map = |l: &[VertexId]| l.iter().filter_map(|v| vmap.get(v).copied()).collect();
@@ -654,6 +846,7 @@ impl Model {
             next_edge: c.edge,
             next_face: c.face,
             next_guide: c.guide,
+            next_curve: c.curve,
         };
         m.link_unlinked()?;
         let problems = m.bookkeeping_problems();
@@ -679,6 +872,7 @@ impl Model {
         copy.next_edge = 0;
         copy.next_face = 0;
         copy.next_guide = 0;
+        copy.next_curve = 0;
         copy.to_json()
     }
 
@@ -688,7 +882,29 @@ impl Model {
     pub fn bookkeeping_problems(&self) -> Vec<String> {
         let mut out = Vec::new();
         let mut pairs = std::collections::BTreeSet::new();
+        let tol = self.tol();
         for (id, e) in &self.edges {
+            if let Curve::Arc {
+                centre,
+                axis,
+                radius,
+            } = e.curve
+            {
+                if !(radius > tol.dist) || (axis.length() - 1.0).abs() > 1e-9 {
+                    out.push(format!("arc {id:?} has no proper radius or axis"));
+                }
+                for v in [e.a, e.b] {
+                    let d = self.vertex(v) - centre;
+                    if (d.length() - radius).abs() > tol.dist || d.dot(axis).abs() > tol.dist {
+                        out.push(format!("arc {id:?}: point {v:?} is off its circle"));
+                    }
+                }
+                if let Some(cid) = e.curve_id
+                    && cid.0 >= self.next_curve
+                {
+                    out.push(format!("edge {id:?} has curve {cid:?} above its counter"));
+                }
+            }
             if !self.has_vertex(e.a) || !self.has_vertex(e.b) {
                 out.push(format!("edge {id:?} uses a missing vertex"));
             }
@@ -697,7 +913,7 @@ impl Model {
                     "edge {id:?} is not ordered or joins a vertex to itself"
                 ));
             }
-            if !pairs.insert((e.a, e.b)) {
+            if !pairs.insert((e.a, e.b)) && !e.curve.is_arc() {
                 out.push(format!("edge {id:?} repeats another edge"));
             }
         }
@@ -726,10 +942,19 @@ impl Model {
                         continue;
                     }
                     let Some(e) = named.get(i) else { continue };
-                    if !self.edges.get(e).is_some_and(|x| x.has(a) && x.has(b)) {
-                        out.push(format!(
+                    match self.edges.get(e) {
+                        Some(x) if x.has(a) && x.has(b) => {
+                            if let Curve::Arc { axis, .. } = x.curve
+                                && (axis.dot(f.plane().normal).abs() - 1.0).abs() > 1e-9
+                            {
+                                out.push(format!(
+                                    "face {id:?} uses arc {e:?}, which is not in its plane"
+                                ));
+                            }
+                        }
+                        _ => out.push(format!(
                             "face {id:?} loop {k} side {i} names edge {e:?}, which does not join {a:?}-{b:?}"
-                        ));
+                        )),
                     }
                 }
             }

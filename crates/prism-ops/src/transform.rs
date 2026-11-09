@@ -4,32 +4,68 @@
 //! refitted plane; if its vertices no longer lie on one plane, it is split
 //! along a diagonal into planar pieces (folded), never triangulated as a
 //! whole. Then vertices that ended up in the same place are welded.
+//!
+//! Arcs move with their ends and stay exact (Exact Curves part 2): a move,
+//! turn or even scale of both ends moves the arc's centre, turns its axis
+//! and scales its radius. A transform that would bend an arc (one end
+//! moving, or an uneven scale) is refused for now: it changes nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use prism_geom::Surface;
-use prism_math::{DQuat, DVec3, Plane, Tol};
+use prism_math::{DAffine3, DQuat, DVec3, Plane, Tol};
 use prism_topo::{Face, FaceId, Model, VertexId};
 
 pub fn translate(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3) {
-    apply(model, vs, |p| p + d);
+    apply(model, vs, &DAffine3::from_translation(d));
+}
+
+/// The turn about the line through `centre` along `axis`, by `angle`.
+fn turn(centre: DVec3, axis: DVec3, angle: f64) -> DAffine3 {
+    let q = DQuat::from_axis_angle(axis.normalize(), angle);
+    DAffine3::from_translation(centre)
+        * DAffine3::from_quat(q)
+        * DAffine3::from_translation(-centre)
 }
 
 /// Rotate about the line through `centre` along `axis`, by `angle` radians.
 pub fn rotate(model: &mut Model, vs: &BTreeSet<VertexId>, centre: DVec3, axis: DVec3, angle: f64) {
-    let q = DQuat::from_axis_angle(axis.normalize(), angle);
-    apply(model, vs, |p| centre + q * (p - centre));
+    apply(model, vs, &turn(centre, axis, angle));
 }
 
 /// Scale about `centre` by `k` along each axis.
 pub fn scale(model: &mut Model, vs: &BTreeSet<VertexId>, centre: DVec3, k: DVec3) {
-    apply(model, vs, |p| centre + (p - centre) * k);
+    let m = DAffine3::from_translation(centre)
+        * DAffine3::from_scale(k)
+        * DAffine3::from_translation(-centre);
+    apply(model, vs, &m);
+}
+
+/// Whether moving `vs` by `m` keeps every arc an arc: each arc with an end
+/// in `vs` has both there, and `m` scales evenly if any does.
+pub fn arcs_follow(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> bool {
+    model.edges().all(|(_, e)| {
+        let (a, b) = (vs.contains(&e.a), vs.contains(&e.b));
+        !e.curve.is_arc() || (!a && !b) || (a && b && e.curve.transformed(m).is_some())
+    })
+}
+
+/// Send the arcs with both ends in `vs` through `m`.
+fn move_arcs(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
+    let arcs: Vec<(prism_topo::EdgeId, prism_geom::Curve)> = model
+        .edges()
+        .filter(|(_, e)| e.curve.is_arc() && vs.contains(&e.a) && vs.contains(&e.b))
+        .filter_map(|(id, e)| Some((id, e.curve.transformed(m)?)))
+        .collect();
+    for (id, c) in arcs {
+        model.set_curve(id, c);
+    }
 }
 
 /// Move vertices by `d` without the coplanar rule afterwards, for edits
 /// that make several moves and then run it once ([`settle_at`]).
 pub fn translate_only(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3) {
-    apply_only(model, vs, |p| p + d);
+    apply_only(model, vs, &DAffine3::from_translation(d));
 }
 
 /// [`rotate`] without the coplanar rule afterwards.
@@ -40,13 +76,18 @@ pub fn rotate_only(
     axis: DVec3,
     angle: f64,
 ) {
-    let q = DQuat::from_axis_angle(axis.normalize(), angle);
-    apply_only(model, vs, |p| centre + q * (p - centre));
+    apply_only(model, vs, &turn(centre, axis, angle));
 }
 
-fn apply(model: &mut Model, vs: &BTreeSet<VertexId>, f: impl Fn(DVec3) -> DVec3) {
-    let targets: Vec<(VertexId, DVec3)> = vs.iter().map(|v| (*v, f(model.vertex(*v)))).collect();
-    apply_only(model, vs, f);
+fn apply(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
+    if !arcs_follow(model, vs, m) {
+        return;
+    }
+    let targets: Vec<(VertexId, DVec3)> = vs
+        .iter()
+        .map(|v| (*v, m.transform_point3(model.vertex(*v))))
+        .collect();
+    apply_only(model, vs, m);
     // Welding may have replaced some moved vertices: find those by place.
     let tol = model.tol();
     let gone: Vec<DVec3> = targets
@@ -89,12 +130,16 @@ pub(crate) fn translate_few(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3
     }
 }
 
-fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, f: impl Fn(DVec3) -> DVec3) {
+fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
+    if !arcs_follow(model, vs, m) {
+        return;
+    }
     keep_straight(model, vs);
     for v in vs {
         let p = model.vertex(*v);
-        model.set_vertex(*v, f(p));
+        model.set_vertex(*v, m.transform_point3(p));
     }
+    move_arcs(model, vs, m);
     let tol = model.tol();
     weld(model, &tol);
     let touched: Vec<FaceId> = model
@@ -113,11 +158,19 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
     let Some(face) = model.face(id).cloned() else {
         return;
     };
-    let outer = model.points(&face.outer);
+    let outer = model.loop_points(&face, 0);
     let Some(plane) = Plane::fit(&outer, tol) else {
         model.remove_face(id);
         return;
     };
+    if face
+        .edge_ids()
+        .any(|e| model.edge(e).is_some_and(|x| x.curve.is_arc()))
+    {
+        // Arcs only move whole, so their faces stay flat: refit the plane.
+        model.edit_face(id, |f| f.surface = Surface::Plane(plane));
+        return;
+    }
     let all_on = face
         .loops()
         .flatten()
@@ -235,8 +288,16 @@ fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
     for (id, a, b) in edges {
         let (ma, mb) = (map(a), map(b));
         if (ma, mb) != (a, b) {
+            let e = model.edge(id).copied();
             model.remove_edge(id);
-            model.add_edge(ma, mb);
+            match e {
+                Some(e) if e.curve.is_arc() => {
+                    model.add_curve_edge(ma, mb, e.curve, e.curve_id);
+                }
+                _ => {
+                    model.add_edge(ma, mb);
+                }
+            }
         }
     }
     let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
@@ -332,28 +393,53 @@ pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
         model.remove_guide(id);
         model.add_guide(moved);
     }
+    // Arcs follow. Under an uneven scale an arc would become an ellipse:
+    // it keeps its moved centre, its turned axis and its radius scaled by
+    // the average stretch, and the model check reports its ends off it
+    // until the segment fallback (DECISIONS #32, after Exact Curves).
+    let all: BTreeSet<VertexId> = model.vertices().map(|(id, _)| id).collect();
+    move_arcs(model, &all, m);
+    let uneven: Vec<(prism_topo::EdgeId, prism_geom::Curve)> = model
+        .edges()
+        .filter_map(|(id, e)| match e.curve {
+            prism_geom::Curve::Arc {
+                centre,
+                axis,
+                radius,
+            } if e.curve.transformed(m).is_none() => {
+                let k = m.matrix3.determinant().abs().cbrt();
+                let flip = m.matrix3.determinant().signum();
+                let n = (m.matrix3.inverse().transpose() * axis).normalize() * flip;
+                Some((
+                    id,
+                    prism_geom::Curve::Arc {
+                        centre: m.transform_point3(centre),
+                        axis: n,
+                        radius: radius * k,
+                    },
+                ))
+            }
+            _ => None,
+        })
+        .collect();
+    for (id, c) in uneven {
+        model.set_curve(id, c);
+    }
     let mirror = m.matrix3.determinant() < 0.0;
     let tol = model.tol();
     let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
     for id in ids {
-        let Some(face) = model.face(id).cloned() else {
+        if mirror {
+            model.edit_face(id, |f| f.reverse());
+        }
+        let Some(face) = model.face(id) else {
             continue;
         };
-        let mut outer = face.outer.clone();
-        let mut holes = face.holes.clone();
-        if mirror {
-            outer.reverse();
-            holes.iter_mut().for_each(|h| h.reverse());
-        }
-        let Some(plane) = Plane::fit(&model.points(&outer), &tol) else {
+        let Some(plane) = Plane::fit(&model.loop_points(face, 0), &tol) else {
             model.remove_face(id);
             continue;
         };
-        model.edit_face(id, |f| {
-            f.outer = outer;
-            f.holes = holes;
-            f.surface = Surface::Plane(plane);
-        });
+        model.edit_face(id, |f| f.surface = Surface::Plane(plane));
     }
 }
 
@@ -370,6 +456,12 @@ fn keep_straight(model: &mut Model, vs: &BTreeSet<VertexId>) {
     // either side), and the points next to it in faces that turn there.
     let mut straight: BTreeMap<VertexId, Vec<(FaceId, VertexId, VertexId)>> = BTreeMap::new();
     let mut corner: BTreeMap<VertexId, BTreeSet<VertexId>> = BTreeMap::new();
+    // An arc's end is never a point on a straight edge.
+    let on_arc: BTreeSet<VertexId> = model
+        .edges()
+        .filter(|(_, e)| e.curve.is_arc())
+        .flat_map(|(_, e)| [e.a, e.b])
+        .collect();
     for (id, face) in model.faces() {
         for l in face.loops() {
             let n = l.len();
@@ -379,7 +471,8 @@ fn keep_straight(model: &mut Model, vs: &BTreeSet<VertexId>) {
                     continue;
                 }
                 let (a, b) = (l[(i + n - 1) % n], l[(i + 1) % n]);
-                let through = !vs.contains(&a)
+                let through = !on_arc.contains(&v)
+                    && !vs.contains(&a)
                     && !vs.contains(&b)
                     && crate::sticky::on_segment_inside(
                         model.vertex(v),
