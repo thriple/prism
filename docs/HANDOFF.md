@@ -22,11 +22,32 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - `Command::Duplicate` was removed (it made CI hang);
   - Updates and MCP Server were added to the plan, right after View
     Settings.
-- **State:** `main` = session branch, clean, last code push is Exact Curves 5a.
-  CI and releases green on both branches through 4d (282bd71) and the
-  session 5 wedge fix (ddd7523, check its CI too). GitHub release downloads gave 504s in the Web build on
-  2026-11-09 (not our code): re-run; if it repeats, make the download
-  steps retry (`curl --fail --retry`).
+- **State:** `main` = session branch, clean, last code push 3170270
+  (the Scale box). CI and releases green on both branches through it
+  (the branch's Release run is cancelled when `main` gets the same
+  commit; `main`'s runs). GitHub release downloads gave 504s in the Web
+  build on 2026-11-09 (not our code): re-run; if it repeats, make the
+  download steps retry (`curl --fail --retry`).
+- **Owner bug fixes, 2026-11-09 evening (NOTES has a section each):**
+  - session 5 wedge: an edge slides only when its neighbour faces away
+    from the pulled face; a face with free sides drawn against a solid
+    keeps its base; retracing a side of a flat loop fills it;
+  - undo property test finds: an arc drawn within 10 tolerances of an
+    existing circle snaps onto it; loops drop a point repeated next to
+    itself; a move that would bend a face with holes is refused
+    (`HOLE_FACE_WOULD_FOLD`); 9000 random undo cases clean after;
+  - **the Scale tool** (owner's request): a dashed box 5% off the
+    selection with grips (corners even, edges two axes, faces one), no
+    inference, Alt (tap) about the centre, Shift switches face/edge
+    grips; `session/scalebox.rs`. PLAN's Scale row updated. Waiting on
+    the owner to try it by hand. Later (owner): scaling from two picked
+    points with inference.
+  - The owner compared our shape rules with SketchUp's (faces, sticky
+    geometry, healing, two-sided faces): they match; kept on purpose:
+    Push/Pull booleans (#31), lines between coplanar faces stay after a
+    pull, a pulled ring keeps no base (#14).
+- **Owner's latest instruction:** "Let's fix bugs" before more features;
+  ask whether to go on with Exact Curves 5b or more bug fixes.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves: parts 1 to 4 are built** (briefs 22 to 25; NOTES
