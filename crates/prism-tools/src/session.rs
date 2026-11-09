@@ -1820,6 +1820,7 @@ impl Session {
                 color: match g.source {
                     infer::GuideSource::Stored(_) => fb.guide,
                     infer::GuideSource::Crossing(..) => fb.guide_cross,
+                    infer::GuideSource::Tangent(..) => fb.tangent,
                     _ => g.axis.map_or(fb.parallel, axis_color),
                 },
                 width: fb.guide_width,
@@ -1887,6 +1888,7 @@ impl Session {
             Kind::Intersection => fb.intersection,
             Kind::GuideCross => fb.guide_cross,
             Kind::Guide => fb.intersection,
+            Kind::Tangent => fb.tangent,
             Kind::GuidePoint => fb.endpoint,
             Kind::Free => fb.free,
         };
@@ -1923,7 +1925,7 @@ impl Session {
             });
         }
         let shape = match i.kind {
-            Kind::Endpoint | Kind::Free | Kind::Guide => Shape::Circle,
+            Kind::Endpoint | Kind::Free | Kind::Guide | Kind::Tangent => Shape::Circle,
             Kind::Midpoint | Kind::Quadrant => Shape::Triangle,
             Kind::Centre => Shape::Ring,
             Kind::OnEdge | Kind::OnArc => Shape::Square,

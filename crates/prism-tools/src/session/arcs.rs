@@ -39,6 +39,8 @@ pub(super) struct ArcOp {
     pub sweep: f64,
     /// The 2-point arc's bulge is snapped to a half circle.
     pub half: bool,
+    /// The 2-point arc's bulge is snapped tangent to an edge at its start.
+    pub tangent: Option<f64>,
 }
 
 impl Session {
@@ -56,6 +58,7 @@ impl Session {
                     at: i.point,
                     sweep: 0.0,
                     half: false,
+                    tangent: None,
                 }
             }
             Some(mut op) => {
@@ -98,15 +101,34 @@ impl Session {
             op.sweep = (raw + k * TAU).clamp(-TAU, TAU);
         }
         op.half = false;
+        op.tangent = None;
         if matches!(self.tool.as_str(), ARC | ARC2) && op.pts.len() == 2 {
-            // Snap to a half circle within a few pixels (magenta).
             let (a, b) = (op.pts[0], op.pts[1]);
             let h = bulge(op);
             let near = view
                 .to_screen(op.at)
                 .map_or(0.0, |(_, d)| view.units_per_px(d))
                 * 8.0;
-            if (h.abs() - a.distance(b) / 2.0).abs() <= near {
+            // Tangent to an edge at the start (cyan) wins over a half circle
+            // (magenta), within a few pixels.
+            let tol = self.scene.tol.dist;
+            op.tangent = self
+                .scene
+                .edges
+                .iter()
+                .filter_map(|e| {
+                    let out = if e.b.distance(a) <= tol {
+                        e.curve.end_tangent(e.a, e.b)
+                    } else if e.a.distance(a) <= tol {
+                        -e.curve.start_tangent(e.a, e.b)
+                    } else {
+                        return None;
+                    };
+                    tangent_bulge(a, b, op.normal, out)
+                })
+                .filter(|t| (t - h).abs() <= near)
+                .min_by(|x, y| (x - h).abs().total_cmp(&(y - h).abs()));
+            if op.tangent.is_none() && (h.abs() - a.distance(b) / 2.0).abs() <= near {
                 op.half = true;
             }
         }
@@ -127,10 +149,10 @@ impl Session {
         match self.tool.as_str() {
             ARC | ARC2 => {
                 let (a, b) = (*op.pts.first()?, *op.pts.get(1)?);
-                let h = if op.half {
-                    bulge(op).signum() * a.distance(b) / 2.0
-                } else {
-                    bulge(op)
+                let h = match (op.tangent, op.half) {
+                    (Some(t), _) => t,
+                    (None, true) => bulge(op).signum() * a.distance(b) / 2.0,
+                    (None, false) => bulge(op),
                 };
                 Some(spec(arc_bulge(a, b, op.normal, h, eps)?, a))
             }
@@ -193,6 +215,7 @@ impl Session {
                 let left = op.normal.cross(b - a).normalize_or_zero();
                 op.at = a.lerp(b, 0.5) + left * h * side;
                 op.half = false;
+                op.tangent = None;
                 op.pts.push(op.at);
             }
             (ARC_CENTRE | PIE, 1) => {
@@ -272,7 +295,9 @@ impl Session {
     pub(super) fn arc_overlay(&self, o: &mut Overlay) {
         let Some(op) = &self.arc else { return };
         let fb = &self.style.feedback;
-        let color = if op.half {
+        let color = if op.tangent.is_some() {
+            fb.tangent
+        } else if op.half {
             fb.half_circle
         } else {
             fb.rubber_band
@@ -318,7 +343,9 @@ impl Session {
             line(o, centre, start, if pie { [0.0, 0.0] } else { [4.0, 3.0] });
             line(o, centre, end, if pie { [0.0, 0.0] } else { [4.0, 3.0] });
         }
-        let label = if op.half && sweep > PI - 1e-9 {
+        let label = if op.tangent.is_some() {
+            "Tangent".to_owned()
+        } else if op.half && sweep > PI - 1e-9 {
             "Half Circle".to_owned()
         } else {
             self.number.show(radius)
@@ -338,4 +365,22 @@ fn bulge(op: &ArcOp) -> f64 {
     let (a, b) = (op.pts[0], op.pts[1]);
     let left = op.normal.cross(b - a).normalize_or_zero();
     (op.at - a.lerp(b, 0.5)).dot(left)
+}
+
+/// The bulge of the arc from `a` to `b` (plane `normal`) that leaves `a`
+/// along `out`: half its sweep is the angle between `out` and the chord.
+/// None if `out` leaves the plane or runs along the chord.
+fn tangent_bulge(a: DVec3, b: DVec3, normal: DVec3, out: DVec3) -> Option<f64> {
+    let n = normal.normalize_or_zero();
+    let d = (b - a).normalize_or_zero();
+    if out.dot(n).abs() > 1e-6 || d == DVec3::ZERO {
+        return None;
+    }
+    let left = n.cross(d);
+    let theta = out.dot(d).clamp(-1.0, 1.0).acos();
+    let side = out.dot(left);
+    if theta < 1e-6 || theta > PI - 1e-6 || side.abs() < 1e-12 {
+        return None;
+    }
+    Some(side.signum() * a.distance(b) / 2.0 * (theta / 2.0).tan())
 }

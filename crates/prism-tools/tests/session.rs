@@ -2156,3 +2156,50 @@ fn the_three_point_centre_and_pie_arcs() {
     same(&areas(&d), &[PI / 4.0]);
     valid(&d);
 }
+
+// ---------- Tangents (brief 24, step 3b) ----------
+
+#[test]
+fn a_line_snaps_tangent_off_an_arc_end() {
+    use prism_tools::session::ARC_CENTRE;
+    let mut d = Driver::empty();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    // An eighth of a turn about (3, 1), from (4, 1).
+    arc_clicks(&mut d, ARC_CENTRE, &[p(3.0, 1.0), p(4.0, 1.0)]);
+    d.hover(p(3.9, 1.4));
+    d.typed("45");
+    let r = 0.5f64.sqrt();
+    let end = p(3.0 + r, 1.0 + r);
+    let dir = DVec3::new(-1.0, 1.0, 0.0).normalize();
+    d.tool(LINE);
+    d.click(end);
+    d.hover(end + dir * 1.0 + DVec3::new(0.02, 0.0, 0.0));
+    assert_eq!(d.s.inference().map(|i| i.kind), Some(Kind::Tangent));
+    d.click(end + dir * 1.0 + DVec3::new(0.02, 0.0, 0.0));
+    let m = d.s.model();
+    let line = m
+        .edges()
+        .find(|(_, e)| !e.curve.is_arc())
+        .map(|(_, e)| m.vertex(e.b) - m.vertex(e.a))
+        .expect("the line");
+    assert!(line.normalize().cross(dir).length() < 1e-9, "{line:?}");
+}
+
+#[test]
+fn a_two_point_arc_snaps_tangent_to_the_line_it_starts_from() {
+    use prism_tools::session::ARC;
+    use std::f64::consts::PI;
+    let mut d = Driver::empty();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    d.tool(LINE);
+    d.click(p(0.0, 1.0));
+    d.click(p(2.0, 1.0));
+    d.send(Input::Key { key: Key::Escape });
+    // From the line's end to (3, 2): tangent is a quarter circle about (2, 2).
+    arc_clicks(&mut d, ARC, &[p(2.0, 1.0), p(3.0, 2.0)]);
+    let tangent_mid = p(2.0, 2.0) + DVec3::new(0.5f64.sqrt(), -(0.5f64.sqrt()), 0.0);
+    d.hover(tangent_mid + DVec3::new(0.03, 0.03, 0.0));
+    d.click(tangent_mid + DVec3::new(0.03, 0.03, 0.0));
+    has_arc(&d, p(2.0, 2.0), 1.0, PI / 2.0);
+    valid(&d);
+}

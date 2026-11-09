@@ -58,6 +58,8 @@ pub enum Kind {
     Centre,
     /// A circle's quarter points (where they lie on the arc).
     Quadrant,
+    /// Along an arc's tangent at its end.
+    Tangent,
     OnFace,
     OnGround,
     Intersection,
@@ -79,6 +81,7 @@ impl Kind {
             Kind::Midpoint => (5.0, 12.0),
             Kind::Quadrant => (4.8, 12.0),
             Kind::Intersection => (4.6, 12.0),
+            Kind::Tangent => (3.4, 8.0),
             Kind::Guide => (3.3, 8.0),
             Kind::OnEdge | Kind::OnArc => (3.0, 9.0),
             Kind::OnFace => (1.0, 0.0),
@@ -95,6 +98,7 @@ impl Kind {
             Kind::OnArc => "On Arc",
             Kind::Centre => "Centre",
             Kind::Quadrant => "Quadrant",
+            Kind::Tangent => "Tangent",
             Kind::OnFace => "On Face",
             Kind::OnGround => "On Ground",
             Kind::Intersection => "Intersection",
@@ -152,6 +156,9 @@ pub enum GuideSource {
     /// Where the hovered face crosses another (faces, and which piece):
     /// DECISIONS #29. Only snaps along its own length.
     Crossing(u32, u32, u8),
+    /// The tangent of arc `edge` at its end, through the start point (`n`
+    /// 0) or woken point number `n`.
+    Tangent(u32, u32),
 }
 
 /// A guide line: infinite, through `origin` along unit `dir`.
@@ -172,6 +179,7 @@ impl Guide {
             GuideSource::Parallel(_) => "Parallel to Edge".to_owned(),
             GuideSource::Stored(_) => "On Guide".to_owned(),
             GuideSource::Crossing(..) => "Face Intersection".to_owned(),
+            GuideSource::Tangent(..) => "Tangent".to_owned(),
         }
     }
 
@@ -182,7 +190,8 @@ impl Guide {
             GuideSource::Start(_)
             | GuideSource::Parallel(_)
             | GuideSource::Stored(_)
-            | GuideSource::Crossing(..) => None,
+            | GuideSource::Crossing(..)
+            | GuideSource::Tangent(..) => None,
             GuideSource::Woken(n, _) => Some(n),
         }
     }
@@ -557,6 +566,37 @@ pub fn infer(
         }
     }
     let mut gl = guides(ctx, mem);
+    // Tangents of the arcs that end at the start point or a woken point.
+    let ends = ctx.start.map(|p| (0, p)).into_iter().chain(
+        mem.woken
+            .iter()
+            .filter(|w| matches!(w.key, Key::Vertex(_)))
+            .map(|w| (w.serial, w.point)),
+    );
+    for (n, p) in ends {
+        for e in scene.edges.iter().filter(|e| e.curve.is_arc()) {
+            let d = if e.a.distance(p) <= tol {
+                e.curve.start_tangent(e.a, e.b)
+            } else if e.b.distance(p) <= tol {
+                e.curve.end_tangent(e.a, e.b)
+            } else {
+                continue;
+            };
+            // A circle's seam has the same tangent from both halves.
+            if d != DVec3::ZERO
+                && !gl
+                    .iter()
+                    .any(|g| g.origin == p && g.dir.cross(d).length() < 1e-9)
+            {
+                gl.push(Guide {
+                    source: GuideSource::Tangent(n, e.id.0),
+                    origin: p,
+                    dir: d,
+                    axis: None,
+                });
+            }
+        }
+    }
     for (id, g) in &scene.guides {
         match *g {
             StoredGuide::Line { origin, dir } => gl.push(Guide {
@@ -620,15 +660,14 @@ pub fn infer(
             && t.abs() < reach
             && within(g, t)
         {
-            let mut c = blank(Kind::Guide, Key::Guide(g.source));
+            let kind = if matches!(g.source, GuideSource::Tangent(..)) {
+                Kind::Tangent
+            } else {
+                Kind::Guide
+            };
+            let mut c = blank(kind, Key::Guide(g.source));
             c.guides = vec![*g];
-            push(
-                Kind::Guide,
-                g.origin + g.dir * t,
-                Key::Guide(g.source),
-                false,
-                c,
-            );
+            push(kind, g.origin + g.dir * t, Key::Guide(g.source), false, c);
         }
     }
     for i in 0..gl.len() {
@@ -770,7 +809,7 @@ pub fn infer(
                     .and_then(|g| g.axis)
                     .filter(|_| matches!(b.kind, Kind::Guide) || b.guides.len() == 1);
                 let label = match b.kind {
-                    Kind::Guide => b.guides[0].label(),
+                    Kind::Guide | Kind::Tangent => b.guides[0].label(),
                     k => k.label().to_owned(),
                 };
                 Inference {

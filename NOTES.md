@@ -1430,3 +1430,18 @@ and inference, 2d the Circle and Polygon tools).
   over MCP with `get_geometry`, random arcs and pies in the property tests
   (3000 cases run once), a pie in the undo property test (1500 cases).
 - Not checked by eye in the app.
+
+## Exact Curves (part 3, step 3b): tangents
+
+- **Tangent guides** (`prism-infer`, Kind::Tangent, GuideSource::Tangent):
+  from the tool's start point and from woken points that are an arc's
+  end, along the arc's exact tangent there; a circle's seam gives one.
+  Line (and any tool with a start point) snaps along them, "Tangent".
+  Drawn in the new style colour `tangent` (cyan).
+- **2-point arc:** after its second click, the bulge snaps (within 8 px)
+  to the arc that leaves the start tangent to an edge ending there (line
+  or arc); the preview turns cyan and says "Tangent". This wins over the
+  magenta half circle.
+- Tests: the guide at three scales; a line tangent off an arc end; a
+  2-point arc tangent to a line (exact centre).
+- Not checked by eye in the app.

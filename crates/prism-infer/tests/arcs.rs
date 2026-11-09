@@ -162,3 +162,47 @@ fn a_guide_meets_an_arc_on_the_circle_not_its_chord() {
         assert!((i.point / k).distance(want) < 1e-9, "at {k}: {:?}", i.point);
     }
 }
+
+#[test]
+fn a_tangent_guide_runs_from_an_arc_end() {
+    for k in SCALES {
+        // An eighth of a turn about (2, 2), from (3, 2) to 45°.
+        let mut m = Model::new();
+        prism_ops::add_arc(
+            &mut m,
+            C * k,
+            DVec3::Z,
+            k,
+            DVec3::new(3.0, 2.0, 0.0) * k,
+            std::f64::consts::FRAC_PI_4,
+        );
+        let cam = Camera {
+            eye: DVec3::new(2.0, -2.0, 6.0) * k,
+            target: C * k,
+        };
+        let t = Setup {
+            scene: Scene::build(&m),
+            view: View::new(&cam, 900.0, 600.0),
+            k,
+        };
+        let end = on_circle(45.0);
+        let dir = DVec3::new(-1.0, 1.0, 0.0).normalize();
+        let ctx = Context {
+            start: Some(end * k),
+            ..Default::default()
+        };
+        let want = end + dir * 0.8;
+        let i = t.at(
+            t.screen(want) + DVec2::new(2.0, 1.0),
+            &ctx,
+            &Memory::default(),
+        );
+        assert_eq!(i.kind, Kind::Tangent, "at {k}");
+        assert_eq!(i.label, "Tangent");
+        let off = i.point / k - end;
+        assert!(
+            off.cross(dir).length() < 1e-9,
+            "on the tangent, at {k}: {off:?}"
+        );
+    }
+}
