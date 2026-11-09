@@ -10,7 +10,7 @@ use prism_ui::widgets::{SoftButton, ToolButton, tooltip};
 use super::{Chrome, MenuKind, Source};
 use crate::actions::keymap::{Chord, Mods, key_label};
 use crate::actions::registry::Entry;
-use crate::toolbars::{Box2, DOCK_THICKNESS, Dock, Layout, float_columns, grid, snap};
+use crate::toolbars::{Box2, Dock, Layout, docked_thickness, fit, grid, snap};
 
 // The scroll bar floats inside the side padding, so it never covers the
 // buttons or needs a horizontal scroll bar. Checked when compiling.
@@ -30,6 +30,9 @@ const TOP_PAD: f32 = 8.0;
 const TOP_SPACING: f32 = 16.0;
 /// A dock with nothing in it, while a toolbar is dragged: a strip to drop on.
 const DROP_STRIP: f32 = 18.0;
+/// How far in from a floating toolbar's right and bottom edges it can be
+/// grabbed to reshape it.
+const RESIZE_EDGE: f32 = FLOAT_PAD + 2.0;
 
 /// The toolbars' state: the layout, edit mode, and a toolbar being dragged.
 #[derive(Clone, Debug)]
@@ -44,6 +47,8 @@ pub struct Toolbars {
     /// A right-click asked for the toolbar menu here; it opens after the
     /// menus are drawn, or the same click would close it.
     pub menu_at: Option<Pos2>,
+    /// The Toolbars window is open (part 2).
+    pub window: bool,
 }
 
 /// A toolbar following the pointer.
@@ -63,6 +68,7 @@ impl Toolbars {
             drag: None,
             drawn: Vec::new(),
             menu_at: None,
+            window: false,
         }
     }
 
@@ -80,7 +86,7 @@ pub fn names(chrome: &Chrome) -> Vec<&'static str> {
     chrome.reg.dock().iter().map(|(n, _)| *n).collect()
 }
 
-fn ids_of(chrome: &Chrome, name: &str) -> &'static [&'static str] {
+pub(super) fn ids_of(chrome: &Chrome, name: &str) -> &'static [&'static str] {
     chrome
         .reg
         .dock()
@@ -89,11 +95,20 @@ fn ids_of(chrome: &Chrome, name: &str) -> &'static [&'static str] {
         .map_or(&[], |(_, ids)| ids)
 }
 
-/// How many buttons thick a docked toolbar is: the same rule as floating
-/// ones (1 for five tools or fewer, 2 for six or more), never more than a
-/// dock holds.
-fn lines_for(n: usize) -> usize {
-    float_columns(n).min(DOCK_THICKNESS)
+/// How many buttons thick a docked toolbar is: its floating shape, turned
+/// so its long side runs along the dock (by default 1 for five tools or
+/// fewer, 2 for six or more).
+fn lines_of(chrome: &Chrome, name: &str) -> usize {
+    let n = ids_of(chrome, name).len();
+    docked_thickness(chrome.toolbars.layout.columns(name, n), n)
+}
+
+/// How many buttons across a floating toolbar is.
+fn columns_of(chrome: &Chrome, name: &str) -> usize {
+    chrome
+        .toolbars
+        .layout
+        .columns(name, ids_of(chrome, name).len())
 }
 
 /// How thick a dock is: as its thickest toolbar.
@@ -103,7 +118,7 @@ fn thickness(chrome: &Chrome, dock: Dock) -> usize {
         .layout
         .in_dock(dock)
         .iter()
-        .map(|n| lines_for(ids_of(chrome, n).len()))
+        .map(|n| lines_of(chrome, n))
         .max()
         .unwrap_or(0)
 }
@@ -146,7 +161,7 @@ fn top_flow(chrome: &Chrome, width: f32) -> (Vec<(String, Rect)>, f32) {
     let (mut x, mut y) = (0.0, 0.0);
     for name in t.layout.in_dock(Dock::Top) {
         let n = ids_of(chrome, name).len();
-        let s = block(n, lines_for(n), false, G);
+        let s = block(n, lines_of(chrome, name), false, G);
         if x > 0.0 && x + s.x > width {
             x = 0.0;
             y += line_h + TOP_SPACING * 0.5;
@@ -205,6 +220,8 @@ struct Hits {
     closed: Option<String>,
     /// Right-click on empty space.
     menu_at: Option<Pos2>,
+    /// A floating toolbar's edge was dragged to this many columns.
+    resized: Option<(String, usize)>,
 }
 
 /// Draw one toolbar's buttons in `rect`, `lines` thick.
@@ -327,6 +344,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context, left: Rect, top: Rect, ar
     if let Some(name) = hits.closed {
         chrome.toolbars.layout.close(&name);
     }
+    if let Some((name, cols)) = hits.resized {
+        chrome.toolbars.layout.set_columns(&name, cols);
+    }
     if let Some((name, corner)) = hits.grabbed {
         let p = ctx.pointer_interact_pos().unwrap_or(corner);
         chrome.toolbars.drag = Some(Drag {
@@ -434,7 +454,7 @@ fn show_left(chrome: &mut Chrome, ctx: &Context, rect: Rect, hits: &mut Hits) {
                             divider(ui, d.left_center(), d.right_center());
                         }
                         let ids = ids_of(chrome, name);
-                        let lines = lines_for(ids.len());
+                        let lines = lines_of(chrome, name);
                         let s = block(ids.len(), lines, true, G);
                         let w = inner.width();
                         if editing {
@@ -499,7 +519,7 @@ fn show_top(chrome: &mut Chrome, ctx: &Context, rect: Rect, hits: &mut Hits) {
                     chrome,
                     ids,
                     buttons_rect,
-                    lines_for(ids.len()),
+                    lines_of(chrome, name),
                     false,
                     G,
                     r,
@@ -511,9 +531,16 @@ fn show_top(chrome: &mut Chrome, ctx: &Context, rect: Rect, hits: &mut Hits) {
     chrome.toolbars.drawn.extend(drawn);
 }
 
-/// A floating toolbar's outer size.
-fn float_size(n: usize) -> Vec2 {
-    block(n, float_columns(n), true, FLOAT_GAP) + vec2(2.0 * FLOAT_PAD, 2.0 * FLOAT_PAD + GRIP)
+/// A floating toolbar's outer size, for `n` buttons `cols` across.
+pub(super) fn float_size(n: usize, cols: usize) -> Vec2 {
+    block(n, cols, true, FLOAT_GAP) + vec2(2.0 * FLOAT_PAD, 2.0 * FLOAT_PAD + GRIP)
+}
+
+/// Where the pointer holds a toolbar dragged out of the Toolbars window:
+/// by its grip, in the middle.
+pub(super) fn grab_point(chrome: &Chrome, name: &str) -> Vec2 {
+    let n = ids_of(chrome, name).len();
+    vec2(float_size(n, columns_of(chrome, name)).x * 0.5, GRIP * 0.5)
 }
 
 fn show_floating(chrome: &mut Chrome, ctx: &Context, hits: &mut Hits) {
@@ -535,7 +562,8 @@ fn show_floating(chrome: &mut Chrome, ctx: &Context, hits: &mut Hits) {
             continue;
         }
         let ids = ids_of(chrome, &name);
-        let size = float_size(ids.len());
+        let cols = columns_of(chrome, &name);
+        let size = float_size(ids.len(), cols);
         // From the app's corner, kept on screen if the window shrank.
         let screen = ctx.viewport_rect();
         let at = pos2(
@@ -602,8 +630,44 @@ fn show_floating(chrome: &mut Chrome, ctx: &Context, hits: &mut Hits) {
                     r.min + vec2(FLOAT_PAD, FLOAT_PAD + GRIP),
                     r.max - vec2(FLOAT_PAD, FLOAT_PAD),
                 );
-                let cols = float_columns(ids.len());
                 buttons(ui, chrome, ids, inner, cols, true, FLOAT_GAP, r, hits);
+                // Its right and bottom edges reshape it: more or fewer
+                // buttons across (part 2).
+                let n = ids.len();
+                let right = Rect::from_min_max(
+                    pos2(r.right() - RESIZE_EDGE, r.top() + GRIP + FLOAT_PAD),
+                    r.max,
+                );
+                let bottom = Rect::from_min_max(
+                    pos2(r.left(), r.bottom() - RESIZE_EDGE),
+                    pos2(r.right() - RESIZE_EDGE, r.bottom()),
+                );
+                for (edge, across) in [(right, true), (bottom, false)] {
+                    let e = ui.interact(
+                        edge,
+                        Id::unique(("float-edge", name.as_str(), across)),
+                        Sense::drag(),
+                    );
+                    if e.hovered() || e.dragged() {
+                        ctx.set_cursor_icon(if across {
+                            egui::CursorIcon::ResizeHorizontal
+                        } else {
+                            egui::CursorIcon::ResizeVertical
+                        });
+                    }
+                    if e.dragged()
+                        && let Some(p) = e.interact_pointer_pos()
+                    {
+                        let want = if across {
+                            fit(p.x - inner.left(), B, FLOAT_GAP, n)
+                        } else {
+                            n.div_ceil(fit(p.y - inner.top(), B, FLOAT_GAP, n))
+                        };
+                        if want != cols {
+                            hits.resized = Some((name.clone(), want));
+                        }
+                    }
+                }
             });
         chrome.toolbars.drawn.push((name, rect));
     }
@@ -624,18 +688,40 @@ pub(super) fn open_menu(chrome: &mut Chrome) {
     }
 }
 
-/// Edit mode's way out, at the top of the viewport.
+/// Edit mode's way out: a small card at the bottom of the viewport, clear
+/// of the menus and of the Toolbars window.
 fn done_button(chrome: &mut Chrome, ctx: &Context, area: Rect) {
+    let screen = ctx.viewport_rect();
     Area::new(Id::unique("toolbars-done"))
         .order(Order::Foreground)
-        .anchor(egui::Align2::CENTER_TOP, vec2(0.0, area.top() + 8.0))
+        .anchor(
+            egui::Align2::CENTER_BOTTOM,
+            vec2(0.0, area.bottom() - screen.bottom() - TOP_PAD),
+        )
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Editing toolbars").color(color::INK));
-                if ui.add(SoftButton::new("Done").small()).clicked() {
-                    chrome.toolbars.editing = false;
-                }
-            });
+            let bg = ui.painter().add(egui::Shape::Noop);
+            let inner = egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(
+                    TOP_PAD as i8,
+                    (TOP_PAD * 0.5) as i8,
+                ))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Editing toolbars").color(color::INK));
+                        if ui.add(SoftButton::new("Done").small()).clicked() {
+                            chrome.toolbars.editing = false;
+                        }
+                    });
+                });
+            let mut shapes = Vec::new();
+            emboss::floating(
+                &mut shapes,
+                inner.response.rect,
+                radius::MENU_BUTTON + 4.0,
+                color::SURFACE,
+                1.0,
+            );
+            ui.painter().set(bg, egui::Shape::Vec(shapes));
         });
 }
 
@@ -650,7 +736,7 @@ fn drag(chrome: &mut Chrome, ctx: &Context, left: Rect, top: Rect, area: Rect) {
         return;
     };
     let n = ids_of(chrome, &d.name).len();
-    let size = float_size(n);
+    let size = float_size(n, columns_of(chrome, &d.name));
     let corner = p - d.grab;
     // Snap against the other floating toolbars and the viewport.
     let others: Vec<Box2> = chrome
@@ -776,20 +862,13 @@ mod tests {
     }
 
     #[test]
-    fn docked_toolbars_take_the_lines_they_need() {
-        assert_eq!(lines_for(3), 1, "Principal: one line");
-        assert_eq!(lines_for(8), 2, "Draw: two");
-        assert_eq!(lines_for(30), DOCK_THICKNESS, "never thicker than a dock");
-    }
-
-    #[test]
     fn floating_toolbars_are_tighter_than_the_rail() {
         // Three buttons: one column, padding 4 and a grip.
         assert_eq!(
-            float_size(3),
+            float_size(3, 1),
             vec2(4.0 + 44.0 + 4.0, 4.0 + 10.0 + 3.0 * 44.0 + 2.0 * 4.0 + 4.0)
         );
         // Eight buttons: two columns.
-        assert_eq!(float_size(8).x, 4.0 + 2.0 * 44.0 + 4.0 + 4.0);
+        assert_eq!(float_size(8, 2).x, 4.0 + 2.0 * 44.0 + 4.0 + 4.0);
     }
 }

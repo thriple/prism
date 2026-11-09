@@ -7,7 +7,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **Built, in order:** Skeleton, Soft Theme, Actions & Keys, Core Model,
   Viewport, Inference & Drawing, Edit Tools (3 parts), Files & Formats
   (3 parts), Groups & Components (3 parts), Model Health (2 parts), View
-  Settings (2 parts, briefs 17 and 18), Toolbars part 1 (brief 19). PLAN
+  Settings (2 parts, briefs 17 and 18), Toolbars (2 parts, brief 19). PLAN
   6.0 has the details; NOTES has a section per part.
 - **Since the last compaction (2026-11-08 to 09), owner feedback fixed:**
   - the plan was put in build order, with a standing rule to follow it;
@@ -23,16 +23,17 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Updates and MCP Server were added to the plan, right after View
     Settings.
 - **State:** `main` = session branch, CI green. Nothing uncommitted.
-- **Next: Toolbars part 2** (brief 19: the Toolbars window, View >
-  Toolbars and Panels, with drag-out of closed toolbars; reshaping a
-  toolbar by dragging its edge). Then Updates, then MCP Server, then the
-  next rows of the PLAN 6.0 table (see the standing rule below).
+- **Also fixed 2026-11-09:** View Settings moved to the Window menu;
+  hidden-geometry ghosts are edges only, drawn like hidden lines.
+- **Next: Updates** (PLAN 3.1 decision 8; needs a brief), then MCP
+  Server, then the next rows of the PLAN 6.0 table (see the standing
+  rule below).
 - **Toolbars, as the owner shaped them:** no name labels (the name is a
   tooltip over a toolbar's empty space, the kit's tooltip), faint dividers
   between toolbars; 1 button thick up to 5 tools, 2 from 6; a dock is as
   thick as its thickest toolbar; the top dock takes no space when empty;
-  floating toolbars are tight. The owner wants them "more adaptable": part
-  2's reshaping is the next step.
+  floating toolbars are tight. Floating ones reshape by their right or
+  bottom edge, and keep that shape docked (turned along the dock).
 - **Waiting on the owner to try by hand:** the toolbars, View Settings
   (styles, X-ray, the sun and shadows, Show Hidden), the side windows,
   groups and components, Model Health, and the Push/Pull cases. The web

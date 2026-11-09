@@ -26,6 +26,19 @@
   - Esc or a "Done" button leaves edit mode.
 - Every toolbar action still goes through the one action registry.
 
+## Requirements (part 2)
+- **The Toolbars window** (View > Toolbars and Panels, and the toolbar right-click menu): a window in the middle of the app that does not dim it. It lists every toolbar with its buttons' icons.
+  - A toolbar that is showing is greyed. A closed one can be dragged out of the list; it drops like a dragged toolbar (on a dock, or floating where it is let go).
+  - A **Reset Toolbars** button, in case a toolbar goes missing.
+  - Esc or the X closes it.
+- **Reshaping:** drag a floating toolbar's right or bottom edge to change how many buttons across it is (1 to all of them). The shape is kept in the layout (saved layouts from part 1 still read).
+- **Docked shape:** a toolbar keeps its shape when docked, turned so its long side runs along the dock: its thickness is the smaller of its columns and rows. So a one-row strip docks one button thick, and the defaults are as in part 1.
+
+## Tests (part 2)
+- Layout: a shape is kept through docking and floating, cleared by Reset, clamped to 1..buttons; old layouts without shapes read; the docked thickness rule; the edge length to columns rule.
+- Chrome: Toolbars and Panels is built, opens the window, and Esc closes it.
+- Hand check: dragging a closed toolbar out of the window, and reshaping.
+
 ## Out of scope (part 1)
 The Toolbars window and drag-out, and resizing floating toolbars (part 2). Docking on the right or bottom. Toolbars of the user's own choosing.
 
@@ -45,3 +58,4 @@ The Toolbars window and drag-out, and resizing floating toolbars (part 2). Docki
 - [ ] Toolbars can be docked on the left or top, floated, rearranged, closed and reset, and the layout is kept between runs.
 - [ ] X-ray and Hidden have buttons.
 - [ ] PLAN and NOTES are updated.
+- [x] (Part 2) Closed toolbars come back from the Toolbars window, and floating toolbars can be reshaped.

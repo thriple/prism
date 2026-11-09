@@ -1030,3 +1030,38 @@ Brief: `docs/briefs/19-toolbars.md` (owner request, built before Updates).
   edge. Docking on the right or bottom is not planned.
 - Checked in the real app under Xvfb: right-click menu, edit mode, docking
   on top, floating, dragging back, Done. Not yet tried by the owner.
+
+## Toolbars (part 2: the Toolbars window, reshaping)
+Brief: `docs/briefs/19-toolbars.md`.
+- **Toolbars window** (View > Toolbars and Panels, and the toolbar
+  right-click menu): centred, does not dim the app (`SoftDialog::undimmed`).
+  Each toolbar is a row with its icons; showing ones are greyed, closed
+  ones are dragged out and drop like any dragged toolbar. Reset Toolbars
+  is at the bottom. Esc or × closes it.
+- **Reshaping:** drag a floating toolbar's right or bottom edge; it snaps
+  to whole buttons (1 to all). The shape is saved per toolbar
+  (`columns`, left out of the file when unset, so part 1 layouts read)
+  and kept through docking and floating. Closing a toolbar or Reset
+  forgets it.
+- **Docked shape:** a toolbar keeps its shape in a dock, turned so its
+  long side runs along it: its thickness is the smaller of its columns and
+  rows. So a one-row strip docks one button thick; the defaults are as in
+  part 1. A dock is as thick as its thickest toolbar (so a 3 by 3 block
+  makes the rail three buttons wide).
+- **Done** moved to a small card at the bottom of the viewport: at the top
+  it covered the Toolbars window's title.
+- Checked in the real app under Xvfb: closing a toolbar, dragging it out of
+  the window, reshaping it to a row, docking that row in the top dock.
+- Not built: "Panels" in the window's name (the side windows are in the
+  Window menu); docking on the right or bottom.
+
+## Owner feedback, 2026-11-09 (after Toolbars part 1)
+- **View Settings** (the window with the Lighting section) moved from the
+  View menu to the Window menu. Lighting > Sun and Shadow Settings… still
+  opens it.
+- **Hidden geometry ghosts** are edges only now: no faces, so they cast no
+  shadow and hide nothing, and they are picked by their edges. They are
+  drawn like hidden lines: faint (`hidden_alpha`), and dashed unless
+  Hidden Lines is set to Faint. With Hidden Lines Off they are dashed too
+  (assumed: otherwise Show Hidden would show nothing by default).
+

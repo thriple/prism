@@ -12,6 +12,7 @@ pub struct SoftDialog<'a> {
     title: &'a str,
     subtitle: Option<String>,
     width: f32,
+    dim: bool,
 }
 
 /// What happened to a dialog this frame.
@@ -27,6 +28,7 @@ impl<'a> SoftDialog<'a> {
             title,
             subtitle: None,
             width: size::DIALOG_WIDTH,
+            dim: true,
         }
     }
 
@@ -37,6 +39,12 @@ impl<'a> SoftDialog<'a> {
 
     pub fn width(mut self, w: f32) -> Self {
         self.width = w;
+        self
+    }
+
+    /// Leave the app behind it as it is, and usable (it closes by its X).
+    pub fn undimmed(mut self) -> Self {
+        self.dim = false;
         self
     }
 
@@ -62,18 +70,20 @@ impl<'a> SoftDialog<'a> {
         let screen = ctx.viewport_rect();
 
         // The dimmed app behind: a click there closes the dialog.
-        let scrim = Area::new(id.with("scrim"))
-            .order(Order::Foreground)
-            .fixed_pos(screen.min)
-            .interactable(open)
-            .show(ctx, |ui| {
-                let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
-                ui.painter()
-                    .rect_filled(r, 0.0, theme::fade(color::SCRIM, shown));
-                resp
-            });
-        if scrim.inner.clicked() {
-            close = true;
+        if self.dim {
+            let scrim = Area::new(id.with("scrim"))
+                .order(Order::Foreground)
+                .fixed_pos(screen.min)
+                .interactable(open)
+                .show(ctx, |ui| {
+                    let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
+                    ui.painter()
+                        .rect_filled(r, 0.0, theme::fade(color::SCRIM, shown));
+                    resp
+                });
+            if scrim.inner.clicked() {
+                close = true;
+            }
         }
 
         let [px, py] = size::DIALOG_PAD;

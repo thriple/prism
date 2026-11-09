@@ -35,6 +35,9 @@ pub enum Place {
 pub struct Bar {
     pub name: String,
     pub place: Place,
+    /// How many buttons across it floats, if the user reshaped it (part 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub columns: Option<usize>,
 }
 
 /// Every open toolbar; a closed one is absent. Within a dock, toolbars
@@ -44,8 +47,6 @@ pub struct Layout {
     pub bars: Vec<Bar>,
 }
 
-/// How many buttons across a dock is.
-pub const DOCK_THICKNESS: usize = 2;
 /// Floating toolbars snap to an edge this close, in points.
 pub const SNAP: f32 = 8.0;
 
@@ -59,6 +60,7 @@ impl Layout {
                 .map(|n| Bar {
                     name: (*n).to_owned(),
                     place: Place::Docked(Dock::Left),
+                    columns: None,
                 })
                 .collect(),
         }
@@ -74,6 +76,35 @@ impl Layout {
 
     pub fn close(&mut self, name: &str) {
         self.bars.retain(|b| b.name != name);
+    }
+
+    /// How many buttons across `name` (of `n` buttons) is when floating:
+    /// the user's shape, else one column for five or fewer, two for more.
+    pub fn columns(&self, name: &str, n: usize) -> usize {
+        self.bars
+            .iter()
+            .find(|b| b.name == name)
+            .and_then(|b| b.columns)
+            .unwrap_or_else(|| float_columns(n))
+            .clamp(1, n.max(1))
+    }
+
+    /// Reshape an open toolbar.
+    pub fn set_columns(&mut self, name: &str, columns: usize) {
+        if let Some(b) = self.bars.iter_mut().find(|b| b.name == name) {
+            b.columns = Some(columns.max(1));
+        }
+    }
+
+    /// Take `name` out, keeping its shape for where it goes next.
+    fn take(&mut self, name: &str) -> Option<usize> {
+        let columns = self
+            .bars
+            .iter()
+            .find(|b| b.name == name)
+            .and_then(|b| b.columns);
+        self.close(name);
+        columns
     }
 
     /// The toolbars in a dock, in order.
@@ -98,7 +129,7 @@ impl Layout {
 
     /// Dock `name` (open or not) so it is the `index`-th toolbar of `dock`.
     pub fn dock(&mut self, name: &str, dock: Dock, index: usize) {
-        self.close(name);
+        let columns = self.take(name);
         // Before the index-th toolbar already there, else at the end.
         let at = self
             .bars
@@ -112,16 +143,18 @@ impl Layout {
             Bar {
                 name: name.to_owned(),
                 place: Place::Docked(dock),
+                columns,
             },
         );
     }
 
     /// Float `name` (open or not) at `x`, `y`.
     pub fn float(&mut self, name: &str, x: f32, y: f32) {
-        self.close(name);
+        let columns = self.take(name);
         self.bars.push(Bar {
             name: name.to_owned(),
             place: Place::Floating { x, y },
+            columns,
         });
     }
 
@@ -151,6 +184,21 @@ impl Layout {
 /// fewer, two for six or more.
 pub fn float_columns(n: usize) -> usize {
     if n <= 5 { 1 } else { 2 }
+}
+
+/// How many buttons thick a toolbar `columns` across is in a dock: it
+/// keeps its shape, turned so its long side runs along the dock.
+pub fn docked_thickness(columns: usize, n: usize) -> usize {
+    let columns = columns.clamp(1, n.max(1));
+    columns.min(n.max(1).div_ceil(columns))
+}
+
+/// How many buttons fit along `len` points (buttons `button` wide with
+/// `gap` between), for a toolbar of `n`: the nearest count, 1 to `n`.
+/// Reshaping a floating toolbar by its edge uses this.
+pub fn fit(len: f32, button: f32, gap: f32, n: usize) -> usize {
+    let k = ((len + gap) / (button + gap)).round();
+    (k.max(1.0) as usize).min(n.max(1))
 }
 
 /// Where button `k` of `n` sits, as (column, row), and the grid's size, for
@@ -268,6 +316,51 @@ mod tests {
     }
 
     #[test]
+    fn a_shape_is_kept_through_moves_and_cleared_by_reset() {
+        let mut l = Layout::default_for(&NAMES);
+        assert_eq!(l.columns("Draw", 8), 2, "default: two for six or more");
+        assert_eq!(l.columns("Principal", 3), 1);
+        l.set_columns("Draw", 4);
+        assert_eq!(l.columns("Draw", 8), 4);
+        l.float("Draw", 5.0, 5.0);
+        l.dock("Draw", Dock::Top, 0);
+        assert_eq!(l.columns("Draw", 8), 4, "kept");
+        // Never more than its buttons, never fewer than one.
+        l.set_columns("Edit", 9);
+        assert_eq!(l.columns("Edit", 3), 3);
+        l.set_columns("Edit", 0);
+        assert_eq!(l.columns("Edit", 3), 1);
+        // A closed toolbar comes back in its default shape.
+        l.close("Draw");
+        l.dock("Draw", Dock::Left, 9);
+        assert_eq!(l.columns("Draw", 8), 2);
+        l.set_columns("Draw", 4);
+        assert_eq!(Layout::default_for(&NAMES).columns("Draw", 8), 2);
+    }
+
+    #[test]
+    fn docked_toolbars_keep_their_shape_turned_along_the_dock() {
+        // The defaults: one thick for five or fewer, two for more.
+        assert_eq!(docked_thickness(float_columns(3), 3), 1);
+        assert_eq!(docked_thickness(float_columns(8), 8), 2);
+        // A one-row strip docks one thick; a 3 by 3 block three thick.
+        assert_eq!(docked_thickness(8, 8), 1);
+        assert_eq!(docked_thickness(3, 9), 3);
+        assert_eq!(docked_thickness(4, 8), 2);
+        assert_eq!(docked_thickness(1, 1), 1);
+    }
+
+    #[test]
+    fn an_edge_dragged_to_a_length_gives_the_nearest_count() {
+        // Buttons 44 wide, 4 apart: 2 buttons are 92 long.
+        assert_eq!(fit(92.0, 44.0, 4.0, 8), 2);
+        assert_eq!(fit(110.0, 44.0, 4.0, 8), 2);
+        assert_eq!(fit(130.0, 44.0, 4.0, 8), 3);
+        assert_eq!(fit(5.0, 44.0, 4.0, 8), 1);
+        assert_eq!(fit(9999.0, 44.0, 4.0, 8), 8);
+    }
+
+    #[test]
     fn floating_toolbars_snap_to_nearby_edges_only() {
         let area = Box2 {
             x: 0.0,
@@ -318,6 +411,11 @@ mod tests {
         assert_eq!(fewer.in_dock(Dock::Left), ["Principal"]);
         assert!(fewer.floating().is_empty());
         assert!(Layout::from_json("not json", &NAMES).is_none());
+        // Part 1's layouts had no shapes; they still read.
+        let old = r#"{"bars":[{"name":"Draw","place":{"Docked":"Top"}}]}"#;
+        let l = Layout::from_json(old, &NAMES).expect("reads");
+        assert_eq!(l.in_dock(Dock::Top), ["Draw"]);
+        assert_eq!(l.columns("Draw", 8), 2);
     }
 }
 

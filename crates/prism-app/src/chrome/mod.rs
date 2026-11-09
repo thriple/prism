@@ -11,6 +11,7 @@ mod frame;
 mod hotkeys;
 mod menus;
 mod palette;
+mod toolbar_list;
 
 use std::collections::{HashMap, HashSet};
 
@@ -358,6 +359,7 @@ impl Chrome {
                     "win.tags" => self.panels.tags = true,
                     "win.health" => self.panels.health = true,
                     "view.edittoolbars" => self.toolbars.editing = true,
+                    "view.toolbars" => self.toolbars.window = true,
                     "view.resettoolbars" => {
                         let names = dock::names(self);
                         self.toolbars.layout = crate::toolbars::Layout::default_for(&names);
@@ -387,6 +389,7 @@ impl Chrome {
             || self.features_open
             || self.hotkeys.is_some()
             || self.toolbars.editing
+            || self.toolbars.window
     }
 
     /// Whether a window is docked in the side column. These windows do
@@ -401,6 +404,8 @@ impl Chrome {
             self.menu = None;
         } else if self.toolbars.editing {
             self.toolbars.editing = false;
+        } else if self.toolbars.window {
+            self.toolbars.window = false;
         } else if self.palette.is_some() {
             self.palette = None;
         } else if let Some(h) = &mut self.hotkeys {
@@ -494,6 +499,7 @@ impl Chrome {
         features::show(self, ctx);
         hotkeys::show(self, ctx);
         panels::show(self, ctx);
+        toolbar_list::show(self, ctx);
         layout
     }
 }
@@ -604,6 +610,16 @@ mod tests {
                 .as_ref()
                 .is_some_and(|h| h.pending_others().is_none())
         );
+    }
+
+    #[test]
+    fn the_toolbars_window_opens_and_esc_closes_it() {
+        let mut c = chrome();
+        assert!(c.enabled("view.toolbars"));
+        c.run("view.toolbars", Source::Menu);
+        assert!(c.toolbars.window && c.ui_open());
+        assert!(c.key(&press("Escape"), false));
+        assert!(!c.toolbars.window);
     }
 
     #[test]
