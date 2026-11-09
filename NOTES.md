@@ -1286,3 +1286,10 @@ and inference, 2d the Circle and Polygon tools).
   `curve` number shared by the edges of one curve.
 - Checked in the app (Xvfb): the circle file opens, and the circle is drawn
   smooth and unbroken.
+- **Bug found by the new check (CI on Windows, part 1's push):** two
+  overlapping rotated copies can leave a face whose loop runs along one
+  edge twice (a bridge to an island). `split_edge` put the new point only
+  into the first run (it did before part 1 too), so a later Push/Pull left
+  a face using an edge that was gone. It now splits every run. Push/Pull's
+  sliding step has the same first-run-only habit; not seen failing, left
+  as is.

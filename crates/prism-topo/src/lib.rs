@@ -501,17 +501,20 @@ impl Model {
                 ..
             } = face;
             for (l, le) in std::iter::once(outer).chain(holes.iter_mut()).zip(edges) {
-                let Some(i) = le.iter().position(|x| *x == id) else {
-                    continue;
-                };
-                // Walked a to b, the halves come first then second.
-                let halves = if l[i] == e.a {
-                    [first, second]
-                } else {
-                    [second, first]
-                };
-                l.insert(i + 1, mid);
-                le.splice(i..=i, halves);
+                // Every run along the edge: a loop can run along one edge
+                // twice (a bridge to an island). Last first, so earlier
+                // places stay put.
+                let runs: Vec<usize> = (0..le.len()).filter(|&i| le[i] == id).collect();
+                for &i in runs.iter().rev() {
+                    // Walked a to b, the halves come first then second.
+                    let halves = if l[i] == e.a {
+                        [first, second]
+                    } else {
+                        [second, first]
+                    };
+                    l.insert(i + 1, mid);
+                    le.splice(i..=i, halves);
+                }
             }
         }
         Some((first, second))

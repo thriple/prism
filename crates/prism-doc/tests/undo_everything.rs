@@ -233,3 +233,21 @@ fn undo_all_then_redo_all_regression_signed_zero() {
     }
     assert_eq!(d.model().to_json(), end);
 }
+
+/// Found by CI on Windows, once the check ran after every step: two
+/// overlapping rotated copies leave a face whose loop runs along one edge
+/// twice (a bridge), and splitting that edge only fixed the first run, so
+/// the Push/Pull after them left a face using an edge that was gone.
+#[test]
+fn rotated_copies_then_a_pull_keep_the_loops_whole() {
+    let mut d = setup();
+    for p in [8usize, 8, 5] {
+        let options = every_kind(&d);
+        if let Some(c) = options.get(p % options.len()) {
+            let name = c.name();
+            d.run(c.clone());
+            let problems = d.model().bookkeeping_problems();
+            assert!(problems.is_empty(), "{name}: {problems:?}");
+        }
+    }
+}
