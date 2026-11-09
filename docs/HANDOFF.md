@@ -23,7 +23,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Updates and MCP Server were added to the plan, right after View
     Settings.
 - **State:** `main` = session branch. Last push: Exact Curves 2c
-  and 2d (part 2 done), then brief 24 and step 3a. Check its CI first. 2b's Web build failed on GitHub download
+  and 2d (part 2 done), then brief 24 and part 3 (3a–3d). Check its CI first. 2b's Web build failed on GitHub download
   504s (not our code); 2c part 1's CI was fully green. If the trunk
   download flakes again, make the Install trunk step retry
   (`curl --fail --retry`). Owner said start part 3 (2026-11-09).
@@ -38,7 +38,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   circle, Repair) and 4 (refused edits say why, in the status bar) are
   built. **2d is built too: Exact Curves part 2 is done.** Part 3 is
   briefed (brief 24: 3a Arc tools, 3b tangents, 3c Offset with arcs, 3d
-  fillets). **3a, 3b and 3c are built; next is 3d** (corner fillets).
+  fillets). **Part 3 is done** (3a–3d). Next is part 4 (curved faces: cylinders from Push/Pull, shading and picking, soften and smooth): write its brief (25) first, with an MCP line. Wait for the owner's go-ahead.
   The notes below were the starting points for 2c: Where to start for 2c:
   - picking and hover already use drawn points (`prism-view/src/pick.rs`,
     `prism-tools/src/select.rs`); selecting an arc should take every edge

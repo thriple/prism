@@ -281,6 +281,12 @@ pub struct Session {
     shape: Option<shapes::ShapeOp>,
     /// The arc being drawn (the Arc tools).
     arc: Option<arcs::ArcOp>,
+    /// The Arc tools' last typed radius (for fillets), the corner of the
+    /// last fillet (a typed radius changes it), and why the last fillet
+    /// was refused.
+    arc_radius: Option<f64>,
+    last_fillet: Option<DVec3>,
+    arc_notice: Option<&'static str>,
     shape_radius: Option<f64>,
     sides: u32,
     last_op: Option<LastOp>,
@@ -388,6 +394,9 @@ impl Session {
             rect_memory: None,
             shape: None,
             arc: None,
+            arc_radius: None,
+            last_fillet: None,
+            arc_notice: None,
             shape_radius: None,
             sides: shapes::DEFAULT_SIDES,
             last_op: None,
@@ -789,6 +798,7 @@ impl Session {
         self.rect = None;
         self.shape = None;
         self.arc = None;
+        self.last_fillet = None;
         self.boxing = None;
         self.typed.clear();
         self.lock = Lock::None;
@@ -1329,7 +1339,10 @@ impl Session {
                     let n = self.clicks.press(self.time, s);
                     self.shape_press(s, n);
                 }
-                t if arcs::is_arc(t) => self.arc_press(s),
+                t if arcs::is_arc(t) => {
+                    let n = self.clicks.press(self.time, s);
+                    self.arc_press(s, n);
+                }
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
                     self.update_hover(s);

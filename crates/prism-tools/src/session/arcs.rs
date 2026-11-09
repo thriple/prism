@@ -44,14 +44,27 @@ pub(super) struct ArcOp {
 }
 
 impl Session {
-    pub(super) fn arc_press(&mut self, s: DVec2) {
+    pub(super) fn arc_press(&mut self, s: DVec2, n_clicks: u32) {
         self.update_hover(s);
+        self.arc_notice = None;
         let Some(i) = self.inference.clone() else {
             return;
         };
+        // A double-click on a corner rounds it.
+        if n_clicks == 2
+            && let Some(op) = &self.arc
+            && op.pts.len() == 1
+            && let Some(v) = prism_ops::vertex_at(self.work_model(), op.pts[0])
+        {
+            let corner = self.work_model().vertex(v);
+            self.arc = None;
+            self.fillet(corner, None);
+            return;
+        }
         let op = match self.arc.take() {
             None => {
                 self.last_op = None;
+                self.last_fillet = None;
                 ArcOp {
                     normal: self.plane_normal(&i),
                     pts: vec![i.point],
@@ -181,6 +194,28 @@ impl Session {
         }
     }
 
+    /// Round `corner` with `radius`, else the last typed radius, else a
+    /// tenth of the shorter edge there; say why if it cannot be done.
+    fn fillet(&mut self, corner: DVec3, radius: Option<f64>) {
+        let m = self.work_model();
+        let Some(r) = radius
+            .or(self.arc_radius)
+            .or_else(|| prism_ops::fillet::default_radius(m, corner))
+        else {
+            self.arc_notice = Some(prism_ops::fillet::NOT_A_CORNER);
+            return;
+        };
+        let c = Command::Fillet { corner, radius: r };
+        if let Some(why) = c.refusal(self.work_model()) {
+            self.arc_notice = Some(why);
+            self.last_fillet = None;
+        } else if self.run(c) {
+            self.last_fillet = Some(corner);
+        }
+        self.overlay_dirty = true;
+        self.refresh();
+    }
+
     fn commit_arc(&mut self, c: Command) {
         self.typed.clear();
         self.lock = prism_infer::Lock::None;
@@ -196,19 +231,31 @@ impl Session {
         if !is_arc(&self.tool) {
             return false;
         }
-        let Some(mut op) = self.arc.clone() else {
-            return true;
-        };
         let t = text.trim();
         let nf = self.number;
+        let radius = |t: &str| nf.length(t.strip_suffix(['r', 'R']).unwrap_or(t).trim());
+        let Some(mut op) = self.arc.clone() else {
+            // A radius for the next fillet; right after one, it changes it.
+            if let Some(r) = radius(t).map(f64::abs).filter(|r| *r > 0.0) {
+                self.arc_radius = Some(r);
+                if let Some(corner) = self.last_fillet {
+                    if self.doc.undo() {
+                        self.model_changed();
+                    }
+                    self.fillet(corner, Some(r));
+                }
+            }
+            return true;
+        };
         match (self.tool.as_str(), op.pts.len()) {
             (ARC | ARC2, 2) => {
                 let (a, b) = (op.pts[0], op.pts[1]);
                 let side = if bulge(&op) < 0.0 { -1.0 } else { 1.0 };
                 let h = match t.strip_suffix(['r', 'R']) {
-                    Some(r) => nf
-                        .length(r.trim())
-                        .and_then(|r| bulge_for_radius(a.distance(b), r.abs())),
+                    Some(r) => nf.length(r.trim()).and_then(|r| {
+                        self.arc_radius = Some(r.abs());
+                        bulge_for_radius(a.distance(b), r.abs())
+                    }),
                     None => nf.length(t).map(f64::abs),
                 };
                 let Some(h) = h else { return true };
@@ -255,9 +302,14 @@ impl Session {
     }
 
     pub(super) fn arc_hint(&self) -> Option<&'static str> {
+        if let Some(why) = self.arc_notice.filter(|_| is_arc(&self.tool)) {
+            return Some(why);
+        }
         let n = self.arc.as_ref().map_or(0, |op| op.pts.len());
         Some(match (self.tool.as_str(), n) {
-            (ARC | ARC2, 0) => "Click the start of the arc",
+            (ARC | ARC2, 0) => {
+                "Click the start of the arc · double-click a corner to round it (type a radius as 2r)"
+            }
             (ARC | ARC2, 1) => "Click the end of the arc",
             (ARC | ARC2, _) => {
                 "Move to bulge the arc (magenta: a half circle) · click to finish · type a bulge, or a radius as 2r, + Enter"

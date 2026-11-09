@@ -1466,3 +1466,23 @@ and inference, 2d the Circle and Polygon tools).
   with arcs (1500 cases run once).
 - `face_at` still goes by a face's corners, so it misses a lone disc
   (two seams); exact point-in-face for arcs is part 4's.
+
+## Exact Curves (part 3, step 3d): corner fillets
+
+- **`prism_ops::fillet`:** a corner (a point with exactly two straight
+  edges) is rounded by an arc tangent to both; the edges are trimmed and
+  the corner piece goes with the two short pieces (erased as the Eraser
+  does). Refusals: `NOT_A_CORNER`, `TOO_SHORT`. `Command::Fillet { corner,
+  radius }` (one undo step; `Command::refusal` gives the reason).
+- **Tools:** with any Arc tool, a double-click on a corner rounds it. The
+  radius is the last one typed (`2r`, or a bare length when nothing is
+  being drawn), else a tenth of the shorter edge. A radius typed right
+  after a fillet changes it (undo and redo with it). A refused fillet says
+  why in the status bar until the next click.
+- Tests: a square corner and a 60° corner (exact areas), the refusals,
+  the double-click and retyping in a session, a fillet in the undo
+  property test (1500 cases run once).
+- **Part 3 is done.** Not checked by eye in the app; brief 24's acceptance
+  asks the owner to draw arcs and fillets over MCP in a build.
+- Not built: a fillet over MCP has no test of its own (the brief asks
+  only for each kind of arc).

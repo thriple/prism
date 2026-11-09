@@ -8,7 +8,7 @@
 - **3a. The Arc tools:** 2-point, 3-point, centre and pie. *(Built.)*
 - **3b. Tangent inference:** tangent guides from arcs, and arcs that continue tangent from an edge. *(Built.)*
 - **3c. Offset with arcs:** Offset of faces whose loops have arcs. *(Built.)*
-- **3d. Corner fillets:** double-click a corner with the Arc tool.
+- **3d. Corner fillets:** double-click a corner with the Arc tool. *(Built.)*
 
 ## Requirements by step
 
@@ -75,6 +75,6 @@
 - **Property tests:** random arcs drawn among lines and circles keep the model check clean, and undo restores the model.
 
 ## Acceptance
-- [ ] Every step: tests and CI green, NOTES updated, pushed.
+- [x] Every step: tests and CI green, NOTES updated, pushed.
 - [ ] In a build made by hand, arcs and fillets drawn over MCP `use_tool` are round, tangent where they should be, and stay exact when moved.
-- [ ] PLAN 6.0 updated.
+- [x] PLAN 6.0 updated.

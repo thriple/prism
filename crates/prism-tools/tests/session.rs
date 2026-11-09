@@ -2223,3 +2223,36 @@ fn offset_of_a_disc_by_a_click_and_by_typing() {
     has_arc(&d, DVec3::new(3.0, 2.0, 0.0), 1.75, std::f64::consts::PI);
     valid(&d);
 }
+
+// ---------- Corner fillets (brief 24, step 3d) ----------
+
+#[test]
+fn a_double_click_on_a_corner_rounds_it_and_a_radius_retypes_it() {
+    use prism_tools::session::ARC;
+    use std::f64::consts::PI;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 2.0);
+    d.tool(ARC);
+    // No radius typed: a tenth of the shorter edge (0.2).
+    double_click(&mut d, DVec3::new(4.0, 2.0, 0.0));
+    has_arc(&d, DVec3::new(3.8, 1.8, 0.0), 0.2, PI / 2.0);
+    let corner = |r: f64| 8.0 - (r * r - PI * r * r / 4.0);
+    same(&areas(&d), &[corner(0.2)]);
+    // Retyped right after: 0.5, still one step.
+    d.typed("0.5r");
+    has_arc(&d, DVec3::new(3.5, 1.5, 0.0), 0.5, PI / 2.0);
+    same(&areas(&d), &[corner(0.5)]);
+    assert_eq!(arc_list(&d).len(), 1);
+    // The next corner takes the typed radius.
+    double_click(&mut d, DVec3::new(0.0, 2.0, 0.0));
+    has_arc(&d, DVec3::new(0.5, 1.5, 0.0), 0.5, PI / 2.0);
+    valid(&d);
+    undo(&mut d);
+    undo(&mut d);
+    same(&areas(&d), &[8.0]);
+    // Too big a radius is refused, and says so.
+    d.typed("3r");
+    double_click(&mut d, DVec3::new(4.0, 0.0, 0.0));
+    assert_eq!(d.s.hint(), prism_ops::fillet::TOO_SHORT);
+    same(&areas(&d), &[8.0]);
+}

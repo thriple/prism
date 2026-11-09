@@ -429,3 +429,67 @@ fn an_arc_ends_on_lines_it_reaches_and_is_not_drawn_twice() {
     assert!(again.edges.is_empty(), "the same arc again adds nothing");
     clean(&m);
 }
+
+// ---------- Corner fillets (brief 24, step 3d) ----------
+
+#[test]
+fn a_fillet_rounds_a_square_corner_exactly() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+    let r = 0.5;
+    assert!(prism_ops::fillet::fillet(
+        &mut m,
+        DVec3::new(2.0, 2.0, 0.0),
+        r
+    ));
+    assert_eq!(m.face_count(), 1);
+    assert!((areas(&m)[0] - (4.0 - (r * r - PI * r * r / 4.0))).abs() < 1e-9);
+    assert_eq!(arcs(&m), vec![(DVec3::new(1.5, 1.5, 0.0), 0.5)]);
+    assert!(
+        prism_ops::vertex_at(&m, DVec3::new(2.0, 2.0, 0.0)).is_none(),
+        "the corner is gone"
+    );
+    assert!(prism_ops::vertex_at(&m, DVec3::new(2.0, 1.5, 0.0)).is_some());
+    assert!(prism_ops::vertex_at(&m, DVec3::new(1.5, 2.0, 0.0)).is_some());
+    clean(&m);
+}
+
+#[test]
+fn a_fillet_on_a_sharp_corner_and_the_refusals() {
+    // A triangle's 60° corner at the origin.
+    let mut m = Model::new();
+    let (a, b, c) = (
+        DVec3::ZERO,
+        DVec3::new(4.0, 0.0, 0.0),
+        DVec3::new(2.0, 12f64.sqrt(), 0.0),
+    );
+    for (p, q) in [(a, b), (b, c), (c, a)] {
+        prism_ops::add_segment(&mut m, p, q);
+    }
+    let before = areas(&m)[0];
+    let r = 0.5;
+    assert!(prism_ops::fillet::fillet(&mut m, a, r));
+    let theta = PI / 3.0;
+    let t = r / (theta / 2.0).tan();
+    let piece = r * t - r * r * (PI - theta) / 2.0;
+    assert!((areas(&m)[0] - (before - piece)).abs() < 1e-9);
+    clean(&m);
+    // Too big for the edges, and a point that is not a corner.
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+    let before = m.clone();
+    assert_eq!(
+        prism_ops::fillet::refusal(&m, DVec3::new(2.0, 2.0, 0.0), 3.0),
+        Some(prism_ops::fillet::TOO_SHORT)
+    );
+    assert!(!prism_ops::fillet::fillet(
+        &mut m,
+        DVec3::new(2.0, 2.0, 0.0),
+        3.0
+    ));
+    assert_eq!(
+        prism_ops::fillet::refusal(&m, DVec3::new(1.0, 1.0, 0.0), 0.2),
+        Some(prism_ops::fillet::NOT_A_CORNER)
+    );
+    assert_eq!(m, before);
+}

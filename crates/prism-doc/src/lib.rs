@@ -50,6 +50,12 @@ pub enum Command {
         sweep: f64,
         pie: bool,
     },
+    /// Round the corner at `corner` with an arc of `radius` (the Arc tools'
+    /// double-click).
+    Fillet {
+        corner: DVec3,
+        radius: f64,
+    },
     /// A polygon through `points` (the Polygon tool), its sides one curve.
     Polygon {
         points: Vec<DVec3>,
@@ -308,6 +314,7 @@ impl Command {
             Command::Polygon { .. } => "Polygon",
             Command::Arc { pie: true, .. } => "Pie",
             Command::Arc { .. } => "Arc",
+            Command::Fillet { .. } => "Fillet",
             Command::Erase { .. } => "Erase",
             Command::PushPull { .. } => "Push/Pull",
             Command::Translate { .. } => "Move",
@@ -395,6 +402,11 @@ impl Command {
             },
             Command::Polygon { points } => Command::Polygon {
                 points: points.iter().map(|v| p(*v)).collect(),
+            },
+            Command::Fillet { corner, radius } => Command::Fillet {
+                corner: p(*corner),
+                // Groups scale evenly where fillets are made.
+                radius: dir(DVec3::X * *radius).length(),
             },
             Command::Arc {
                 centre,
@@ -579,6 +591,7 @@ impl Command {
             Command::PushPull { face, .. } if m.face_has_arcs(*face) => {
                 Some(prism_ops::pushpull::ARC_FACE_PULL)
             }
+            Command::Fillet { corner, radius } => prism_ops::fillet::refusal(m, *corner, *radius),
             Command::Translate { vertices, by } => {
                 arcs_refusal(m, vertices, &prism_math::DAffine3::from_translation(*by))
             }
@@ -618,6 +631,9 @@ impl Command {
                 prism_ops::add_circle(m, *centre, *normal, *radius);
             }
             Command::Polygon { points } => prism_ops::add_polygon(m, points),
+            Command::Fillet { corner, radius } => {
+                prism_ops::fillet::fillet(m, *corner, *radius);
+            }
             Command::Arc {
                 centre,
                 normal,
