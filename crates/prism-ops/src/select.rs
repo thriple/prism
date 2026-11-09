@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_topo::{EdgeId, FaceId, GuideId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, FaceId, GuideId, Model, VertexId};
 use serde::{Deserialize, Serialize};
 
 /// Some vertices, edges and faces.
@@ -63,25 +63,26 @@ pub fn remove(model: &mut Model, sel: &Selection) {
     for v in &sel.vertices {
         gone_edges.extend(model.edges().filter(|(_, e)| e.has(*v)).map(|(id, _)| id));
     }
-    let pairs: BTreeSet<(VertexId, VertexId)> = gone_edges
-        .iter()
-        .filter_map(|e| model.edge(*e))
-        .map(|e| (e.a, e.b))
-        .collect();
-    let uses = |a: VertexId, b: VertexId| pairs.contains(&(a.min(b), a.max(b)));
+    let uses =
+        |f: &prism_topo::Face, k: usize| f.loop_edges(k).any(|s| gone_edges.contains(&s.edge));
 
     let mut gone_faces = sel.faces.clone();
     let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
     for id in ids {
-        let Some(f) = model.face_mut(id) else {
+        let Some(f) = model.face(id) else {
             continue;
         };
-        if loop_pairs(&f.outer).any(|(a, b)| uses(a, b))
-            || sel.vertices.iter().any(|v| f.outer.contains(v))
-        {
+        if uses(f, 0) || sel.vertices.iter().any(|v| f.outer.contains(v)) {
             gone_faces.insert(id);
         }
-        f.holes.retain(|h| !loop_pairs(h).any(|(a, b)| uses(a, b)));
+        // Holes that run along a gone edge go.
+        let keep: Vec<bool> = (1..=f.holes.len()).map(|k| !uses(f, k)).collect();
+        if keep.contains(&false) {
+            model.edit_face(id, |f| {
+                let mut keep = keep.into_iter();
+                f.holes.retain(|_| keep.next().unwrap_or(true));
+            });
+        }
     }
     for f in gone_faces {
         model.remove_face(f);
@@ -232,54 +233,64 @@ pub fn duplicate(model: &mut Model, sel: &Selection) -> Selection {
         .iter()
         .map(|v| (*v, model.add_vertex(model.vertex(*v))))
         .collect();
-    let mut pairs: BTreeSet<(VertexId, VertexId)> = sel
-        .edges
-        .iter()
-        .filter_map(|e| model.edge(*e))
-        .map(|e| (e.a, e.b))
-        .collect();
     let faces: Vec<_> = sel
         .faces
         .iter()
         .filter_map(|f| model.face(*f).cloned())
         .collect();
+    let mut edges: BTreeSet<EdgeId> = sel.edges.clone();
     for f in &faces {
-        for l in f.loops() {
-            pairs.extend(loop_pairs(l).map(|(a, b)| (a.min(b), a.max(b))));
-        }
+        edges.extend(f.edge_ids());
     }
     let mut out = Selection::default();
-    for (a, b) in pairs {
-        if let Some(e) = model.add_edge(map[&a], map[&b]) {
-            out.edges.insert(e);
+    let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
+    for e in edges {
+        let Some(ed) = model.edge(e).copied() else {
+            continue;
+        };
+        if let Some(c) = model.add_edge(map[&ed.a], map[&ed.b]) {
+            out.edges.insert(c);
+            emap.insert(e, c);
         }
     }
     out.vertices = sel.vertices.iter().map(|v| map[v]).collect();
-    for mut f in faces {
-        f.outer = f.outer.iter().map(|v| map[v]).collect();
-        for h in &mut f.holes {
-            *h = h.iter().map(|v| map[v]).collect();
-        }
-        out.faces.insert(model.add_face(f));
+    for f in faces {
+        out.faces.insert(model.add_face(copy_face(&f, &map, &emap)));
     }
     out
+}
+
+/// A face with its vertices and edges swapped for their copies.
+fn copy_face(
+    f: &prism_topo::Face,
+    vmap: &BTreeMap<VertexId, VertexId>,
+    emap: &BTreeMap<EdgeId, EdgeId>,
+) -> prism_topo::Face {
+    let vs = |l: &[VertexId]| -> Vec<VertexId> { l.iter().map(|v| vmap[v]).collect() };
+    let edges = (0..=f.holes.len())
+        .map(|k| {
+            f.loop_edge_ids(k)
+                .iter()
+                .filter_map(|e| emap.get(e).copied())
+                .collect()
+        })
+        .collect();
+    prism_topo::Face::with_edges(
+        vs(&f.outer),
+        f.holes.iter().map(|h| vs(h)).collect(),
+        f.surface,
+        edges,
+    )
 }
 
 /// Move a selection out into a new model (Make Group). Edges and points
 /// that geometry left behind still uses are copied, not moved, so what
 /// stays is whole. The new model has new ids.
 pub fn take(model: &mut Model, sel: &Selection) -> Model {
-    let pair = |a: VertexId, b: VertexId| (a.min(b), a.max(b));
-    let by_ends: BTreeMap<(VertexId, VertexId), EdgeId> =
-        model.edges().map(|(id, e)| (pair(e.a, e.b), id)).collect();
     let mut edges: BTreeSet<EdgeId> = sel.edges.clone();
     for f in &sel.faces {
         if let Some(face) = model.face(*f) {
-            for (a, b) in face.loops().flat_map(|l| loop_pairs(l)) {
-                if let Some(e) = by_ends.get(&pair(a, b)) {
-                    edges.insert(*e);
-                }
-            }
+            edges.extend(face.edge_ids());
         }
     }
     let mut verts = sel.all_vertices(model);
@@ -295,19 +306,17 @@ pub fn take(model: &mut Model, sel: &Selection) -> Model {
         .iter()
         .map(|v| (*v, out.add_vertex(model.vertex(*v))))
         .collect();
+    let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
     for e in &edges {
-        if let Some(ed) = model.edge(*e) {
-            out.add_edge(vmap[&ed.a], vmap[&ed.b]);
+        if let Some(ed) = model.edge(*e)
+            && let Some(c) = out.add_edge(vmap[&ed.a], vmap[&ed.b])
+        {
+            emap.insert(*e, c);
         }
     }
-    let remap = |l: &[VertexId]| -> Vec<VertexId> { l.iter().map(|v| vmap[v]).collect() };
     for f in &sel.faces {
         if let Some(face) = model.face(*f) {
-            out.add_face(prism_topo::Face {
-                outer: remap(&face.outer),
-                holes: face.holes.iter().map(|h| remap(h)).collect(),
-                surface: face.surface,
-            });
+            out.add_face(copy_face(face, &vmap, &emap));
         }
     }
     for g in &sel.guides {
@@ -321,20 +330,14 @@ pub fn take(model: &mut Model, sel: &Selection) -> Model {
     for f in &sel.faces {
         model.remove_face(*f);
     }
-    let mut used: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
+    let mut used: BTreeSet<EdgeId> = BTreeSet::new();
     let mut used_verts: BTreeSet<VertexId> = BTreeSet::new();
     for (_, f) in model.faces() {
-        for l in f.loops() {
-            used_verts.extend(l.iter().copied());
-            for (a, b) in loop_pairs(l) {
-                used.insert(pair(a, b));
-            }
-        }
+        used_verts.extend(f.loops().flatten().copied());
+        used.extend(f.edge_ids());
     }
     for e in &edges {
-        if let Some(ed) = model.edge(*e)
-            && !used.contains(&pair(ed.a, ed.b))
-        {
+        if !used.contains(e) {
             model.remove_edge(*e);
         }
     }

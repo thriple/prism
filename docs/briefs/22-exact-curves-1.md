@@ -32,5 +32,5 @@ Arcs, new curve types, any new tool or visible change (parts 2 to 5).
 - The property tests also run the new check after every random operation.
 
 ## Acceptance
-- [ ] No visible change, all tests and CI green.
-- [ ] PLAN and NOTES are updated.
+- [x] No visible change, all tests and CI green.
+- [x] PLAN and NOTES are updated.

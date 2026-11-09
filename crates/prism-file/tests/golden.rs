@@ -160,6 +160,25 @@ fn golden_files_open_and_save_the_same() {
     assert!(seen >= 3, "the golden files are there");
 }
 
+/// Files saved before loops named their edges (schema 2, geometry layout
+/// 1) open with the same faces and edges, found from the loops.
+#[test]
+fn schema_2_files_open_with_their_edges() {
+    let mut seen = 0;
+    for e in std::fs::read_dir(dir().join("schema-2")).expect("docs/acceptance/files/schema-2") {
+        let path = e.expect("entry").path();
+        let old = read(&std::fs::read(&path).expect("read"))
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let name = path.file_name().expect("name");
+        let new = read(&std::fs::read(dir().join(name)).expect("read")).expect("reads");
+        assert_eq!(old.model(), new.model(), "{}", path.display());
+        assert!(prism_ops::check::problems(old.model()).is_empty());
+        assert_eq!(write(&old, APP), write(&new, APP), "{}", path.display());
+        seen += 1;
+    }
+    assert!(seen >= 5);
+}
+
 /// Files saved before groups (schema 1) still open, as they were.
 #[test]
 fn schema_1_files_still_open() {

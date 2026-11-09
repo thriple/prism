@@ -484,14 +484,14 @@ fn tiny(model: &Model, tol: &Tol) -> Found {
 
 /// Turn a face round.
 fn flip(model: &mut Model, id: FaceId) {
-    if let Some(f) = model.face_mut(id) {
+    model.edit_face(id, |f| {
         f.outer.reverse();
         for h in &mut f.holes {
             h.reverse();
         }
         let p = f.plane().flipped();
         f.surface = Surface::Plane(p);
-    }
+    });
 }
 
 /// Orient Faces: turn round every face the reversed check finds, or only
@@ -528,26 +528,15 @@ pub fn clean_envelope(model: &mut Model, only: Option<&BTreeSet<FaceId>>) -> usi
         return 0;
     }
     // Remove the faces, then edges no face uses any more.
-    let mut edges_of: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
+    let mut edges_of: BTreeSet<EdgeId> = BTreeSet::new();
     for f in &inside {
         if let Some(face) = model.remove_face(*f) {
-            for (a, b) in face.loops().flat_map(|l| loop_pairs(l)) {
-                edges_of.insert(pair(a, b));
-            }
+            edges_of.extend(face.edge_ids());
         }
     }
-    let used: BTreeSet<(VertexId, VertexId)> = model
-        .faces()
-        .flat_map(|(_, f)| {
-            f.loops()
-                .flat_map(|l| loop_pairs(l).map(|(a, b)| pair(a, b)))
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    for (a, b) in edges_of.difference(&used) {
-        if let Some(e) = model.edge_between(*a, *b) {
-            model.remove_edge(e);
-        }
+    let used: BTreeSet<EdgeId> = model.faces().flat_map(|(_, f)| f.edge_ids()).collect();
+    for e in edges_of.difference(&used) {
+        model.remove_edge(*e);
     }
     remove_lonely_points(model);
     inside.len()

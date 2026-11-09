@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Plane, Tol};
-use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 use crate::regions::{Fill, InsideTest, rebuild_plane};
 use crate::sticky::{crossing, on_segment_inside};
@@ -158,16 +158,7 @@ fn run(
         }
     }
 
-    let edge_ids: BTreeMap<(VertexId, VertexId), EdgeId> =
-        model.edges().map(|(id, e)| ((e.a, e.b), id)).collect();
-    let mut in_faces: BTreeSet<EdgeId> = BTreeSet::new();
-    for (_, f) in model.faces() {
-        for (a, b) in f.loops().flat_map(|l| loop_pairs(l)) {
-            if let Some(e) = edge_ids.get(&(a.min(b), a.max(b))) {
-                in_faces.insert(*e);
-            }
-        }
-    }
+    let in_faces: BTreeSet<EdgeId> = model.faces().flat_map(|(_, f)| f.edge_ids()).collect();
     let mut edges_at: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
     for (id, e) in model.edges() {
         edges_at.entry(e.a).or_default().push(id);
@@ -200,12 +191,7 @@ fn run(
             .collect();
         let mut edges: BTreeSet<EdgeId> = BTreeSet::new();
         for f in &faces {
-            let face = model.face(*f).expect("face");
-            for (a, b) in face.loops().flat_map(|l| loop_pairs(l)) {
-                if let Some(e) = edge_ids.get(&(a.min(b), a.max(b))) {
-                    edges.insert(*e);
-                }
-            }
+            edges.extend(model.face(*f).expect("face").edge_ids());
         }
         // Edges of faces in other planes can lie in this one too (a wall's
         // corner edge along this plane): take those at this plane's points.

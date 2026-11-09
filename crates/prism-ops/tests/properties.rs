@@ -51,6 +51,9 @@ fn build(ops: &[Op], k: f64) -> Model {
     let mut m = Model::new();
     for op in ops {
         apply(&mut m, op, k);
+        // After every operation, loops name the right edges.
+        let p = m.bookkeeping_problems();
+        assert!(p.is_empty(), "{p:?} after {op:?}");
     }
     m
 }

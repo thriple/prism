@@ -62,14 +62,66 @@ impl Edge {
 /// A face: an outer loop, any number of hole loops, and the surface.
 /// The outer loop winds counter-clockwise about the surface normal; holes
 /// wind the other way.
+///
+/// Each loop also names its edges (Exact Curves part 1): edge `i` of a loop
+/// joins vertex `i` to vertex `i + 1`. The model keeps them in step with
+/// the vertices when a face is added or edited, and when an edge is split.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Face {
     pub outer: Vec<VertexId>,
     pub holes: Vec<Vec<VertexId>>,
     pub surface: Surface,
+    /// One list per loop, the outer loop first. Empty until the face is in
+    /// a model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    edges: Vec<Vec<EdgeId>>,
+}
+
+/// Stands for an edge a loop needs but the model does not have. Ids are
+/// never this high; the model check reports it.
+const NO_EDGE: EdgeId = EdgeId(u32::MAX);
+
+/// One side of a loop: its edge, walked from `from` to `to`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Side {
+    pub edge: EdgeId,
+    pub from: VertexId,
+    pub to: VertexId,
 }
 
 impl Face {
+    /// A face from its loops and surface; the model finds its edges when
+    /// it is added.
+    pub fn new(outer: Vec<VertexId>, holes: Vec<Vec<VertexId>>, surface: Surface) -> Face {
+        Face {
+            outer,
+            holes,
+            surface,
+            edges: Vec::new(),
+        }
+    }
+
+    /// A face whose loops name their edges already (one list per loop, the
+    /// outer loop first), which saves looking them up.
+    pub fn with_edges(
+        outer: Vec<VertexId>,
+        holes: Vec<Vec<VertexId>>,
+        surface: Surface,
+        edges: Vec<Vec<EdgeId>>,
+    ) -> Face {
+        Face {
+            outer,
+            holes,
+            surface,
+            edges,
+        }
+    }
+
+    /// The edges of loop `k` as stored, one per side.
+    pub fn loop_edge_ids(&self, k: usize) -> &[EdgeId] {
+        self.edges.get(k).map(|e| e.as_slice()).unwrap_or(&[])
+    }
+
     /// The outer loop, then each hole.
     pub fn loops(&self) -> impl Iterator<Item = &Vec<VertexId>> {
         std::iter::once(&self.outer).chain(self.holes.iter())
@@ -81,6 +133,35 @@ impl Face {
 
     pub fn uses_vertex(&self, v: VertexId) -> bool {
         self.loops().any(|l| l.contains(&v))
+    }
+
+    /// The sides of loop `k` (0 is the outer loop, then the holes), in
+    /// order. A side whose edge is missing is left out.
+    pub fn loop_edges(&self, k: usize) -> impl Iterator<Item = Side> + '_ {
+        let l = self.loops().nth(k).map(|l| l.as_slice()).unwrap_or(&[]);
+        let edges = self.edges.get(k).map(|e| e.as_slice()).unwrap_or(&[]);
+        (0..l.len()).filter_map(move |i| {
+            let edge = *edges.get(i)?;
+            (edge != NO_EDGE).then(|| Side {
+                edge,
+                from: l[i],
+                to: l[(i + 1) % l.len()],
+            })
+        })
+    }
+
+    /// The sides of every loop, the outer loop first.
+    pub fn sides(&self) -> impl Iterator<Item = Side> + '_ {
+        (0..1 + self.holes.len()).flat_map(move |k| self.loop_edges(k))
+    }
+
+    /// The edges of every loop.
+    pub fn edge_ids(&self) -> impl Iterator<Item = EdgeId> + '_ {
+        self.sides().map(|s| s.edge)
+    }
+
+    pub fn uses_edge(&self, e: EdgeId) -> bool {
+        self.edges.iter().flatten().any(|x| *x == e)
     }
 }
 
@@ -95,6 +176,7 @@ fn is_zero(n: &u32) -> bool {
 
 /// The model: plain data, cloned to make undo snapshots.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ModelData")]
 pub struct Model {
     vertices: BTreeMap<VertexId, DVec3>,
     edges: BTreeMap<EdgeId, Edge>,
@@ -106,6 +188,41 @@ pub struct Model {
     next_face: u32,
     #[serde(default, skip_serializing_if = "is_zero")]
     next_guide: u32,
+}
+
+/// The model as saved in JSON (undo journals, schema 0 files). Faces saved
+/// before loops named their edges find them when read.
+#[derive(Deserialize)]
+struct ModelData {
+    vertices: BTreeMap<VertexId, DVec3>,
+    edges: BTreeMap<EdgeId, Edge>,
+    faces: BTreeMap<FaceId, Face>,
+    #[serde(default)]
+    guides: BTreeMap<GuideId, Guide>,
+    next_vertex: u32,
+    next_edge: u32,
+    next_face: u32,
+    #[serde(default)]
+    next_guide: u32,
+}
+
+impl TryFrom<ModelData> for Model {
+    type Error = String;
+
+    fn try_from(d: ModelData) -> Result<Model, String> {
+        let mut m = Model {
+            vertices: d.vertices,
+            edges: d.edges,
+            faces: d.faces,
+            guides: d.guides,
+            next_vertex: d.next_vertex,
+            next_edge: d.next_edge,
+            next_face: d.next_face,
+            next_guide: d.next_guide,
+        };
+        m.link_unlinked()?;
+        Ok(m)
+    }
 }
 
 /// A model taken apart: every item with its id, and the id counters.
@@ -238,23 +355,33 @@ impl Model {
         self.edges.remove(&id);
     }
 
-    /// Replace edge `id` by two edges through `mid`, and put `mid` into every
-    /// face loop that ran along the edge. Returns the two new edges.
+    /// Replace edge `id` by two edges through `mid`, and put `mid` and both
+    /// halves into every face loop that ran along the edge. Returns the two
+    /// new edges.
     pub fn split_edge(&mut self, id: EdgeId, mid: VertexId) -> Option<(EdgeId, EdgeId)> {
         let e = *self.edges.get(&id)?;
         self.edges.remove(&id);
         let first = self.add_edge(e.a, mid)?;
         let second = self.add_edge(mid, e.b)?;
         for face in self.faces.values_mut() {
-            for l in std::iter::once(&mut face.outer).chain(face.holes.iter_mut()) {
-                let n = l.len();
-                for i in 0..n {
-                    let (x, y) = (l[i], l[(i + 1) % n]);
-                    if (x == e.a && y == e.b) || (x == e.b && y == e.a) {
-                        l.insert(i + 1, mid);
-                        break;
-                    }
-                }
+            let Face {
+                outer,
+                holes,
+                edges,
+                ..
+            } = face;
+            for (l, le) in std::iter::once(outer).chain(holes.iter_mut()).zip(edges) {
+                let Some(i) = le.iter().position(|x| *x == id) else {
+                    continue;
+                };
+                // Walked a to b, the halves come first then second.
+                let halves = if l[i] == e.a {
+                    [first, second]
+                } else {
+                    [second, first]
+                };
+                l.insert(i + 1, mid);
+                le.splice(i..=i, halves);
             }
         }
         Some((first, second))
@@ -262,7 +389,10 @@ impl Model {
 
     // ---- faces ----
 
-    pub fn add_face(&mut self, face: Face) -> FaceId {
+    /// Add a face. Its loops find their edges: edges it was given that
+    /// still join the right vertices are kept, the rest are looked up.
+    pub fn add_face(&mut self, mut face: Face) -> FaceId {
+        self.link(&mut face);
         let id = FaceId(self.next_face);
         self.next_face += 1;
         self.faces.insert(id, face);
@@ -273,8 +403,63 @@ impl Model {
         self.faces.get(&id)
     }
 
-    pub fn face_mut(&mut self, id: FaceId) -> Option<&mut Face> {
-        self.faces.get_mut(&id)
+    /// Change a face (its loops or surface); its loops find their edges
+    /// again afterwards, as in [`Model::add_face`].
+    pub fn edit_face<R>(&mut self, id: FaceId, change: impl FnOnce(&mut Face) -> R) -> Option<R> {
+        let mut face = self.faces.remove(&id)?;
+        let r = change(&mut face);
+        self.link(&mut face);
+        self.faces.insert(id, face);
+        Some(r)
+    }
+
+    /// Find a face's edges again, after edges it needed were added.
+    pub fn relink_face(&mut self, id: FaceId) {
+        self.edit_face(id, |_| ());
+    }
+
+    /// Give each loop of `face` its edges: an edge it already names that
+    /// joins the same two vertices is kept, else the edge between them.
+    fn link(&self, face: &mut Face) {
+        let named: BTreeMap<(VertexId, VertexId), EdgeId> = std::mem::take(&mut face.edges)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| self.edges.get(&e).map(|x| ((x.a, x.b), e)))
+            .collect();
+        let find = |a: VertexId, b: VertexId| {
+            named
+                .get(&(a.min(b), a.max(b)))
+                .copied()
+                .or_else(|| self.edge_between(a, b))
+                .unwrap_or(NO_EDGE)
+        };
+        face.edges = face
+            .loops()
+            .map(|l| loop_pairs(l).map(|(a, b)| find(a, b)).collect())
+            .collect();
+    }
+
+    /// Link every face that names no edges (one saved before loops named
+    /// them). Refused if a loop needs an edge the model does not have.
+    fn link_unlinked(&mut self) -> Result<(), String> {
+        let ids: Vec<FaceId> = self
+            .faces
+            .iter()
+            .filter(|(_, f)| f.edges.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            self.relink_face(id);
+            if self.faces[&id]
+                .edges
+                .iter()
+                .flatten()
+                .any(|e| *e == NO_EDGE)
+            {
+                return Err(format!("face {id:?} uses a missing edge"));
+            }
+        }
+        Ok(())
     }
 
     pub fn faces(&self) -> impl Iterator<Item = (FaceId, &Face)> + '_ {
@@ -303,19 +488,10 @@ impl Model {
 
     /// For every edge, the faces whose loops use it.
     pub fn edge_faces(&self) -> BTreeMap<EdgeId, Vec<FaceId>> {
-        // Look edges up by their two vertices (a scan per pair was O(n²)).
-        let by_ends: BTreeMap<(VertexId, VertexId), EdgeId> = self
-            .edges()
-            .map(|(id, e)| ((e.a.min(e.b), e.a.max(e.b)), id))
-            .collect();
         let mut map: BTreeMap<EdgeId, Vec<FaceId>> = BTreeMap::new();
         for (fid, f) in &self.faces {
-            for l in f.loops() {
-                for (a, b) in loop_pairs(l) {
-                    if let Some(e) = by_ends.get(&(a.min(b), a.max(b))) {
-                        map.entry(*e).or_default().push(*fid);
-                    }
-                }
+            for e in f.edge_ids() {
+                map.entry(e).or_default().push(*fid);
             }
         }
         map
@@ -384,12 +560,14 @@ impl Model {
         for (id, p) in other.vertices() {
             vmap.insert(id, self.add_vertex(p));
         }
-        for (_, e) in other.edges() {
+        let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
+        for (old, e) in other.edges() {
             // The vertices are all new, so the edges cannot be here yet.
             if let (Some(a), Some(b)) = (vmap.get(&e.a), vmap.get(&e.b))
                 && a != b
             {
                 let id = self.add_new_edge(*a, *b);
+                emap.insert(old, id);
                 if let Some(ne) = self.edges.get_mut(&id) {
                     ne.curve = e.curve;
                 }
@@ -398,11 +576,17 @@ impl Model {
         let map = |l: &[VertexId]| l.iter().filter_map(|v| vmap.get(v).copied()).collect();
         let mut faces = Vec::new();
         for (_, f) in other.faces() {
-            faces.push(self.add_face(Face {
-                outer: map(&f.outer),
-                holes: f.holes.iter().map(|h| map(h)).collect(),
-                surface: f.surface,
-            }));
+            let edges = f
+                .edges
+                .iter()
+                .map(|l| l.iter().map(|e| *emap.get(e).unwrap_or(&NO_EDGE)).collect())
+                .collect();
+            faces.push(self.add_face(Face::with_edges(
+                map(&f.outer),
+                f.holes.iter().map(|h| map(h)).collect(),
+                f.surface,
+                edges,
+            )));
         }
         for (_, g) in other.guides() {
             self.add_guide(*g);
@@ -461,7 +645,7 @@ impl Model {
         }) {
             return Err(format!("face {id:?} has no finite plane"));
         }
-        let m = Model {
+        let mut m = Model {
             vertices,
             edges: ids(p.edges, "edge", |k: EdgeId| k.0 < c.edge)?,
             faces: ids(p.faces, "face", |k: FaceId| k.0 < c.face)?,
@@ -471,6 +655,7 @@ impl Model {
             next_face: c.face,
             next_guide: c.guide,
         };
+        m.link_unlinked()?;
         let problems = m.bookkeeping_problems();
         if let Some(first) = problems.first() {
             return Err(first.clone());
@@ -498,7 +683,8 @@ impl Model {
     }
 
     /// Bookkeeping problems (empty if none): face loops use existing edges
-    /// and vertices, edges join existing vertices, no edge is repeated.
+    /// and vertices and name those edges in order, edges join existing
+    /// vertices, no edge is repeated.
     pub fn bookkeeping_problems(&self) -> Vec<String> {
         let mut out = Vec::new();
         let mut pairs = std::collections::BTreeSet::new();
@@ -516,13 +702,34 @@ impl Model {
             }
         }
         for (id, f) in &self.faces {
-            for l in f.loops() {
+            if f.edges.len() != 1 + f.holes.len() {
+                out.push(format!(
+                    "face {id:?} names edges for {} loops",
+                    f.edges.len()
+                ));
+            }
+            for (k, l) in f.loops().enumerate() {
                 if l.len() < 3 {
                     out.push(format!("face {id:?} has a loop of {} vertices", l.len()));
                 }
-                for (a, b) in loop_pairs(l) {
+                let named = f.loop_edge_ids(k);
+                if named.len() != l.len() && f.edges.len() == 1 + f.holes.len() {
+                    out.push(format!(
+                        "face {id:?} loop {k} has {} vertices but {} edges",
+                        l.len(),
+                        named.len()
+                    ));
+                }
+                for (i, (a, b)) in loop_pairs(l).enumerate() {
                     if !pairs.contains(&(a.min(b), a.max(b))) {
                         out.push(format!("face {id:?} uses a missing edge {a:?}-{b:?}"));
+                        continue;
+                    }
+                    let Some(e) = named.get(i) else { continue };
+                    if !self.edges.get(e).is_some_and(|x| x.has(a) && x.has(b)) {
+                        out.push(format!(
+                            "face {id:?} loop {k} side {i} names edge {e:?}, which does not join {a:?}-{b:?}"
+                        ));
                     }
                 }
             }
@@ -545,11 +752,11 @@ mod tests {
         for i in 0..4 {
             m.add_edge(v[i], v[(i + 1) % 4]);
         }
-        m.add_face(Face {
-            outer: v.to_vec(),
-            holes: vec![],
-            surface: Surface::Plane(Plane::new(DVec3::ZERO, DVec3::Z)),
-        });
+        m.add_face(Face::new(
+            v.to_vec(),
+            vec![],
+            Surface::Plane(Plane::new(DVec3::ZERO, DVec3::Z)),
+        ));
         v
     }
 
@@ -593,5 +800,88 @@ mod tests {
         let back = Model::from_json(&text).expect("reads");
         assert_eq!(back, m);
         assert_eq!(back.to_json(), text);
+    }
+
+    fn sides_of(f: &Face) -> Vec<(VertexId, VertexId, EdgeId)> {
+        f.sides().map(|s| (s.from, s.to, s.edge)).collect()
+    }
+
+    #[test]
+    fn a_face_finds_its_edges() {
+        let mut m = Model::new();
+        let v = square(&mut m);
+        let f = m.face(FaceId(0)).expect("face");
+        let want: Vec<_> = (0..4)
+            .map(|i| {
+                let (a, b) = (v[i], v[(i + 1) % 4]);
+                (a, b, m.edge_between(a, b).expect("edge"))
+            })
+            .collect();
+        assert_eq!(sides_of(f), want);
+        assert_eq!(m.edge_faces().len(), 4);
+    }
+
+    #[test]
+    fn splitting_an_edge_relinks_every_face_using_it() {
+        let mut m = Model::new();
+        let v = square(&mut m);
+        // A second face on the same first edge, walked the other way.
+        let w = m.add_vertex(DVec3::new(2.0, -3.0, 0.0));
+        m.add_edge(v[0], w);
+        m.add_edge(w, v[1]);
+        m.add_face(Face::new(
+            vec![v[1], v[0], w],
+            vec![],
+            Surface::Plane(Plane::new(DVec3::ZERO, DVec3::Z)),
+        ));
+        let e = m.edge_between(v[0], v[1]).expect("edge");
+        let mid = m.add_vertex(DVec3::new(2.0, 0.0, 0.0));
+        let (first, second) = m.split_edge(e, mid).expect("splits");
+        assert!(m.bookkeeping_problems().is_empty());
+        let back = m.face(FaceId(1)).expect("face");
+        assert_eq!(back.outer, vec![v[1], mid, v[0], w]);
+        assert_eq!(&back.loop_edge_ids(0)[..2], &[second, first]);
+        assert!(!m.faces().any(|(_, f)| f.uses_edge(e)));
+    }
+
+    #[test]
+    fn the_check_finds_loop_edges_out_of_step() {
+        let mut m = Model::new();
+        let v = square(&mut m);
+        // Change the loop behind the model's back: its edges are now wrong.
+        let mut f = m.face(FaceId(0)).expect("face").clone();
+        f.outer.rotate_left(1);
+        m.faces.insert(FaceId(0), f);
+        let p = m.bookkeeping_problems();
+        assert!(p.iter().any(|x| x.contains("does not join")), "{p:?}");
+        // Editing through the model finds them again.
+        m.relink_face(FaceId(0));
+        assert!(m.bookkeeping_problems().is_empty());
+        // A loop whose edge is gone.
+        m.remove_edge(m.edge_between(v[0], v[1]).expect("edge"));
+        assert!(!m.bookkeeping_problems().is_empty());
+    }
+
+    #[test]
+    fn faces_saved_without_edges_find_them() {
+        let mut m = Model::new();
+        square(&mut m);
+        let mut parts = m.to_parts();
+        let (id, f) = &parts.faces[0];
+        parts.faces[0] = (*id, Face::new(f.outer.clone(), f.holes.clone(), f.surface));
+        assert_eq!(Model::from_parts(parts).expect("reads"), m);
+        let old = m.to_json().replace(r#","edges":[[0,1,2,3]]"#, "");
+        assert!(!old.contains(r#""edges":[["#), "{old}");
+        assert_eq!(Model::from_json(&old).expect("reads"), m);
+    }
+
+    #[test]
+    fn appending_keeps_the_loop_edges() {
+        let mut m = Model::new();
+        square(&mut m);
+        let mut both = m.clone();
+        let faces = both.append(&m);
+        assert!(both.bookkeeping_problems().is_empty());
+        assert_eq!(both.face(faces[0]).expect("face").sides().count(), 4);
     }
 }

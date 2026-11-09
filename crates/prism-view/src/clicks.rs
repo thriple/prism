@@ -5,7 +5,7 @@
 
 use prism_math::DVec2;
 use prism_ops::select::{Selection, connected};
-use prism_topo::{Model, loop_pairs};
+use prism_topo::Model;
 
 use crate::pick::Hit;
 
@@ -61,11 +61,7 @@ pub fn click_select(model: &Model, hit: Option<Hit>, n: u32) -> Selection {
             if n == 2
                 && let Some(face) = model.face(f)
             {
-                for (a, b) in loop_pairs(&face.outer) {
-                    if let Some(e) = model.edge_between(a, b) {
-                        sel.edges.insert(e);
-                    }
-                }
+                sel.edges.extend(face.loop_edges(0).map(|s| s.edge));
             }
         }
     }

@@ -394,9 +394,9 @@ fn saved_sessions_replay() {
         if e.path().extension().is_some_and(|x| x == "json") {
             let text = std::fs::read_to_string(e.path()).expect("read");
             let r: Recording = serde_json::from_str(&text).expect("a recording");
-            assert_eq!(
-                Session::replay(&r).model().geometry_json(),
-                r.result,
+            // Recordings saved before loops named their edges still match.
+            assert!(
+                r.ends_with(Session::replay(&r).model()),
                 "{}",
                 e.path().display()
             );

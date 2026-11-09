@@ -159,6 +159,16 @@ pub struct Recording {
     pub result: String,
 }
 
+impl Recording {
+    /// Whether `model` is the one this recording ended with. A recording
+    /// saved before loops named their edges is read back as a model (which
+    /// finds them), so it still matches.
+    pub fn ends_with(&self, model: &Model) -> bool {
+        let now = model.geometry_json();
+        now == self.result || Model::from_json(&self.result).is_ok_and(|m| m.geometry_json() == now)
+    }
+}
+
 /// What the app should do after an event.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Response {

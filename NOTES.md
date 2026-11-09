@@ -1205,3 +1205,40 @@ Brief: `docs/briefs/21-mcp-server.md`.
   parts), even where a part has built one. Written into brief 22 and the
   PLAN row.
 
+
+## Exact Curves (part 1): loops list their edges
+- **What changed:** each face loop names its edges (`Face` keeps a private
+  list per loop; edge `i` joins vertex `i` to `i + 1`). `Face::new` makes
+  a face (the model finds its edges when it is added); `Face::with_edges`
+  gives them (imports, copies, files: no lookups). `loop_edges(k)`,
+  `sides()`, `edge_ids()` and `uses_edge()` read them.
+- **Kept in step by the model:** `add_face` and `edit_face` (which replaces
+  `face_mut`) link the loops: an edge the face named that still joins the
+  same two vertices is kept, the rest are looked up. `relink_face` is for
+  code that adds edges after editing loops (moving a box top, Push/Pull's
+  sliding walls were reordered so the edges come first). `split_edge` puts
+  both halves into each loop directly. A loop with no edge for a side keeps
+  a marker the check reports, as the missing edge was before.
+- **Check:** `bookkeeping_problems` also finds a loop whose edges are
+  missing, too few, or join other vertices. The property tests run it after
+  every random operation (both the Core Model ones and the undo test of all
+  17 commands).
+- **Walks that looked edges up by their ends now use the stored edges:**
+  Erase, Copy, Make Group, Push/Pull, solids, Model Health's inside-face
+  removal, the coplanar rule (`settle`), double-click selection.
+- **Files:** schema 3, geometry layout 2 (loop edges saved). Layout 1 is
+  read by finding the edges. The schema 2 golden files were kept in
+  `docs/acceptance/files/schema-2/`; a test opens each and checks it gives
+  the same model as the new golden file. JSON (journals, recordings, schema
+  0) without loop edges finds them on reading. Recorded sessions compare
+  through `Recording::ends_with` (reads the recorded result as a model),
+  so old recordings still match; the MCP `replay_session` uses it too.
+- **Tests changed only in form:** helpers that built `Face { .. }` by hand
+  use `Face::new`, and the saved-sessions test uses `ends_with`.
+- **Left for part 2 (arcs):**
+  - linking by ends cannot tell two edges between the same two vertices
+    apart. Code that makes such loops must give their edges
+    (`with_edges`, `split_edge`);
+  - face finding (`regions`), Model Health's orientation (`runs`) and the
+    reach rule still key edges by their two vertices. They are right for
+    straight edges and need edge ids when arcs come.

@@ -167,6 +167,8 @@ fn undo_and_redo_of_every_operation_are_exact() {
         let mut d = base.clone();
         let before = d.model().geometry_json();
         assert!(d.run(c.clone()), "{} changed something", c.name());
+        let p = d.model().bookkeeping_problems();
+        assert!(p.is_empty(), "{}: {p:?}", c.name());
         let after = d.model().to_json();
         d.undo();
         assert_eq!(d.model().geometry_json(), before, "undo {}", c.name());
@@ -191,6 +193,9 @@ proptest! {
                 && d.run(c.clone())
             {
                 ran += 1;
+                // Loops still name the right edges (Exact Curves part 1).
+                let p = d.model().bookkeeping_problems();
+                prop_assert!(p.is_empty(), "{}: {:?}", c.name(), p);
             }
         }
         let end = d.model().to_json();

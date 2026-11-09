@@ -123,9 +123,7 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
         .flatten()
         .all(|v| plane.contains(model.vertex(*v), tol));
     if all_on {
-        if let Some(f) = model.face_mut(id) {
-            f.surface = Surface::Plane(plane);
-        }
+        model.edit_face(id, |f| f.surface = Surface::Plane(plane));
         return;
     }
     if !face.holes.is_empty() {
@@ -135,9 +133,7 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
             let p = model.vertex(*v);
             model.set_vertex(*v, plane.project(p));
         }
-        if let Some(f) = model.face_mut(id) {
-            f.surface = Surface::Plane(plane);
-        }
+        model.edit_face(id, |f| f.surface = Surface::Plane(plane));
         return;
     }
     model.remove_face(id);
@@ -146,11 +142,7 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
             for w in 0..piece.len() {
                 model.add_edge(piece[w], piece[(w + 1) % piece.len()]);
             }
-            model.add_face(Face {
-                outer: piece,
-                holes: vec![],
-                surface: Surface::Plane(pl),
-            });
+            model.add_face(Face::new(piece, vec![], Surface::Plane(pl)));
         }
     }
 }
@@ -253,50 +245,49 @@ fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
     let mut seen: BTreeMap<Vec<VertexId>, (FaceId, Vec<VertexId>)> = BTreeMap::new();
     let mut gone: Vec<FaceId> = Vec::new();
     for id in ids {
-        let Some(f) = model.face_mut(id) else {
-            continue;
-        };
-        let fix = |l: &mut Vec<VertexId>| {
-            for v in l.iter_mut() {
-                *v = map(*v);
+        model.edit_face(id, |f| {
+            let fix = |l: &mut Vec<VertexId>| {
+                for v in l.iter_mut() {
+                    *v = map(*v);
+                }
+                l.dedup();
+                while l.len() > 1 && l.first() == l.last() {
+                    l.pop();
+                }
+            };
+            fix(&mut f.outer);
+            for h in &mut f.holes {
+                fix(h);
             }
-            l.dedup();
-            while l.len() > 1 && l.first() == l.last() {
-                l.pop();
+            f.holes.retain(|h| h.len() >= 3);
+            // Same outline and same holes: the same face.
+            let mut key = f.outer.clone();
+            key.sort();
+            let mut holes: Vec<Vec<VertexId>> = f
+                .holes
+                .iter()
+                .map(|h| {
+                    let mut h = h.clone();
+                    h.sort();
+                    h
+                })
+                .collect();
+            holes.sort();
+            for h in holes {
+                key.push(VertexId(u32::MAX));
+                key.extend(h);
             }
-        };
-        fix(&mut f.outer);
-        for h in &mut f.holes {
-            fix(h);
-        }
-        f.holes.retain(|h| h.len() >= 3);
-        // Same outline and same holes: the same face.
-        let mut key = f.outer.clone();
-        key.sort();
-        let mut holes: Vec<Vec<VertexId>> = f
-            .holes
-            .iter()
-            .map(|h| {
-                let mut h = h.clone();
-                h.sort();
-                h
-            })
-            .collect();
-        holes.sort();
-        for h in holes {
-            key.push(VertexId(u32::MAX));
-            key.extend(h);
-        }
-        if f.outer.len() < 3 {
-            gone.push(id);
-        } else if let Some((other, loop_)) = seen.get(&key) {
-            if !same_direction(loop_, &f.outer) {
-                gone.push(*other);
+            if f.outer.len() < 3 {
+                gone.push(id);
+            } else if let Some((other, loop_)) = seen.get(&key) {
+                if !same_direction(loop_, &f.outer) {
+                    gone.push(*other);
+                }
+                gone.push(id);
+            } else {
+                seen.insert(key, (id, f.outer.clone()));
             }
-            gone.push(id);
-        } else {
-            seen.insert(key, (id, f.outer.clone()));
-        }
+        });
     }
     for id in gone {
         model.remove_face(id);
@@ -358,11 +349,11 @@ pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
             model.remove_face(id);
             continue;
         };
-        if let Some(f) = model.face_mut(id) {
+        model.edit_face(id, |f| {
             f.outer = outer;
             f.holes = holes;
             f.surface = Surface::Plane(plane);
-        }
+        });
     }
 }
 
@@ -420,19 +411,18 @@ fn keep_straight(model: &mut Model, vs: &BTreeSet<VertexId>) {
         let faces: Vec<FaceId> = faces.iter().map(|f| f.0).collect();
         let w = model.add_vertex(model.vertex(v));
         let mut pairs = Vec::new();
-        for id in faces {
-            let Some(face) = model.face_mut(id) else {
-                continue;
-            };
-            for l in std::iter::once(&mut face.outer).chain(face.holes.iter_mut()) {
-                let n = l.len();
-                for i in 0..n {
-                    if l[i] == v {
-                        l[i] = w;
-                        pairs.push((l[(i + n - 1) % n], l[(i + 1) % n]));
+        for id in &faces {
+            model.edit_face(*id, |face| {
+                for l in std::iter::once(&mut face.outer).chain(face.holes.iter_mut()) {
+                    let n = l.len();
+                    for i in 0..n {
+                        if l[i] == v {
+                            l[i] = w;
+                            pairs.push((l[(i + n - 1) % n], l[(i + 1) % n]));
+                        }
                     }
                 }
-            }
+            });
         }
         for (a, b) in pairs {
             for x in [a, b] {
@@ -445,6 +435,10 @@ fn keep_straight(model: &mut Model, vs: &BTreeSet<VertexId>) {
                     model.remove_edge(e);
                 }
             }
+        }
+        // The new edges are there now.
+        for id in faces {
+            model.relink_face(id);
         }
     }
 }

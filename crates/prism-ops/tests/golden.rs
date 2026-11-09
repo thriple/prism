@@ -64,11 +64,11 @@ pub fn cube(k: f64) -> Model {
         let pts = m.points(&outer);
         let n = newell(&pts);
         let centre = pts.iter().copied().sum::<DVec3>() / 4.0;
-        m.add_face(Face {
+        m.add_face(Face::new(
             outer,
-            holes: vec![],
-            surface: Surface::Plane(Plane::new(centre, n)),
-        });
+            vec![],
+            Surface::Plane(Plane::new(centre, n)),
+        ));
     }
     m
 }

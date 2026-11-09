@@ -425,11 +425,10 @@ fn replay(args: &Value) -> Result<Value, String> {
     let r: prism_tools::Recording = serde_json::from_str(&text)
         .map_err(|e| format!("That is not a recorded session ({e})."))?;
     let s = prism_tools::Session::replay(&r);
-    let end = s.model().geometry_json();
     let m = s.model();
     Ok(json!({
         "events": r.events.len(),
-        "matches_recording": if r.result.is_empty() { Value::Null } else { json!(end == r.result) },
+        "matches_recording": if r.result.is_empty() { Value::Null } else { json!(r.ends_with(m)) },
         "end": {"faces": m.face_count(), "edges": m.edge_count(), "points": m.vertex_count(), "tool": s.tool()},
     }))
 }

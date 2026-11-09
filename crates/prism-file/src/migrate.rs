@@ -46,6 +46,9 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             0 => from_0(raw)?,
             // Schema 2 adds groups; a schema 1 file has none.
             1 => raw,
+            // Schema 3 writes geometry layout 2; layout 1 entries are read
+            // by finding each loop's edges (`geometry::decode`).
+            2 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

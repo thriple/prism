@@ -261,11 +261,7 @@ fn make_face(model: &Model, r: &Region, frame: &Frame, up: bool) -> Face {
     let pts = model.points(&outer);
     let centroid = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
     let normal = if up { frame.normal } else { -frame.normal };
-    Face {
-        outer,
-        holes,
-        surface: Surface::Plane(Plane::new(centroid, normal)),
-    }
+    Face::new(outer, holes, Surface::Plane(Plane::new(centroid, normal)))
 }
 
 /// Which way a coplanar face sharing an edge with the region faces, if any.

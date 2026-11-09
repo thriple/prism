@@ -71,10 +71,9 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     };
     let before_ids: BTreeSet<prism_topo::EdgeId> = model.edges().map(|(id, _)| id).collect();
     let edge_faces = model.edge_faces();
-    let others = |a: VertexId, b: VertexId| -> Vec<FaceId> {
-        model
-            .edge_between(a, b)
-            .and_then(|e| edge_faces.get(&e))
+    let others = |e: prism_topo::EdgeId| -> Vec<FaceId> {
+        edge_faces
+            .get(&e)
             .map(|v| v.iter().copied().filter(|x| *x != face).collect())
             .unwrap_or_default()
     };
@@ -103,8 +102,9 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let mut any_slide = false;
     let mut walls_at: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
     let mut slides: Vec<((VertexId, VertexId), Vec<FaceId>)> = Vec::new();
-    for &(a, b) in &pairs {
-        let o = others(a, b);
+    for side in f.sides() {
+        let (a, b) = (side.from, side.to);
+        let o = others(side.edge);
         if o.is_empty() {
             if line_behind(a) && line_behind(b) {
                 slides.push(((a, b), o));
@@ -178,31 +178,31 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             continue;
         }
         for g in neighbours {
-            let Some(gf) = model.face_mut(*g) else {
-                continue;
-            };
-            for l in std::iter::once(&mut gf.outer).chain(gf.holes.iter_mut()) {
-                let len = l.len();
-                let Some(i) = (0..len).find(|&i| key(l[i], l[(i + 1) % len]) == key(*a, *b)) else {
-                    continue;
-                };
-                let (x, y) = (l[i], l[(i + 1) % len]);
-                let mut mid = Vec::new();
-                if staying.contains(&x) {
-                    mid.push(to[&x]);
-                }
-                if staying.contains(&y) {
-                    mid.push(to[&y]);
-                }
-                for (k, m) in mid.into_iter().enumerate() {
-                    l.insert(i + 1 + k, m);
-                }
-                break;
-            }
             let chain: Vec<VertexId> = [*a, to[a], to[b], *b].into();
             for w in chain.windows(2) {
                 model.add_edge(w[0], w[1]);
             }
+            model.edit_face(*g, |gf| {
+                for l in std::iter::once(&mut gf.outer).chain(gf.holes.iter_mut()) {
+                    let len = l.len();
+                    let Some(i) = (0..len).find(|&i| key(l[i], l[(i + 1) % len]) == key(*a, *b))
+                    else {
+                        continue;
+                    };
+                    let (x, y) = (l[i], l[(i + 1) % len]);
+                    let mut mid = Vec::new();
+                    if staying.contains(&x) {
+                        mid.push(to[&x]);
+                    }
+                    if staying.contains(&y) {
+                        mid.push(to[&y]);
+                    }
+                    for (k, m) in mid.into_iter().enumerate() {
+                        l.insert(i + 1 + k, m);
+                    }
+                    break;
+                }
+            });
         }
     }
 
@@ -219,11 +219,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             model.add_edge(nu, u);
             let quad = vec![u, w, nw, nu];
             if let Some(plane) = Plane::fit(&model.points(&quad), &tol) {
-                walls.push(model.add_face(Face {
-                    outer: quad,
-                    holes: vec![],
-                    surface: Surface::Plane(plane),
-                }));
+                walls.push(model.add_face(Face::new(quad, vec![], Surface::Plane(plane))));
             }
         }
     }
@@ -238,11 +234,11 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     }
     let old_plane = *f.plane();
     let moved_plane = Plane::new(old_plane.origin + shift, old_plane.normal);
-    if let Some(g) = model.face_mut(face) {
+    model.edit_face(face, |g| {
         g.outer = remap(&f.outer);
         g.holes = f.holes.iter().map(|h| remap(h)).collect();
         g.surface = Surface::Plane(moved_plane);
-    }
+    });
 
     let original = |flip: bool| -> Face {
         let mut outer = f.outer.clone();
@@ -253,11 +249,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             holes.iter_mut().for_each(|h| h.reverse());
             plane = plane.flipped();
         }
-        Face {
-            outer,
-            holes,
-            surface: Surface::Plane(plane),
-        }
+        Face::new(outer, holes, Surface::Plane(plane))
     };
     if new_loop && !standalone {
         // Alt: the original boundary stays as a face.
@@ -269,23 +261,18 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         } else {
             // Pushed back: the moved face now faces the other way, and the
             // original stays as the cap.
-            if let Some(g) = model.face_mut(face) {
+            model.edit_face(face, |g| {
                 g.outer.reverse();
                 g.holes.iter_mut().for_each(|h| h.reverse());
                 g.surface = Surface::Plane(moved_plane.flipped());
-            }
+            });
             model.add_face(original(false));
         }
     }
 
     // Edges of the old boundary that no face uses any more.
-    for (a, b) in &on_face {
-        if let Some(e) = model.edge_between(*a, *b)
-            && !model.faces().any(|(_, g)| {
-                g.loops()
-                    .any(|l| loop_pairs(l).any(|(x, y)| key(x, y) == (*a, *b)))
-            })
-        {
+    for e in f.edge_ids() {
+        if model.edge(e).is_some() && !model.faces().any(|(_, g)| g.uses_edge(e)) {
             model.remove_edge(e);
         }
     }

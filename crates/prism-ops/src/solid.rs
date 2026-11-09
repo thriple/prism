@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Tol};
-use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 use crate::intersect::{Flat, crossings};
 use crate::regions::interior_points;
@@ -286,39 +286,30 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
         }
     }
     for id in backwards {
-        if let Some(f) = model.face_mut(id) {
+        model.edit_face(id, |f| {
             f.outer.reverse();
             for h in &mut f.holes {
                 h.reverse();
             }
             let flipped = f.plane().flipped();
             f.surface = prism_geom::Surface::Plane(flipped);
-        }
+        });
     }
 
     // 4. Remove them, and the edges and points only they used.
-    let mut maybe_loose: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
+    let mut maybe_loose: BTreeSet<EdgeId> = BTreeSet::new();
     for id in &inside_faces {
         if let Some(f) = model.remove_face(*id) {
-            for (a, b) in f.loops().flat_map(|l| loop_pairs(l)) {
-                maybe_loose.insert((a.min(b), a.max(b)));
-            }
+            maybe_loose.extend(f.edge_ids());
         }
     }
-    let used: BTreeSet<(VertexId, VertexId)> = model
-        .faces()
-        .flat_map(|(_, f)| {
-            f.loops()
-                .flat_map(|l| loop_pairs(l).map(|(a, b)| (a.min(b), a.max(b))))
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    let used: BTreeSet<EdgeId> = model.faces().flat_map(|(_, f)| f.edge_ids()).collect();
     let mut points: BTreeSet<VertexId> = BTreeSet::new();
-    for (a, b) in maybe_loose.difference(&used) {
-        if let Some(e) = model.edge_between(*a, *b) {
-            model.remove_edge(e);
-            points.insert(*a);
-            points.insert(*b);
+    for e in maybe_loose.difference(&used) {
+        if let Some(ed) = model.edge(*e).copied() {
+            model.remove_edge(*e);
+            points.insert(ed.a);
+            points.insert(ed.b);
         }
     }
     for v in points {

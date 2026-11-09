@@ -25,8 +25,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **State:** `main` = session branch, CI green. Nothing uncommitted.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
-- **Next: Exact Curves part 1** (brief 22: loops list their edges, no
-  visible change). Exact Curves is 5 parts (owner, 2026-11-09); the design
+- **Exact Curves part 1 is built** (brief 22: faces name their edges, file
+  schema 3 / geometry layout 2; NOTES has what is left for part 2).
+- **Next: Exact Curves part 2** (arcs and circles in the core, Circle and
+  Polygon; needs a brief). Exact Curves is 5 parts (owner, 2026-11-09); the design
   is in `docs/research/exact-curves.md`. Curves that are not lines or arcs
   fall back to fine segments, flagged (DECISIONS #32), built after part 5.
   The curve tools stay greyed in releases until all five parts are done

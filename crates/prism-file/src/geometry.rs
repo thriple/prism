@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::FileError;
 
-/// The geometry layout this version writes.
-pub const VERSION: u32 = 1;
+/// The geometry layout this version writes. Layout 2 (Exact Curves part 1)
+/// adds each loop's edges; a layout 1 file finds them when read.
+pub const VERSION: u32 = 2;
 
 type P = [f64; 3];
 
@@ -56,6 +57,50 @@ struct GeometryV1 {
     counters: [u32; 4],
 }
 
+#[derive(Serialize, Deserialize)]
+struct FaceV2 {
+    id: u32,
+    outer: Vec<u32>,
+    holes: Vec<Vec<u32>>,
+    /// Each loop's edges, the outer loop first: edge `i` joins vertex `i`
+    /// to vertex `i + 1`.
+    edges: Vec<Vec<u32>>,
+    surface: SurfaceV1,
+}
+
+/// Layout 2: as layout 1, and faces name their loops' edges.
+#[derive(Serialize, Deserialize)]
+struct GeometryV2 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV1>,
+    faces: Vec<FaceV2>,
+    guides: Vec<(u32, GuideV1)>,
+    counters: [u32; 4],
+}
+
+impl From<GeometryV1> for GeometryV2 {
+    /// No loop edges: they are found when the model is put together.
+    fn from(g: GeometryV1) -> GeometryV2 {
+        GeometryV2 {
+            vertices: g.vertices,
+            edges: g.edges,
+            faces: g
+                .faces
+                .into_iter()
+                .map(|f| FaceV2 {
+                    id: f.id,
+                    outer: f.outer,
+                    holes: f.holes,
+                    edges: Vec::new(),
+                    surface: f.surface,
+                })
+                .collect(),
+            guides: g.guides,
+            counters: g.counters,
+        }
+    }
+}
+
 fn p(v: DVec3) -> P {
     v.to_array()
 }
@@ -66,7 +111,7 @@ fn ids(l: &[VertexId]) -> Vec<u32> {
 
 pub fn encode(m: &Model) -> Vec<u8> {
     let parts = m.to_parts();
-    let g = GeometryV1 {
+    let g = GeometryV2 {
         vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
         edges: parts
             .edges
@@ -83,10 +128,13 @@ pub fn encode(m: &Model) -> Vec<u8> {
         faces: parts
             .faces
             .iter()
-            .map(|(id, f)| FaceV1 {
+            .map(|(id, f)| FaceV2 {
                 id: id.0,
                 outer: ids(&f.outer),
                 holes: f.holes.iter().map(|h| ids(h)).collect(),
+                edges: (0..=f.holes.len())
+                    .map(|k| f.loop_edge_ids(k).iter().map(|e| e.0).collect())
+                    .collect(),
                 surface: match f.surface {
                     Surface::Plane(pl) => SurfaceV1::Plane {
                         origin: p(pl.origin),
@@ -122,13 +170,18 @@ pub fn encode(m: &Model) -> Vec<u8> {
 }
 
 pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
-    if version != VERSION {
-        return Err(FileError::Damaged(format!(
-            "unknown geometry layout {version}"
-        )));
-    }
-    let g: GeometryV1 =
-        postcard::from_bytes(bytes).map_err(|e| FileError::Damaged(format!("geometry: {e}")))?;
+    let bad = |e: postcard::Error| FileError::Damaged(format!("geometry: {e}"));
+    let g: GeometryV2 = match version {
+        1 => postcard::from_bytes::<GeometryV1>(bytes)
+            .map_err(bad)?
+            .into(),
+        2 => postcard::from_bytes(bytes).map_err(bad)?,
+        _ => {
+            return Err(FileError::Damaged(format!(
+                "unknown geometry layout {version}"
+            )));
+        }
+    };
     let v = |a: u32| VertexId(a);
     let parts = ModelParts {
         vertices: g
@@ -158,20 +211,23 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             .map(|f| {
                 (
                     FaceId(f.id),
-                    Face {
-                        outer: f.outer.into_iter().map(v).collect(),
-                        holes: f
-                            .holes
+                    Face::with_edges(
+                        f.outer.into_iter().map(v).collect(),
+                        f.holes
                             .into_iter()
                             .map(|h| h.into_iter().map(v).collect())
                             .collect(),
-                        surface: match f.surface {
+                        match f.surface {
                             SurfaceV1::Plane { origin, normal } => Surface::Plane(Plane {
                                 origin: DVec3::from_array(origin),
                                 normal: DVec3::from_array(normal),
                             }),
                         },
-                    },
+                        f.edges
+                            .into_iter()
+                            .map(|l| l.into_iter().map(EdgeId).collect())
+                            .collect(),
+                    ),
                 )
             })
             .collect(),

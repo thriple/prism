@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use prism_geom::Surface;
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Plane, Tol, newell};
-use prism_topo::{Face, Model, VertexId};
+use prism_topo::{EdgeId, Face, Model, VertexId};
 
 use super::{Mesh, into_model};
 
@@ -52,28 +52,33 @@ pub fn build(mesh: &Mesh, metres_per_unit: f64, y_up: bool, merge: bool) -> Mode
     let mut m = Model::new();
     let ids: Vec<VertexId> = welded.iter().map(|p| m.add_vertex(*p)).collect();
     let mut used = vec![false; welded.len()];
-    let mut edges: BTreeSet<(usize, usize)> = BTreeSet::new();
+    let mut edges: BTreeMap<(usize, usize), EdgeId> = BTreeMap::new();
     for (outer, holes) in &regions {
+        let mut loop_edges = Vec::new();
         for l in std::iter::once(outer).chain(holes.iter()) {
+            let mut le = Vec::new();
             for k in 0..l.len() {
                 let (a, b) = (l[k], l[(k + 1) % l.len()]);
-                if edges.insert((a.min(b), a.max(b))) {
-                    m.add_new_edge(ids[a], ids[b]);
-                }
+                let e = *edges
+                    .entry((a.min(b), a.max(b)))
+                    .or_insert_with(|| m.add_new_edge(ids[a], ids[b]));
+                le.push(e);
                 used[a] = true;
             }
+            loop_edges.push(le);
         }
         let ring: Vec<DVec3> = outer.iter().map(|i| welded[*i]).collect();
         let n = newell(&ring).normalize_or_zero();
         let centre = ring.iter().copied().sum::<DVec3>() / ring.len() as f64;
-        m.add_face(Face {
-            outer: outer.iter().map(|i| ids[*i]).collect(),
-            holes: holes
+        m.add_face(Face::with_edges(
+            outer.iter().map(|i| ids[*i]).collect(),
+            holes
                 .iter()
                 .map(|h| h.iter().map(|i| ids[*i]).collect())
                 .collect(),
-            surface: Surface::Plane(Plane::new(centre, n)),
-        });
+            Surface::Plane(Plane::new(centre, n)),
+            loop_edges,
+        ));
     }
     for (k, id) in ids.iter().enumerate() {
         if !used[k] {
