@@ -619,13 +619,17 @@ pub fn infer(
     }
     // Where the face under the cursor crosses other faces (DECISIONS #29).
     let mut spans: Vec<(GuideSource, f64)> = Vec::new();
+    // Not for curved faces yet: their crossings need ellipses.
     if let Some((hid, _)) = scene.ray_face(o, dir)
-        && let Some(hf) = scene.face(hid)
+        && let Some(hf) = scene.face(hid).filter(|f| f.curved.is_none())
     {
         let pad = DVec3::splat(tol);
         let hflat = hf.flat();
         for of in &scene.faces {
-            if of.id == hid || (hf.hi + pad).cmplt(of.lo).any() || (of.hi + pad).cmplt(hf.lo).any()
+            if of.id == hid
+                || of.curved.is_some()
+                || (hf.hi + pad).cmplt(of.lo).any()
+                || (of.hi + pad).cmplt(hf.lo).any()
             {
                 continue;
             }

@@ -189,7 +189,7 @@ fn bending_a_cylinder_is_refused() {
 }
 
 #[test]
-fn push_pull_and_offset_refuse_curved_faces() {
+fn push_pull_and_offset_refuse_curved_faces_but_not_their_caps() {
     let mut model = cylinder(1.0, 2.0);
     let side = sides(&model)[0];
     let cap = model
@@ -199,14 +199,11 @@ fn push_pull_and_offset_refuse_curved_faces() {
         .expect("a cap");
     use prism_ops::pushpull::{CURVED_PULL, Pulled, push_pull, refusal};
     assert_eq!(refusal(&model, side), Some(CURVED_PULL));
-    assert_eq!(refusal(&model, cap), Some(CURVED_PULL));
+    // A cap pulls along its sides: they only stretch (4b).
+    assert_eq!(refusal(&model, cap), None);
     let before = model.clone();
     assert!(matches!(
         push_pull(&mut model, side, 0.5, false),
-        Pulled::Nothing
-    ));
-    assert!(matches!(
-        push_pull(&mut model, cap, 0.5, false),
         Pulled::Nothing
     ));
     assert_eq!(prism_ops::offset::offset(&mut model, side, 0.1), None);
@@ -240,4 +237,121 @@ fn model_health_finds_and_repairs_points_off_a_cylinder() {
     assert!(prism_ops::health::repair_arcs(&mut m) > 0);
     assert!(prism_ops::health::check(&m).off_circle.is_empty());
     assert_eq!(check::problems(&m), Vec::<String>::new());
+}
+
+// ---------- Cylinders from Push/Pull (Exact Curves 4b) ----------
+
+/// The volume inside the model's faces, by the divergence theorem: a flat
+/// face adds area × (normal · a point) / 3; a cylinder face whose axis
+/// passes through the origin adds area × radius / 3 (facing out).
+fn volume(m: &Model) -> f64 {
+    m.faces()
+        .map(|(id, f)| {
+            let a = m.face_area(id);
+            match f.surface {
+                Surface::Plane(p) => a * p.normal.dot(p.origin) / 3.0,
+                Surface::Cylinder(c) => {
+                    assert!(c.origin.cross(c.axis).length() < 1e-12, "axis through 0");
+                    let s = if c.outward { 1.0 } else { -1.0 };
+                    s * a * c.radius / 3.0
+                }
+            }
+        })
+        .sum()
+}
+
+fn disc(r: f64) -> (Model, FaceId) {
+    let mut m = Model::new();
+    add_circle(&mut m, DVec3::ZERO, DVec3::Z, r);
+    let f = m.faces().next().map(|(id, _)| id).expect("a disc");
+    (m, f)
+}
+
+fn clean(m: &Model) {
+    assert_eq!(check::problems(m), Vec::<String>::new());
+    let r = prism_ops::health::check(m);
+    assert!(r.off_circle.is_empty(), "{r:?}");
+}
+
+#[test]
+fn a_disc_pulled_is_a_closed_cylinder() {
+    use prism_ops::pushpull::{Pulled, push_pull};
+    let (r, h) = (1.5, 2.0);
+    for d in [h, -h] {
+        let (mut m, f) = disc(r);
+        let pulled = push_pull(&mut m, f, d, false);
+        assert!(matches!(pulled, Pulled::Extruded { .. }), "{pulled:?}");
+        clean(&m);
+        assert_eq!(sides(&m).len(), 2, "two half cylinders");
+        assert_eq!(m.face_count(), 4);
+        for s in sides(&m) {
+            assert!((m.face_area(s) - PI * r * h).abs() < 1e-9);
+            let c = cylinder_of(&m, s);
+            assert!((c.radius - r).abs() < 1e-12 && c.axis.cross(DVec3::Z).length() < 1e-12);
+        }
+        let health = prism_ops::health::check(&m);
+        assert_eq!((health.watertight, health.leaky), (1, 0));
+        assert!(health.reversed.is_empty(), "{health:?}");
+        let v = volume(&m);
+        assert!((v - PI * r * r * h).abs() < 1e-9, "{v}");
+    }
+}
+
+#[test]
+fn pulling_a_cylinders_cap_again_lengthens_it() {
+    use prism_ops::pushpull::{Pulled, push_pull, refusal};
+    let (mut m, f) = disc(1.0);
+    let d = if m.face(f).unwrap().plane().unwrap().normal.z > 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
+    push_pull(&mut m, f, d, false);
+    let cap = f;
+    assert_eq!(refusal(&m, cap), None, "the sides run along the pull");
+    let more = d * 0.5;
+    assert_eq!(push_pull(&mut m, cap, more, false), Pulled::Stretched);
+    clean(&m);
+    assert_eq!(m.face_count(), 4, "the same faces, longer");
+    for s in sides(&m) {
+        assert!((m.face_area(s) - PI * 1.5).abs() < 1e-9);
+    }
+    assert!((volume(&m).abs() - PI * 1.5).abs() < 1e-9);
+}
+
+#[test]
+fn alt_pulls_a_new_loop_from_a_cylinders_cap() {
+    use prism_ops::pushpull::push_pull;
+    let (mut m, f) = disc(1.0);
+    let d = if m.face(f).unwrap().plane().unwrap().normal.z > 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
+    push_pull(&mut m, f, d, false);
+    push_pull(&mut m, f, d, true);
+    clean(&m);
+    assert_eq!(sides(&m).len(), 4, "two rings of sides");
+}
+
+#[test]
+fn a_rounded_rectangle_pulled_has_flat_and_curved_sides() {
+    use prism_ops::pushpull::push_pull;
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 2.0, 0.0);
+    for c in [
+        DVec3::ZERO,
+        DVec3::new(4.0, 0.0, 0.0),
+        DVec3::new(4.0, 2.0, 0.0),
+    ] {
+        assert!(prism_ops::fillet::fillet(&mut m, c, 0.5));
+    }
+    let f = m.faces().next().map(|(id, _)| id).expect("the face");
+    let up = m.face(f).unwrap().plane().unwrap().normal.z;
+    push_pull(&mut m, f, up, false);
+    clean(&m);
+    assert_eq!(sides(&m).len(), 3, "one per rounded corner");
+    assert_eq!(m.face_count(), 2 + 3 + 4);
+    let h = prism_ops::health::check(&m);
+    assert_eq!((h.watertight, h.leaky), (1, 0));
 }

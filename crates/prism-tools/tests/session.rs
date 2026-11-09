@@ -1959,7 +1959,6 @@ fn model_health_repairs_an_arc_off_its_circle_with_undo() {
 
 #[test]
 fn refused_edits_of_arcs_say_why() {
-    use prism_ops::pushpull::ARC_FACE_PULL;
     use prism_ops::transform::{ARC_FACE_WOULD_FOLD, ARC_WOULD_BEND};
     let mut d = circle_in_a_rectangle();
     let before = d.s.model().clone();
@@ -1982,12 +1981,6 @@ fn refused_edits_of_arcs_say_why() {
     d.send(Input::Key { key: Key::Up });
     d.hover(DVec3::new(6.0, 4.0, 1.0));
     assert_eq!(d.s.hint(), ARC_FACE_WOULD_FOLD);
-    d.send(Input::Key { key: Key::Escape });
-    // Push/Pull on a half of the disc.
-    d.tool(PUSH);
-    d.click(DVec3::new(3.5, 2.5, 0.0));
-    d.hover(DVec3::new(3.5, 2.5, 0.5));
-    assert_eq!(d.s.hint(), ARC_FACE_PULL);
     d.send(Input::Key { key: Key::Escape });
     assert_eq!(d.s.model(), &before, "nothing changed");
 }
@@ -2255,4 +2248,68 @@ fn a_double_click_on_a_corner_rounds_it_and_a_radius_retypes_it() {
     double_click(&mut d, DVec3::new(4.0, 0.0, 0.0));
     assert_eq!(d.s.hint(), prism_ops::fillet::TOO_SHORT);
     same(&areas(&d), &[8.0]);
+}
+
+// ---------- Cylinders from Push/Pull (brief 25, step 4b) ----------
+
+/// The faces of the model on a cylinder.
+fn curved_faces(d: &Driver) -> Vec<prism_topo::FaceId> {
+    d.s.model()
+        .faces()
+        .filter(|(_, f)| f.is_curved())
+        .map(|(id, _)| id)
+        .collect()
+}
+
+#[test]
+fn push_pull_makes_a_cylinder_that_picks_and_snaps() {
+    use prism_tools::session::CIRCLE;
+    let mut d = Driver::empty();
+    // Seen from the front (`look` starts a new session, so first).
+    d.look(Camera {
+        eye: DVec3::new(0.5, -6.0, 3.0),
+        target: DVec3::new(0.0, 0.0, 1.0),
+    });
+    d.tool(CIRCLE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    d.tool(PUSH);
+    d.click(DVec3::new(0.2, 0.2, 0.0));
+    d.hover(DVec3::new(0.2, 0.2, 0.5));
+    d.typed("2");
+    assert_eq!(d.faces(), 4);
+    assert_eq!(curved_faces(&d).len(), 2);
+    valid(&d);
+    let (lo, hi) = d.s.model().bbox().expect("a cylinder");
+    assert!((hi.z - lo.z - 2.0).abs() < 1e-9, "{lo} {hi}");
+    // Its side: snapped on, and picked.
+    d.tool(LINE);
+    d.hover(DVec3::new(0.6, -0.8, 1.2));
+    let i = d.s.inference().expect("an inference").clone();
+    assert_eq!(i.kind, Kind::OnFace);
+    assert!(curved_faces(&d).contains(&i.face.expect("a face")));
+    assert!(
+        (i.point.truncate().length() - 1.0).abs() < 1e-9,
+        "on it: {}",
+        i.point
+    );
+    d.tool(SELECT);
+    d.click(DVec3::new(0.6, -0.8, 1.2));
+    let picked: Vec<_> = d.s.selection().faces.iter().copied().collect();
+    assert_eq!(picked.len(), 1);
+    assert!(curved_faces(&d).contains(&picked[0]));
+    // The cap pulled again lengthens it.
+    d.tool(PUSH);
+    d.click(DVec3::new(0.2, 0.2, 2.0));
+    d.hover(DVec3::new(0.2, 0.2, 2.5));
+    d.typed("1");
+    assert_eq!(d.faces(), 4, "the same faces, longer");
+    let (lo, hi) = d.s.model().bbox().expect("a cylinder");
+    assert!((hi.z - lo.z - 3.0).abs() < 1e-9, "{lo} {hi}");
+    valid(&d);
+    // One undo each.
+    undo(&mut d);
+    assert_eq!(d.faces(), 4);
+    undo(&mut d);
+    assert_eq!(d.faces(), 1);
 }

@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use prism_geom::Surface;
 use prism_math::{DVec3, Plane};
-use prism_topo::{Face, FaceId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, Face, FaceId, Model, VertexId, loop_pairs};
 
 use crate::transform;
 
@@ -35,28 +35,32 @@ fn key(a: VertexId, b: VertexId) -> (VertexId, VertexId) {
     (a.min(b), a.max(b))
 }
 
-/// Said when Push/Pull is asked to pull a face with arcs.
-pub const ARC_FACE_PULL: &str = "Faces with arcs cannot be pulled yet.";
+/// Said when Push/Pull is asked to pull a curved face, or a face whose
+/// pull would bend a curved face beside it.
+pub const CURVED_PULL: &str =
+    "Curved faces cannot be pulled yet, nor faces that would bend one beside them.";
 
-/// Said when Push/Pull is asked to pull a curved face, or one beside it.
-pub const CURVED_PULL: &str = "Curved faces, and faces beside them, cannot be pulled yet.";
-
-/// Why `face` cannot be pulled yet, if it cannot.
+/// Why `face` cannot be pulled yet, if it cannot. A face beside a curved
+/// face can be pulled when the curved face runs along the pull (the cap of
+/// a cylinder), so it only stretches.
 pub fn refusal(model: &Model, face: FaceId) -> Option<&'static str> {
     let f = model.face(face)?;
-    let touches_curved = || {
-        model.faces().any(|(g, x)| {
-            g != face && x.is_curved() && x.loops().flatten().any(|v| f.uses_vertex(*v))
-        })
+    let Some(plane) = f.plane() else {
+        // A new radius: Exact Curves 4d.
+        return Some(CURVED_PULL);
     };
-    if f.is_curved() || touches_curved() {
-        Some(CURVED_PULL)
-    } else if model.face_has_arcs(face) {
-        // Faces with arcs make curved walls: Exact Curves 4b.
-        Some(ARC_FACE_PULL)
-    } else {
-        None
-    }
+    let tol = model.tol();
+    let bends = model.faces().any(|(g, x)| {
+        g != face
+            && match x.surface {
+                Surface::Cylinder(c) => {
+                    !tol.parallel(c.axis, plane.normal)
+                        && x.loops().flatten().any(|v| f.uses_vertex(*v))
+                }
+                Surface::Plane(_) => false,
+            }
+    });
+    bends.then_some(CURVED_PULL)
 }
 
 pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool) -> Pulled {
@@ -83,7 +87,10 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let n = plane.normal;
     let shift = n * distance;
     // On a solid, Push/Pull is a boolean with the block the face sweeps.
-    let swept = if new_loop {
+    // Not yet with arcs or curved faces (the block's test goes by flat
+    // faces' corners).
+    let curved = model.face_has_arcs(face) || model.faces().any(|(_, g)| g.is_curved());
+    let swept = if new_loop || curved {
         None
     } else {
         crate::solid::Swept::of(model, face, distance)
@@ -114,8 +121,11 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         model.face(g).is_some_and(|g| {
             let pts = model.points(&g.outer);
             let centre = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
-            g.plane()
-                .is_some_and(|p| tol.perpendicular(p.normal, n) && (centre - origin).dot(n) < 0.0)
+            let runs_along = match g.surface {
+                Surface::Plane(p) => tol.perpendicular(p.normal, n),
+                Surface::Cylinder(c) => tol.parallel(c.axis, n),
+            };
+            runs_along && (centre - origin).dot(n) < 0.0
         })
     };
     // A point with a line running back from it along the push (an open box).
@@ -186,6 +196,22 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     };
     let staying: BTreeSet<VertexId> = verts.iter().copied().filter(|v| !in_place(*v)).collect();
     let moving: BTreeSet<VertexId> = verts.difference(&staying).copied().collect();
+    // An arc with one end staying and one moving would bend; one that
+    // slides would need a stretched arc in its neighbour. Not yet.
+    let arc_sides: Vec<(VertexId, VertexId)> = f
+        .sides()
+        .filter(|s| model.edge(s.edge).is_some_and(|e| e.curve.is_arc()))
+        .map(|s| (s.from, s.to))
+        .collect();
+    let bends = arc_sides.iter().any(|(a, b)| {
+        staying.contains(a) != staying.contains(b)
+            || slides
+                .iter()
+                .any(|(k, _)| *k == key(*a, *b) && (staying.contains(a) || staying.contains(b)))
+    });
+    if bends {
+        return Pulled::Nothing;
+    }
 
     // New points for the vertices that stay behind.
     let mut to: BTreeMap<VertexId, VertexId> = BTreeMap::new();
@@ -237,50 +263,121 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         }
     }
 
-    // Walls.
+    // Where each side of the face goes: the same edge when both its ends
+    // move in place, else a copy at the new points (an arc moved, with a
+    // new curve id per curve).
+    // Made as each wall needs it, then for the other sides (the order
+    // edges were made in before arcs, so recorded sessions still match).
+    let step = prism_math::DAffine3::from_translation(shift);
+    let mut moved_edge: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
+    let mut new_curve: BTreeMap<prism_topo::CurveId, prism_topo::CurveId> = BTreeMap::new();
+    let mut move_side = |model: &mut Model, edge: EdgeId| -> Option<EdgeId> {
+        if let Some(c) = moved_edge.get(&edge) {
+            return Some(*c);
+        }
+        let e = model.edge(edge).cloned()?;
+        let (na, nb) = (to[&e.a], to[&e.b]);
+        let copy = if na == e.a && nb == e.b {
+            Some(edge)
+        } else if let Some(curve) = e.curve.transformed(&step).filter(|c| c.is_arc()) {
+            let id = e
+                .curve_id
+                .map(|c| *new_curve.entry(c).or_insert_with(|| model.new_curve_id()));
+            model.add_curve_edge(na, nb, curve, id)
+        } else {
+            model.add_edge(na, nb)
+        }?;
+        moved_edge.insert(edge, copy);
+        Some(copy)
+    };
+
+    // Walls: flat for a line, part of a cylinder for an arc.
     let mut walls = Vec::new();
-    for l in f.loops() {
-        for (u, w) in loop_pairs(l) {
-            if !walls_at.contains(&key(u, w)) {
-                continue;
-            }
-            let (nu, nw) = (to[&u], to[&w]);
-            model.add_edge(w, nw);
-            model.add_edge(nw, nu);
-            model.add_edge(nu, u);
-            let quad = vec![u, w, nw, nu];
+    for side in f.sides() {
+        let (u, w) = (side.from, side.to);
+        if !walls_at.contains(&key(u, w)) {
+            continue;
+        }
+        let (nu, nw) = (to[&u], to[&w]);
+        let quad = vec![u, w, nw, nu];
+        let arc = model.edge(side.edge).and_then(|e| match e.curve {
+            prism_geom::Curve::Arc { centre, radius, .. } => Some((centre, radius)),
+            prism_geom::Curve::Line => None,
+        });
+        let up = model.add_edge(w, nw);
+        let top = move_side(model, side.edge);
+        let down = model.add_edge(nu, u);
+        let Some((centre, radius)) = arc else {
             if let Some(plane) = Plane::fit(&model.points(&quad), &tol) {
                 walls.push(model.add_face(Face::new(quad, vec![], Surface::Plane(plane))));
             }
+            continue;
+        };
+        let (Some(up), Some(top), Some(down)) = (up, top, down) else {
+            continue;
+        };
+        let cylinder = prism_geom::Cylinder {
+            origin: centre,
+            axis: n,
+            radius,
+            outward: true,
+        };
+        let wall = model.add_face(Face::with_edges(
+            quad,
+            vec![],
+            Surface::Cylinder(cylinder),
+            vec![vec![side.edge, up, top, down]],
+        ));
+        // It faces out where its loop winds counter-clockwise unrolled, as
+        // a flat wall faces the way its loop winds.
+        if let Some(g) = model.face(wall) {
+            let p = model.unrolled(g, 0);
+            let area: f64 = (0..p.len())
+                .map(|i| p[i].1.perp_dot(p[(i + 1) % p.len()].1))
+                .sum();
+            if area < 0.0 {
+                model.edit_face(wall, |g| g.surface = g.surface.flipped());
+            }
         }
+        walls.push(wall);
     }
+
+    for side in f.sides() {
+        move_side(model, side.edge);
+    }
+    let moved_edge = moved_edge;
 
     // The face moves out.
     let remap = |l: &[VertexId]| -> Vec<VertexId> { l.iter().map(|v| to[v]).collect() };
-    for (a, b) in loop_pairs(&remap(&f.outer)).chain(f.holes.iter().flat_map(|h| {
-        let r = remap(h);
-        loop_pairs(&r).collect::<Vec<_>>()
-    })) {
-        model.add_edge(a, b);
-    }
+    let loop_edges = |k: usize, map: &dyn Fn(EdgeId) -> EdgeId| -> Vec<EdgeId> {
+        f.loop_edge_ids(k).iter().map(|e| map(*e)).collect()
+    };
+    let n_loops = 1 + f.holes.len();
+    let moved_edges: Vec<Vec<EdgeId>> = (0..n_loops)
+        .map(|k| loop_edges(k, &|e| moved_edge.get(&e).copied().unwrap_or(e)))
+        .collect();
     let old_plane = plane;
     let moved_plane = Plane::new(old_plane.origin + shift, old_plane.normal);
-    model.edit_face(face, |g| {
-        g.outer = remap(&f.outer);
-        g.holes = f.holes.iter().map(|h| remap(h)).collect();
-        g.surface = Surface::Plane(moved_plane);
-    });
+    let moved_face = Face::with_edges(
+        remap(&f.outer),
+        f.holes.iter().map(|h| remap(h)).collect(),
+        Surface::Plane(moved_plane),
+        moved_edges,
+    );
+    model.edit_face(face, |g| *g = moved_face);
 
     let original = |flip: bool| -> Face {
-        let mut outer = f.outer.clone();
-        let mut holes = f.holes.clone();
-        let mut plane = old_plane;
+        let edges: Vec<Vec<EdgeId>> = (0..n_loops).map(|k| loop_edges(k, &|e| e)).collect();
+        let mut o = Face::with_edges(
+            f.outer.clone(),
+            f.holes.clone(),
+            Surface::Plane(old_plane),
+            edges,
+        );
         if flip {
-            outer.reverse();
-            holes.iter_mut().for_each(|h| h.reverse());
-            plane = plane.flipped();
+            o.reverse();
         }
-        Face::new(outer, holes, Surface::Plane(plane))
+        o
     };
     if new_loop && !standalone {
         // Alt: the original boundary stays as a face.
@@ -293,8 +390,13 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             // Pushed back: the moved face now faces the other way, and the
             // original stays as the cap.
             // (Its surface is the moved plane, which turns round too.)
+            // The walls were wound for a pull out: they turn round too, so
+            // the solid faces out.
             model.edit_face(face, |g| g.reverse());
             model.add_face(original(false));
+            for w in &walls {
+                model.edit_face(*w, |g| g.reverse());
+            }
         }
     }
 
@@ -328,8 +430,9 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let test: Option<&dyn Fn(DVec3) -> Option<bool>> =
         test.as_ref().map(|f| f as &dyn Fn(DVec3) -> Option<bool>);
     crate::settle::settle_with(model, &touched, &around_planes, test);
-    // Alt keeps the original face on purpose, inside or not.
-    if !new_loop {
+    // Alt keeps the original face on purpose, inside or not. Its inside
+    // test goes by flat faces, so not yet with curved ones.
+    if !new_loop && !curved {
         crate::solid::keep_boundary(model, &touched, swept.as_ref());
     }
     crate::settle::dedupe_faces(model);

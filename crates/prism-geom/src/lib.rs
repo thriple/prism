@@ -427,6 +427,29 @@ impl Cylinder {
         })
     }
 
+    /// Where the ray from `o` along `d` meets the surface: up to two
+    /// distances along it (in units of `d`), nearest first.
+    pub fn ray_hits(&self, o: DVec3, d: DVec3) -> Vec<f64> {
+        let flat = |v: DVec3| v - self.axis * v.dot(self.axis);
+        let (w, e) = (flat(o - self.origin), flat(d));
+        let a = e.length_squared();
+        if a <= 1e-300 {
+            return Vec::new();
+        }
+        let b = 2.0 * w.dot(e);
+        let c = w.length_squared() - self.radius * self.radius;
+        let disc = b * b - 4.0 * a * c;
+        if disc < 0.0 {
+            return Vec::new();
+        }
+        let r = disc.sqrt();
+        // The stable form of the two roots.
+        let q = -0.5 * (b + b.signum() * r);
+        let (t1, t2) = (q / a, if q != 0.0 { c / q } else { -b / (2.0 * a) });
+        let (lo, hi) = (t1.min(t2), t1.max(t2));
+        if lo == hi { vec![lo] } else { vec![lo, hi] }
+    }
+
     /// The circle of this cylinder through `p`: its centre and axis.
     pub fn circle_at(&self, p: DVec3) -> (DVec3, DVec3) {
         (self.axis_point(p), self.axis)
@@ -507,6 +530,27 @@ impl Surface {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn rays_meet_a_cylinder_exactly() {
+        let c = Cylinder {
+            origin: DVec3::new(1.0, 0.0, 0.0),
+            axis: DVec3::Z,
+            radius: 2.0,
+            outward: true,
+        };
+        let t = c.ray_hits(DVec3::new(-5.0, 0.0, 3.0), DVec3::X);
+        assert_eq!(t, vec![4.0, 8.0]);
+        assert!(c.ray_hits(DVec3::new(-5.0, 3.0, 0.0), DVec3::X).is_empty());
+        assert!(
+            c.ray_hits(DVec3::ZERO, DVec3::Z).is_empty(),
+            "along the axis"
+        );
+        let d = DVec3::new(1.0, 0.3, 0.2);
+        for t in c.ray_hits(DVec3::new(-4.0, -1.0, 0.0), d) {
+            assert!(c.distance(DVec3::new(-4.0, -1.0, 0.0) + d * t).abs() < 1e-12);
+        }
+    }
 
     #[test]
     fn arcs_through_three_points_and_by_bulge() {

@@ -108,6 +108,17 @@ fn every_kind(d: &Document) -> Vec<Command> {
             new_loop: true,
         });
     }
+    // A face with arcs, pulled into cylinders (Exact Curves 4b).
+    if let Some((face, _)) = m
+        .faces()
+        .find(|(id, f)| !f.is_curved() && m.face_has_arcs(*id))
+    {
+        out.push(Command::PushPull {
+            face,
+            distance: 0.75,
+            new_loop: false,
+        });
+    }
     let all: BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
     if let Some(corner) = prism_ops::vertex_at(m, DVec3::ZERO) {
         out.push(Command::Translate {
@@ -182,7 +193,7 @@ fn every_kind(d: &Document) -> Vec<Command> {
 fn undo_and_redo_of_every_operation_are_exact() {
     let base = setup();
     let kinds = every_kind(&base);
-    assert_eq!(kinds.len(), 20, "one of each kind");
+    assert_eq!(kinds.len(), 20, "one of each kind (no face has arcs yet)");
     for c in kinds {
         let mut d = base.clone();
         let before = d.model().geometry_json();
@@ -203,7 +214,7 @@ proptest! {
     /// Any sequence of commands, undone all the way and redone, ends exactly
     /// where it was.
     #[test]
-    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..20, 1..6)) {
+    fn undo_all_then_redo_all(picks in prop::collection::vec(0usize..21, 1..6)) {
         let mut d = setup();
         let start = d.model().geometry_json();
         let mut ran = 0;
@@ -269,5 +280,36 @@ fn rotated_copies_then_a_pull_keep_the_loops_whole() {
             let problems = d.model().bookkeeping_problems();
             assert!(problems.is_empty(), "{name}: {problems:?}");
         }
+    }
+}
+
+/// Faces with arcs pulled into cylinders undo and redo exactly
+/// (Exact Curves 4b).
+#[test]
+fn pulling_faces_with_arcs_undoes_exactly() {
+    let mut d = setup();
+    d.run(Command::Circle {
+        centre: DVec3::new(3.0, 2.0, 0.0),
+        normal: DVec3::Z,
+        radius: 1.5,
+    });
+    let base = d.clone();
+    let pulls: Vec<Command> = every_kind(&d)
+        .into_iter()
+        .filter(|c| matches!(c, Command::PushPull { face, .. } if d.model().face_has_arcs(*face)))
+        .collect();
+    assert!(!pulls.is_empty());
+    for c in pulls {
+        let mut d = base.clone();
+        let before = d.model().geometry_json();
+        assert!(d.run(c.clone()), "pulled");
+        assert!(d.model().faces().any(|(_, f)| f.is_curved()), "a cylinder");
+        let p = prism_ops::check::problems(d.model());
+        assert!(p.is_empty(), "{p:?}");
+        let after = d.model().to_json();
+        d.undo();
+        assert_eq!(d.model().geometry_json(), before);
+        d.redo();
+        assert_eq!(d.model().to_json(), after);
     }
 }

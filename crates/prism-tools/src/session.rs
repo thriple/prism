@@ -1625,8 +1625,13 @@ impl Session {
         if let Lock::Axis(a) = self.lock {
             return AXES[a as usize];
         }
-        if let Some(f) = i.face.and_then(|f| self.scene.face(f)) {
-            return f.normal;
+        // A curved face has no plane: the ground or the view's.
+        if let Some(n) = i
+            .face
+            .and_then(|f| self.scene.face(f))
+            .and_then(|f| f.flat_normal())
+        {
+            return n;
         }
         if i.kind == Kind::OnGround {
             return DVec3::Z;
@@ -1639,9 +1644,10 @@ impl Session {
                 .scene
                 .ray_face(o, d)
                 .and_then(|(f, _)| self.scene.face(f))
-                && (i.point - f.origin).dot(f.normal).abs() <= self.scene.tol.dist * 10.0
+                && let Some(n) = f.flat_normal()
+                && (i.point - f.origin).dot(n).abs() <= self.scene.tol.dist * 10.0
             {
-                return f.normal;
+                return n;
             }
         }
         let f = self.view().f;

@@ -31,15 +31,16 @@ Updated 2026-11-09 (Guam), before a context compaction.
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves: parts 1, 2 and 3 are built** (briefs 22, 23, 24; NOTES
   has a section per step). **Part 4 is under way** (brief 25, steps
-  4a–4d): 4a is built (`Surface::Cylinder`; `plane()` is an `Option`).
-  Next is 4b: Push/Pull of faces with arcs makes cylinders, and the
-  viewport shades and picks them (use `tess::triangulate_unrolled`).
+  4a–4d): 4a and 4b are built (`Surface::Cylinder`, `plane()` is an
+  `Option`; Push/Pull makes cylinders, shaded and picked). Next is 4c:
+  soften and smooth (edge flags, Eraser with Ctrl, Edit > Soften/Smooth).
   - The curve tools (`GREYED_TOOLS` in `prism-tools/src/session/shapes.rs`:
     Circle, Polygon, `tool.arc`, `arc.2`, `arc.3`, `arc.c`, `arc.p`) are
     built but greyed in menus; only MCP `use_tool` reaches them.
-  - Push/Pull still refuses faces with arcs (`ARC_FACE_PULL`) and curved
-    faces or faces beside them (`CURVED_PULL`): 4b lifts these.
-    `face_at` goes by corners (misses a lone disc).
+  - Push/Pull refuses curved faces (a new radius is 4d) and pulls that
+    would bend one (`CURVED_PULL`). `face_at` goes by corners (misses a
+    lone disc). A lone face pushed back now makes a box (it used to leave
+    one face): the owner should try it.
   - Not yet checked by eye in the app: arc snaps, tangents, the Arc tools,
     fillets, refusal hints. Briefs 23 and 24 ask the owner to try them over
     MCP in a build.

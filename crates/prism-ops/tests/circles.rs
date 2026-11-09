@@ -176,15 +176,6 @@ fn copies_and_groups_keep_arcs() {
     clean(&m);
 }
 
-#[test]
-fn push_pull_waits_for_its_part() {
-    let mut m = Model::new();
-    circle(&mut m, DVec3::ZERO, 1.0);
-    let before = m.clone();
-    prism_ops::push_pull(&mut m, FaceId(0), 1.0, false);
-    assert_eq!(m, before);
-}
-
 fn seg(m: &mut Model, a: (f64, f64), b: (f64, f64)) {
     prism_ops::add_segment(m, DVec3::new(a.0, a.1, 0.0), DVec3::new(b.0, b.1, 0.0));
 }

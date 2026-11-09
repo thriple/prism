@@ -1537,3 +1537,51 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   MCP; the refusals through `Command::refusal`; both tessellation paths.
 - Not built: curved faces in the viewport, picking and inference on them
   (4b).
+
+## Exact Curves (part 4, step 4b): cylinders from Push/Pull
+
+- **Push/Pull of a face with arcs:** each arc side gets a cylinder wall
+  (the arc, its moved copy, and the lines between their ends); lines get
+  flat walls as before. The moved face keeps its arcs (each moved curve
+  gets a new curve id). A disc pulled is two half cylinders and two caps,
+  a closed solid with volume πr²h. `ARC_FACE_PULL` is gone.
+- **The cap again:** a face whose curved neighbours run along the pull
+  (a cylinder's cap) moves in place and the sides stretch; arcs now move
+  with their ends in `translate_few`. A pull that would bend a curved
+  face beside it is refused (`CURVED_PULL`), and so is pulling a curved
+  face itself (a new radius is 4d). An arc with one end moving and one
+  staying (a slide) is refused too.
+- **Faces name their edges when made:** the moved face and the base are
+  made with their edges (`Face::with_edges`), since two arcs can join the
+  same two points (a disc). Edges are made in the same order as before,
+  so recorded sessions still replay exactly.
+- **Found and fixed (outside the brief):** a lone face pushed back
+  (against its normal) left only one face: its walls faced in and the
+  inside test removed them. The walls now turn round with the face, so it
+  makes a box the other way. Test: `a_lone_face_pushed_back_makes_a_box`.
+  The owner should try it by hand.
+- **Not yet with curved faces:** the solid boolean of a pull into a solid
+  (`Swept`) and the inside test after it (`keep_boundary`) go by flat
+  faces, so they are skipped when the face has arcs or the model has a
+  curved face. A cylinder pulled into a box does not cut it yet.
+  `reach::limit` still meets curved faces only by corners and edges.
+- **Viewport:** `SceneFace::curved` holds the cylinder, the outer loop in
+  space, and its loops unrolled. Shading: `tess::triangulate_unrolled`,
+  with the surface's normal at every point, so it shades round. Picking:
+  `Cylinder::ray_hits`, then inside the unrolled loops. Placed instances
+  (components) and moving previews carry the cylinder along.
+- The tessellation is the arcs' fixed 128 steps per turn, not adaptive to
+  the screen yet (PLAN 1.1); the normals hide the steps inside the face,
+  but a big cylinder's outline shows them up close.
+- **Tools:** a curved face gives no drawing plane (`flat_normal`): the
+  Rectangle, Circle and Arc tools and the protractor fall back to the
+  ground or the view's axis. Face crossings for inference skip curved
+  faces. Inference snaps "On Face" on the exact surface.
+- The seams between two halves are drawn as lines until 4c softens them.
+- Tests: a disc pulled up and down (closed, exact areas and volume), the
+  cap again, Alt's new loop, a rounded rectangle; shading (triangles on
+  the surface, round normals), picking (exact distances, all the way
+  round, placed and mirrored); the Push/Pull tool by typing, with picking
+  and snapping on the side and one undo per pull; MCP; the undo property
+  test pulls faces with arcs (1500 cases and 3000 for the model rules,
+  run once).

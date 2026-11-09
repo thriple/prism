@@ -33,10 +33,57 @@ pub struct SceneFace {
     pub tris: Range<u32>,
     /// Drawn faded: outside the open group (PLAN 1.2).
     pub faded: bool,
+    /// A curved face (Exact Curves part 4): then `outer` and `holes` are
+    /// its loops unrolled flat, `normal` is only its normal at the first
+    /// corner, and it has no plane.
+    pub curved: Option<Curved>,
+}
+
+/// What picking a curved face needs.
+#[derive(Clone, Debug)]
+pub struct Curved {
+    pub cylinder: prism_geom::Cylinder,
+    /// The first corner of the outer loop: distance 0 round, unrolled.
+    pub start: DVec3,
+    /// The outer loop's points in space.
+    pub outer: Vec<DVec3>,
+}
+
+impl Curved {
+    /// `p` (on the surface) unrolled, as each way round it could be.
+    fn unrolled(&self, p: DVec3) -> [DVec2; 3] {
+        let c = &self.cylinder;
+        let r0 = (self.start - c.axis_point(self.start)).normalize_or_zero();
+        let w = c.axis.cross(r0);
+        let q = p - c.axis_point(p);
+        let phi = q.dot(w).atan2(q.dot(r0));
+        let h = (p - c.origin).dot(c.axis);
+        let tau = std::f64::consts::TAU;
+        [phi, phi + tau, phi - tau].map(|a| DVec2::new(a * c.radius, h))
+    }
 }
 
 impl SceneFace {
-    /// The face for crossing tests (`prism_ops::intersect`).
+    /// Its plane's normal; None for a curved face, which has no plane
+    /// for tools to draw on.
+    pub fn flat_normal(&self) -> Option<DVec3> {
+        self.curved.is_none().then_some(self.normal)
+    }
+
+    /// The outer loop's points in space.
+    pub fn outer_points(&self) -> Vec<DVec3> {
+        match &self.curved {
+            Some(c) => c.outer.clone(),
+            None => self
+                .outer
+                .iter()
+                .map(|q| self.origin + self.u * q.x + self.v * q.y)
+                .collect(),
+        }
+    }
+
+    /// The face for crossing tests (`prism_ops::intersect`). Not for a
+    /// curved face.
     pub fn flat(&self) -> prism_ops::intersect::Flat {
         prism_ops::intersect::Flat {
             origin: self.origin,
@@ -57,6 +104,17 @@ impl SceneFace {
 
     /// Where the ray hits this face (distance along it), if it does.
     pub fn hit(&self, o: DVec3, d: DVec3) -> Option<f64> {
+        if let Some(c) = &self.curved {
+            if !ray_box(o, d, self.lo, self.hi) {
+                return None;
+            }
+            return c
+                .cylinder
+                .ray_hits(o, d)
+                .into_iter()
+                .filter(|t| *t > 0.0)
+                .find(|t| c.unrolled(o + d * *t).iter().any(|q| self.inside(*q)));
+        }
         let den = self.normal.dot(d);
         if den.abs() < 1e-12 || !ray_box(o, d, self.lo, self.hi) {
             return None;
@@ -66,12 +124,15 @@ impl SceneFace {
             return None;
         }
         let q = self.to_2d(o + d * t);
-        let inside = point_in_polygon(q, &self.outer) != Inside::Outside
+        self.inside(q).then_some(t)
+    }
+
+    fn inside(&self, q: DVec2) -> bool {
+        point_in_polygon(q, &self.outer) != Inside::Outside
             && self
                 .holes
                 .iter()
-                .all(|h| point_in_polygon(q, h) != Inside::Inside);
-        inside.then_some(t)
+                .all(|h| point_in_polygon(q, h) != Inside::Inside)
     }
 }
 
@@ -203,7 +264,10 @@ impl Scene {
         };
         let edge_faces = model.edge_faces();
         for (id, f) in model.faces() {
-            // Curved faces are shaded from Exact Curves 4b.
+            if let prism_geom::Surface::Cylinder(c) = f.surface {
+                s.add_curved(model, id, f, c);
+                continue;
+            }
             let Some(&plane) = f.plane() else { continue };
             let frame = plane.frame();
             let (u, v) = if frame.normal.dot(plane.normal) >= 0.0 {
@@ -246,6 +310,7 @@ impl Scene {
                 hi,
                 tris: 0..0,
                 faded: false,
+                curved: None,
             };
             face.outer = loops[0].iter().map(|p| face.to_2d(*p)).collect();
             face.holes = loops[1..]
@@ -297,6 +362,81 @@ impl Scene {
         s
     }
 
+    /// A curved face: its loops unrolled, triangulated so every triangle
+    /// lies on the surface, with the surface's normal at every point (so
+    /// it shades round).
+    fn add_curved(
+        &mut self,
+        model: &Model,
+        id: FaceId,
+        f: &prism_topo::Face,
+        c: prism_geom::Cylinder,
+    ) {
+        let loops: Vec<Vec<(DVec3, DVec2)>> =
+            (0..=f.holes.len()).map(|k| model.unrolled(f, k)).collect();
+        let pts: Vec<DVec3> = loops.iter().flatten().map(|x| x.0).collect();
+        let Some(&first) = pts.first() else { return };
+        // Each point belongs to the vertex its side starts at.
+        let mut owners: Vec<VertexId> = Vec::with_capacity(pts.len());
+        for (k, l) in f.loops().enumerate() {
+            let edges = f.loop_edge_ids(k);
+            for (i, v) in l.iter().enumerate() {
+                owners.push(*v);
+                let inner = edges.get(i).and_then(|e| model.edge(*e)).map_or(0, |e| {
+                    e.curve
+                        .inner_points(model.vertex(e.a), model.vertex(e.b))
+                        .len()
+                });
+                owners.extend(std::iter::repeat_n(*v, inner));
+            }
+        }
+        let (mut lo, mut hi) = (first, first);
+        for p in &pts {
+            lo = lo.min(*p);
+            hi = hi.max(*p);
+        }
+        let flat = |l: &Vec<(DVec3, DVec2)>| l.iter().map(|x| x.1).collect::<Vec<_>>();
+        let frame = prism_math::Plane::new(c.origin, c.axis).frame();
+        let mut face = SceneFace {
+            id,
+            normal: c.normal_at(first),
+            origin: c.origin,
+            u: frame.u,
+            v: frame.v,
+            outer: flat(&loops[0]),
+            holes: loops[1..].iter().map(flat).collect(),
+            lo,
+            hi,
+            tris: 0..0,
+            faded: false,
+            curved: Some(Curved {
+                cylinder: c,
+                start: first,
+                outer: loops[0].iter().map(|x| x.0).collect(),
+            }),
+        };
+        let start = self.mesh.indices.len() as u32;
+        let base = self.mesh.positions.len() as u32;
+        self.mesh.positions.extend_from_slice(&pts);
+        self.mesh_vertex_ids.extend(owners);
+        self.mesh
+            .normals
+            .extend(pts.iter().map(|p| c.normal_at(*p)));
+        self.mesh
+            .faces
+            .extend(std::iter::repeat_n(self.faces.len() as u32, pts.len()));
+        for mut t in crate::tess::triangulate_unrolled(&face.outer, &face.holes) {
+            // Unrolled, counter-clockwise turns about the outward normal.
+            if !c.outward {
+                t.swap(1, 2);
+            }
+            self.mesh.indices.extend(t.iter().map(|&i| base + i as u32));
+        }
+        face.tris = start..self.mesh.indices.len() as u32;
+        self.face_index.insert(id, self.faces.len());
+        self.faces.push(face);
+    }
+
     /// The scene with the vertices `moving` sent through a rigid motion
     /// (`f` for points, `nf` for directions), without rebuilding or
     /// triangulating anything. None unless every face and edge moves whole
@@ -345,6 +485,12 @@ impl Scene {
                 face.u = nf(face.u);
                 face.v = nf(face.v);
                 face.normal = nf(face.normal);
+                if let Some(c) = &mut face.curved {
+                    c.cylinder.origin = f(c.cylinder.origin);
+                    c.cylinder.axis = nf(c.cylinder.axis);
+                    c.start = f(c.start);
+                    c.outer.iter_mut().for_each(|q| *q = f(*q));
+                }
             }
         }
         for i in 0..s.mesh.positions.len() {
@@ -505,12 +651,26 @@ impl Scene {
                 f.u = u;
                 f.v = v;
             }
-            f.outer = f.outer.iter().map(scale2).collect();
-            f.holes = f
-                .holes
-                .iter()
-                .map(|h| h.iter().map(scale2).collect())
-                .collect();
+            if let Some(c) = &mut f.curved {
+                // Unrolled: lengths scale; a mirror turns the way round.
+                let unroll = |q: &DVec2| DVec2::new(if mirror { -q.x } else { q.x }, q.y) * k;
+                f.outer = f.outer.iter().map(unroll).collect();
+                f.holes = f
+                    .holes
+                    .iter()
+                    .map(|h| h.iter().map(unroll).collect())
+                    .collect();
+                c.cylinder = c.cylinder.transformed(m).unwrap_or(c.cylinder);
+                c.start = p(c.start);
+                c.outer.iter_mut().for_each(|q| *q = p(*q));
+            } else {
+                f.outer = f.outer.iter().map(scale2).collect();
+                f.holes = f
+                    .holes
+                    .iter()
+                    .map(|h| h.iter().map(scale2).collect())
+                    .collect();
+            }
             let (a, b) = (p(f.lo), p(f.hi));
             f.lo = a.min(b);
             f.hi = a.max(b);

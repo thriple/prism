@@ -12,11 +12,6 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
         .find(|(_, f)| f.is_curved())
         .map(|(id, _)| id)
         .expect("a side");
-    let cap = m
-        .faces()
-        .find(|(_, f)| !f.is_curved())
-        .map(|(id, _)| id)
-        .expect("a cap");
     let top = m
         .vertices()
         .filter(|(_, p)| p.z > 1.0)
@@ -33,14 +28,6 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
         (
             Command::PushPull {
                 face: side,
-                distance: 0.5,
-                new_loop: false,
-            },
-            prism_ops::pushpull::CURVED_PULL,
-        ),
-        (
-            Command::PushPull {
-                face: cap,
                 distance: 0.5,
                 new_loop: false,
             },

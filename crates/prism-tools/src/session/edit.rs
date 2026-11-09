@@ -178,8 +178,13 @@ impl Session {
             return n;
         }
         if let Some(i) = &self.inference {
-            if let Some(f) = i.face.and_then(|f| self.scene.face(f)) {
-                return f.normal;
+            // A curved face has no plane: the ground or the view's.
+            if let Some(n) = i
+                .face
+                .and_then(|f| self.scene.face(f))
+                .and_then(|f| f.flat_normal())
+            {
+                return n;
             }
             if i.kind == Kind::OnGround {
                 return DVec3::Z;
@@ -188,12 +193,13 @@ impl Session {
             // the ground if the point is on it.
             if let Some(s) = self.cursor {
                 let (o, d) = self.view().ray(s);
-                if let Some(f) = self
+                if let Some(n) = self
                     .scene
                     .ray_face(o, d)
                     .and_then(|(f, _)| self.scene.face(f))
+                    .and_then(|f| f.flat_normal())
                 {
-                    return f.normal;
+                    return n;
                 }
             }
             if i.point.z.abs() <= self.scene.tol.dist {
@@ -216,7 +222,8 @@ impl Session {
                     .as_ref()
                     .and_then(|i| i.face)
                     .and_then(|f| self.scene.face(f))
-                    .map_or(DVec3::Z, |f| f.normal),
+                    .and_then(|f| f.flat_normal())
+                    .unwrap_or(DVec3::Z),
             ),
             (false, Some(a)) => Some(AXES[a as usize]),
             (false, None) => None,
@@ -339,7 +346,9 @@ impl Session {
         if snap.is_none()
             && let Some((g, tg)) = self.scene.ray_face(o, dir).filter(|(g, _)| *g != face)
             && let Some(gf) = self.scene.face(g)
-            && self.scene.tol.parallel(gf.normal, *n)
+            && gf
+                .flat_normal()
+                .is_some_and(|g| self.scene.tol.parallel(g, *n))
         {
             let q = o + dir * tg;
             t = (q - *p0).dot(*n);

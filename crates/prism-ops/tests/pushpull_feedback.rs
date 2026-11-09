@@ -336,3 +336,19 @@ fn a_very_thin_plate_keeps_its_faces() {
         closed(&m);
     }
 }
+
+/// Found while building Exact Curves 4b: a lone face pushed back (against
+/// its normal) left only one face, because its walls faced in and the
+/// inside test took them. It makes a box the other way, facing out.
+#[test]
+fn a_lone_face_pushed_back_makes_a_box() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 1.0, 1.0, 0.0);
+    let f = m.faces().next().map(|(id, _)| id).expect("a face");
+    prism_ops::push_pull(&mut m, f, -1.0, false);
+    assert_eq!(m.face_count(), 6);
+    let h = prism_ops::health::check(&m);
+    assert_eq!((h.watertight, h.leaky), (1, 0));
+    assert!(h.reversed.is_empty(), "{h:?}");
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+}

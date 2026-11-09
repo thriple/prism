@@ -6,7 +6,7 @@
 
 ## Steps (each one is tested, documented and pushed on its own)
 - **4a. Curved surfaces in the core:** the cylinder surface; every planar-only operation works, refuses or skips. No visible change. *(Built.)*
-- **4b. Cylinders from Push/Pull:** pulling a face with arcs; shading and picking of cylinder faces.
+- **4b. Cylinders from Push/Pull:** pulling a face with arcs; shading and picking of cylinder faces. *(Built.)*
 - **4c. Soften and smooth:** edge flags, the drawing, the Eraser with Ctrl, Edit > Soften/Smooth, picking a whole smooth surface.
 - **4d. Push/Pull on a cylinder:** a new radius.
 
@@ -28,7 +28,7 @@
 - Pulling a face whose loops have arcs makes, for each arc, a cylinder side face (the arc, its copy at the new height, and the lines between their ends). Lines make planar sides, as now. `ARC_FACE_PULL` goes.
 - The lines between two cylinder sides of one circle or arc are made soft and smooth (step 4c's flags; until 4c they are drawn as normal).
 - Pulling the cap of a cylinder again lengthens it.
-- **Shading:** a cylinder face is drawn from triangles cut finely enough on screen (PLAN 1.1), with normals from the exact surface, so it looks round at any zoom.
+- **Shading:** a cylinder face is drawn from triangles on the surface, with normals from the exact surface, so it shades round. The steps are the arcs' (128 per turn); making them adaptive to the screen (PLAN 1.1) comes later.
 - **Picking:** a ray meets the exact cylinder, inside the face's loops. Inference snaps "On Face" to it.
 
 ### 4c. Soften and smooth

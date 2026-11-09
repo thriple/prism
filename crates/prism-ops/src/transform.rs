@@ -186,6 +186,7 @@ pub(crate) fn translate_few(model: &mut Model, vs: &BTreeSet<VertexId>, d: DVec3
         let p = model.vertex(*v);
         model.set_vertex(*v, p + d);
     }
+    move_arcs(model, vs, &DAffine3::from_translation(d));
     let tol = model.tol();
     weld_new(model, vs, &tol);
     for id in faces {
@@ -245,6 +246,11 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
     let Some(face) = model.face(id).cloned() else {
         return;
     };
+    if face.is_curved() {
+        // Curved faces move whole (`move_curved`) or stretch along their
+        // axis (Push/Pull of a cylinder's cap): the surface stays.
+        return;
+    }
     let outer = model.loop_points(&face, 0);
     let Some(plane) = Plane::fit(&outer, tol) else {
         model.remove_face(id);
