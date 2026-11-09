@@ -1379,3 +1379,26 @@ and inference, 2d the Circle and Polygon tools).
 - **2c is done.** For the owner to try: click and erase a circle, snap to
   an arc's centre (hover the arc first), quadrants, Model Health's Repair,
   and the refusal hints.
+
+## Exact Curves (part 2, step 2d): the Circle and Polygon tools
+
+- **Circle (`tool.circle`) and Polygon (`tool.polygon`)**, in
+  `prism-tools/src/session/shapes.rs`: click the centre, then a radius
+  point; the plane is the Rectangle's (face under the cursor, an arrow
+  lock, the ground, else the view's main axis). The measurement box takes
+  the radius; Polygon takes sides as `8s` (6 by default, 3 to 1000). A
+  double-click places the last radius again.
+- A polygon is inscribed, its first corner towards the radius point; its
+  sides share one curve id (`prism_ops::add_polygon`,
+  `Command::Polygon`), so a click on one selects all.
+- **Greyed:** both stay out of `TOOLS`, so menus, toolbars and the dock
+  grey them (owner, until all five parts are done). `GREYED_TOOLS` lets MCP
+  `use_tool` pick them; its description says so. Test: drawn over MCP,
+  read back with `get_geometry` (arc centre, radius and curve id: brief
+  23's 2a MCP test).
+- **Not yet:** retyping the radius after a circle is finished (Rectangle
+  and Line can) does nothing; a centre that lands on a guide over empty
+  ground takes the view's main axis as its plane, as the Rectangle does
+  (an arrow key picks the plane). Not checked by eye in the app; brief 23's
+  acceptance asks the owner to draw circles over MCP in a build and move
+  them.

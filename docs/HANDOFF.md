@@ -23,10 +23,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Updates and MCP Server were added to the plan, right after View
     Settings.
 - **State:** `main` = session branch. Last push: Exact Curves 2c
-  (done). Check its CI first. 2b's Web build failed on GitHub download
+  and 2d (part 2 done). Check its CI first. 2b's Web build failed on GitHub download
   504s (not our code); 2c part 1's CI was fully green. If the trunk
   download flakes again, make the Install trunk step retry
-  (`curl --fail --retry`). Step 2d waits for the owner's go-ahead.
+  (`curl --fail --retry`). Part 3 waits for the owner's go-ahead.
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
 - **Exact Curves part 1 is built** (brief 22: faces name their edges, file
@@ -36,7 +36,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
   (picking, inference, Eraser, Model Health). 2c parts 1 (whole curves:
   select, Eraser), 2 (arc snaps), 3 (Model Health: arcs off their
   circle, Repair) and 4 (refused edits say why, in the status bar) are
-  built: **2c is done; next is 2d** (Circle and Polygon tools, brief 23).
+  built. **2d is built too: Exact Curves part 2 is done.** Next is part 3
+  (Arc tools, tangent inference, Offset with arcs, corner fillets): write
+  its brief (24) first, with an MCP line.
   The notes below were the starting points for 2c: Where to start for 2c:
   - picking and hover already use drawn points (`prism-view/src/pick.rs`,
     `prism-tools/src/select.rs`); selecting an arc should take every edge

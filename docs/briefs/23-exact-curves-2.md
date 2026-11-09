@@ -9,7 +9,7 @@ Part 2 is too big for one go, so it is built in four steps:
 - **2a. Arcs in the core:** the curve, curve ids, face finding with arcs (a circle alone is a face), files, areas, transforms, drawing. *(Built.)*
 - **2b. Crossings:** lines and arcs cut each other, and points split arcs. *(Built.)*
 - **2c. Picking and inference:** arcs are picked, erased and snapped to. *(Built.)*
-- **2d. The Circle and Polygon tools.**
+- **2d. The Circle and Polygon tools.** *(Built.)*
 
 ## How an arc is kept
 - `Curve::Arc { centre, axis, radius }`:
@@ -107,6 +107,6 @@ Part 2 is too big for one go, so it is built in four steps:
 - **Property tests:** random circles and rectangles keep the model check clean.
 
 ## Acceptance
-- [ ] Every step: tests and CI green, NOTES updated, pushed.
+- [x] Every step: tests and CI green, NOTES updated, pushed.
 - [ ] Circles and polygons drawn over MCP `use_tool` in a build made by hand look round and stay round when moved.
-- [ ] PLAN 6.0 updated.
+- [x] PLAN 6.0 updated.

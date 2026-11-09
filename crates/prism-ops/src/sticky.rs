@@ -228,6 +228,46 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     }
 }
 
+/// A closed polygon through `points`, its sides sharing one curve id (a
+/// click on one side selects them all). Sides are added as lines are, so
+/// they cut and are cut by what they cross; every straight piece along a
+/// side takes the polygon's id.
+pub fn add_polygon(model: &mut Model, points: &[DVec3]) {
+    let n = points.len();
+    if n < 3 {
+        return;
+    }
+    for i in 0..n {
+        add_segment(model, points[i], points[(i + 1) % n]);
+    }
+    let tol = model.tol();
+    let on_side = |p: DVec3| {
+        (0..n).find(|&i| {
+            let (a, b) = (points[i], points[(i + 1) % n]);
+            Curve::Line.closest_point(a, b, p).distance(p) <= tol.dist
+        })
+    };
+    let sides: Vec<EdgeId> = model
+        .edges()
+        .filter(|(_, e)| !e.curve.is_arc())
+        .filter(|(_, e)| {
+            let (a, b) = (on_side(model.vertex(e.a)), on_side(model.vertex(e.b)));
+            // Both ends on one side (a corner is on two: check the middle).
+            a.is_some()
+                && b.is_some()
+                && on_side(model.vertex(e.a).lerp(model.vertex(e.b), 0.5)).is_some()
+        })
+        .map(|(id, _)| id)
+        .collect();
+    if sides.is_empty() {
+        return;
+    }
+    let cid = model.new_curve_id();
+    for id in sides {
+        model.set_curve_id(id, Some(cid));
+    }
+}
+
 /// Add an exact circle about `centre` in the plane with `normal`: arcs
 /// sharing one curve id, between two seam points and every point where it
 /// meets edges already there (which it splits). The plane's faces are

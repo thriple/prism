@@ -1998,3 +1998,71 @@ fn refused_edits_of_arcs_say_why() {
     d.send(Input::Key { key: Key::Escape });
     assert_eq!(d.s.model(), &before, "nothing changed");
 }
+
+// ---------- Circle and Polygon (brief 23, step 2d) ----------
+
+#[test]
+fn the_circle_tool_draws_by_clicks_typing_and_a_double_click() {
+    use prism_tools::session::CIRCLE;
+    let mut d = Driver::empty();
+    d.tool(CIRCLE);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.click(DVec3::new(2.0, 1.0, 0.0));
+    assert_eq!(d.faces(), 1);
+    same(&areas(&d), &[std::f64::consts::PI]);
+    assert_eq!(
+        d.s.model()
+            .edges()
+            .filter(|(_, e)| e.curve.is_arc())
+            .count(),
+        2
+    );
+    // A typed radius.
+    d.click(DVec3::new(6.0, 1.0, 0.0));
+    d.hover(DVec3::new(6.5, 1.0, 0.0));
+    d.typed("1.5");
+    same(
+        &areas(&d),
+        &[std::f64::consts::PI, std::f64::consts::PI * 2.25],
+    );
+    // A double-click places the last size again.
+    d.click(DVec3::new(4.0, 5.0, 0.0));
+    d.click(DVec3::new(4.0, 5.0, 0.0));
+    assert_eq!(d.faces(), 3);
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 2, "each circle is one step");
+}
+
+#[test]
+fn the_polygon_tool_takes_a_side_count_and_its_sides_are_one_curve() {
+    use prism_tools::session::POLYGON;
+    let mut d = Driver::empty();
+    d.tool(POLYGON);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    let m = d.s.model();
+    assert_eq!(m.edge_count(), 6, "6 sides by default");
+    let hex = 6.0 * 0.5 * (std::f64::consts::TAU / 6.0).sin();
+    same(&areas(&d), &[hex]);
+    // The first corner is where the radius was clicked (inscribed).
+    assert!(prism_ops::vertex_at(m, DVec3::new(3.0, 2.0, 0.0)).is_some());
+    // Eight sides, typed first.
+    d.typed("8s");
+    // Up picks the ground plane (the centre may land on a guide).
+    d.send(Input::Key { key: Key::Up });
+    d.click(DVec3::new(6.0, 2.0, 0.0));
+    d.hover(DVec3::new(6.0, 3.0, 0.0));
+    d.typed("1");
+    assert_eq!(d.s.model().edge_count(), 14);
+    let oct = 8.0 * 0.5 * (std::f64::consts::TAU / 8.0).sin();
+    same(&areas(&d), &[hex, oct]);
+    assert!(d.s.model().edges().all(|(_, e)| !e.curve.is_arc()));
+    // A click on one side selects all of them.
+    d.tool(SELECT);
+    let pts =
+        prism_tools::session::polygon_points(DVec3::new(6.0, 2.0, 0.0), DVec3::Z, DVec3::Y, 1.0, 8);
+    d.click(pts[0].lerp(pts[1], 0.5));
+    assert_eq!(d.s.selection().edges.len(), 8);
+    valid(&d);
+}

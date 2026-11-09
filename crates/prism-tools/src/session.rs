@@ -29,12 +29,14 @@ mod construct;
 mod edit;
 mod groups;
 mod health;
+mod shapes;
 use crate::units::NumberFormat;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
+pub use shapes::{CIRCLE, DEFAULT_SIDES, GREYED_TOOLS, POLYGON, polygon_points};
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -272,6 +274,11 @@ pub struct Session {
     line_start: Option<DVec3>,
     rect: Option<RectOp>,
     rect_memory: Option<(f64, f64)>,
+    /// The circle or polygon being drawn, the last radius, and the
+    /// polygon's side count.
+    shape: Option<shapes::ShapeOp>,
+    shape_radius: Option<f64>,
+    sides: u32,
     last_op: Option<LastOp>,
     pub settings: Settings,
     mem: Memory,
@@ -375,6 +382,9 @@ impl Session {
             line_start: None,
             rect: None,
             rect_memory: None,
+            shape: None,
+            shape_radius: None,
+            sides: shapes::DEFAULT_SIDES,
             last_op: None,
             settings: Settings::default(),
             mem: Memory::default(),
@@ -466,6 +476,7 @@ impl Session {
     pub fn in_operation(&self) -> bool {
         self.line_start.is_some()
             || self.rect.is_some()
+            || self.shape.is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
     }
@@ -516,6 +527,7 @@ impl Session {
     fn typing_tool(&self) -> bool {
         self.tool == LINE
             || self.tool == RECT
+            || shapes::is_shape(&self.tool)
             || matches!(
                 self.tool.as_str(),
                 PUSH | MOVE | ROTATE | SCALE | OFFSET | TAPE | PROTRACTOR
@@ -526,6 +538,8 @@ impl Session {
     pub fn measurement(&self) -> (String, String, bool) {
         let nf = &self.number;
         let (label, value) = if let Some((l, v)) = self.edit_measurement() {
+            (l, v)
+        } else if let Some((l, v)) = self.shape_measurement() {
             (l, v)
         } else if let (Some(start), Some(i)) = (self.line_start, &self.inference) {
             ("Length", nf.show(start.distance(i.point)))
@@ -562,6 +576,9 @@ impl Session {
             return r;
         }
         if let Some(h) = self.edit_hint() {
+            return h;
+        }
+        if let Some(h) = self.shape_hint() {
             return h;
         }
         match self.tool.as_str() {
@@ -758,6 +775,7 @@ impl Session {
         self.cancel_edit();
         self.line_start = None;
         self.rect = None;
+        self.shape = None;
         self.boxing = None;
         self.typed.clear();
         self.lock = Lock::None;
@@ -1090,7 +1108,10 @@ impl Session {
     // ---------- the mouse ----------
 
     fn wants_inference(&self) -> bool {
-        self.tool == LINE || self.tool == RECT || self.edit_wants_inference()
+        self.tool == LINE
+            || self.tool == RECT
+            || shapes::is_shape(&self.tool)
+            || self.edit_wants_inference()
     }
 
     fn context(&self) -> Context {
@@ -1101,6 +1122,11 @@ impl Session {
             },
             RECT => Context {
                 start: self.rect.map(|r| r.start),
+                no_lock: true,
+                ..Default::default()
+            },
+            CIRCLE | POLYGON => Context {
+                start: self.shape.map(|r| r.centre),
                 no_lock: true,
                 ..Default::default()
             },
@@ -1204,6 +1230,7 @@ impl Session {
                 self.overlay_dirty = true;
                 self.dirty = true;
             }
+            self.shape_hover(s, &view);
             if is_edit(&self.tool) {
                 self.edit_hover(s, &view);
             }
@@ -1278,6 +1305,10 @@ impl Session {
                 SELECT => self.select_press(s, shift, ctrl),
                 LINE => self.line_press(s),
                 RECT => self.rect_press(s),
+                CIRCLE | POLYGON => {
+                    let n = self.clicks.press(self.time, s);
+                    self.shape_press(s, n);
+                }
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
                     self.update_hover(s);
@@ -1605,6 +1636,9 @@ impl Session {
             self.edit_enter(&text);
             return;
         }
+        if self.shape_enter(&text) {
+            return;
+        }
         if !text.is_empty() && self.edit_retype(&text) {
             return;
         }
@@ -1819,6 +1853,7 @@ impl Session {
                 color: fb.pill,
             });
         }
+        self.shape_overlay(&mut o);
         // The snap: its target, glyph and label.
         let glyph_color = match i.kind {
             Kind::Endpoint => fb.endpoint,

@@ -290,6 +290,18 @@ impl AppHost<'_> {
 
     fn use_tool(&mut self, args: &Value) -> Result<Value, String> {
         if let Some(tool) = args.get("tool").and_then(Value::as_str) {
+            // The Circle and Polygon tools stay greyed in the menus until
+            // Exact Curves is done, but an assistant can use them (brief 23).
+            if let Some(&greyed) = prism_tools::session::GREYED_TOOLS
+                .iter()
+                .find(|t| **t == tool)
+            {
+                self.chrome.active_tool = greyed;
+                self.follow_tool();
+                self.viewport.session.mark_all_dirty();
+                return self
+                    .use_tool(&json!({"steps": args.get("steps").cloned().unwrap_or_default()}));
+            }
             let is_tool = self
                 .chrome
                 .reg
@@ -524,6 +536,52 @@ mod tests {
         // Undo takes the push back.
         value(h.call("run_action", &json!({"id": "edit.undo"})));
         assert_eq!(value(h.call("get_model", &json!({})))["model"]["faces"], 1);
+    }
+
+    #[test]
+    fn use_tool_draws_circles_and_polygons_that_stay_greyed_in_menus() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        assert!(
+            !h.chrome.enabled("tool.circle"),
+            "greyed until Exact Curves is done"
+        );
+        assert!(!h.chrome.enabled("tool.polygon"));
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.circle", "steps": [{"lock": "blue"}, {"click": [0, 0, 0]}, {"move": [0.5, 0, 0]}, {"type": "1"}]}),
+        ));
+        assert_eq!(r["model"]["faces"], 1, "{r}");
+        let g = value(h.call("get_geometry", &json!({})));
+        let edges = g["edges"].as_array().unwrap();
+        assert_eq!(edges.len(), 2, "{g}");
+        for e in edges {
+            assert_eq!(e["arc"]["radius"], 1.0, "{e}");
+            assert_eq!(e["arc"]["centre"], json!([0.0, 0.0, 0.0]));
+            assert_eq!(e["curve"], edges[0]["curve"], "one curve");
+        }
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.polygon", "steps": [{"type": "5s"}, {"lock": "blue"}, {"click": [4, 0, 0]}, {"click": [5, 0, 0]}]}),
+        ));
+        assert_eq!(r["model"]["faces"], 2, "{r}");
+        let g = value(h.call("get_geometry", &json!({})));
+        let sides: Vec<&Value> = g["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e.get("arc").is_none())
+            .collect();
+        assert_eq!(sides.len(), 5);
+        assert!(sides.iter().all(|e| e["curve"] == sides[0]["curve"]));
+        assert!(!h.chrome.enabled("tool.circle"), "still greyed");
     }
 
     #[test]

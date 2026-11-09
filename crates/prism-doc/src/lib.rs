@@ -39,6 +39,10 @@ pub enum Command {
         points: Vec<DVec3>,
     },
     /// An exact circle: two half arcs with one curve id (Exact Curves).
+    /// A polygon through `points` (the Polygon tool), its sides one curve.
+    Polygon {
+        points: Vec<DVec3>,
+    },
     Circle {
         centre: DVec3,
         normal: DVec3,
@@ -290,6 +294,7 @@ impl Command {
             Command::Loop { points } if points.len() == 4 => "Rectangle",
             Command::Loop { .. } => "Shape",
             Command::Circle { .. } => "Circle",
+            Command::Polygon { .. } => "Polygon",
             Command::Erase { .. } => "Erase",
             Command::PushPull { .. } => "Push/Pull",
             Command::Translate { .. } => "Move",
@@ -373,6 +378,9 @@ impl Command {
                 }
             }
             Command::Loop { points } => Command::Loop {
+                points: points.iter().map(|v| p(*v)).collect(),
+            },
+            Command::Polygon { points } => Command::Polygon {
                 points: points.iter().map(|v| p(*v)).collect(),
             },
             Command::PushPull {
@@ -580,6 +588,7 @@ impl Command {
             } => {
                 prism_ops::add_circle(m, *centre, *normal, *radius);
             }
+            Command::Polygon { points } => prism_ops::add_polygon(m, points),
             Command::Erase { selection } => prism_ops::remove(m, selection),
             Command::PushPull {
                 face,
