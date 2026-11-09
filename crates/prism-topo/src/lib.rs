@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 
 use prism_geom::{Curve, Surface};
-use prism_math::{DVec3, Plane, Tol, newell};
+use prism_math::{DVec2, DVec3, Plane, Tol, newell};
 use serde::{Deserialize, Serialize};
 
 macro_rules! id {
@@ -133,8 +133,13 @@ impl Face {
         std::iter::once(&self.outer).chain(self.holes.iter())
     }
 
-    pub fn plane(&self) -> &Plane {
+    /// The plane of a flat face; None for a curved one.
+    pub fn plane(&self) -> Option<&Plane> {
         self.surface.plane()
+    }
+
+    pub fn is_curved(&self) -> bool {
+        self.surface.is_curved()
     }
 
     pub fn uses_vertex(&self, v: VertexId) -> bool {
@@ -189,8 +194,7 @@ impl Face {
                 }
             }
         }
-        let Surface::Plane(p) = *surface;
-        *surface = Surface::Plane(p.flipped());
+        *surface = surface.flipped();
     }
 
     pub fn uses_edge(&self, e: EdgeId) -> bool {
@@ -644,7 +648,18 @@ impl Model {
     /// A face's area: its outer loop minus its holes, exact for arcs.
     pub fn face_area(&self, id: FaceId) -> f64 {
         let Some(f) = self.face(id) else { return 0.0 };
-        let n = f.plane().normal;
+        let Some(n) = f.plane().map(|p| p.normal) else {
+            // A curved face is flat when unrolled.
+            let area = |k: usize| {
+                let p: Vec<DVec2> = self.unrolled(f, k).into_iter().map(|x| x.1).collect();
+                (0..p.len())
+                    .map(|i| p[i].perp_dot(p[(i + 1) % p.len()]))
+                    .sum::<f64>()
+                    .abs()
+                    * 0.5
+            };
+            return area(0) - (1..=f.holes.len()).map(area).sum::<f64>();
+        };
         let area = |k: usize, l: &[VertexId]| {
             let poly = newell(&self.points(l)).dot(n) * 0.5;
             let bulges: f64 = f
@@ -668,6 +683,49 @@ impl Model {
                 .enumerate()
                 .map(|(i, h)| area(i + 1, h))
                 .sum::<f64>()
+    }
+
+    /// Loop `k` of a cylinder face unrolled flat: each drawn point (arcs
+    /// give their inner points) with its place as (distance round the
+    /// cylinder, height along its axis), walking the loop's sides so the
+    /// angle never jumps. The sides of a cylinder face are lines along the
+    /// axis and arcs round it, which unroll straight. Empty for a flat face.
+    pub fn unrolled(&self, f: &Face, k: usize) -> Vec<(DVec3, DVec2)> {
+        let Surface::Cylinder(c) = f.surface else {
+            return Vec::new();
+        };
+        let Some(l) = f.loops().nth(k) else {
+            return Vec::new();
+        };
+        let ids = f.loop_edge_ids(k);
+        let height = |p: DVec3| (p - c.origin).dot(c.axis);
+        let mut turned = 0.0;
+        let mut out = Vec::with_capacity(l.len());
+        for (i, v) in l.iter().enumerate() {
+            let p = self.vertex(*v);
+            out.push((p, DVec2::new(turned * c.radius, height(p))));
+            let Some(e) = ids.get(i).and_then(|id| self.edges.get(id)) else {
+                continue;
+            };
+            if let Curve::Arc { axis, .. } = e.curve {
+                let q = self.vertex(l[(i + 1) % l.len()]);
+                let (curve, dir) = if e.a == *v {
+                    (e.curve, axis)
+                } else {
+                    (e.curve.reversed(), -axis)
+                };
+                let sweep = curve.sweep(p, q);
+                let sign = dir.dot(c.axis).signum();
+                let inner = curve.inner_points(p, q);
+                let n = inner.len() + 1;
+                for (j, x) in inner.into_iter().enumerate() {
+                    let t = turned + sign * sweep * (j + 1) as f64 / n as f64;
+                    out.push((x, DVec2::new(t * c.radius, height(x))));
+                }
+                turned += sign * sweep;
+            }
+        }
+        out
     }
 
     /// The points of loop `k` of a face, walking its edges (arcs give their
@@ -857,11 +915,17 @@ impl Model {
         if let Some((id, _)) = p.guides.iter().find(|(_, g)| !finite(g)) {
             return Err(format!("guide {id:?} is not finite"));
         }
-        if let Some((id, _)) = p.faces.iter().find(|(_, f)| {
-            let pl = f.plane();
-            !(pl.origin.is_finite() && pl.normal.is_finite())
+        if let Some((id, _)) = p.faces.iter().find(|(_, f)| match f.surface {
+            Surface::Plane(pl) => !(pl.origin.is_finite() && pl.normal.is_finite()),
+            Surface::Cylinder(c) => {
+                !(c.origin.is_finite()
+                    && c.axis.is_finite()
+                    && c.axis != DVec3::ZERO
+                    && c.radius.is_finite()
+                    && c.radius > 0.0)
+            }
         }) {
-            return Err(format!("face {id:?} has no finite plane"));
+            return Err(format!("face {id:?} has no finite surface"));
         }
         let mut m = Model {
             vertices,
@@ -978,15 +1042,25 @@ impl Model {
                     }
                     let Some(e) = named.get(i) else { continue };
                     match self.edges.get(e) {
-                        Some(x) if x.has(a) && x.has(b) => {
-                            if let Curve::Arc { axis, .. } = x.curve
-                                && (axis.dot(f.plane().normal).abs() - 1.0).abs() > 1e-9
-                            {
-                                out.push(format!(
-                                    "face {id:?} uses arc {e:?}, which is not in its plane"
-                                ));
+                        Some(x) if x.has(a) && x.has(b) => match f.surface {
+                            Surface::Plane(pl) => {
+                                if let Curve::Arc { axis, .. } = x.curve
+                                    && (axis.dot(pl.normal).abs() - 1.0).abs() > 1e-9
+                                {
+                                    out.push(format!(
+                                        "face {id:?} uses arc {e:?}, which is not in its plane"
+                                    ));
+                                }
                             }
-                        }
+                            Surface::Cylinder(c) => {
+                                let (p, q) = (self.vertex(x.a), self.vertex(x.b));
+                                if !c.holds(&x.curve, p, q, self.tol().dist) {
+                                    out.push(format!(
+                                        "face {id:?} uses edge {e:?}, which is not on its cylinder"
+                                    ));
+                                }
+                            }
+                        },
                         _ => out.push(format!(
                             "face {id:?} loop {k} side {i} names edge {e:?}, which does not join {a:?}-{b:?}"
                         )),

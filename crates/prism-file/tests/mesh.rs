@@ -263,3 +263,38 @@ fn large_scene_timing() {
         );
     }
 }
+
+/// Curved faces export as triangles on their surface (Exact Curves 4a).
+#[test]
+fn cylinder_sides_export_as_triangles_on_the_surface() {
+    let (r, h) = (1.5, 2.0);
+    let m = prism_tools::scenes::cylinder(r, h);
+    let sides: std::collections::BTreeSet<_> = m
+        .faces()
+        .filter(|(_, f)| f.is_curved())
+        .map(|(id, _)| id)
+        .collect();
+    let o = ExportOptions {
+        format: Format::Stl,
+        unit: prism_math::LengthUnit::Metres,
+        y_up: false,
+    };
+    let mesh = mesh::to_mesh(&m, Some(&sides), &o, false);
+    let mut area = 0.0;
+    for t in &mesh.polygons {
+        let [a, b, c] = [0, 1, 2].map(|i| mesh.positions[t[i] as usize]);
+        let n = (b - a).cross(c - a);
+        // Facing out, away from the axis.
+        let mid = (a + b + c) / 3.0;
+        assert!(
+            n.dot(mid.truncate().extend(0.0)) > 0.0,
+            "faces out: {a} {b} {c} n={n}"
+        );
+        area += n.length() / 2.0;
+        for p in [a, b, c] {
+            assert!((p.truncate().length() - r).abs() < 1e-9, "on the surface");
+        }
+    }
+    let exact = std::f64::consts::TAU * r * h;
+    assert!((area - exact).abs() < exact * 1e-3, "{area} vs {exact}");
+}

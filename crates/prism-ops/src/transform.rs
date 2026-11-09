@@ -52,6 +52,9 @@ pub const ARC_WOULD_BEND: &str =
 pub const ARC_FACE_WOULD_FOLD: &str =
     "Refused: a face with arcs would fold. Keep it flat, or move all of it.";
 
+/// Said when a move would bend a curved face.
+pub const CURVED_WOULD_BEND: &str = "Refused: a curved face would bend. Move all of it.";
+
 /// Whether moving `vs` by `m` keeps every arc an arc and its faces flat:
 /// each arc with an end in `vs` has both there, `m` scales evenly if any
 /// does, and a face with arcs (or with holes and an arc's end) that moves
@@ -70,6 +73,16 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
     });
     if !arcs_ok {
         return Some(ARC_WOULD_BEND);
+    }
+    // Curved faces move whole, or not at all (Exact Curves 4a).
+    let curved_bends = model.faces().any(|(_, f)| {
+        f.is_curved() && {
+            let n = f.loops().flatten().filter(|v| vs.contains(v)).count();
+            n > 0 && n < f.loops().flatten().count()
+        }
+    });
+    if curved_bends {
+        return Some(CURVED_WOULD_BEND);
     }
     let tol = model.tol();
     // Arc ends: a face with holes that bends is flattened by moving its
@@ -91,9 +104,10 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
         !touches_arcs
             || moved.is_empty()
             || moved.len() == f.loops().flatten().count()
-            || moved.iter().all(|v| {
-                f.plane()
-                    .contains(m.transform_point3(model.vertex(*v)), &tol)
+            || f.plane().is_some_and(|pl| {
+                moved
+                    .iter()
+                    .all(|v| pl.contains(m.transform_point3(model.vertex(*v)), &tol))
             })
     });
     (!flat).then_some(ARC_FACE_WOULD_FOLD)
@@ -197,8 +211,32 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
         .map(|(id, _)| id)
         .collect();
     for id in touched {
+        if move_curved(model, id, m) {
+            continue;
+        }
         settle_face(model, id, &tol);
     }
+}
+
+/// A curved face moved whole: its surface follows `m` exactly. False for a
+/// flat face.
+fn move_curved(model: &mut Model, id: FaceId, m: &DAffine3) -> bool {
+    let Some(Surface::Cylinder(c)) = model.face(id).map(|f| f.surface) else {
+        return false;
+    };
+    let moved = c.transformed(m).unwrap_or_else(|| {
+        // Uneven: the model check reports it off its surface until the
+        // segment fallback (DECISIONS #32).
+        let k = m.matrix3.determinant().abs().cbrt();
+        prism_geom::Cylinder {
+            origin: m.transform_point3(c.origin),
+            axis: m.transform_vector3(c.axis).normalize(),
+            radius: c.radius * k,
+            outward: c.outward != (m.matrix3.determinant() < 0.0),
+        }
+    });
+    model.edit_face(id, |f| f.surface = Surface::Cylinder(moved));
+    true
 }
 
 /// Refit a face's plane after its vertices moved, or fold it into planar
@@ -481,6 +519,9 @@ pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
     for id in ids {
         if mirror {
             model.edit_face(id, |f| f.reverse());
+        }
+        if move_curved(model, id, m) {
+            continue;
         }
         let Some(face) = model.face(id) else {
             continue;

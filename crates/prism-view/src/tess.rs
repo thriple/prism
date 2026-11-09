@@ -52,6 +52,139 @@ pub fn triangulate(outer: &[DVec2], holes: &[Vec<DVec2>]) -> Vec<[usize; 3]> {
 
 /// Join one hole to the ring with a bridge from the hole's rightmost vertex
 /// to the nearest ring vertex it can see.
+/// [`triangulate`] for a curved face unrolled flat (Exact Curves part 4),
+/// with every triangle spanning as little of the curve as the points
+/// allow: a triangle spanning much of it would cut through the curved
+/// surface on its chord. Triangles index the points as given and turn
+/// counter-clockwise in the flat frame.
+///
+/// A loop that runs one way round and comes back (a cylinder face pulled
+/// from an arc: two chains along the curve, joined by straight seams) is
+/// zipped from one chain to the other. Any other shape is triangulated
+/// with each straight run bowed a little into the face first: unrolled,
+/// an arc's points are in a line that is not a line on the surface, and
+/// bowed, no triangle can join two of them that are not neighbours.
+pub fn triangulate_unrolled(outer: &[DVec2], holes: &[Vec<DVec2>]) -> Vec<[usize; 3]> {
+    if holes.is_empty()
+        && let Some(t) = zip(outer)
+    {
+        return t;
+    }
+    // The face is on the left of a counter-clockwise outer loop and of a
+    // clockwise hole.
+    let o = bow(outer, signed_area2(outer) > 0.0);
+    let hs: Vec<Vec<DVec2>> = holes
+        .iter()
+        .map(|h| bow(h, signed_area2(h) < 0.0))
+        .collect();
+    triangulate(&o, &hs)
+}
+
+/// Triangles between the two chains of a loop that runs along x and back
+/// (x never turns back within a chain), or None if it does not.
+fn zip(l: &[DVec2]) -> Option<Vec<[usize; 3]>> {
+    let n = l.len();
+    if n < 3 {
+        return None;
+    }
+    // Walk counter-clockwise, from the lowest of the leftmost points.
+    let ccw = signed_area2(l) > 0.0;
+    let start = (0..n).min_by(|a, b| {
+        l[*a]
+            .x
+            .total_cmp(&l[*b].x)
+            .then(l[*a].y.total_cmp(&l[*b].y))
+    })?;
+    let walk: Vec<usize> = (0..n)
+        .map(|k| {
+            if ccw {
+                (start + k) % n
+            } else {
+                (start + n - k) % n
+            }
+        })
+        .collect();
+    // Along x (the lower chain), then back (the upper one).
+    let mut turn = 0;
+    while turn + 1 < n && l[walk[turn + 1]].x >= l[walk[turn]].x {
+        turn += 1;
+    }
+    let lower: Vec<usize> = walk[..=turn].to_vec();
+    let mut upper: Vec<usize> = walk[turn..].to_vec();
+    upper.push(start);
+    if upper.windows(2).any(|w| l[w[1]].x > l[w[0]].x) {
+        return None;
+    }
+    upper.reverse();
+    let (mut i, mut j) = (0, 0);
+    let mut out = Vec::with_capacity(n);
+    while i + 1 < lower.len() || j + 1 < upper.len() {
+        let lower_next = (i + 1 < lower.len()).then(|| l[lower[i + 1]].x);
+        let upper_next = (j + 1 < upper.len()).then(|| l[upper[j + 1]].x);
+        let step_lower = match (lower_next, upper_next) {
+            (Some(a), Some(b)) => a < b || (a == b && i <= j),
+            (Some(_), None) => true,
+            _ => false,
+        };
+        let t = if step_lower {
+            i += 1;
+            [lower[i - 1], lower[i], upper[j]]
+        } else {
+            j += 1;
+            [lower[i], upper[j], upper[j - 1]]
+        };
+        if t[0] != t[1] && t[1] != t[2] && t[0] != t[2] {
+            out.push(t);
+        }
+    }
+    Some(out)
+}
+
+/// A loop with each straight run of three or more points bowed towards
+/// the face (`face_left`: the face is on its left).
+fn bow(l: &[DVec2], face_left: bool) -> Vec<DVec2> {
+    let n = l.len();
+    let mut out = l.to_vec();
+    if n < 3 {
+        return out;
+    }
+    let corner = |i: usize| {
+        let (a, b, c) = (l[(i + n - 1) % n], l[i], l[(i + 1) % n]);
+        let (u, v) = (b - a, c - b);
+        u.perp_dot(v).abs() > 1e-9 * u.length() * v.length() || u.dot(v) <= 0.0
+    };
+    let corners: Vec<usize> = (0..n).filter(|i| corner(*i)).collect();
+    if corners.len() < 2 {
+        return out;
+    }
+    let (lo, hi) = l
+        .iter()
+        .fold((l[0], l[0]), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+    let span = (hi - lo).min_element();
+    for (k, &c) in corners.iter().enumerate() {
+        let next = corners[(k + 1) % corners.len()];
+        let (p, q) = (l[c], l[next]);
+        let len = p.distance(q);
+        if len <= 0.0 {
+            continue;
+        }
+        let d = (q - p) / len;
+        let into = if face_left {
+            DVec2::new(-d.y, d.x)
+        } else {
+            DVec2::new(d.y, -d.x)
+        };
+        let amp = 0.04 * len.min(span);
+        let mut j = (c + 1) % n;
+        while j != next {
+            let t = l[j].distance(p) / len;
+            out[j] += into * amp * t * (1.0 - t);
+            j = (j + 1) % n;
+        }
+    }
+    out
+}
+
 fn bridge(pts: &[DVec2], ring: Vec<usize>, hole: &[usize], later: &[Vec<usize>]) -> Vec<usize> {
     let hm = (0..hole.len())
         .max_by(|&a, &b| {
@@ -241,6 +374,65 @@ fn is_ear(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A band unrolled from a cylinder: the bottom in 5 steps, the top in 3.
+    fn band() -> Vec<DVec2> {
+        let mut l: Vec<DVec2> = (0..=5).map(|i| DVec2::new(f64::from(i), 0.0)).collect();
+        l.extend(
+            (0..=3)
+                .rev()
+                .map(|i| DVec2::new(f64::from(i) * 5.0 / 3.0, 2.0)),
+        );
+        l
+    }
+
+    fn tri_area(l: &[DVec2], t: &[[usize; 3]]) -> f64 {
+        t.iter()
+            .map(|t| (l[t[1]] - l[t[0]]).perp_dot(l[t[2]] - l[t[0]]) / 2.0)
+            .sum()
+    }
+
+    #[test]
+    fn unrolled_bands_zip_in_short_steps() {
+        for l in [band(), band().into_iter().rev().collect()] {
+            let t = triangulate_unrolled(&l, &[]);
+            assert_eq!(t.len(), l.len() - 2);
+            assert!((tri_area(&l, &t) - 10.0).abs() < 1e-12, "covers it once");
+            for t in &t {
+                let xs = t.map(|i| l[i].x);
+                let span = xs.iter().fold(0.0f64, |m, x| m.max(*x))
+                    - xs.iter().fold(9.0f64, |m, x| m.min(*x));
+                assert!(span <= 5.0 / 3.0 + 1e-12, "a short step: {t:?}");
+                // No triangle lies along one chain.
+                let ys = t.map(|i| l[i].y);
+                assert!(ys.contains(&0.0) && ys.contains(&2.0));
+            }
+        }
+    }
+
+    #[test]
+    fn other_unrolled_shapes_never_join_three_points_of_a_run() {
+        // A C opening right: x turns back, so it is not a band.
+        let mut l: Vec<DVec2> = (0..=3).map(|i| DVec2::new(f64::from(i), 0.0)).collect();
+        l.extend(
+            [
+                (3.0, 1.0),
+                (1.0, 1.0),
+                (1.0, 2.0),
+                (3.0, 2.0),
+                (3.0, 3.0),
+                (0.0, 3.0),
+            ]
+            .map(|(x, y)| DVec2::new(x, y)),
+        );
+        let t = triangulate_unrolled(&l, &[]);
+        assert!(zip(&l).is_none());
+        assert!((tri_area(&l, &t) - 7.0).abs() < 1e-12, "{t:?}");
+        for t in &t {
+            let on_bottom = t.iter().filter(|i| l[**i].y == 0.0).count();
+            assert!(on_bottom < 3, "{t:?}");
+        }
+    }
 
     fn area(pts: &[DVec2], tris: &[[usize; 3]]) -> f64 {
         tris.iter()

@@ -39,7 +39,7 @@ fn closed(m: &Model) {
 
 fn normal_at(m: &Model, p: DVec3) -> DVec3 {
     let f = prism_ops::face_at(m, p).unwrap_or_else(|| panic!("a face at {p:?}"));
-    m.face(f).expect("face").plane().normal
+    m.face(f).expect("face").plane().unwrap().normal
 }
 
 #[allow(dead_code)]
@@ -48,7 +48,7 @@ fn dump(m: &Model) {
         let pts: Vec<_> = m.points(&f.outer).iter().map(|p| (p.x, p.y, p.z)).collect();
         eprintln!(
             "{id:?} n={:?} outer={pts:?} holes={}",
-            f.plane().normal,
+            f.plane().unwrap().normal,
             f.holes.len()
         );
     }
@@ -318,7 +318,7 @@ fn a_very_thin_plate_keeps_its_faces() {
         let t = 0.0005;
         prism_ops::add_rect(&mut m, -s / 2.0, 0.0, s / 2.0, t, 0.0);
         let f = prism_ops::face_at(&m, v(0.0, t / 2.0, 0.0)).expect("base");
-        let up = m.face(f).unwrap().plane().normal.z > 0.0;
+        let up = m.face(f).unwrap().plane().unwrap().normal.z > 0.0;
         prism_ops::push_pull(&mut m, f, if up { s } else { -s }, false);
         // And a box behind it, pulled up as a solid of its own.
         prism_ops::add_rect(
@@ -330,7 +330,7 @@ fn a_very_thin_plate_keeps_its_faces() {
             s * 0.3,
         );
         let g = prism_ops::face_at(&m, v(0.0, t + 0.01 + s * 0.1, s * 0.3)).expect("detail");
-        let up = m.face(g).unwrap().plane().normal.z > 0.0;
+        let up = m.face(g).unwrap().plane().unwrap().normal.z > 0.0;
         prism_ops::push_pull(&mut m, g, if up { s * 0.4 } else { -s * 0.4 }, false);
         assert_eq!(m.face_count(), 12, "size {s}");
         closed(&m);

@@ -171,12 +171,31 @@ pub fn to_mesh(
                 (mesh.positions.len() - 1) as u32
             })
         };
+        if let prism_geom::Surface::Cylinder(c) = f.surface {
+            // A curved face: its drawn points, triangulated unrolled flat.
+            let loops: Vec<Vec<(DVec3, DVec2)>> =
+                (0..=f.holes.len()).map(|k| m.unrolled(f, k)).collect();
+            let flat = |l: &Vec<(DVec3, DVec2)>| l.iter().map(|x| x.1).collect::<Vec<_>>();
+            let holes: Vec<Vec<DVec2>> = loops[1..].iter().map(flat).collect();
+            let base = mesh.positions.len() as u32;
+            mesh.positions
+                .extend(loops.iter().flatten().map(|x| out(x.0, o)));
+            for t in prism_view_tess::triangulate_unrolled(&flat(&loops[0]), &holes) {
+                let mut tri = [t[0], t[1], t[2]].map(|i| base + i as u32);
+                if !c.outward {
+                    tri.swap(1, 2);
+                }
+                mesh.polygons.push(tri.to_vec());
+            }
+            continue;
+        }
         if polygons && f.holes.is_empty() {
             let poly: Vec<u32> = f.outer.iter().map(|v| idx(*v, &mut mesh)).collect();
             mesh.polygons.push(poly);
             continue;
         }
-        let frame = f.plane().frame();
+        let Some(&plane) = f.plane() else { continue };
+        let frame = plane.frame();
         let flat = |l: &[prism_topo::VertexId]| -> Vec<DVec2> {
             l.iter().map(|v| frame.to_2d(m.vertex(*v))).collect()
         };
@@ -184,7 +203,7 @@ pub fn to_mesh(
         let holes: Vec<Vec<DVec2>> = f.holes.iter().map(|h| flat(h)).collect();
         let all: Vec<prism_topo::VertexId> = f.loops().flatten().copied().collect();
         // The frame's normal may be the face's, or the opposite.
-        let flip = frame.normal.dot(f.plane().normal) < 0.0;
+        let flip = frame.normal.dot(plane.normal) < 0.0;
         for t in prism_view_tess::triangulate(&outer, &holes) {
             let mut tri = [all[t[0]], all[t[1]], all[t[2]]];
             if flip {

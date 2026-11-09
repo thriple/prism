@@ -203,7 +203,8 @@ impl Scene {
         };
         let edge_faces = model.edge_faces();
         for (id, f) in model.faces() {
-            let plane = *f.plane();
+            // Curved faces are shaded from Exact Curves 4b.
+            let Some(&plane) = f.plane() else { continue };
             let frame = plane.frame();
             let (u, v) = if frame.normal.dot(plane.normal) >= 0.0 {
                 (frame.u, frame.v)
@@ -271,7 +272,12 @@ impl Scene {
         for (id, e) in model.edges() {
             let fs = edge_faces.get(&id);
             let fid = |k: usize| fs.and_then(|v| v.get(k)).copied();
-            let n = |k: usize| fid(k).and_then(|f| model.face(f)).map(|f| f.plane().normal);
+            let mid = model.vertex(e.a).lerp(model.vertex(e.b), 0.5);
+            let n = |k: usize| {
+                fid(k)
+                    .and_then(|f| model.face(f))
+                    .map(|f| f.surface.normal_at(mid))
+            };
             s.edge_index.insert(id, s.edges.len());
             s.edges.push(SceneEdge {
                 id,

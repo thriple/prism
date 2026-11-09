@@ -90,7 +90,7 @@ fn moves_turns_and_even_scales_keep_circles_exact() {
     );
     transform::rotate(&mut m, &vs, DVec3::ZERO, DVec3::X, PI / 2.0);
     // Now standing up: its face turned with it.
-    let n = m.face(FaceId(0)).expect("face").plane().normal;
+    let n = m.face(FaceId(0)).expect("face").plane().unwrap().normal;
     assert!(n.z.abs() < 1e-9, "{n}");
     transform::scale(&mut m, &vs, DVec3::ZERO, DVec3::splat(2.0));
     assert!(arcs(&m).iter().all(|(_, r)| (*r - 4.0).abs() < 1e-9));

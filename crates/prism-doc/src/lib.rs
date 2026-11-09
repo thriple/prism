@@ -363,8 +363,9 @@ impl Command {
         let dir = |v: DVec3| to_local.transform_vector3(v);
         // A distance along a face's normal, in the group's units.
         let along = |face: FaceId, d: f64| -> f64 {
-            let Some(f) = model.face(face) else { return d };
-            let n = f.plane().normal;
+            let Some(n) = model.face(face).and_then(|f| f.plane()).map(|p| p.normal) else {
+                return d;
+            };
             // The world normal is the local one through the inverse
             // transpose; a world step d along it, brought back.
             let world_n = to_local.matrix3.transpose().mul_vec3(n).normalize();
@@ -584,14 +585,15 @@ impl Command {
     /// Run a geometry command on a model (commands that change groups do
     /// nothing here; see [`Command::apply_in`]).
     /// Why this edit leaves `m` as it is, when it is refused because of
-    /// arcs (what the tools say).
+    /// arcs or curved faces (what the tools say).
     pub fn refusal(&self, m: &Model) -> Option<&'static str> {
         use prism_ops::transform::{arcs_refusal, scaling, turn};
         match self {
-            Command::PushPull { face, .. } if m.face_has_arcs(*face) => {
-                Some(prism_ops::pushpull::ARC_FACE_PULL)
-            }
+            Command::PushPull { face, .. } => prism_ops::pushpull::refusal(m, *face),
             Command::Fillet { corner, radius } => prism_ops::fillet::refusal(m, *corner, *radius),
+            Command::Offset { face, .. } if m.face(*face).is_some_and(|f| f.is_curved()) => {
+                Some(prism_ops::offset::CURVED_OFFSET)
+            }
             Command::Translate { vertices, by } => {
                 arcs_refusal(m, vertices, &prism_math::DAffine3::from_translation(*by))
             }

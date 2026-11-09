@@ -117,7 +117,8 @@ pub(crate) fn rebuild_plane(
     let old: Vec<FaceId> = model
         .faces()
         .filter(|(_, f)| {
-            f.plane().same_surface(plane, tol) && f.loops().flatten().all(|v| on.contains_key(v))
+            f.plane().is_some_and(|p| p.same_surface(plane, tol))
+                && f.loops().flatten().all(|v| on.contains_key(v))
         })
         .map(|(id, _)| id)
         .collect();
@@ -158,7 +159,8 @@ pub(crate) fn rebuild_plane(
             let facing = |f: &FaceId| {
                 model
                     .face(*f)
-                    .is_some_and(|g| g.plane().normal.dot(frame.normal) > 0.0)
+                    .and_then(|g| g.plane())
+                    .is_some_and(|p| p.normal.dot(frame.normal) > 0.0)
             };
             if covers.iter().any(facing) && !covers.iter().all(facing) {
                 continue;
@@ -201,7 +203,8 @@ pub(crate) fn rebuild_plane(
             } else {
                 let up = model
                     .face(*c)
-                    .is_some_and(|f| f.plane().normal.dot(frame.normal) > 0.0);
+                    .and_then(|f| f.plane())
+                    .is_some_and(|p| p.normal.dot(frame.normal) > 0.0);
                 made_faces.push(make_face(model, r, &frame, up));
             }
         }
@@ -297,7 +300,8 @@ fn neighbour_facing(model: &Model, old: &[FaceId], r: &Region, frame: &Frame) ->
     old.iter().find_map(|f| {
         let face = model.face(*f)?;
         let shares = face.edge_ids().any(|e| edges.contains(&e));
-        shares.then(|| face.plane().normal.dot(frame.normal) > 0.0)
+        let n = face.plane()?.normal;
+        shares.then(|| n.dot(frame.normal) > 0.0)
     })
 }
 

@@ -241,7 +241,7 @@ fn moving_the_top_of_a_box_set_against_a_wall() {
     let mut m = Model::new();
     let pull = |m: &mut Model, at: DVec3, h: f64| {
         let f = prism_ops::face_at(m, at).expect("base");
-        let up = m.face(f).expect("f").plane().normal.z > 0.0;
+        let up = m.face(f).expect("f").plane().unwrap().normal.z > 0.0;
         prism_ops::push_pull(m, f, if up { h } else { -h }, false);
     };
     prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
@@ -261,7 +261,7 @@ fn moving_the_top_of_a_box_set_against_a_wall() {
     // face there reaches out to y = -0.2.
     for (_, f) in m.faces() {
         let pts = m.points(&f.outer);
-        if f.plane().normal.x.abs() > 0.99 && pts.iter().any(|p| p.z > 2.0) {
+        if f.plane().unwrap().normal.x.abs() > 0.99 && pts.iter().any(|p| p.z > 2.0) {
             assert!(
                 pts.iter().all(|p| p.y > -1e-9),
                 "the tall wall bent: {pts:?}"
@@ -279,7 +279,7 @@ fn moving_a_box_top_leaves_a_corner_neighbours_edge_straight() {
     let mut m = Model::new();
     let pull = |m: &mut Model, at: DVec3, h: f64| {
         let f = prism_ops::face_at(m, at).expect("base");
-        let up = m.face(f).expect("f").plane().normal.z > 0.0;
+        let up = m.face(f).expect("f").plane().unwrap().normal.z > 0.0;
         prism_ops::push_pull(m, f, if up { h } else { -h }, false);
     };
     prism_ops::add_rect(&mut m, 3.0, 1.0, 4.0, 2.0, 0.0);

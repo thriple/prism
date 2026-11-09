@@ -61,7 +61,7 @@ fn run(m: &mut Model, s: &Step) {
         Step::Notch { face, a, b, d } => {
             let id = ids[face % ids.len()];
             let f = m.face(id).expect("face").clone();
-            let plane = *f.plane();
+            let plane = *f.plane().unwrap();
             let frame = plane.frame();
             // A small rectangle near the face's first corner, inside it.
             let c = frame.to_2d(m.vertex(f.outer[0]));

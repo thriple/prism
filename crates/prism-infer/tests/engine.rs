@@ -15,7 +15,7 @@ fn model(k: f64) -> Model {
     prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0 * k, 4.0 * k, 0.0);
     prism_ops::add_rect(&mut m, 1.0 * k, 1.0 * k, 2.0 * k, 2.0 * k, 0.0);
     let f = prism_ops::face_at(&m, DVec3::new(1.5, 1.5, 0.0) * k).expect("small square");
-    let up = m.face(f).expect("f").plane().normal.z > 0.0;
+    let up = m.face(f).expect("f").plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { k } else { -k }, false);
     m
 }
@@ -445,14 +445,14 @@ fn crossings_of_the_hovered_face_snap() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
     let f = prism_ops::face_at(&m, DVec3::new(2.0, 2.0, 0.0)).unwrap();
-    let up = m.face(f).unwrap().plane().normal.z > 0.0;
+    let up = m.face(f).unwrap().plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
     // A 2 x 1 bar through the box from y = -1 to 6, moved in (a move does
     // not cut, so the crossings stay for inference to find).
     let before: std::collections::BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
     prism_ops::add_rect(&mut m, 21.0, -1.0, 23.0, 6.0, 0.5);
     let bar = prism_ops::face_at(&m, DVec3::new(22.0, 2.0, 0.5)).unwrap();
-    let up = m.face(bar).unwrap().plane().normal.z > 0.0;
+    let up = m.face(bar).unwrap().plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, bar, if up { 1.0 } else { -1.0 }, false);
     let vs = m
         .vertices()

@@ -20,9 +20,12 @@ pub fn limit(model: &Model, face: FaceId, distance: f64) -> f64 {
         return distance;
     }
     let sign = distance.signum();
-    let dir = f.plane().normal * sign;
-    let origin = f.plane().origin;
-    let frame = f.plane().frame();
+    let Some(&plane) = f.plane() else {
+        return 0.0;
+    };
+    let dir = plane.normal * sign;
+    let origin = plane.origin;
+    let frame = plane.frame();
     let flat = |l: &[VertexId]| -> Vec<DVec2> {
         l.iter().map(|v| frame.to_2d(model.vertex(*v))).collect()
     };
@@ -44,24 +47,28 @@ pub fn limit(model: &Model, face: FaceId, distance: f64) -> f64 {
         if glo.cmpgt(hi).any() || ghi.cmplt(lo).any() {
             continue;
         }
-        if leans_over(model, f, g, dir) {
-            return 0.0;
-        }
-        let gn = g.plane().normal;
         let height = |p: DVec3| (p - origin).dot(dir);
-        if tol.parallel(gn, dir) {
-            // A parallel face ahead: met when the two overlap.
-            let h = height(g.plane().origin);
-            if h > tol.dist && h < best {
-                let gframe: Vec<Vec<DVec2>> = g
-                    .loops()
-                    .map(|l| l.iter().map(|v| frame.to_2d(model.vertex(*v))).collect())
-                    .collect();
-                if overlap(&f2, &gframe, &tol) {
-                    take(&mut best, h, tol.dist);
-                }
+        // A curved face is met by its corners and edges only, for now
+        // (Exact Curves 4b meets its surface).
+        let gplane = g.plane().copied();
+        if let Some(gp) = gplane {
+            if leans_over(model, f, g, dir) {
+                return 0.0;
             }
-            continue;
+            if tol.parallel(gp.normal, dir) {
+                // A parallel face ahead: met when the two overlap.
+                let h = height(gp.origin);
+                if h > tol.dist && h < best {
+                    let gframe: Vec<Vec<DVec2>> = g
+                        .loops()
+                        .map(|l| l.iter().map(|v| frame.to_2d(model.vertex(*v))).collect())
+                        .collect();
+                    if overlap(&f2, &gframe, &tol) {
+                        take(&mut best, h, tol.dist);
+                    }
+                }
+                continue;
+            }
         }
         // Another face's corner inside the swept block.
         for p in g3.iter().flatten() {
@@ -71,17 +78,20 @@ pub fn limit(model: &Model, face: FaceId, distance: f64) -> f64 {
             }
         }
         // The moving face's corner reaching the other face.
-        let gframe = g.plane().frame();
-        let g2: Vec<Vec<DVec2>> = g3
-            .iter()
-            .map(|l| l.iter().map(|p| gframe.to_2d(*p)).collect())
-            .collect();
-        let along = dir.dot(gn);
-        if along.abs() > 1e-12 {
-            for p in f3.iter().flatten() {
-                let t = (g.plane().origin - *p).dot(gn) / along;
-                if t > tol.dist && t <= best && inside(gframe.to_2d(*p + dir * t), &g2, &tol) {
-                    take(&mut best, t, tol.dist);
+        if let Some(gp) = gplane {
+            let gn = gp.normal;
+            let gframe = gp.frame();
+            let g2: Vec<Vec<DVec2>> = g3
+                .iter()
+                .map(|l| l.iter().map(|p| gframe.to_2d(*p)).collect())
+                .collect();
+            let along = dir.dot(gn);
+            if along.abs() > 1e-12 {
+                for p in f3.iter().flatten() {
+                    let t = (gp.origin - *p).dot(gn) / along;
+                    if t > tol.dist && t <= best && inside(gframe.to_2d(*p + dir * t), &g2, &tol) {
+                        take(&mut best, t, tol.dist);
+                    }
                 }
             }
         }
@@ -196,8 +206,10 @@ fn edge_cross(p: DVec3, q: DVec3, a: DVec3, b: DVec3, dir: DVec3, tol: &Tol) -> 
 /// Whether neighbour `g` shares an edge with `f` and leans over the path
 /// `f` moves along (its inside heads both along `dir` and back over `f`).
 fn leans_over(model: &Model, f: &Face, g: &Face, dir: DVec3) -> bool {
-    let fn_ = f.plane().normal;
-    let gn = g.plane().normal;
+    let (Some(fp), Some(gp)) = (f.plane(), g.plane()) else {
+        return false;
+    };
+    let (fn_, gn) = (fp.normal, gp.normal);
     let pairs = |face: &Face| -> Vec<(VertexId, VertexId)> {
         face.loops()
             .flat_map(|l| loop_pairs(l).collect::<Vec<_>>())
@@ -232,7 +244,9 @@ mod tests {
 
     fn top_face(m: &Model, z: f64) -> FaceId {
         m.faces()
-            .find(|(_, f)| f.plane().normal.z > 0.9 && (m.points(&f.outer)[0].z - z).abs() < 1e-9)
+            .find(|(_, f)| {
+                f.plane().unwrap().normal.z > 0.9 && (m.points(&f.outer)[0].z - z).abs() < 1e-9
+            })
             .map(|(id, _)| id)
             .expect("a face facing up")
     }
@@ -253,7 +267,7 @@ mod tests {
         add_rect(&mut m, 0.5, 0.5, 1.5, 1.5, 3.0);
         let f = top_face(&m, 0.0);
         // The floor faces up or down: push it toward the plate above.
-        let up = if m.face(f).unwrap().plane().normal.z > 0.0 {
+        let up = if m.face(f).unwrap().plane().unwrap().normal.z > 0.0 {
             1.0
         } else {
             -1.0
@@ -265,7 +279,7 @@ mod tests {
         add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
         add_rect(&mut m, 5.0, 0.0, 6.0, 1.0, 3.0);
         let f = top_face(&m, 0.0);
-        let up = if m.face(f).unwrap().plane().normal.z > 0.0 {
+        let up = if m.face(f).unwrap().plane().unwrap().normal.z > 0.0 {
             1.0
         } else {
             -1.0
@@ -278,7 +292,7 @@ mod tests {
         let mut m = Model::new();
         add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
         let base = m.faces().next().unwrap().0;
-        let up = if m.face(base).unwrap().plane().normal.z > 0.0 {
+        let up = if m.face(base).unwrap().plane().unwrap().normal.z > 0.0 {
             1.0
         } else {
             -1.0
@@ -306,7 +320,7 @@ mod tests {
             crate::sticky::add_segment(&mut m, fin[i], fin[(i + 1) % 4]);
         }
         let f = top_face(&m, 0.0);
-        let up = if m.face(f).unwrap().plane().normal.z > 0.0 {
+        let up = if m.face(f).unwrap().plane().unwrap().normal.z > 0.0 {
             1.0
         } else {
             -1.0
@@ -338,7 +352,7 @@ mod tests {
             crate::sticky::add_segment(&mut m, lean[i], lean[(i + 1) % 4]);
         }
         let f = top_face(&m, 0.0);
-        let up = if m.face(f).unwrap().plane().normal.z > 0.0 {
+        let up = if m.face(f).unwrap().plane().unwrap().normal.z > 0.0 {
             1.0
         } else {
             -1.0

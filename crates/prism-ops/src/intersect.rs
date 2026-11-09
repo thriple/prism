@@ -27,10 +27,11 @@ pub struct Flat {
 }
 
 impl Flat {
-    /// A model face's flat form.
+    /// A model face's flat form. None for a curved face: Intersect Faces
+    /// skips those (their cuts would need ellipses, DECISIONS #32).
     pub fn of(m: &Model, id: FaceId) -> Option<Flat> {
         let f = m.face(id)?;
-        let plane = *f.plane();
+        let plane = *f.plane()?;
         let frame = plane.frame();
         let to2 = |l: &[prism_topo::VertexId]| -> Vec<DVec2> {
             l.iter().map(|v| frame.to_2d(m.vertex(*v))).collect()

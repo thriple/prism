@@ -58,7 +58,8 @@ pub struct Report {
     pub far_from_origin: bool,
     /// Pieces smaller than ten tolerances.
     pub tiny: Found,
-    /// Arcs with an end off their circle.
+    /// Arcs with an end off their circle, and curved faces with a point
+    /// off their surface.
     pub off_circle: Found,
 }
 
@@ -104,7 +105,38 @@ pub fn check(model: &Model) -> Report {
     }
     r.tiny = tiny(model, &tol);
     r.off_circle.edges = off_circle(model, &tol).into_keys().collect();
+    r.off_circle.faces = off_surface(model, &tol).into_keys().collect();
     r
+}
+
+/// Curved faces with a point off their surface, and where each such point
+/// belongs (straight out from the axis).
+fn off_surface(model: &Model, tol: &Tol) -> BTreeMap<FaceId, Vec<(VertexId, DVec3)>> {
+    let mut out = BTreeMap::new();
+    for (id, f) in model.faces() {
+        let prism_geom::Surface::Cylinder(c) = f.surface else {
+            continue;
+        };
+        let off: Vec<(VertexId, DVec3)> = f
+            .loops()
+            .flatten()
+            .filter_map(|v| {
+                let p = model.vertex(*v);
+                if c.distance(p).abs() <= tol.dist {
+                    return None;
+                }
+                let at = c.axis_point(p);
+                let dir = (p - at)
+                    .try_normalize()
+                    .unwrap_or_else(|| prism_math::Plane::new(at, c.axis).frame().u);
+                Some((*v, at + dir * c.radius))
+            })
+            .collect();
+        if !off.is_empty() {
+            out.insert(id, off);
+        }
+    }
+    out
 }
 
 /// Arcs with an end off their circle, and where each such end belongs.
@@ -139,10 +171,12 @@ fn off_circle(model: &Model, tol: &Tol) -> BTreeMap<EdgeId, Vec<(VertexId, DVec3
 }
 
 /// Repair Arcs: move each end that left its arc's circle back onto it (the
-/// nearest point). A point shared by two such arcs follows the first.
-/// Returns how many arcs were repaired.
+/// nearest point), and each point of a curved face back onto its surface.
+/// A point shared by two such arcs or faces follows the first. Returns how
+/// many arcs and faces were repaired.
 pub fn repair_arcs(model: &mut Model) -> usize {
-    let found = off_circle(model, &model.tol());
+    let tol = model.tol();
+    let found = off_circle(model, &tol);
     let mut moved = BTreeSet::new();
     for ends in found.values() {
         for &(v, p) in ends {
@@ -151,7 +185,15 @@ pub fn repair_arcs(model: &mut Model) -> usize {
             }
         }
     }
-    found.len()
+    let faces = off_surface(model, &tol);
+    for points in faces.values() {
+        for &(v, p) in points {
+            if moved.insert(v) {
+                model.set_vertex(v, p);
+            }
+        }
+    }
+    found.len() + faces.len()
 }
 
 fn pair(a: VertexId, b: VertexId) -> (VertexId, VertexId) {

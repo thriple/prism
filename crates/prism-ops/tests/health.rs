@@ -12,7 +12,7 @@ fn cube(at: DVec3, s: f64) -> Model {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, at.x, at.y, at.x + s, at.y + s, at.z);
     let f = prism_ops::face_at(&m, at + v(s / 2.0, s / 2.0, 0.0)).expect("base");
-    let up = m.face(f).unwrap().plane().normal.z > 0.0;
+    let up = m.face(f).unwrap().plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { s } else { -s }, false);
     m
 }
@@ -48,7 +48,7 @@ fn a_flipped_face_is_found_and_orient_turns_it_back() {
     assert_eq!(health::orient(&mut m, None), 1);
     assert!(check(&m).reversed.is_empty());
     assert!(
-        m.face(top).unwrap().plane().normal.z > 0.9,
+        m.face(top).unwrap().plane().unwrap().normal.z > 0.9,
         "the top faces up again"
     );
 }
@@ -62,7 +62,7 @@ fn an_inside_out_box_is_turned_to_face_out() {
     health::orient(&mut m, None);
     assert!(check(&m).reversed.is_empty());
     let top = prism_ops::face_at(&m, v(1.0, 1.0, 2.0)).unwrap();
-    assert!(m.face(top).unwrap().plane().normal.z > 0.9);
+    assert!(m.face(top).unwrap().plane().unwrap().normal.z > 0.9);
 }
 
 #[test]

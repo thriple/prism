@@ -136,14 +136,14 @@ fn a_tilted_face_offsets_in_its_own_plane() {
     // A side wall, upright in the x-z plane at y = 0.
     let wall = m
         .faces()
-        .find(|(_, fc)| fc.plane().normal.y < -0.9)
+        .find(|(_, fc)| fc.plane().unwrap().normal.y < -0.9)
         .map(|(id, _)| id)
         .expect("the y = 0 wall");
     offset::offset(&mut m, wall, 0.5);
     ok(&m);
     let a = m.face_area(
         m.faces()
-            .filter(|(_, fc)| fc.plane().normal.y < -0.9)
+            .filter(|(_, fc)| fc.plane().unwrap().normal.y < -0.9)
             .map(|(id, _)| id)
             .min_by(|a, b| m.face_area(*a).total_cmp(&m.face_area(*b)))
             .unwrap(),

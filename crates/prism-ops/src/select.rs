@@ -129,7 +129,7 @@ fn merge_across(model: &mut Model, sel: &mut Selection) {
         // edge too: it goes, as erasing an edge always takes its faces).
         let flat: Vec<(FaceId, prism_math::Plane)> = fs
             .iter()
-            .filter_map(|f| model.face(*f).map(|x| (*f, *x.plane())))
+            .filter_map(|f| model.face(*f).and_then(|x| Some((*f, *x.plane()?))))
             .collect();
         let mut pair = None;
         for i in 0..flat.len() {

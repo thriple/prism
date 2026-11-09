@@ -38,15 +38,38 @@ fn key(a: VertexId, b: VertexId) -> (VertexId, VertexId) {
 /// Said when Push/Pull is asked to pull a face with arcs.
 pub const ARC_FACE_PULL: &str = "Faces with arcs cannot be pulled yet.";
 
+/// Said when Push/Pull is asked to pull a curved face, or one beside it.
+pub const CURVED_PULL: &str = "Curved faces, and faces beside them, cannot be pulled yet.";
+
+/// Why `face` cannot be pulled yet, if it cannot.
+pub fn refusal(model: &Model, face: FaceId) -> Option<&'static str> {
+    let f = model.face(face)?;
+    let touches_curved = || {
+        model.faces().any(|(g, x)| {
+            g != face && x.is_curved() && x.loops().flatten().any(|v| f.uses_vertex(*v))
+        })
+    };
+    if f.is_curved() || touches_curved() {
+        Some(CURVED_PULL)
+    } else if model.face_has_arcs(face) {
+        // Faces with arcs make curved walls: Exact Curves 4b.
+        Some(ARC_FACE_PULL)
+    } else {
+        None
+    }
+}
+
 pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool) -> Pulled {
     let tol = model.tol();
     let Some(f) = model.face(face).cloned() else {
         return Pulled::Nothing;
     };
-    // Faces with arcs make curved walls: Exact Curves part 4.
-    if model.face_has_arcs(face) {
+    if refusal(model, face).is_some() {
         return Pulled::Nothing;
     }
+    let Some(&plane) = f.plane() else {
+        return Pulled::Nothing;
+    };
     // It stops at the first face in its way (Alt's new loop is not
     // limited: the original loop stays behind).
     let distance = if new_loop {
@@ -57,7 +80,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     if tol.is_zero(distance) {
         return Pulled::Nothing;
     }
-    let n = f.plane().normal;
+    let n = plane.normal;
     let shift = n * distance;
     // On a solid, Push/Pull is a boolean with the block the face sweeps.
     let swept = if new_loop {
@@ -73,7 +96,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         model
             .faces()
             .filter(|(_, g)| g.loops().flatten().any(|v| vs.contains(v)))
-            .map(|(_, g)| *g.plane())
+            .filter_map(|(_, g)| g.plane().copied())
             .collect()
     };
     let before_ids: BTreeSet<prism_topo::EdgeId> = model.edges().map(|(id, _)| id).collect();
@@ -86,12 +109,13 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     };
     // A face that runs along the push and lies behind the face (the walls
     // under a box's top), so it can stretch.
-    let origin = f.plane().origin;
+    let origin = plane.origin;
     let along = |g: FaceId| {
         model.face(g).is_some_and(|g| {
             let pts = model.points(&g.outer);
             let centre = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
-            tol.perpendicular(g.plane().normal, n) && (centre - origin).dot(n) < 0.0
+            g.plane()
+                .is_some_and(|p| tol.perpendicular(p.normal, n) && (centre - origin).dot(n) < 0.0)
         })
     };
     // A point with a line running back from it along the push (an open box).
@@ -239,7 +263,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     })) {
         model.add_edge(a, b);
     }
-    let old_plane = *f.plane();
+    let old_plane = plane;
     let moved_plane = Plane::new(old_plane.origin + shift, old_plane.normal);
     model.edit_face(face, |g| {
         g.outer = remap(&f.outer);

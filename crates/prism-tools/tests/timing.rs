@@ -84,7 +84,13 @@ fn push_pull_on_the_large_scene() {
     let m = doc.model().clone();
     let (top, _) = m
         .faces()
-        .max_by(|a, b| a.1.plane().origin.z.total_cmp(&b.1.plane().origin.z))
+        .max_by(|a, b| {
+            a.1.plane()
+                .unwrap()
+                .origin
+                .z
+                .total_cmp(&b.1.plane().unwrap().origin.z)
+        })
         .expect("a face");
     let n = 10;
     let t = std::time::Instant::now();

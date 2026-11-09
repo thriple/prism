@@ -273,3 +273,16 @@ fn names_tags_and_hidden_flags_round_trip() {
     assert_eq!(back.assembly, c.assembly);
     assert_eq!(prism_file::write(&back, "test"), bytes);
 }
+
+/// Curved faces are saved and read back exactly (Exact Curves 4a).
+#[test]
+fn cylinders_round_trip_exactly() {
+    let m = prism_tools::scenes::cylinder(1.25, 0.5);
+    let c = Contents::with_model(m.clone(), Settings::default());
+    let back = read(&write(&c, "test")).expect("opens");
+    assert_eq!(back.model().to_json(), m.to_json());
+    assert_eq!(
+        back.model().faces().filter(|(_, f)| f.is_curved()).count(),
+        2
+    );
+}

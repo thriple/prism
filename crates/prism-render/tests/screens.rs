@@ -125,7 +125,7 @@ fn pocket_box(ratio: f64, depth: f64) -> Model {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
     let base = prism_ops::face_at(&m, DVec3::new(2.0, 2.0, 0.0)).expect("base");
-    let up = if m.face(base).expect("face").plane().normal.z > 0.0 {
+    let up = if m.face(base).expect("face").plane().unwrap().normal.z > 0.0 {
         2.0
     } else {
         -2.0
@@ -134,7 +134,7 @@ fn pocket_box(ratio: f64, depth: f64) -> Model {
     let (a, b) = (2.0 - 2.0 * ratio, 2.0 + 2.0 * ratio);
     prism_ops::add_rect(&mut m, a, a, b, b, 2.0);
     let inner = prism_ops::face_at(&m, DVec3::new(2.0, 2.0, 2.0)).expect("pocket face");
-    let down = if m.face(inner).expect("face").plane().normal.z > 0.0 {
+    let down = if m.face(inner).expect("face").plane().unwrap().normal.z > 0.0 {
         -depth
     } else {
         depth
@@ -207,7 +207,7 @@ fn nothing_shows_through_a_thin_plate_far_away() {
         let y0 = -s * 0.05;
         prism_ops::add_rect(&mut m, -s / 2.0, y0, s / 2.0, y0 + t, 0.0);
         let f = prism_ops::face_at(&m, DVec3::new(0.0, y0 + t / 2.0, 0.0)).expect("plate base");
-        let up = if m.face(f).expect("f").plane().normal.z > 0.0 {
+        let up = if m.face(f).expect("f").plane().unwrap().normal.z > 0.0 {
             s
         } else {
             -s
@@ -224,7 +224,7 @@ fn nothing_shows_through_a_thin_plate_far_away() {
         prism_ops::add_rect(&mut m, -s * 0.2, d0, s * 0.2, d1, s * 0.3);
         let f =
             prism_ops::face_at(&m, DVec3::new(0.0, (d0 + d1) / 2.0, s * 0.3)).expect("detail base");
-        let up = if m.face(f).expect("f").plane().normal.z > 0.0 {
+        let up = if m.face(f).expect("f").plane().unwrap().normal.z > 0.0 {
             s * 0.4
         } else {
             -s * 0.4
@@ -540,7 +540,7 @@ fn an_open_group_fades_the_rest() {
             z: 0.0,
         });
         let f = prism_ops::face_at(doc.model(), DVec3::new(x + 1.0, 1.0, 0.0)).expect("base");
-        let up = doc.model().face(f).expect("f").plane().normal.z > 0.0;
+        let up = doc.model().face(f).expect("f").plane().unwrap().normal.z > 0.0;
         doc.run(Command::PushPull {
             face: f,
             distance: if up { 2.0 } else { -2.0 },
@@ -619,7 +619,7 @@ fn an_edge_shared_by_two_touching_boxes_is_drawn_whole() {
     for (x, y) in [(0.0, 0.0), (2.0, 2.0)] {
         prism_ops::add_rect(&mut m, x, y, x + 2.0, y + 2.0, 0.0);
         let f = prism_ops::face_at(&m, DVec3::new(x + 1.0, y + 1.0, 0.0)).expect("base");
-        let up = m.face(f).expect("f").plane().normal.z > 0.0;
+        let up = m.face(f).expect("f").plane().unwrap().normal.z > 0.0;
         prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
     }
     let corner = m
@@ -725,7 +725,7 @@ fn view_styles_draw_as_described() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
     let f = prism_ops::face_at(&m, DVec3::new(1.0, 1.0, 0.0)).expect("base");
-    let up = m.face(f).expect("f").plane().normal.z > 0.0;
+    let up = m.face(f).expect("f").plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
     let cam = Camera {
         eye: DVec3::new(5.0, -4.0, 4.0),
@@ -827,7 +827,7 @@ fn the_sun_casts_shadows_on_faces() {
     prism_ops::add_rect(&mut m, -6.0, -6.0, 6.0, 6.0, 0.0);
     prism_ops::add_rect(&mut m, -1.0, -1.0, 1.0, 1.0, 0.0);
     let f = prism_ops::face_at(&m, DVec3::new(0.0, 0.0, 0.0)).expect("square");
-    let up = m.face(f).expect("f").plane().normal.z > 0.0;
+    let up = m.face(f).expect("f").plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { 3.0 } else { -3.0 }, false);
     let sun = ViewStyle {
         sun: true,

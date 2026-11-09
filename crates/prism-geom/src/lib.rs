@@ -377,22 +377,131 @@ pub fn circle_circle(
         .collect()
 }
 
+/// A round surface about an axis (Exact Curves part 4): every point is
+/// `radius` from the line through `origin` along the unit `axis`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Cylinder {
+    pub origin: DVec3,
+    /// Unit length.
+    pub axis: DVec3,
+    pub radius: f64,
+    /// The face points away from the axis (true) or towards it.
+    pub outward: bool,
+}
+
+impl Cylinder {
+    /// The nearest point of the axis to `p`.
+    pub fn axis_point(&self, p: DVec3) -> DVec3 {
+        self.origin + self.axis * (p - self.origin).dot(self.axis)
+    }
+
+    /// How far `p` is from the surface (positive outside).
+    pub fn distance(&self, p: DVec3) -> f64 {
+        (p - self.axis_point(p)).length() - self.radius
+    }
+
+    /// The face's normal at `p` (a point on or near the surface).
+    pub fn normal_at(&self, p: DVec3) -> DVec3 {
+        let out = (p - self.axis_point(p)).normalize_or_zero();
+        if self.outward { out } else { -out }
+    }
+
+    /// The same surface, facing the other way.
+    pub fn flipped(&self) -> Cylinder {
+        Cylinder {
+            outward: !self.outward,
+            ..*self
+        }
+    }
+
+    /// The surface after `m`, if it is still a cylinder (moves, turns,
+    /// mirrors and even scales; an uneven scale gives None). A mirror turns
+    /// the face's loops round, so the face then points the other way.
+    pub fn transformed(&self, m: &DAffine3) -> Option<Cylinder> {
+        let s = even_scale(m)?;
+        Some(Cylinder {
+            origin: m.transform_point3(self.origin),
+            axis: (m.matrix3 * self.axis).normalize(),
+            radius: self.radius * s,
+            outward: self.outward != (m.matrix3.determinant() < 0.0),
+        })
+    }
+
+    /// The circle of this cylinder through `p`: its centre and axis.
+    pub fn circle_at(&self, p: DVec3) -> (DVec3, DVec3) {
+        (self.axis_point(p), self.axis)
+    }
+
+    /// Whether `curve` from `a` to `b` lies on the surface, within `eps`:
+    /// a line along the axis, or an arc of one of its circles.
+    pub fn holds(&self, curve: &Curve, a: DVec3, b: DVec3, eps: f64) -> bool {
+        let on = |p: DVec3| self.distance(p).abs() <= eps;
+        if !on(a) || !on(b) {
+            return false;
+        }
+        match *curve {
+            Curve::Line => {
+                let d = b - a;
+                (d - self.axis * d.dot(self.axis)).length() <= eps
+            }
+            Curve::Arc {
+                centre,
+                axis,
+                radius,
+            } => {
+                (radius - self.radius).abs() <= eps
+                    && (axis.dot(self.axis).abs() - 1.0).abs() <= 1e-9
+                    && centre.distance(self.axis_point(centre)) <= eps
+            }
+        }
+    }
+}
+
 /// The surface a face lies on.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Surface {
     Plane(Plane),
+    Cylinder(Cylinder),
 }
 
 impl Surface {
-    pub fn plane(&self) -> &Plane {
+    /// The plane, for a flat face; None for a curved one.
+    pub fn plane(&self) -> Option<&Plane> {
         match self {
-            Surface::Plane(p) => p,
+            Surface::Plane(p) => Some(p),
+            Surface::Cylinder(_) => None,
         }
     }
 
-    /// Which way the face points.
-    pub fn normal(&self) -> DVec3 {
-        self.plane().normal
+    pub fn is_curved(&self) -> bool {
+        !matches!(self, Surface::Plane(_))
+    }
+
+    /// Which way the face points at `p` (a point on it).
+    pub fn normal_at(&self, p: DVec3) -> DVec3 {
+        match self {
+            Surface::Plane(pl) => pl.normal,
+            Surface::Cylinder(c) => c.normal_at(p),
+        }
+    }
+
+    /// How far `p` is from the surface, signed by the face's side.
+    pub fn distance(&self, p: DVec3) -> f64 {
+        match self {
+            Surface::Plane(pl) => pl.distance(p),
+            Surface::Cylinder(c) => {
+                let d = c.distance(p);
+                if c.outward { d } else { -d }
+            }
+        }
+    }
+
+    /// The same surface, facing the other way.
+    pub fn flipped(&self) -> Surface {
+        match self {
+            Surface::Plane(p) => Surface::Plane(p.flipped()),
+            Surface::Cylinder(c) => Surface::Cylinder(c.flipped()),
+        }
     }
 }
 

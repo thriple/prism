@@ -228,19 +228,34 @@ impl AppHost<'_> {
             .faces()
             .take(limit)
             .map(|(id, f)| {
-                let n = t.transform_vector3(f.plane().normal).normalize_or_zero();
                 let outer: Vec<Value> = m
                     .points(&f.outer)
                     .into_iter()
                     .map(|p| point(t.transform_point3(p)))
                     .collect();
-                json!({
+                let mut j = json!({
                     "id": id.0,
-                    "normal": point(n),
                     "area": round(m.face_area(id)),
                     "outer": outer,
                     "holes": f.holes.len(),
-                })
+                });
+                match f.surface {
+                    prism_geom::Surface::Plane(pl) => {
+                        j["normal"] = point(t.transform_vector3(pl.normal).normalize_or_zero());
+                    }
+                    // A curved face (Exact Curves part 4), as placed in the
+                    // world.
+                    prism_geom::Surface::Cylinder(c) => {
+                        let c = c.transformed(&t).unwrap_or(c);
+                        j["cylinder"] = json!({
+                            "origin": point(c.origin),
+                            "axis": point(c.axis),
+                            "radius": round(c.radius),
+                            "outward": c.outward,
+                        });
+                    }
+                }
+                j
             })
             .collect();
         let edges: Vec<Value> = m
@@ -639,6 +654,35 @@ mod tests {
         assert!(has([-1.0, 0.0, 0.0]), "by centre: {g}");
         assert!(has([-1.0, 1.0, 0.0]), "the pie: {g}");
         assert_eq!(g["faces_total"], 1, "the pie is a face");
+    }
+
+    #[test]
+    fn geometry_lists_a_cylinder_face() {
+        let mut doc = prism_doc::Document::new();
+        doc.run(prism_doc::Command::Import {
+            model: prism_tools::scenes::cylinder(1.5, 2.0),
+        });
+        let (mut chrome, mut viewport, mut files) = parts(doc);
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let g = value(h.call("get_geometry", &json!({})));
+        let faces = g["faces"].as_array().unwrap();
+        let sides: Vec<&Value> = faces.iter().filter(|f| f["cylinder"].is_object()).collect();
+        assert_eq!(sides.len(), 2, "{g}");
+        for f in sides {
+            let c = &f["cylinder"];
+            assert_eq!(c["radius"], 1.5);
+            assert_eq!(c["axis"], json!([0.0, 0.0, 1.0]));
+            assert_eq!(c["outward"], true);
+            assert!(f["normal"].is_null(), "no single normal");
+        }
+        assert_eq!(faces.iter().filter(|f| f["normal"].is_array()).count(), 2);
     }
 
     #[test]

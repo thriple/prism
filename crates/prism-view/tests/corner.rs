@@ -11,7 +11,7 @@ fn touching(h2: f64) -> Model {
     for (x, h) in [(0.0, 2.0), (2.0, h2)] {
         prism_ops::add_rect(&mut m, x, x, x + 2.0, x + 2.0, 0.0);
         let f = prism_ops::face_at(&m, DVec3::new(x + 1.0, x + 1.0, 0.0)).expect("base");
-        let up = m.face(f).expect("f").plane().normal.z > 0.0;
+        let up = m.face(f).expect("f").plane().unwrap().normal.z > 0.0;
         prism_ops::push_pull(&mut m, f, if up { h } else { -h }, false);
     }
     m
@@ -58,7 +58,7 @@ fn pulling_one_box_up_or_down_splits_the_shared_line() {
     ] {
         let mut m = touching(2.0);
         let top = prism_ops::face_at(&m, DVec3::new(3.0, 3.0, 2.0)).expect("top");
-        let up = m.face(top).expect("f").plane().normal.z > 0.0;
+        let up = m.face(top).expect("f").plane().unwrap().normal.z > 0.0;
         prism_ops::push_pull(&mut m, top, if up { d } else { -d }, false);
         assert_eq!(corner_edges(&m), want, "pulled by {d}");
         assert!(prism_ops::check::problems(&m).is_empty());

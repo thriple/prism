@@ -5,6 +5,77 @@ use prism_geom::Surface;
 use prism_math::{DVec3, Plane, newell};
 use prism_topo::{Face, Model, VertexId};
 
+/// A cylinder of radius `r` and height `h` on the ground, built by hand
+/// for tests (Push/Pull makes them from Exact Curves 4b): two discs, two
+/// seams, and two cylinder faces facing out.
+pub fn cylinder(r: f64, h: f64) -> Model {
+    let mut m = Model::new();
+    prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, r);
+    prism_ops::add_circle(&mut m, DVec3::Z * h, DVec3::Z, r);
+    let at = |m: &Model, z: f64| -> Vec<VertexId> {
+        m.vertices()
+            .filter(|(_, p)| (p.z - z).abs() < 1e-9)
+            .map(|(id, _)| id)
+            .collect()
+    };
+    let (bottom, top) = (at(&m, 0.0), at(&m, h));
+    let above = |m: &Model, b: VertexId| -> VertexId {
+        let p = m.vertex(b);
+        *top.iter()
+            .find(|t| m.vertex(**t).truncate().distance(p.truncate()) < 1e-9)
+            .expect("a seam")
+    };
+    let (b0, b1) = (bottom[0], bottom[1]);
+    let (t0, t1) = (above(&m, b0), above(&m, b1));
+    let seams = [(m.vertex(b0), m.vertex(t0)), (m.vertex(b1), m.vertex(t1))];
+    for (p, q) in seams {
+        prism_ops::add_segment(&mut m, p, q);
+    }
+    // The arc between `a` and `b` that runs counter-clockwise about +Z
+    // from `a`.
+    let arc = |m: &Model, a: VertexId, b: VertexId| -> prism_topo::EdgeId {
+        m.edges()
+            .find(|(_, e)| {
+                e.has(a) && e.has(b) && {
+                    let prism_geom::Curve::Arc { axis, .. } = e.curve else {
+                        return false;
+                    };
+                    (if e.a == a { axis } else { -axis }).z > 0.0
+                }
+            })
+            .map(|(id, _)| id)
+            .expect("an arc")
+    };
+    let line = |m: &Model, a: VertexId, b: VertexId| -> prism_topo::EdgeId {
+        m.edges()
+            .find(|(_, e)| e.has(a) && e.has(b) && !e.curve.is_arc())
+            .map(|(id, _)| id)
+            .expect("a seam")
+    };
+    let side = Surface::Cylinder(prism_geom::Cylinder {
+        origin: DVec3::ZERO,
+        axis: DVec3::Z,
+        radius: r,
+        outward: true,
+    });
+    for (a, b, ta, tb) in [(b0, b1, t0, t1), (b1, b0, t1, t0)] {
+        // Round the bottom, up a seam, back round the top, down.
+        let edges = vec![
+            arc(&m, a, b),
+            line(&m, b, tb),
+            arc(&m, ta, tb),
+            line(&m, ta, a),
+        ];
+        m.add_face(Face::with_edges(
+            vec![a, b, tb, ta],
+            vec![],
+            side,
+            vec![edges],
+        ));
+    }
+    m
+}
+
 pub fn by_action(id: &str) -> Option<Document> {
     Some(match id {
         "help.scene.cube" => cube(),
@@ -23,7 +94,7 @@ fn pulled_rect(doc: &mut Document, x0: f64, y0: f64, x1: f64, y1: f64, z: f64, h
         let up = doc
             .model()
             .face(face)
-            .is_some_and(|f| f.plane().normal.z > 0.0);
+            .is_some_and(|f| f.plane().unwrap().normal.z > 0.0);
         doc.run(Command::PushPull {
             face,
             distance: if up { height } else { -height },
@@ -65,7 +136,7 @@ pub fn plate() -> Document {
         let up = doc
             .model()
             .face(face)
-            .is_some_and(|f| f.plane().normal.z > 0.0);
+            .is_some_and(|f| f.plane().unwrap().normal.z > 0.0);
         doc.run(Command::PushPull {
             face,
             distance: if up { 1.0 } else { -1.0 },
@@ -161,7 +232,7 @@ mod tests {
             let h = 0.5 + f64::from((i * 7 + j * 3) % 5) * 0.3;
             let centre = DVec3::new(f64::from(i) * 1.5 + 0.5, f64::from(j) * 1.5 + 0.5, h / 2.0);
             assert!(
-                f.plane().normal.dot(c - centre) > 0.0,
+                f.plane().unwrap().normal.dot(c - centre) > 0.0,
                 "a face points into its box"
             );
         }

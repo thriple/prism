@@ -22,7 +22,13 @@ fn loops_2d(model: &Model, f: FaceId) -> Vec<Vec<DVec2>> {
     let Some(face) = model.face(f) else {
         return vec![];
     };
-    let fr = face.plane().frame();
+    let Some(pl) = face.plane() else {
+        // A curved face, unrolled flat.
+        return (0..=face.holes.len())
+            .map(|k| model.unrolled(face, k).into_iter().map(|x| x.1).collect())
+            .collect();
+    };
+    let fr = pl.frame();
     model
         .face_loop_points(face)
         .iter()
@@ -35,19 +41,24 @@ pub fn no_overlaps(model: &Model, tol: &Tol) -> Vec<String> {
     let mut out = Vec::new();
     let faces: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
     for &f in &faces {
-        let Some(ff) = model.face(f) else { continue };
-        let fr = ff.plane().frame();
+        // Curved faces are not checked for overlaps yet.
+        let Some(fp) = model.face(f).and_then(|x| x.plane()) else {
+            continue;
+        };
+        let fr = fp.frame();
         let Some(sample) = interior_point(&loops_2d(model, f)) else {
             out.push(format!("face {f:?} has no inside"));
             continue;
         };
         let p3 = fr.to_3d(sample);
         for &g in &faces {
-            let Some(gg) = model.face(g) else { continue };
-            if g == f || !gg.plane().same_surface(ff.plane(), tol) {
+            let Some(gp) = model.face(g).and_then(|x| x.plane()) else {
+                continue;
+            };
+            if g == f || !gp.same_surface(fp, tol) {
                 continue;
             }
-            let q = gg.plane().frame().to_2d(p3);
+            let q = gp.frame().to_2d(p3);
             let polys = loops_2d(model, g);
             if point_in_polygon(q, &polys[0]) == Inside::Inside
                 && polys[1..]
@@ -111,12 +122,29 @@ pub fn holes_inside(model: &Model, _tol: &Tol) -> Vec<String> {
     out
 }
 
-/// Every face's vertices are on its plane, and its outer loop winds the way
-/// its normal points.
+/// Every face's vertices are on its surface, and its outer loop winds the
+/// way its normal points.
 pub fn planar(model: &Model, tol: &Tol) -> Vec<String> {
     let mut out = Vec::new();
     for (id, f) in model.faces() {
-        let pl = f.plane();
+        let Some(pl) = f.plane() else {
+            if f.loops()
+                .flatten()
+                .any(|v| f.surface.distance(model.vertex(*v)).abs() > tol.dist)
+            {
+                out.push(format!("face {id:?} is off its surface"));
+            }
+            // Unrolled, the outer loop winds about the outward normal.
+            let p: Vec<DVec2> = model.unrolled(f, 0).into_iter().map(|x| x.1).collect();
+            let area: f64 = (0..p.len())
+                .map(|i| p[i].perp_dot(p[(i + 1) % p.len()]))
+                .sum();
+            let outward = matches!(f.surface, prism_geom::Surface::Cylinder(c) if c.outward);
+            if (area > 0.0) != outward {
+                out.push(format!("face {id:?} winds against its normal"));
+            }
+            continue;
+        };
         if f.loops()
             .flatten()
             .any(|v| !pl.contains(model.vertex(*v), tol))

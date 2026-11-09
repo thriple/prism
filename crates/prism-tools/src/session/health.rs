@@ -68,12 +68,7 @@ impl Session {
                 Some("Intersect Faces"),
             ),
             row("tiny", "Tiny pieces", &r.tiny, None),
-            row(
-                "arcs",
-                "Arcs off their circle",
-                &r.off_circle,
-                Some("Repair"),
-            ),
+            row("arcs", "Off their curve", &r.off_circle, Some("Repair")),
         ];
         // Information only: nesting and scale.
         let asm = self.doc.assembly();

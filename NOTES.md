@@ -1486,3 +1486,54 @@ and inference, 2d the Circle and Polygon tools).
   asks the owner to draw arcs and fillets over MCP in a build.
 - Not built: a fillet over MCP has no test of its own (the brief asks
   only for each kind of arc).
+
+## Exact Curves (part 4, step 4a): curved surfaces in the core
+
+Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
+- **`prism_geom::Cylinder`:** axis point, unit axis, radius, and whether
+  the face points out. `holds` says whether a line (along the axis) or an
+  arc (one of its circles) lies on it. `Surface::Cylinder` is the new
+  surface.
+- **`Surface::plane()` and `Face::plane()` now give `Option`.** Every use
+  was decided:
+  - moves, turns, mirrors and even scales of a whole curved face move its
+    cylinder exactly (`move_curved` in `transform.rs`; a mirror turns the
+    loops round, so `outward` flips with it);
+  - refused, with reasons: moving part of a curved face
+    (`CURVED_WOULD_BEND`); Push/Pull of a curved face or a face touching
+    one (`CURVED_PULL`, until 4b); Offset of a curved face
+    (`CURVED_OFFSET`); uneven scales already refuse because of the arcs;
+  - skipped: face finding, the coplanar rule, the overlap check, and
+    Intersect Faces (curved faces are not cut; their cuts need ellipses).
+    The brief said Intersect Faces would refuse; skipping is gentler and
+    the brief now says so.
+  - `reach::limit` meets a curved face only by its corners and edges, not
+    its surface (4b).
+  - the viewport does not draw curved faces yet (4b).
+- **Unrolled faces:** `Model::unrolled(face, k)` gives a cylinder face's
+  loop flat, as (distance round, height), walking its sides so the angle
+  never jumps. Areas, the model check (points on the surface, winding)
+  and mesh export use it.
+- **Tessellation:** `tess::triangulate_unrolled`. A band (two chains along
+  the curve joined by seams: what Push/Pull makes) is zipped chain to
+  chain, so no triangle spans more than one step round. Other shapes are
+  triangulated with each straight run bowed a little into the face, so
+  three points of one arc are never joined (they would stick out on the
+  surface). The plain triangulator made both mistakes: the export test
+  found them.
+- **Files:** `SurfaceV1::Cylinder`; old files read unchanged, so the
+  layout number stays. An older Prism cannot open a file with a cylinder.
+- **Model Health:** the "arcs" row (now "Off their curve") also lists
+  curved faces with a point off their surface; Repair moves such points
+  straight back onto it.
+- **MCP:** `get_geometry` gives a curved face's `cylinder` (origin, axis,
+  radius, outward) in place of `normal`.
+- Tests: a cylinder built by hand (`prism_tools::scenes::cylinder`, and a
+  copy in `prism-ops/tests/curved.rs`) is clean with exact areas; moves,
+  turns, even scales and mirrors keep it exact; bends and uneven scales
+  are refused; Push/Pull and Offset refuse; Intersect Faces leaves its
+  sides; Model Health finds and repairs a point pushed off; the file
+  round trip; mesh export (on the surface, facing out, the right area);
+  MCP; the refusals through `Command::refusal`; both tessellation paths.
+- Not built: curved faces in the viewport, picking and inference on them
+  (4b).

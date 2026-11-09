@@ -44,7 +44,7 @@ impl Flat {
 /// the face on its left.
 fn flat_loops(model: &Model, face: FaceId) -> Option<(Flat, Vec<Vec<DVec2>>)> {
     let f = model.face(face)?;
-    let n = f.plane().normal;
+    let n = f.plane()?.normal;
     let origin = model.vertex(*f.outer.first()?);
     let flat = Flat::new(origin, n);
     let loops = f
@@ -384,7 +384,7 @@ pub fn offset_arc_loops(
     distance: f64,
 ) -> Option<(Vec<Vec<Piece>>, f64)> {
     let f = model.face(face)?;
-    let n = f.plane().normal;
+    let n = f.plane()?.normal;
     let flat = Flat::new(model.vertex(*f.outer.first()?), n);
     let loops = face_pieces(model, face)?;
     let tol = model.tol();
@@ -405,7 +405,7 @@ pub fn signed_distance(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
     if model.face_has_arcs(face) {
         // Along the curves, and inside by the drawn outline.
         let f = model.face(face)?;
-        let flat = Flat::new(model.vertex(*f.outer.first()?), f.plane().normal);
+        let flat = Flat::new(model.vertex(*f.outer.first()?), f.plane()?.normal);
         let best = face_pieces(model, face)?
             .iter()
             .flatten()
@@ -483,7 +483,7 @@ pub fn distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
 /// lies beside (within its length, or its sweep), by how far it is to
 /// that piece's left.
 fn arc_distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
-    let n = model.face(face)?.plane().normal;
+    let n = model.face(face)?.plane()?.normal;
     let slack = model.tol().dist;
     face_pieces(model, face)?
         .iter()
@@ -520,6 +520,9 @@ fn arc_distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
 
 /// Offset a face: add its offset loops as edges (they split the face, or
 /// add a ring round it). Returns the distance used, if anything was added.
+/// Said when Offset is asked to offset a curved face.
+pub const CURVED_OFFSET: &str = "Curved faces cannot be offset yet.";
+
 pub fn offset(model: &mut Model, face: FaceId, distance: f64) -> Option<f64> {
     if model.tol().is_zero(distance) {
         return None;

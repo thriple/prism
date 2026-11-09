@@ -521,8 +521,10 @@ fn candidate_planes(
         }
     };
     for (_, f) in model.faces() {
-        let pl = f.plane();
-        if pl.contains(pa, tol) && pl.contains(pb, tol) {
+        if let Some(pl) = f.plane()
+            && pl.contains(pa, tol)
+            && pl.contains(pb, tol)
+        {
             push(*pl);
         }
     }
@@ -560,9 +562,10 @@ pub fn face_at(model: &Model, p: DVec3) -> Option<FaceId> {
     let tol = model.tol();
     model
         .faces()
-        .filter(|(_, f)| f.plane().contains(p, &tol))
+        .filter(|(_, f)| f.plane().is_some_and(|pl| pl.contains(p, &tol)))
         .filter(|(_, f)| {
-            let fr = f.plane().frame();
+            let Some(pl) = f.plane() else { return false };
+            let fr = pl.frame();
             let poly = |l: &[VertexId]| -> Vec<prism_math::DVec2> {
                 l.iter().map(|v| fr.to_2d(model.vertex(*v))).collect()
             };

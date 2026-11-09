@@ -23,7 +23,17 @@ enum CurveV1 {
 
 #[derive(Serialize, Deserialize)]
 enum SurfaceV1 {
-    Plane { origin: P, normal: P },
+    Plane {
+        origin: P,
+        normal: P,
+    },
+    /// Exact Curves 4a. Old files have none, so the layout stays.
+    Cylinder {
+        origin: P,
+        axis: P,
+        radius: f64,
+        outward: bool,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -207,6 +217,12 @@ pub fn encode(m: &Model) -> Vec<u8> {
                         origin: p(pl.origin),
                         normal: p(pl.normal),
                     },
+                    Surface::Cylinder(c) => SurfaceV1::Cylinder {
+                        origin: p(c.origin),
+                        axis: p(c.axis),
+                        radius: c.radius,
+                        outward: c.outward,
+                    },
                 },
             })
             .collect(),
@@ -300,6 +316,17 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                             SurfaceV1::Plane { origin, normal } => Surface::Plane(Plane {
                                 origin: DVec3::from_array(origin),
                                 normal: DVec3::from_array(normal),
+                            }),
+                            SurfaceV1::Cylinder {
+                                origin,
+                                axis,
+                                radius,
+                                outward,
+                            } => Surface::Cylinder(prism_geom::Cylinder {
+                                origin: DVec3::from_array(origin),
+                                axis: DVec3::from_array(axis),
+                                radius,
+                                outward,
                             }),
                         },
                         f.edges

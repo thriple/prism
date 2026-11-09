@@ -218,7 +218,7 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
                 continue;
             }
             points.extend(f.loops().flatten().copied());
-            planes.push(*f.plane());
+            planes.extend(f.plane().copied());
         }
         let test = |x: DVec3| sw.inside(x);
         crate::settle::settle_with(model, &points, &planes, Some(&test));

@@ -130,12 +130,13 @@ fn run(
     let mut planes: Vec<Plane> = Vec::new();
     let mut plane_cells: BTreeMap<Cell, Vec<usize>> = BTreeMap::new();
     for (id, f) in model.faces() {
-        let c = cell(f.plane(), &tol);
+        // The coplanar rule is for flat faces.
+        let Some(&p) = f.plane() else { continue };
+        let c = cell(&p, &tol);
         cells.entry(c).or_default().push(id);
         if face_tag(f) == Tag::Still {
             continue;
         }
-        let p = *f.plane();
         let known = around(c).any(|k| {
             plane_cells
                 .get(&k)
@@ -181,7 +182,7 @@ fn run(
             .copied()
             .filter(|f| {
                 model.face(*f).is_some_and(|face| {
-                    face.plane().same_surface(plane, &tol)
+                    face.plane().is_some_and(|p| p.same_surface(plane, &tol))
                         && face
                             .loops()
                             .flatten()

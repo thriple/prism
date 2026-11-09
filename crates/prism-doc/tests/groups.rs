@@ -23,7 +23,7 @@ fn boxed(d: &mut Document, at: DVec3, w: f64, h: f64) {
         z: at.z,
     });
     let f = prism_ops::face_at(d.model(), at + v(w / 2.0, w / 2.0, 0.0)).expect("base");
-    let up = d.model().face(f).expect("face").plane().normal.z > 0.0;
+    let up = d.model().face(f).expect("face").plane().unwrap().normal.z > 0.0;
     d.run(Command::PushPull {
         face: f,
         distance: if up { h } else { -h },
@@ -266,6 +266,7 @@ fn overlap_case(k: f64, turn: f64) {
         .face(side)
         .unwrap()
         .plane()
+        .unwrap()
         .normal
         .x
         > 0.0;
@@ -487,7 +488,7 @@ fn a_mirrored_instance_explodes_into_a_valid_model() {
     assert!(check::problems(m).is_empty(), "{:?}", check::problems(m));
     // Faces still face out: the top's normal is up.
     let top = prism_ops::face_at(m, v(1.0, 1.0, 1.0)).expect("top");
-    assert!(m.face(top).unwrap().plane().normal.z > 0.9);
+    assert!(m.face(top).unwrap().plane().unwrap().normal.z > 0.9);
 }
 
 // ---------- hiding, names and tags (part 3) ----------

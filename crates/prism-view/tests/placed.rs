@@ -21,7 +21,7 @@ fn block() -> Model {
         prism_ops::add_segment(&mut m, DVec3::new(a.0, a.1, 0.0), DVec3::new(b.0, b.1, 0.0));
     }
     let f = prism_ops::face_at(&m, DVec3::new(0.5, 0.5, 0.0)).expect("base");
-    let up = m.face(f).unwrap().plane().normal.z > 0.0;
+    let up = m.face(f).unwrap().plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { 1.5 } else { -1.5 }, false);
     m
 }

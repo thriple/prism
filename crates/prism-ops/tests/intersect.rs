@@ -108,7 +108,7 @@ fn intersect_faces_cuts_where_a_moved_bar_passes_through() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
     let f = face_at(&m, DVec3::new(2.0, 2.0, 0.0)).unwrap();
-    let up = m.face(f).unwrap().plane().normal.z > 0.0;
+    let up = m.face(f).unwrap().plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
     m = through_box(m);
     ok(&m);
@@ -134,7 +134,7 @@ pub fn through_box(mut m: Model) -> Model {
     let before: std::collections::BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
     prism_ops::add_rect(&mut m, 21.0, -1.0, 23.0, 6.0, 0.5);
     let bar = face_at(&m, DVec3::new(22.0, 2.0, 0.5)).unwrap();
-    let up = m.face(bar).unwrap().plane().normal.z > 0.0;
+    let up = m.face(bar).unwrap().plane().unwrap().normal.z > 0.0;
     prism_ops::push_pull(&mut m, bar, if up { 1.0 } else { -1.0 }, false);
     let vs = m
         .vertices()
