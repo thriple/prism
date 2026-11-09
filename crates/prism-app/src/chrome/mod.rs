@@ -9,6 +9,7 @@ mod dock;
 mod features;
 mod frame;
 mod hotkeys;
+mod mcp_window;
 mod menus;
 mod palette;
 mod toolbar_list;
@@ -38,6 +39,8 @@ pub enum Source {
     Context,
     Key,
     Search,
+    /// An AI assistant, through the MCP server (brief 21).
+    Assistant,
 }
 
 /// Clicked in the document tabs.
@@ -120,6 +123,9 @@ pub struct Chrome {
     /// Help > Check for Updates: its window, and the check (brief 20).
     pub(crate) updates_open: bool,
     pub(crate) updater: crate::update::Updater,
+    /// Help > MCP Server: its window, and the server (brief 21).
+    pub(crate) mcp_open: bool,
+    pub mcp: crate::mcp::Mcp,
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
@@ -155,6 +161,15 @@ impl Chrome {
             .unwrap_or_else(|| Keymap::from_preset(Preset::SketchUp, &reg));
         let mut c = Self::with_keymap(platform, keymap);
         c.persist = true;
+        let mcp = storage::load_mcp()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_else(|| {
+                // Saved now, so the token stays the same next time.
+                let s = crate::mcp::Settings::default();
+                storage::save_mcp(&serde_json::to_string_pretty(&s).unwrap_or_default());
+                s
+            });
+        c.mcp = crate::mcp::Mcp::new(mcp);
         let names = dock::names(&c);
         if let Some(l) = storage::load_toolbars()
             .and_then(|text| crate::toolbars::Layout::from_json(&text, &names))
@@ -203,6 +218,8 @@ impl Chrome {
             hotkeys: None,
             updates_open: false,
             updater: Default::default(),
+            mcp_open: false,
+            mcp: Default::default(),
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
             recent: Vec::new(),
@@ -366,6 +383,7 @@ impl Chrome {
                     "win.health" => self.panels.health = true,
                     "view.edittoolbars" => self.toolbars.editing = true,
                     "view.toolbars" => self.toolbars.window = true,
+                    "help.mcp" => self.mcp_open = true,
                     "help.update" => {
                         self.updates_open = true;
                         self.updater.check();
@@ -401,6 +419,7 @@ impl Chrome {
             || self.toolbars.editing
             || self.toolbars.window
             || self.updates_open
+            || self.mcp_open
     }
 
     /// Whether a window is docked in the side column. These windows do
@@ -419,6 +438,8 @@ impl Chrome {
             self.toolbars.window = false;
         } else if self.updates_open {
             self.updates_open = false;
+        } else if self.mcp_open {
+            self.mcp_open = false;
         } else if self.palette.is_some() {
             self.palette = None;
         } else if let Some(h) = &mut self.hotkeys {
@@ -514,6 +535,7 @@ impl Chrome {
         panels::show(self, ctx);
         toolbar_list::show(self, ctx);
         updates::show(self, ctx);
+        mcp_window::show(self, ctx);
         layout
     }
 }

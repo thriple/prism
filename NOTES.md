@@ -1098,3 +1098,42 @@ Brief: `docs/briefs/20-updates.md` (PLAN 3.1 decision 8, owner request).
 - **Left out:** checking at start, a Restart Now button (needs the quit
   path that asks to save), signature checks (once builds are signed).
 
+## MCP Server (part 1: the server, reading, and actions)
+Brief: `docs/briefs/21-mcp-server.md` (PLAN section 8 decision 6).
+- **Help > MCP Server…** (`help.mcp`): a switch (off by default), the
+  address, the token (New Token), the `claude mcp add --transport http …`
+  command with a Copy button, and the last few calls. Kept in `mcp.json`
+  in the user's settings; a token is made and saved on first start.
+- **Transport:** `http://127.0.0.1:47615/mcp` (tiny_http, its own
+  thread), local machine only. Bearer token (401), `Origin` must be local
+  (403, against DNS rebinding), GET and DELETE 405, POST answers JSON
+  only (no SSE), notifications 202, no sessions.
+- **Both protocol eras** (researched from the spec repository, 2026-11-09:
+  2026-07-28 is the newest release and removed the handshake):
+  `initialize`/`ping` for 2025-03-26 to 2025-11-25; `server/discover`,
+  the version in each request's `_meta`, `UnsupportedProtocolVersion`
+  (-32022, 400), `HeaderMismatch` (-32020, 400) and 404 for unknown
+  methods for 2026-07-28. Every result has `resultType: "complete"`.
+- **Tools:** `get_model`, `get_selection`, `get_health`, `list_actions`
+  (with a query), `run_action` (through the registry as a menu click,
+  `Source::Assistant`; greyed ones refused with the reason).
+- **Threads:** the socket thread speaks the protocol and sends tool calls
+  to the main thread (a channel and `UserEvent::Mcp`); it waits up to 60
+  seconds. The action dispatch from `redraw` became `app::dispatch`, used
+  by both. Stopping drops waiting calls (so nothing hangs) and joins the
+  thread; starting retries the port for a second (tiny_http lets go of it
+  a moment after stopping, which a restart on a new token hit).
+- **Checked:** tests for the protocol, the socket (token, origin, method,
+  restart on the same port, a call answered by the "main thread"), and
+  the tools on the real chrome and viewport (Select All, Make Group and
+  Undo through the history). In the real app under Xvfb: curl with both
+  eras, `run_action` Select All and X-ray showing in the viewport, the
+  window, and the switch stopping and starting the server.
+- **Left for part 2:** drawing at model coordinates, screenshots,
+  replaying sessions, face and edge detail, units. A file dialog opened
+  by an action blocks the answer until it closes (the call times out
+  after 60 seconds). `get_model` lists every group; very large models
+  give long answers.
+- **Not tried yet:** Claude Code itself connecting (not installable here
+  against the app's window; curl stood in for it).
+

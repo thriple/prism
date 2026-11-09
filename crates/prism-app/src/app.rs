@@ -76,6 +76,35 @@ fn start_files() -> Vec<String> {
     }
 }
 
+/// What can run now, from the document and the selection.
+pub(crate) fn rules(viewport: &Viewport, recent: usize) -> crate::actions::Context {
+    crate::actions::Context {
+        can_undo: viewport.can_undo(),
+        can_redo: viewport.can_redo(),
+        has_selection: !viewport.counts().is_empty(),
+        has_groups: viewport.counts().groups > 0,
+        recent,
+    }
+}
+
+/// Send the actions that ran (menus, keys, the assistant) where they go.
+pub(crate) fn dispatch(
+    chrome: &mut Chrome,
+    viewport: &mut Viewport,
+    files: &mut crate::files::Files,
+    tab_actions: &mut Vec<isize>,
+) {
+    for e in std::mem::take(&mut chrome.events) {
+        if e.id == "win.nexttab" || e.id == "win.prevtab" {
+            tab_actions.push(if e.id == "win.nexttab" { 1 } else { -1 });
+        } else if e.id.starts_with("file.") || e.id.starts_with("exp.") {
+            files.action(e.id, &mut viewport.session, chrome);
+        } else {
+            viewport.action(e.id, chrome);
+        }
+    }
+}
+
 /// What other threads and the browser tell the event loop.
 pub enum UserEvent {
     /// The GPU is ready (the web sets it up in the background).
@@ -84,6 +113,9 @@ pub enum UserEvent {
     /// Files arrived from another start or from the system (native only).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Files,
+    /// The MCP server has a tool call waiting (brief 21).
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Mcp,
 }
 
 struct App {
@@ -140,6 +172,13 @@ impl App {
         // `prism model.prism` (how Windows passes a double-clicked file).
         // macOS adds a -psn_ argument when Finder starts an app.
         let start_file = start_files().into_iter().next();
+        let mut chrome = Chrome::new(crate::platform::keys());
+        // The MCP server, if the user turned it on (brief 21).
+        let proxy = event_loop.create_proxy();
+        chrome.mcp.set_wake(move || {
+            let _ = proxy.send_event(UserEvent::Mcp);
+        });
+        chrome.mcp.apply();
         Self {
             proxy: event_loop.create_proxy(),
             window: None,
@@ -156,7 +195,7 @@ impl App {
             aurora: prism_ui::Aurora::new(),
             system_reduce_motion: crate::platform::system_reduces_motion(),
             next_redraw: None,
-            chrome: Chrome::new(crate::platform::keys()),
+            chrome,
             modifiers_state: winit::keyboard::ModifiersState::empty(),
             viewport,
             last_tool: "tool.select",
@@ -167,6 +206,34 @@ impl App {
             start_file,
             health_version: None,
         }
+    }
+
+    /// Run the assistant's waiting tool calls (brief 21).
+    fn serve_mcp(&mut self) {
+        for call in self.chrome.mcp.take_calls() {
+            let mut host = crate::mcp::host::AppHost {
+                chrome: &mut self.chrome,
+                viewport: &mut self.viewport,
+                files: &mut self.files,
+                tab_actions: &mut self.tab_actions,
+            };
+            let result = crate::mcp::protocol::Host::call(&mut host, &call.name, &call.args);
+            let what = call
+                .args
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map_or(call.name.clone(), |id| format!("{} {id}", call.name));
+            self.chrome.mcp.note(format!(
+                "{what}{}",
+                if result.is_ok() { "" } else { " (refused)" }
+            ));
+            let _ = call.reply.send(result);
+        }
+        if self.chrome.active_tool != self.last_tool {
+            self.viewport.tool_changed(self.chrome.active_tool);
+            self.last_tool = self.chrome.active_tool;
+        }
+        self.request_redraw();
     }
 
     fn request_redraw(&self) {
@@ -310,13 +377,7 @@ impl App {
             chrome.docs = tabs_labels.clone();
             chrome.active_doc = active_tab;
             chrome.recent = files.recent_names();
-            chrome.rules = crate::actions::Context {
-                can_undo: viewport.can_undo(),
-                can_redo: viewport.can_redo(),
-                has_selection: !viewport.counts().is_empty(),
-                has_groups: viewport.counts().groups > 0,
-                recent: chrome.recent.len(),
-            };
+            chrome.rules = rules(viewport, chrome.recent.len());
             chrome.component_rows = viewport
                 .session
                 .component_rows()
@@ -415,15 +476,7 @@ impl App {
                 viewport.tool_changed(chrome.active_tool);
                 *last_tool = chrome.active_tool;
             }
-            for e in std::mem::take(&mut chrome.events) {
-                if e.id == "win.nexttab" || e.id == "win.prevtab" {
-                    tab_actions.push(if e.id == "win.nexttab" { 1 } else { -1 });
-                } else if e.id.starts_with("file.") || e.id.starts_with("exp.") {
-                    files.action(e.id, &mut viewport.session, chrome);
-                } else {
-                    viewport.action(e.id, chrome);
-                }
-            }
+            dispatch(chrome, viewport, files, &mut tab_actions);
             if let Some(resp) = &layout.response {
                 viewport.input(ctx, resp, layout.viewport, chrome);
             }
@@ -580,6 +633,10 @@ impl ApplicationHandler<UserEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         let gpu = match event {
             UserEvent::Gpu(gpu) => *gpu,
+            UserEvent::Mcp => {
+                self.serve_mcp();
+                return;
+            }
             UserEvent::Files => {
                 // Each opens in a tab (or switches to it); the window comes
                 // forward.

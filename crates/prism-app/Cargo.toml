@@ -35,6 +35,7 @@ env_logger = "0.11.11"
 pollster = "1.0.1"
 # Open and save dialogs. On Linux (CI) the xdg-portal backend is pure Rust.
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+tiny_http = { version = "0.12", default-features = false }
 ureq = { version = "3.5", default-features = false, features = ["native-tls-no-default"] }
 
 # One running Prism: later starts hand their files over (brief 11).

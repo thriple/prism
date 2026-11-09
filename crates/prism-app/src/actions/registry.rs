@@ -95,7 +95,9 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 22] = [
+const COMMANDS: [&str; 23] = [
+    // MCP Server (brief 21).
+    "help.mcp",
     // Updates (brief 20).
     "help.update",
     // Toolbars (brief 19).

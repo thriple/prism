@@ -66,3 +66,4 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 | ureq | 3.5 | prism-app (native only) | MIT OR Apache-2.0 | Not used on the web | Downloads updates (brief 20). Default features off; `native-tls-no-default`, so the system's TLS and certificates are used |
 | native-tls | 0.2 | prism-app (native only, through ureq) | MIT OR Apache-2.0 | Not used on the web | Schannel on Windows, Security framework on macOS, OpenSSL on Linux (CI only) |
 | sha2 | 0.10 | prism-app | MIT OR Apache-2.0 | Yes | Checks a downloaded update against its published SHA-256 |
+| tiny_http | 0.12 | prism-app (native only) | MIT OR Apache-2.0 | Not used on the web (browsers cannot listen) | The local MCP server's HTTP (brief 21) |

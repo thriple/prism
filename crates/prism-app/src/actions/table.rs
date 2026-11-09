@@ -1268,6 +1268,14 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "",
         when: "",
     },
+    // MCP Server (brief 21): not in the prototype.
+    RawAction {
+        id: "help.mcp",
+        name: "MCP Server…",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
     RawAction {
         id: "help.about",
         name: "About Prism",
@@ -1811,6 +1819,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("help.record"),
             Item::Action("help.pen"),
             Item::Separator,
+            Item::Action("help.mcp"),
             Item::Action("help.update"),
             Item::Action("help.about"),
         ],

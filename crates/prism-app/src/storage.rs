@@ -16,6 +16,19 @@ pub fn save_keymap(json: &str) {
     }
 }
 
+const MCP: &str = "mcp.json";
+
+/// The MCP server's settings (brief 21), if saved.
+pub fn load_mcp() -> Option<String> {
+    imp::read(MCP)
+}
+
+pub fn save_mcp(json: &str) {
+    if let Err(e) = imp::write(MCP, json) {
+        log::warn!("could not save the MCP settings: {e}");
+    }
+}
+
 const TOOLBARS: &str = "toolbars.json";
 
 /// Where the toolbars were left (brief 19), if saved.
