@@ -22,41 +22,36 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - `Command::Duplicate` was removed (it made CI hang);
   - Updates and MCP Server were added to the plan, right after View
     Settings.
-- **State:** `main` = session branch. Last push: Exact Curves 2c
-  and 2d (part 2 done), then brief 24 and part 3 (3a–3d). Check its CI first. 2b's Web build failed on GitHub download
-  504s (not our code); 2c part 1's CI was fully green. If the trunk
-  download flakes again, make the Install trunk step retry
-  (`curl --fail --retry`). Owner said start part 3 (2026-11-09).
+- **State:** `main` = session branch, clean, last push 17ee0b8 (Exact
+  Curves 3d). CI was green through 3b; check 3c (d9af40c) and 3d first,
+  all jobs. GitHub release downloads gave 504s in the Web build on
+  2026-11-09 (not our code): re-run; if it repeats, make the download
+  steps retry (`curl --fail --retry`).
 - **Also fixed 2026-11-09:** View Settings moved to the Window menu;
   hidden-geometry ghosts are edges only, drawn like hidden lines.
-- **Exact Curves part 1 is built** (brief 22: faces name their edges, file
-  schema 3 / geometry layout 2; NOTES has what is left for part 2).
-- **Exact Curves part 2** is briefed (brief 23, four steps). Steps 2a
-  (arcs in the core) and 2b (exact crossings) are built. **Next: step 2c**
-  (picking, inference, Eraser, Model Health). 2c parts 1 (whole curves:
-  select, Eraser), 2 (arc snaps), 3 (Model Health: arcs off their
-  circle, Repair) and 4 (refused edits say why, in the status bar) are
-  built. **2d is built too: Exact Curves part 2 is done.** Part 3 is
-  briefed (brief 24: 3a Arc tools, 3b tangents, 3c Offset with arcs, 3d
-  fillets). **Part 3 is done** (3a–3d). Next is part 4 (curved faces: cylinders from Push/Pull, shading and picking, soften and smooth): write its brief (25) first, with an MCP line. Wait for the owner's go-ahead.
-  The notes below were the starting points for 2c: Where to start for 2c:
-  - picking and hover already use drawn points (`prism-view/src/pick.rs`,
-    `prism-tools/src/select.rs`); selecting an arc should take every edge
-    with its `curve_id`, and the Eraser the whole curve;
-  - inference is `prism-infer` (`Kind::Midpoint`, `Kind::OnEdge`): add arc
-    ends, centre (while hovering the arc), arc midpoints, circle quadrants,
-    and "on arc" with `Curve::closest_point`;
-  - Model Health: list arcs whose ends left their circle, and repair by
-    moving the ends back (`circle_distance`);
-  - tools should say why a move was refused (an arc would bend, or a face
-    with arcs would fold); brief 23 says 2c/2d.
-- **Exact Curves conventions (2a, 2b):** crossings go through
+- **Exact Curves: parts 1, 2 and 3 are built** (briefs 22, 23, 24; NOTES
+  has a section per step). **Next is part 4** (curved faces: cylinders
+  from Push/Pull, shading and picking of curved faces, soften and
+  smooth). Write brief 25 first (with an MCP line), and wait for the
+  owner's go-ahead before building.
+  - The curve tools (`GREYED_TOOLS` in `prism-tools/src/session/shapes.rs`:
+    Circle, Polygon, `tool.arc`, `arc.2`, `arc.3`, `arc.c`, `arc.p`) are
+    built but greyed in menus; only MCP `use_tool` reaches them.
+  - Push/Pull still refuses faces with arcs (`ARC_FACE_PULL`): part 4
+    lifts that. `face_at` goes by corners (misses a lone disc).
+  - Not yet checked by eye in the app: arc snaps, tangents, the Arc tools,
+    fillets, refusal hints. Briefs 23 and 24 ask the owner to try them over
+    MCP in a build.
+- **Exact Curves conventions:** crossings go through
   `sticky::meet` / `on_curve_inside` (exact for lines and arcs), never the
   straight-only `crossing` alone; `Curve::Arc` runs counter-clockwise
   about its axis from the edge's `a` to `b`; use `add_curve_edge` (never
   `add_edge`) for arcs; edit face loops with `edit_face` or `Face::reverse`
   so edges stay with their sides; polygons for faces come from
-  `loop_points`, not the vertices. Exact Curves is 5 parts (owner, 2026-11-09); the design
+  `loop_points`, not the vertices; arcs are added with `add_arc` /
+  `add_circle` (they cut and are cut like segments); a loop as lines and
+  arcs comes from `face_pieces` (private, in `prism-ops/src/offset.rs`); refusals because of arcs give
+  their reason through `Command::refusal`. Exact Curves is 5 parts (owner, 2026-11-09); the design
   is in `docs/research/exact-curves.md`. Curves that are not lines or arcs
   fall back to fine segments, flagged (DECISIONS #32), built after part 5.
   The curve tools stay greyed in releases until all five parts are done
@@ -71,7 +66,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
   Check for Updates).
 - **Waiting on the owner to try by hand (2026-11-09):** Push/Pull stopping
   at faces, Option/Alt/Ctrl taps, the web wheel, Toolbars part 2, ghosts,
-  Updates, MCP Server.
+  Updates, MCP Server, and the curve tools over MCP (Exact Curves 2–3).
+- **Disk in cloud sessions:** the build cache can fill the session's disk
+  (a linker bus error). Delete `target/debug/incremental` and build with
+  `CARGO_INCREMENTAL=0`.
 - **MCP spec:** 2026-07-28 is the newest release (stateless, no
   `initialize`); the server speaks it and the older handshake. The spec
   site is blocked here; the spec repository on GitHub is reachable
