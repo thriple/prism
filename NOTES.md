@@ -1166,3 +1166,16 @@ Brief: `docs/briefs/21-mcp-server.md`.
 - **Push/Pull clicks report no inference point** (the tool picks a face,
   not a point); the face's change shows in the counts and `get_geometry`.
 
+## Owner feedback, 2026-11-09 (after MCP Server)
+- **MCP line in every brief:** added to PLAN 6.0a as a standing rule.
+- **Web wheel jitter:** on the web build a wheel panned for a moment
+  before zooming. Browsers report wheels and trackpads alike (points), and
+  each event was sorted alone: small first steps of a wheel notch panned.
+  Now a gesture (events under 0.25 s apart) is sorted as a whole: small
+  vertical steps at its start are held (up to three) until a big step says
+  wheel (all zoom) or more small or sideways steps say trackpad (all pan,
+  nothing lost); a wheel gesture's small tail zooms too. Not reproduced
+  here (no browser with a wheel); the owner should check it. Native
+  trackpads (pixel scrolls) pass the same way and may wait up to three
+  events (a few milliseconds) before panning.
+

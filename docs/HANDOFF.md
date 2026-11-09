@@ -45,6 +45,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
   groups and components, Model Health, and the Push/Pull cases. The web
   build has not been run since the face-plane render target was added
   (WebGL2 should allow it; installing trunk here was blocked).
+- **MCP line in every brief** (owner, 2026-11-09; PLAN 6.0a): a chunk
+  that adds something an assistant should read or set beyond actions and
+  tool clicks extends the MCP tools in the same chunk, with a test.
 - **Owner's standing instructions:** push tested work to `main` (everyone
   on one branch); break up XL chunks into parts; split any part, or
   research first, when not prepared enough to build it in one go;

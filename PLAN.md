@@ -946,6 +946,7 @@ Every chunk is built in **parts**. A part is one brief, sized so that one sessio
 - Each part ends with something the owner can try. NOTES says what was built, and `docs/HANDOFF.md` is updated if the session ends there.
 - **Sizes in the table above:** S and M chunks take one or two parts, L takes two or three, and XL takes four to seven.
 - **Writing the briefs:** a part's brief is written just before it is built, not all at once. The split below is a starting point, and each brief may move work between parts.
+- **The MCP line (owner, 2026-11-09):** every brief from Exact Curves on has an "MCP" line. Actions and tools reach the MCP server by themselves (`list_actions`, `run_action`, `use_tool`). When a chunk adds something an assistant should read or set that those cannot reach (a new kind of geometry, materials, dimensions, panel settings), the same chunk extends the MCP tools, with a test.
 - **In a session:** commit and push after each step of a part, so a compaction or a restarted worker loses nothing. Untested app code goes on the session branch, not `main`, because every push to `main` makes a release.
 
 **Done so far:**

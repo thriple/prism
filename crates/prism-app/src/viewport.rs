@@ -18,6 +18,8 @@ pub struct Viewport {
     held: bool,
     /// The time egui last reported, so events carry it.
     now: f64,
+    /// Sorts browser scrolls into wheel zooms and trackpad pans.
+    wheel: WheelSort,
 }
 
 /// What the status bar shows from the viewport.
@@ -45,6 +47,7 @@ impl Viewport {
             rect: Rect::NOTHING,
             held: false,
             now: 0.0,
+            wheel: WheelSort::default(),
         }
     }
 
@@ -257,15 +260,24 @@ impl Viewport {
                                 factor: (dy * 0.01).exp(),
                             }
                         }
-                        // Browsers report a mouse wheel in points too: big
-                        // vertical steps zoom (DECISIONS #4, the wheel only
-                        // zooms); small or sideways ones are a trackpad, which pans.
-                        egui::MouseWheelUnit::Point if is_mouse_wheel(dx, dy) => Input::Wheel {
-                            x,
-                            y,
-                            notches: dy / WHEEL_POINTS_PER_NOTCH,
-                        },
-                        egui::MouseWheelUnit::Point => Input::Scroll { x, y, dx, dy },
+                        // Browsers report a mouse wheel in points too: a
+                        // gesture with a big vertical step zooms (DECISIONS
+                        // #4, the wheel only zooms); otherwise it is a
+                        // trackpad, which pans.
+                        egui::MouseWheelUnit::Point => {
+                            let t = ctx.input(|i| i.time);
+                            for step in self.wheel.feed(t, dx, dy) {
+                                self.send(match step {
+                                    Step::Zoom(dy) => Input::Wheel {
+                                        x,
+                                        y,
+                                        notches: dy / WHEEL_POINTS_PER_NOTCH,
+                                    },
+                                    Step::Pan(dx, dy) => Input::Scroll { x, y, dx, dy },
+                                });
+                            }
+                            continue;
+                        }
                         _ => Input::Wheel { x, y, notches: dy },
                     };
                     self.send(input);
@@ -315,6 +327,62 @@ fn is_mouse_wheel(dx: f64, dy: f64) -> bool {
     dx == 0.0 && dy.abs() >= WHEEL_MIN_STEP
 }
 
+/// Scroll events this close together (seconds) are one gesture.
+const GESTURE_GAP: f64 = 0.25;
+/// Small vertical steps held at a gesture's start before it counts as a
+/// trackpad (a wheel's first steps can be small in some browsers).
+const HOLD_STEPS: usize = 3;
+
+/// What a browser scroll becomes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Step {
+    /// Points of wheel (100 a notch).
+    Zoom(f64),
+    Pan(f64, f64),
+}
+
+/// Sorts a browser's scrolls, gesture by gesture, into wheel zooms and
+/// trackpad pans (owner, 2026-11-09: on the web a wheel panned for a
+/// moment before zooming). Native builds tell the two apart themselves.
+#[derive(Clone, Debug, Default)]
+struct WheelSort {
+    last: Option<f64>,
+    /// This gesture is a wheel, a trackpad, or not known yet.
+    wheel: Option<bool>,
+    held: Vec<(f64, f64)>,
+}
+
+impl WheelSort {
+    fn feed(&mut self, t: f64, dx: f64, dy: f64) -> Vec<Step> {
+        let mut out = Vec::new();
+        if self.last.is_none_or(|l| t - l > GESTURE_GAP) {
+            // A new gesture: what was held from the last one was a pan.
+            out.extend(self.held.drain(..).map(|(x, y)| Step::Pan(x, y)));
+            self.wheel = None;
+        }
+        self.last = Some(t);
+        match self.wheel {
+            Some(true) if dx == 0.0 => out.push(Step::Zoom(dy)),
+            Some(_) => {
+                self.wheel = Some(false);
+                out.push(Step::Pan(dx, dy));
+            }
+            None if is_mouse_wheel(dx, dy) => {
+                self.wheel = Some(true);
+                out.extend(self.held.drain(..).map(|(_, y)| Step::Zoom(y)));
+                out.push(Step::Zoom(dy));
+            }
+            None if dx == 0.0 && self.held.len() < HOLD_STEPS => self.held.push((dx, dy)),
+            None => {
+                self.wheel = Some(false);
+                out.extend(self.held.drain(..).map(|(x, y)| Step::Pan(x, y)));
+                out.push(Step::Pan(dx, dy));
+            }
+        }
+        out
+    }
+}
+
 /// A fixed start for timings (the session only measures differences).
 fn start() -> web_time::Instant {
     use std::sync::OnceLock;
@@ -324,7 +392,51 @@ fn start() -> web_time::Instant {
 
 #[cfg(test)]
 mod tests {
-    use super::is_mouse_wheel;
+    use super::{Step, WheelSort, is_mouse_wheel};
+
+    #[test]
+    fn a_wheel_gesture_zooms_from_its_first_small_step() {
+        let mut w = WheelSort::default();
+        // Small steps first, then a notch: all of it zooms, nothing pans.
+        assert!(w.feed(0.0, 0.0, 6.0).is_empty());
+        assert!(w.feed(0.01, 0.0, 10.0).is_empty());
+        assert_eq!(
+            w.feed(0.02, 0.0, 100.0),
+            [Step::Zoom(6.0), Step::Zoom(10.0), Step::Zoom(100.0)]
+        );
+        // The smooth tail of the same gesture zooms too.
+        assert_eq!(w.feed(0.05, 0.0, 8.0), [Step::Zoom(8.0)]);
+    }
+
+    #[test]
+    fn a_trackpad_gesture_pans_and_nothing_is_lost() {
+        let mut w = WheelSort::default();
+        assert!(w.feed(0.0, 0.0, 3.0).is_empty());
+        assert!(w.feed(0.01, 0.0, 4.0).is_empty());
+        assert!(w.feed(0.02, 0.0, 5.0).is_empty());
+        // A fourth small step: it is a trackpad.
+        assert_eq!(
+            w.feed(0.03, 0.0, 6.0),
+            [
+                Step::Pan(0.0, 3.0),
+                Step::Pan(0.0, 4.0),
+                Step::Pan(0.0, 5.0),
+                Step::Pan(0.0, 6.0)
+            ]
+        );
+        // A big step later in a trackpad gesture still pans.
+        assert_eq!(w.feed(0.04, 0.0, 60.0), [Step::Pan(0.0, 60.0)]);
+        // Sideways motion is a trackpad at once.
+        let mut w = WheelSort::default();
+        assert_eq!(w.feed(0.0, 2.0, 1.0), [Step::Pan(2.0, 1.0)]);
+        // A held step from an earlier gesture pans when the next begins.
+        let mut w = WheelSort::default();
+        assert!(w.feed(0.0, 0.0, 3.0).is_empty());
+        assert_eq!(
+            w.feed(1.0, 0.0, 100.0),
+            [Step::Pan(0.0, 3.0), Step::Zoom(100.0)]
+        );
+    }
 
     #[test]
     fn wheel_notches_zoom_and_trackpad_scrolls_pan() {
