@@ -933,3 +933,37 @@ the export note (prism-ops).
 - **Profile lines** are now spelled out in PLAN 1.14 and named in the View
   Settings chunk (next). They already work in the renderer, off by default
   (Help > debug panel, "Profile lines").
+
+## View Settings (part 1: what is shown, lines and faces)
+Brief: `docs/briefs/17-view-settings-1.md`.
+- **ViewStyle** (`prism-view/src/view_style.rs`): what is shown (faces,
+  lines, points, axes, ground, grid, guides), line and profile thickness,
+  line colour (one, or by axis), hidden lines (not drawn, dashed, faint),
+  face style (Shaded, Monochrome, Hidden Line, Wireframe) and X-ray with
+  an opacity. Named styles: Default, Hidden Line, X-ray, Technical,
+  Wireframe. `apply` turns it into the renderer's `Style`, so Monochrome
+  and Hidden Line are only colours and lighting; Wireframe and X-ray are
+  `FaceDraw::None` and `FaceDraw::XRay` in the renderer.
+- **Profiles are on in Default** (3 pt over 1.5 pt lines), as the owner
+  asked.
+- **Picking follows the style:** `Scene::faces_hide` and `faces_pick`. In
+  X-ray faces hide nothing, so points and edges behind them snap; in
+  Wireframe faces cannot be picked, snapped to or pushed.
+- **Window:** View > View Settings (and Line Thickness, Outline Thickness,
+  Edge Style, Face Style, Styles) opens a View Settings side card. The View
+  > Show toggles and X-ray are menu toggles; their check marks follow the
+  style. The profile and hidden-line controls left the debug panel.
+- **Saved with the file** under `view` in the settings (an old file opens
+  with Default; no new schema). Changing the style marks the document
+  unsaved, and changing it back does not.
+- **Left over:**
+  - X-ray is the "Fast" kind: only the nearest layer of faces is
+    see-through (order-independent "Accurate" is for later).
+  - Profiles still skip edges with three or more faces, and do not yet
+    leave out faces hidden behind others.
+  - Points are drawn for every vertex, faded groups' too.
+  - Choosing a named style replaces every setting; there is no "save as
+    new style" yet.
+  - Lighting and the sun, View > Hidden Geometry and "Show Hidden" ghosts:
+    part 2.
+  - Not yet clicked through by the owner, and not run on the web build.

@@ -715,3 +715,103 @@ fn lines_on_a_face_seen_edge_on_are_drawn_whole() {
     let floor = img.at(px, py);
     assert!(floor[0] > 200, "the floor is plain there: {floor:?}");
 }
+
+/// View Settings (PLAN 1.14): profiles, Wireframe, Hidden Line, X-ray and
+/// colour by axis, on one box.
+#[test]
+fn view_styles_draw_as_described() {
+    use prism_view::ViewStyle;
+    let Some((_turn, mut g)) = gpu() else { return };
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+    let f = prism_ops::face_at(&m, DVec3::new(1.0, 1.0, 0.0)).expect("base");
+    let up = m.face(f).expect("f").plane().normal.z > 0.0;
+    prism_ops::push_pull(&mut m, f, if up { 2.0 } else { -2.0 }, false);
+    let cam = Camera {
+        eye: DVec3::new(5.0, -4.0, 4.0),
+        target: DVec3::new(1.0, 1.0, 1.0),
+    };
+    let shot = |g: &mut common::Gpu, v: &ViewStyle, name: &str| {
+        let style = v.apply(&Style::default());
+        let img = g.shot(&m, cam, 640, 400, 1.0, &style, &Highlight::default());
+        img.save(name);
+        img
+    };
+    // Dark pixels across a vertical edge, along the row through `p`.
+    let width = |img: &common::Image, p: DVec3| {
+        let (x, y) = cam_px(&cam, p);
+        (x.saturating_sub(10)..x + 10)
+            .filter(|x| img.at(*x, y)[0] < 150)
+            .count()
+    };
+    let top = cam_px(&cam, DVec3::new(1.0, 1.0, 2.0));
+
+    let default = shot(&mut g, &ViewStyle::default(), "style-default");
+    // The left edge outlines the box (a profile); the front corner is inside.
+    let (outline, inner) = (
+        width(&default, DVec3::new(0.0, 0.0, 1.0)),
+        width(&default, DVec3::new(2.0, 0.0, 1.0)),
+    );
+    assert!(outline > inner, "profile {outline} px vs plain {inner} px");
+    let face = default.at(top.0, top.1);
+    assert!(face[0] > 200, "the top is drawn: {face:?}");
+
+    let wire = shot(
+        &mut g,
+        &ViewStyle::preset("Wireframe").unwrap(),
+        "style-wireframe",
+    );
+    let mut empty = Model::new();
+    prism_ops::add_segment(
+        &mut empty,
+        DVec3::new(50.0, 50.0, 0.0),
+        DVec3::new(51.0, 50.0, 0.0),
+    );
+    let bg = g
+        .shot(
+            &empty,
+            cam,
+            640,
+            400,
+            1.0,
+            &Style::default(),
+            &Highlight::default(),
+        )
+        .at(top.0, top.1);
+    let w = wire.at(top.0, top.1);
+    assert!(
+        (0..3).all(|i| w[i].abs_diff(bg[i]) < 12),
+        "no face in Wireframe: {w:?} vs background {bg:?}"
+    );
+
+    let hidden = shot(
+        &mut g,
+        &ViewStyle::preset("Hidden Line").unwrap(),
+        "style-hidden-line",
+    );
+    let h = hidden.at(top.0, top.1);
+    assert!(
+        h[..3].iter().all(|c| *c > 250),
+        "Hidden Line faces are paper: {h:?}"
+    );
+
+    // The back corner (x = 0, y = 2) is behind the box.
+    let back = DVec3::new(0.0, 2.0, 0.5);
+    let xray = shot(&mut g, &ViewStyle::preset("X-ray").unwrap(), "style-xray");
+    assert!(width(&xray, back) > 0, "X-ray shows the back corner");
+    assert_eq!(width(&default, back), 0, "shaded hides it");
+
+    let by_axis = ViewStyle {
+        line_color: prism_view::view_style::LineColor::ByAxis,
+        ..ViewStyle::default()
+    };
+    let axis = shot(&mut g, &by_axis, "style-by-axis");
+    let (x, y) = cam_px(&cam, DVec3::new(1.0, 0.0, 0.0));
+    let red = (x - 1..=x + 1)
+        .flat_map(|x| (y - 1..=y + 1).map(move |y| (x, y)))
+        .any(|(x, y)| {
+            let p = axis.at(x, y);
+            i32::from(p[0]) > i32::from(p[1]) + 60
+        });
+    assert!(red, "an edge along red is red");
+}

@@ -1817,8 +1817,9 @@ fn xray_snaps_to_a_corner_behind_faces() {
     d.tool(LINE);
     d.hover(hidden);
     let snapped = |d: &Driver| {
-        d.s.inference()
-            .is_some_and(|i| i.kind == prism_infer::Kind::Endpoint && i.point.distance(hidden) < 1e-9)
+        d.s.inference().is_some_and(|i| {
+            i.kind == prism_infer::Kind::Endpoint && i.point.distance(hidden) < 1e-9
+        })
     };
     assert!(!snapped(&d), "hidden when shaded");
     act(&mut d, "view.xray");

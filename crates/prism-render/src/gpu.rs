@@ -1007,7 +1007,11 @@ impl Renderer {
         let pos = crate::style::alpha(style.axis_alpha);
         let neg = crate::style::alpha(style.axis_negative_alpha);
         let axes = if style.show_axes { 3 } else { 0 };
-        for (i, dir) in [DVec3::X, DVec3::Y, DVec3::Z].into_iter().enumerate().take(axes) {
+        for (i, dir) in [DVec3::X, DVec3::Y, DVec3::Z]
+            .into_iter()
+            .enumerate()
+            .take(axes)
+        {
             let c = style.axes[i];
             lines.push(
                 LineInstance::new(DVec3::ZERO, dir * l, c.with_alpha(pos), style.axis_width)
@@ -1152,9 +1156,11 @@ impl Renderer {
         pass.set_pipeline(&self.bg);
         pass.draw(0..3, 0..1);
 
-        let faces = (s.faces != FaceDraw::None)
-            .then_some(())
-            .and(self.face_vertices.as_ref().zip(self.face_indices.buffer.as_ref()));
+        let faces = (s.faces != FaceDraw::None).then_some(()).and(
+            self.face_vertices
+                .as_ref()
+                .zip(self.face_indices.buffer.as_ref()),
+        );
         if let Some((vb, ib)) = faces {
             pass.set_vertex_buffer(0, vb.slice(..));
             if f.shadow {

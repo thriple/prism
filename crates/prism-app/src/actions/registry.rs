@@ -95,7 +95,14 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 11] = [
+const COMMANDS: [&str; 17] = [
+    // View Settings (part 1): these open the View Settings window.
+    "view.settings",
+    "view.linew",
+    "view.outline",
+    "view.edges",
+    "view.faces",
+    "view.styles",
     "win.health",
     "win.components",
     "win.outliner",
@@ -120,9 +127,16 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 5] = [
+const TOGGLES: [&str; 12] = [
     "view.shadow",
     "view.guides",
+    "show.faces",
+    "show.lines",
+    "show.points",
+    "view.axes",
+    "view.ground",
+    "view.grid",
+    "view.xray",
     "help.debug",
     "help.themedemo",
     "help.record",
@@ -135,6 +149,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
     } else if id.starts_with("help.scene.")
         || id == "help.record"
         || id == "view.guides"
+        // View Settings: the toggles are handled by the session.
+        || prism_view::view_style::TOGGLES.contains(&id)
         || id.starts_with("file.")
         || id == "exp.3mf"
         || id == "exp.gltf"
@@ -538,6 +554,24 @@ mod tests {
             .map(|a| a.id)
             .collect();
         assert!(missing.is_empty(), "no menu path: {missing:?}");
+    }
+
+    /// View Settings part 1: the View menu's items work, except lighting
+    /// and hidden geometry (part 2) and section display.
+    #[test]
+    fn the_view_menu_is_built() {
+        let reg = Registry::new();
+        for id in prism_view::view_style::TOGGLES.into_iter().chain([
+            "view.settings",
+            "view.linew",
+            "view.outline",
+            "view.edges",
+            "view.faces",
+            "view.styles",
+            "view.shadow",
+        ]) {
+            assert!(reg.get(id).is_some_and(Action::built), "{id} is greyed");
+        }
     }
 
     #[test]

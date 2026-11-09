@@ -19,8 +19,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Groups & Components: briefs 12, 13, 14. Model Health: briefs 15, 16.
 - **State:** `main` = session branch = `16a4648`, CI green, web page
   updated. Nothing uncommitted.
-- **Next: View Settings,** the first row of the PLAN 6.0 table not yet
-  started (see the standing rule below).
+- **Next: View Settings part 2** (lighting and the sun, Show Hidden).
+  Part 1 is built (brief 17). Then the next row of the PLAN 6.0 table
+  (see the standing rule below).
 - **Waiting on the owner to try by hand:** groups and components (make,
   select, open, close, explode, copy), the Components, Outliner, Entity
   Info, Tags and Model Health windows, and the Push/Pull cases they

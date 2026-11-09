@@ -50,6 +50,8 @@ pub struct Files {
     saved_rev: Option<u64>,
     /// Document Settings changed since then (they are not commands).
     settings_changed: bool,
+    /// The view style as last saved (a change to it needs saving).
+    saved_view: prism_view::ViewStyle,
     /// Fields a newer Prism wrote, kept for the next save.
     extra: Map<String, Value>,
     /// This tab's recovery slot.
@@ -75,8 +77,16 @@ pub struct Files {
     transfer: crate::transfer::Transfer,
 }
 
+/// The key the view style is saved under in the file's settings (View
+/// Settings, PLAN 1.14).
+const VIEW_KEY: &str = "view";
+
 fn contents(s: &Session, extra: &Map<String, Value>) -> Contents {
     let c = s.camera();
+    let mut extra = extra.clone();
+    if let Ok(v) = serde_json::to_value(s.view_style()) {
+        extra.insert(VIEW_KEY.into(), v);
+    }
     Contents {
         assembly: s.document().assembly().clone(),
         settings: Settings {
@@ -85,9 +95,17 @@ fn contents(s: &Session, extra: &Map<String, Value>) -> Contents {
                 eye: c.eye.to_array(),
                 target: c.target.to_array(),
             }),
-            extra: extra.clone(),
+            extra,
         },
     }
+}
+
+/// The view style saved in a file, or Default.
+fn view_style(extra: &mut Map<String, Value>) -> prism_view::ViewStyle {
+    extra
+        .remove(VIEW_KEY)
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
 }
 
 fn app_version() -> &'static str {
@@ -102,6 +120,7 @@ impl Files {
             path: None,
             saved_rev: Some(session.document().revision()),
             settings_changed: false,
+            saved_view: session.view_style().clone(),
             extra: Map::new(),
             slot,
             requests: Vec::new(),
@@ -123,7 +142,9 @@ impl Files {
     }
 
     pub fn dirty(&self, s: &Session) -> bool {
-        self.settings_changed || self.saved_rev != Some(s.document().revision())
+        self.settings_changed
+            || self.saved_rev != Some(s.document().revision())
+            || s.view_style() != &self.saved_view
     }
 
     /// A dialog of ours is open (keys go to it, not to the tools).
@@ -285,6 +306,7 @@ impl Files {
         s.open_document(Document::with_assembly(c.assembly), camera);
         s.set_units(c.settings.units);
         self.extra = c.settings.extra;
+        s.set_view_style(view_style(&mut self.extra));
         self.name = Some(o.name.clone());
         self.path = o.path.clone();
         if let Some(p) = &o.path {
@@ -308,6 +330,7 @@ impl Files {
     fn mark_saved(&mut self, s: &Session, bytes: Option<Vec<u8>>) {
         self.saved_rev = Some(s.document().revision());
         self.settings_changed = false;
+        self.saved_view = s.view_style().clone();
         self.base = Base {
             bytes: bytes
                 .unwrap_or_else(|| prism_file::write(&contents(s, &self.extra), app_version())),
@@ -550,6 +573,7 @@ impl Files {
         s.open_document(doc, camera);
         s.set_units(c.settings.units);
         self.extra = c.settings.extra;
+        s.set_view_style(view_style(&mut self.extra));
         self.name = j.path.as_deref().map(doc_files::display_name);
         self.path = j
             .path
@@ -565,5 +589,27 @@ impl Files {
             written: true,
         };
         chrome.status_note("Restored your unsaved work".into());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The view style is saved with the file, and a file without one opens
+    /// with Default (View Settings, PLAN 1.14).
+    #[test]
+    fn the_view_style_is_saved_with_the_file() {
+        let mut s = Session::new(Document::new());
+        let technical = prism_view::ViewStyle::preset("Technical").expect("preset");
+        s.set_view_style(technical.clone());
+        let bytes = prism_file::write(&contents(&s, &Map::new()), app_version());
+        let mut extra = prism_file::read(&bytes).expect("read").settings.extra;
+        assert_eq!(view_style(&mut extra), technical);
+        assert!(extra.is_empty(), "the view key is taken out");
+        assert_eq!(
+            view_style(&mut Map::new()),
+            prism_view::ViewStyle::default()
+        );
     }
 }

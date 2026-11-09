@@ -9,8 +9,6 @@ use crate::input_log::{InputLog, Modifiers};
 use crate::settings::{REDUCE_MOTION_CHOICES, Settings};
 use crate::viewport::Viewport;
 
-const HIDDEN_LINES: [&str; 3] = ["Not drawn", "Dashed", "Faint"];
-
 /// Which build this is, set by the release workflow (for example "build 12").
 /// Local builds say "local".
 pub const BUILD: &str = match option_env!("PRISM_BUILD") {
@@ -132,7 +130,6 @@ fn debug_panel(ui: &mut egui::Ui, info: &DebugInfo<'_>, viewport: &mut Viewport)
 
 /// The viewport's tuning (the prototype's Feel Panel sliders) and counts.
 fn viewport_controls(ui: &mut egui::Ui, v: &mut Viewport) {
-    use prism_view::style::HiddenLines;
     let s = &mut v.session;
     let m = s.model();
     mono(
@@ -172,27 +169,6 @@ fn viewport_controls(ui: &mut egui::Ui, v: &mut Viewport) {
         .changed()
     {
         s.settings.wake = f64::from(wake) / 1000.0;
-    }
-    let mut profile = s.style.profile_width;
-    if ui
-        .add(SoftSlider::new(&mut profile, 0.0..=4.0, "Profile lines").suffix(" pt"))
-        .changed()
-    {
-        s.style.profile_width = profile;
-        s.mark_dirty();
-    }
-    let mut hidden = match s.style.hidden_lines {
-        HiddenLines::Off => 0,
-        HiddenLines::Dashed => 1,
-        HiddenLines::Faint => 2,
-    };
-    if ui
-        .add(SoftSelect::new(&mut hidden, &HIDDEN_LINES, "Hidden lines"))
-        .changed()
-    {
-        s.style.hidden_lines =
-            [HiddenLines::Off, HiddenLines::Dashed, HiddenLines::Faint][hidden.min(2)];
-        s.mark_dirty();
     }
     ui.add(SoftToggle::new(&mut s.ease, "Ease zoom"));
 }

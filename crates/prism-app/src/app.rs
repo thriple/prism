@@ -341,6 +341,11 @@ impl App {
                 viewport.session.mark_all_dirty();
             }
             viewport.session.set_health_view(chrome.health_marks());
+            // The View menu's check marks follow the view style.
+            for id in prism_view::view_style::TOGGLES {
+                let on = viewport.session.view_style().is_on(id) == Some(true);
+                chrome.set_on(id, on);
+            }
             if chrome.panels_open() {
                 let s = &viewport.session;
                 // The checks take a while on big models: rerun them only
@@ -361,6 +366,7 @@ impl App {
                     info: Some(s.entity_info()),
                     tags: s.tag_rows(),
                     health,
+                    view: s.view_style().clone(),
                 };
             }
             for op in std::mem::take(&mut chrome.panel_ops) {
@@ -373,6 +379,7 @@ impl App {
                     crate::chrome::PanelOp::Tag(t) => s.tag_command(t),
                     crate::chrome::PanelOp::HealthSelect(k) => s.select_health(k),
                     crate::chrome::PanelOp::HealthFix(k) => s.health_fix(k),
+                    crate::chrome::PanelOp::View(v) => s.set_view_style(v),
                 }
                 s.mark_all_dirty();
             }

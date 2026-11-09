@@ -23,6 +23,8 @@ pub enum PanelOp {
     /// Model Health: select a row's items, or run its fix.
     HealthSelect(&'static str),
     HealthFix(&'static str),
+    /// View Settings: the new view style.
+    View(prism_view::ViewStyle),
 }
 
 /// The panels' data, set by the app each frame.
@@ -34,6 +36,8 @@ pub struct PanelData {
     pub tags: Vec<(TagId, String, bool, usize)>,
     /// Model Health's rows (computed when the model changes while open).
     pub health: Vec<prism_tools::HealthRow>,
+    /// View Settings' style.
+    pub view: prism_view::ViewStyle,
 }
 
 /// Which panels are open, and text being edited.
@@ -43,6 +47,8 @@ pub struct Panels {
     pub info: bool,
     pub tags: bool,
     pub health: bool,
+    /// View Settings.
+    pub view: bool,
     /// Model Health's problems not drawn in the model (its switch off).
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
@@ -55,7 +61,7 @@ pub struct Panels {
 
 impl Panels {
     pub fn any_open(&self) -> bool {
-        self.outliner || self.info || self.tags || self.health
+        self.outliner || self.info || self.tags || self.health || self.view
     }
 }
 
@@ -84,6 +90,7 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     super::components::card(chrome, ui, &mut p.folded);
                     tags(ui, &mut p, &data, &mut ops);
                     health(ui, &mut p, &data, &mut ops);
+                    view(ui, &mut p, &data, &mut ops);
                     // Room for the last card's shadow.
                     ui.add_space(size::GAP);
                 });
@@ -374,4 +381,142 @@ fn health(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>)
     if after_card(ui, &mut p.folded, "Model Health", r) {
         p.health = false;
     }
+}
+
+fn view(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+    use prism_view::style::HiddenLines;
+    use prism_view::view_style::{FaceStyle, LineColor, PRESETS};
+    if !p.view {
+        return;
+    }
+    let mut v = data.view.clone();
+    let r = SideCard::new("View Settings")
+        .subtitle(v.name.clone())
+        .show(ui, p.folded.contains("View Settings"), |ui| {
+            let mut preset = PRESETS.iter().position(|n| *n == v.name).unwrap_or(0);
+            if ui
+                .add(prism_ui::widgets::SoftSelect::new(
+                    &mut preset,
+                    &PRESETS,
+                    "Style",
+                ))
+                .changed()
+                && let Some(s) = prism_view::ViewStyle::preset(PRESETS[preset])
+            {
+                v = s;
+            }
+            ui.add_space(size::MENU_PAD);
+            ui.label(RichText::new("Show").color(color::MUTED));
+            ui.horizontal_wrapped(|ui| {
+                for (on, label) in [
+                    (&mut v.faces, "Faces"),
+                    (&mut v.lines, "Lines"),
+                    (&mut v.points, "Points"),
+                    (&mut v.axes, "Axes"),
+                    (&mut v.ground, "Ground"),
+                    (&mut v.grid, "Grid"),
+                    (&mut v.guides, "Guides"),
+                ] {
+                    ui.add(prism_ui::widgets::SoftToggle::new(on, label));
+                }
+            });
+            ui.add_space(size::MENU_PAD);
+            const FACES: [&str; 4] = ["Shaded", "Monochrome", "Hidden Line", "Wireframe"];
+            const FACE_STYLES: [FaceStyle; 4] = [
+                FaceStyle::Shaded,
+                FaceStyle::Monochrome,
+                FaceStyle::HiddenLine,
+                FaceStyle::Wireframe,
+            ];
+            let mut f = FACE_STYLES
+                .iter()
+                .position(|s| *s == v.face_style)
+                .unwrap_or(0);
+            if ui
+                .add(prism_ui::widgets::SoftSelect::new(&mut f, &FACES, "Faces"))
+                .changed()
+            {
+                v.face_style = FACE_STYLES[f.min(3)];
+            }
+            ui.add(prism_ui::widgets::SoftToggle::new(&mut v.xray, "X-ray"));
+            if v.xray {
+                caption(ui, format!("Opacity {:.0} %", v.xray_opacity * 100.0));
+                let mut o = v.xray_opacity * 100.0;
+                if ui
+                    .add(
+                        prism_ui::widgets::SoftSlider::new(&mut o, 10.0..=90.0, "Opacity")
+                            .suffix(" %"),
+                    )
+                    .changed()
+                {
+                    v.xray_opacity = o / 100.0;
+                }
+            }
+            ui.add_space(size::MENU_PAD);
+            caption(ui, format!("Line thickness {:.1} pt", v.line_width));
+            ui.add(
+                prism_ui::widgets::SoftSlider::new(&mut v.line_width, 0.5..=4.0, "Line thickness")
+                    .suffix(" pt"),
+            );
+            caption(
+                ui,
+                if v.profile_width > 0.0 {
+                    format!("Profile thickness {:.1} pt", v.profile_width)
+                } else {
+                    "Profiles off".to_owned()
+                },
+            );
+            ui.add(
+                prism_ui::widgets::SoftSlider::new(
+                    &mut v.profile_width,
+                    0.0..=6.0,
+                    "Profile thickness",
+                )
+                .suffix(" pt"),
+            );
+            const COLORS: [&str; 2] = ["One colour", "By axis"];
+            let mut c = usize::from(v.line_color == LineColor::ByAxis);
+            if ui
+                .add(prism_ui::widgets::SoftSelect::new(
+                    &mut c,
+                    &COLORS,
+                    "Line colour",
+                ))
+                .changed()
+            {
+                v.line_color = if c == 1 {
+                    LineColor::ByAxis
+                } else {
+                    LineColor::One
+                };
+            }
+            const HIDDEN: [&str; 3] = ["Not drawn", "Dashed", "Faint"];
+            const HIDDEN_LINES: [HiddenLines; 3] =
+                [HiddenLines::Off, HiddenLines::Dashed, HiddenLines::Faint];
+            let mut h = HIDDEN_LINES
+                .iter()
+                .position(|x| *x == v.hidden_lines)
+                .unwrap_or(0);
+            if ui
+                .add(prism_ui::widgets::SoftSelect::new(
+                    &mut h,
+                    &HIDDEN,
+                    "Hidden lines",
+                ))
+                .changed()
+            {
+                v.hidden_lines = HIDDEN_LINES[h.min(2)];
+            }
+        });
+    if v != data.view {
+        ops.push(PanelOp::View(v));
+    }
+    if after_card(ui, &mut p.folded, "View Settings", r) {
+        p.view = false;
+    }
+}
+
+/// A slider's name and value, above it.
+fn caption(ui: &mut Ui, text: String) {
+    ui.label(RichText::new(text).color(color::MUTED));
 }

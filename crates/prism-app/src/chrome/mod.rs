@@ -264,6 +264,16 @@ impl Chrome {
         }
     }
 
+    /// Set a toggle's check mark (from state kept elsewhere, such as the
+    /// view style in the session).
+    pub fn set_on(&mut self, id: &'static str, on: bool) {
+        if on {
+            self.toggles.insert(id);
+        } else {
+            self.toggles.remove(id);
+        }
+    }
+
     pub fn is_on(&self, id: &str) -> bool {
         self.toggles.contains(id)
     }
@@ -336,6 +346,8 @@ impl Chrome {
                     "win.info" => self.panels.info = true,
                     "win.tags" => self.panels.tags = true,
                     "win.health" => self.panels.health = true,
+                    "view.settings" | "view.linew" | "view.outline" | "view.edges"
+                    | "view.faces" | "view.styles" => self.panels.view = true,
                     "help.search" => self.palette = Some(palette::Palette::default()),
                     "help.keys" | "win.hotkeys" => {
                         self.hotkeys.get_or_insert_with(HotkeysWindow::default);
