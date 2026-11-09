@@ -42,6 +42,8 @@ pub struct ViewStyle {
     pub ground: bool,
     pub grid: bool,
     pub guides: bool,
+    /// Hidden objects drawn as ghosts that can be picked and unhidden.
+    pub hidden: bool,
     /// Points.
     pub line_width: f32,
     /// Points; 0 turns profiles off.
@@ -89,6 +91,7 @@ impl ViewStyle {
             ground: true,
             grid: true,
             guides: true,
+            hidden: false,
             line_width: 1.5,
             // Profiles on by default (owner request, 2026-11-09).
             profile_width: 3.0,
@@ -213,6 +216,7 @@ impl ViewStyle {
             "view.ground" => self.ground,
             "view.grid" => self.grid,
             "view.guides" => self.guides,
+            "view.hidden" => self.hidden,
             "view.xray" => self.xray,
             "view.shadow" => self.shadows,
             "light.sun" => self.sun,
@@ -231,6 +235,7 @@ impl ViewStyle {
             "view.ground" => &mut self.ground,
             "view.grid" => &mut self.grid,
             "view.guides" => &mut self.guides,
+            "view.hidden" => &mut self.hidden,
             "view.xray" => &mut self.xray,
             "view.shadow" => &mut self.shadows,
             // One or the other.
@@ -246,7 +251,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 11] = [
+pub const TOGGLES: [&str; 12] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -254,6 +259,7 @@ pub const TOGGLES: [&str; 11] = [
     "view.ground",
     "view.grid",
     "view.guides",
+    "view.hidden",
     "view.xray",
     "view.shadow",
     "light.sun",

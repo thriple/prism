@@ -113,6 +113,8 @@ pub struct SceneEdge {
     pub faces: [Option<FaceId>; 2],
     /// Drawn faded: outside the open group.
     pub faded: bool,
+    /// A hidden object shown by View > Hidden Geometry: drawn dashed.
+    pub ghost: bool,
 }
 
 /// The display triangles of all faces: one vertex per face corner, so every
@@ -255,6 +257,7 @@ impl Scene {
                 normals: [n(0), n(1)],
                 faces: [fid(0), fid(1)],
                 faded: false,
+                ghost: false,
             });
         }
         s.vertices = model.vertices().collect();

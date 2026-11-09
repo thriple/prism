@@ -227,9 +227,7 @@ fn sun_view_proj(light: DVec3, lo: DVec3, hi: DVec3, eye: DVec3) -> prism_math::
         (u / r, -u.dot(p) / r),
         (f / (far - near), (-f.dot(p) - near) / (far - near)),
     ];
-    let col = |k: usize| {
-        glam::DVec4::new(rows[0].0[k], rows[1].0[k], rows[2].0[k], 0.0)
-    };
+    let col = |k: usize| glam::DVec4::new(rows[0].0[k], rows[1].0[k], rows[2].0[k], 0.0);
     prism_math::DMat4::from_cols(
         col(0),
         col(1),
@@ -1008,6 +1006,9 @@ impl Renderer {
                     color = color.with_alpha(style.faded_alpha);
                 }
                 let mut l = LineInstance::new(e.a, e.b, color, style.edge_width).flags(MODEL_EDGE);
+                if e.ghost {
+                    l = l.dashed(style.hidden_dash);
+                }
                 if let Some(n) = e.normals[0] {
                     l.n1 = n.as_vec3().to_array();
                     l.flags |= HAS_N1;

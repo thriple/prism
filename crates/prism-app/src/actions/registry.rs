@@ -95,8 +95,9 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 17] = [
-    // View Settings (part 1): these open the View Settings window.
+const COMMANDS: [&str; 18] = [
+    // View Settings: these open the View Settings window.
+    "view.sunset",
     "view.settings",
     "view.linew",
     "view.outline",
@@ -127,7 +128,10 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 12] = [
+const TOGGLES: [&str; 15] = [
+    "view.hidden",
+    "light.sun",
+    "light.default",
     "view.shadow",
     "view.guides",
     "show.faces",
@@ -166,7 +170,10 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "edit.revface"
         || id == "edit.orient"
         // Part 3: hiding.
-        || matches!(id, "edit.hide" | "edit.unhideall" | "edit.unhidelast" | "edit.isolate")
+        || matches!(
+            id,
+            "edit.hide" | "edit.unhide" | "edit.unhideall" | "edit.unhidelast" | "edit.isolate"
+        )
         || id.starts_with("flip.")
         || id == "win.nexttab"
         || id == "win.prevtab"
@@ -569,6 +576,11 @@ mod tests {
             "view.faces",
             "view.styles",
             "view.shadow",
+            "view.sunset",
+            "light.sun",
+            "light.default",
+            "view.hidden",
+            "edit.unhide",
         ]) {
             assert!(reg.get(id).is_some_and(Action::built), "{id} is greyed");
         }

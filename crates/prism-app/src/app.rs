@@ -456,7 +456,6 @@ impl App {
             .egui_ctx
             .tessellate(output.shapes, output.pixels_per_point);
 
-        let shadow = self.chrome.is_on("view.shadow");
         let s = &mut self.viewport.session;
         let mut redraw = s.take_dirty();
         let highlight_changed = s.take_highlight_dirty();
@@ -470,6 +469,7 @@ impl App {
             selection: s.selection().clone(),
         };
         let (scene, style) = (s.display_scene(), &s.style);
+        let shadow = style.ground_shadow;
         let draw = crate::gpu::ViewportDraw {
             size: viewport_px,
             upload: upload.then_some(scene),

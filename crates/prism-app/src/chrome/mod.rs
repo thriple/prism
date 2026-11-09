@@ -347,7 +347,7 @@ impl Chrome {
                     "win.tags" => self.panels.tags = true,
                     "win.health" => self.panels.health = true,
                     "view.settings" | "view.linew" | "view.outline" | "view.edges"
-                    | "view.faces" | "view.styles" => self.panels.view = true,
+                    | "view.faces" | "view.styles" | "view.sunset" => self.panels.view = true,
                     "help.search" => self.palette = Some(palette::Palette::default()),
                     "help.keys" | "win.hotkeys" => {
                         self.hotkeys.get_or_insert_with(HotkeysWindow::default);

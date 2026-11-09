@@ -45,6 +45,14 @@ pub(super) struct Piece {
     faded: bool,
 }
 
+/// Mark a scene's edges as a hidden object's ghost (drawn dashed).
+fn ghost(mut s: Scene) -> Scene {
+    for e in &mut s.edges {
+        e.ghost = true;
+    }
+    s
+}
+
 /// How far the open group's dashed box stands off its contents, as a
 /// share of their largest size.
 const OPEN_BOX_MARGIN: f64 = 0.05;
@@ -123,11 +131,17 @@ impl Session {
         let mut local: std::collections::BTreeMap<prism_doc::DefId, Scene> = Default::default();
         // Hidden must be free (PLAN 1.14): hidden instances, and those on
         // hidden tags, are not built, so nothing draws, picks or snaps to
-        // them.
-        for placed in asm.placed_visible() {
+        // them, unless View > Hidden Geometry shows them as ghosts.
+        let placed_all = if self.view.hidden {
+            asm.placed()
+        } else {
+            asm.placed_visible()
+        };
+        for placed in placed_all {
             if placed.path == self.ctx {
                 continue;
             }
+            let hidden = placed.path.iter().any(|i| !asm.is_shown(*i));
             let inside = placed.path.len() > self.ctx.len() && placed.path.starts_with(&self.ctx);
             // Other instances of the open component show the edit live.
             let sibling = !self.ctx.is_empty() && placed.def == def;
@@ -155,9 +169,9 @@ impl Session {
                 Scene::build_with(&m, false)
             });
             pieces.push(Piece {
-                scene,
+                scene: if hidden { ghost(scene) } else { scene },
                 owner: k as u32,
-                faded: !inside && !sibling,
+                faded: hidden || (!inside && !sibling),
             });
         }
         let mut scene =
@@ -550,6 +564,25 @@ impl Session {
     }
 
     /// Edit > Unhide All: every hidden group in the open one.
+    /// Show the selected groups again (picked as ghosts, View > Hidden
+    /// Geometry).
+    pub(super) fn unhide_selected(&mut self) {
+        let asm = self.doc.assembly();
+        let hidden: BTreeSet<InstanceId> = self
+            .groups
+            .iter()
+            .copied()
+            .filter(|i| asm.is_hidden(*i))
+            .collect();
+        if !hidden.is_empty() {
+            self.cancel();
+            self.run(Command::SetHidden {
+                instances: hidden,
+                hidden: false,
+            });
+        }
+    }
+
     pub(super) fn unhide_all(&mut self) {
         let asm = self.doc.assembly();
         let hidden: BTreeSet<InstanceId> = self

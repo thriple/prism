@@ -967,3 +967,32 @@ Brief: `docs/briefs/17-view-settings-1.md`.
   - Lighting and the sun, View > Hidden Geometry and "Show Hidden" ghosts:
     part 2.
   - Not yet clicked through by the owner, and not run on the web build.
+
+## View Settings (part 2: the sun, shadows and Show Hidden)
+Brief: `docs/briefs/18-view-settings-2.md`. View Settings is done (2 parts).
+- **The sun** (`prism-math/src/sun.rs`): NOAA solar position from month,
+  day, local time, UTC offset, latitude, longitude and north angle. Pure;
+  tests cover noon overhead at the equinox, east at sunrise, polar night,
+  the north angle and longitude against time zone. The default place is
+  Guam, 21 June, 1:30 pm.
+- **Lighting in the view style:** Default lighting (the old fixed light)
+  or the sun; light and dark levels; one Shadows switch (View > Lighting,
+  formerly Ground Shadow). At night: dark level only, no shadows.
+- **Shadow map:** a 2048² depth pass from the sun over the faces, fitted
+  to the model's bounds, relative to the eye; faces sample it with a
+  comparison sampler, 3×3 taps. It uses bind group 3 (lines use group 2).
+  Hidden objects are not in the scene, so they cast nothing. The ground
+  shadow follows the sun.
+- **Show Hidden** (View > Hidden Geometry): hidden groups and components
+  (and those on hidden tags) are built as faded ghosts with dashed edges;
+  they can be clicked and box-selected, and Edit > Unhide Selected shows
+  them. Off by default; off, hidden things still cost nothing.
+- **Left over:**
+  - Shadow quality is one fixed map over the whole model: on a large
+    model shadows are blurry (no cascades yet).
+  - "Unhide Selected" does not show something hidden by its tag (switch
+    the tag on), and picking a ghost nested inside a visible group selects
+    the visible group.
+  - Fog, ground opacity, below ground, edge shadows, and a time slider in
+    a toolbar are not built.
+  - Not yet run on the web build or clicked through by the owner.

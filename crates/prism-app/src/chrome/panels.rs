@@ -416,6 +416,7 @@ fn view(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     (&mut v.ground, "Ground"),
                     (&mut v.grid, "Grid"),
                     (&mut v.guides, "Guides"),
+                    (&mut v.hidden, "Hidden"),
                 ] {
                     ui.add(prism_ui::widgets::SoftToggle::new(on, label));
                 }
@@ -507,6 +508,7 @@ fn view(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
             {
                 v.hidden_lines = HIDDEN_LINES[h.min(2)];
             }
+            lighting(ui, &mut v);
         });
     if v != data.view {
         ops.push(PanelOp::View(v));
@@ -519,4 +521,86 @@ fn view(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
 /// A slider's name and value, above it.
 fn caption(ui: &mut Ui, text: String) {
     ui.label(RichText::new(text).color(color::MUTED));
+}
+
+/// View Settings' Lighting section (part 2): the sun and shadows.
+fn lighting(ui: &mut Ui, v: &mut prism_view::ViewStyle) {
+    use prism_ui::widgets::{SoftSlider, SoftToggle};
+    ui.add_space(size::MENU_PAD);
+    ui.label(RichText::new("Lighting").color(color::MUTED));
+    ui.horizontal_wrapped(|ui| {
+        ui.add(SoftToggle::new(&mut v.sun, "Sun"));
+        ui.add(SoftToggle::new(&mut v.shadows, "Shadows"));
+    });
+    // Each value is written back only when its slider moves, so a value
+    // that f32 cannot hold exactly is not "changed" every frame.
+    let slider = |ui: &mut Ui, text: String, value: f64, range| -> Option<f64> {
+        caption(ui, text);
+        let mut x = value as f32;
+        ui.add(SoftSlider::new(&mut x, range, ""))
+            .changed()
+            .then_some(f64::from(x))
+    };
+    if v.sun {
+        const MONTHS: [&str; 12] = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ];
+        let m = MONTHS[(v.month.clamp(1, 12) - 1) as usize];
+        if let Some(x) = slider(ui, format!("Month {m}"), f64::from(v.month), 1.0..=12.0) {
+            v.month = x.round() as u32;
+        }
+        if let Some(x) = slider(ui, format!("Day {}", v.day), f64::from(v.day), 1.0..=31.0) {
+            v.day = x.round() as u32;
+        }
+        let (h, min) = (
+            v.hours.floor() as u32,
+            (v.hours.fract() * 60.0).round() as u32,
+        );
+        if let Some(x) = slider(ui, format!("Time {h:02}:{min:02}"), v.hours, 0.0..=24.0) {
+            v.hours = (x * 12.0).round() / 12.0;
+        }
+        if let Some(x) = slider(
+            ui,
+            format!("Latitude {:.2}°", v.latitude),
+            v.latitude,
+            -90.0..=90.0,
+        ) {
+            v.latitude = (x * 100.0).round() / 100.0;
+        }
+        if let Some(x) = slider(
+            ui,
+            format!("Longitude {:.2}°", v.longitude),
+            v.longitude,
+            -180.0..=180.0,
+        ) {
+            v.longitude = (x * 100.0).round() / 100.0;
+        }
+        if let Some(x) = slider(
+            ui,
+            format!("UTC {:+.1} h", v.utc_offset),
+            v.utc_offset,
+            -12.0..=14.0,
+        ) {
+            v.utc_offset = (x * 2.0).round() / 2.0;
+        }
+        if let Some(x) = slider(ui, format!("North {:.0}°", v.north), v.north, 0.0..=360.0) {
+            v.north = x.round();
+        }
+    }
+    if let Some(x) = slider(
+        ui,
+        format!("Light {:.0} %", v.light * 100.0),
+        f64::from(v.light),
+        0.0..=1.0,
+    ) {
+        v.light = x as f32;
+    }
+    if let Some(x) = slider(
+        ui,
+        format!("Dark {:.0} %", v.dark * 100.0),
+        f64::from(v.dark),
+        0.0..=1.0,
+    ) {
+        v.dark = x as f32;
+    }
 }

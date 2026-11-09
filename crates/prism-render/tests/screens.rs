@@ -815,3 +815,81 @@ fn view_styles_draw_as_described() {
         });
     assert!(red, "an edge along red is red");
 }
+
+/// With the sun, a box shadows the plate it stands on (View Settings part
+/// 2): a spot in its shadow is darker than open plate, and is lit again
+/// with shadows off. At night faces sit at the dark level.
+#[test]
+fn the_sun_casts_shadows_on_faces() {
+    use prism_view::ViewStyle;
+    let Some((_turn, mut g)) = gpu() else { return };
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, -6.0, -6.0, 6.0, 6.0, 0.0);
+    prism_ops::add_rect(&mut m, -1.0, -1.0, 1.0, 1.0, 0.0);
+    let f = prism_ops::face_at(&m, DVec3::new(0.0, 0.0, 0.0)).expect("square");
+    let up = m.face(f).expect("f").plane().normal.z > 0.0;
+    prism_ops::push_pull(&mut m, f, if up { 3.0 } else { -3.0 }, false);
+    let sun = ViewStyle {
+        sun: true,
+        ..ViewStyle::default()
+    };
+    // Where the shadow falls: from the box's middle, away from the sun,
+    // onto the plate.
+    let d = sun.sun_direction();
+    assert!(d.z > 0.2, "the sun is up: {d}");
+    let away = DVec3::new(-d.x, -d.y, 0.0).normalize();
+    let in_shadow = away * 1.6;
+    let open = -away * 3.0;
+    let cam = Camera {
+        eye: DVec3::new(0.0, -3.0, 18.0),
+        target: DVec3::ZERO,
+    };
+    let lum = |img: &common::Image, p: DVec3| {
+        let (x, y) = cam_px(&cam, p);
+        let c = img.at(x, y);
+        u32::from(c[0]) + u32::from(c[1]) + u32::from(c[2])
+    };
+    let shot = |g: &mut common::Gpu, v: &ViewStyle, name: &str| {
+        let img = g.shot(
+            &m,
+            cam,
+            640,
+            400,
+            1.0,
+            &v.apply(&Style::default()),
+            &Highlight::default(),
+        );
+        img.save(name);
+        img
+    };
+    let lit = shot(&mut g, &sun, "sun-shadows");
+    assert!(
+        lum(&lit, in_shadow) + 30 < lum(&lit, open),
+        "shadow {} vs open {}",
+        lum(&lit, in_shadow),
+        lum(&lit, open)
+    );
+    let off = shot(
+        &mut g,
+        &ViewStyle {
+            shadows: false,
+            ..sun.clone()
+        },
+        "sun-no-shadows",
+    );
+    assert!(
+        lum(&off, in_shadow).abs_diff(lum(&off, open)) < 6,
+        "no shadow: {} vs {}",
+        lum(&off, in_shadow),
+        lum(&off, open)
+    );
+    let night = shot(
+        &mut g,
+        &ViewStyle {
+            hours: 23.0,
+            ..sun.clone()
+        },
+        "sun-night",
+    );
+    assert!(lum(&night, open) < lum(&off, open), "night is darker");
+}

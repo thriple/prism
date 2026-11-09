@@ -1828,3 +1828,45 @@ fn xray_snaps_to_a_corner_behind_faces() {
     d.hover(hidden);
     assert!(snapped(&d), "{:?}", d.s.inference());
 }
+
+/// View > Hidden Geometry shows a hidden group as a ghost that can be
+/// clicked and unhidden; with it off the group cannot be picked.
+#[test]
+fn hidden_groups_show_as_ghosts_to_unhide() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.hide");
+    assert!(d.s.document().assembly().is_hidden(g));
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    assert!(d.s.selected_groups().is_empty(), "hidden: nothing to pick");
+    act(&mut d, "view.hidden");
+    assert!(d.s.view_style().hidden);
+    assert!(
+        d.s.scene().edges.iter().any(|e| e.ghost),
+        "drawn as a ghost"
+    );
+    d.wait(1.0);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    assert_eq!(
+        d.s.selected_groups().iter().copied().collect::<Vec<_>>(),
+        [g]
+    );
+    act(&mut d, "edit.unhide");
+    assert!(!d.s.document().assembly().is_hidden(g));
+    assert!(d.s.scene().edges.iter().all(|e| !e.ghost));
+}
+
+/// The sun and Shadows are menu toggles on the view style.
+#[test]
+fn lighting_menu_items_switch_the_sun() {
+    let mut d = Driver::empty();
+    assert!(!d.s.view_style().sun);
+    act(&mut d, "light.sun");
+    assert!(d.s.view_style().sun);
+    assert!(d.s.style.face_shadows, "the sun casts shadows at 1:30 pm");
+    act(&mut d, "view.shadow");
+    assert!(!d.s.style.face_shadows && !d.s.style.ground_shadow);
+    act(&mut d, "light.default");
+    assert!(!d.s.view_style().sun);
+}

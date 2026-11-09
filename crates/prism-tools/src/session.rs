@@ -913,10 +913,11 @@ impl Session {
         if v == self.view {
             return;
         }
-        let guides = v.guides != self.view.guides;
+        // Guides and hidden objects change what the scene holds.
+        let rebuild = v.guides != self.view.guides || v.hidden != self.view.hidden;
         self.view = v;
         self.style = self.view.apply(&Style::default());
-        if guides {
+        if rebuild {
             self.model_changed();
         } else {
             self.set_pick_flags();
@@ -1010,6 +1011,7 @@ impl Session {
             }
             "edit.hide" => self.hide(),
             "edit.unhideall" => self.unhide_all(),
+            "edit.unhide" => self.unhide_selected(),
             "edit.unhidelast" => self.unhide_last(),
             "edit.isolate" => self.isolate(),
             "edit.unique" => self.make_unique(),
@@ -1037,7 +1039,6 @@ impl Session {
                 }
             }
             "file.new" => self.load(Document::new()),
-            "view.shadow" => self.dirty = true,
             // Edit > Intersect Faces (DECISIONS #29).
             "isect.model" | "isect.sel" => {
                 let faces = (id == "isect.sel").then(|| self.selection.faces.clone());
