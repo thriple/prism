@@ -16,6 +16,19 @@ pub fn save_keymap(json: &str) {
     }
 }
 
+const TOOLBARS: &str = "toolbars.json";
+
+/// Where the toolbars were left (brief 19), if saved.
+pub fn load_toolbars() -> Option<String> {
+    imp::read(TOOLBARS)
+}
+
+pub fn save_toolbars(json: &str) {
+    if let Err(e) = imp::write(TOOLBARS, json) {
+        log::warn!("could not save the toolbars: {e}");
+    }
+}
+
 /// Share the keymap as a file. Returns where it went, for the status bar.
 pub fn export_keymap(json: &str) -> Result<String, String> {
     imp::export(EXPORT_NAME, json)

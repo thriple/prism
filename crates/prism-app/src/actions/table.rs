@@ -307,6 +307,21 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "",
         when: "",
     },
+    // Toolbars (brief 19): not in the prototype.
+    RawAction {
+        id: "view.edittoolbars",
+        name: "Edit Toolbars",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "view.resettoolbars",
+        name: "Reset Toolbars",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
     RawAction {
         id: "show.faces",
         name: "Faces",
@@ -1523,6 +1538,8 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
         "View",
         &[
             Item::Action("view.toolbars"),
+            Item::Action("view.edittoolbars"),
+            Item::Action("view.resettoolbars"),
             Item::Action("view.settings"),
             Item::Separator,
             Item::Sub(

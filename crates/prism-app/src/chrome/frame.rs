@@ -19,15 +19,30 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
         pos2(screen.left() + g, screen.bottom() - size::STATUS_HEIGHT),
         pos2(screen.right() - g, screen.bottom()),
     );
-    let body_top = top.bottom() + g;
+    // The top dock, under the menu bar: no space when it is empty.
+    let top_h = dock::top_height(chrome, top.width());
+    let top_dock =
+        Rect::from_min_size(pos2(top.left(), top.bottom() + g), vec2(top.width(), top_h));
+    let body_top = if top_h > 0.0 {
+        top_dock.bottom() + g
+    } else {
+        top.bottom() + g
+    };
     let body_bottom = status.top();
+    // The left rail: no space when it is empty either.
+    let left_w = dock::left_width(chrome);
     let dock_rect = Rect::from_min_max(
         pos2(screen.left() + g, body_top),
-        pos2(screen.left() + g + dock::width(), body_bottom),
+        pos2(screen.left() + g + left_w, body_bottom),
     );
+    let after_rail = if left_w > 0.0 {
+        dock_rect.right() + g
+    } else {
+        screen.left() + g
+    };
     // The document tabs: a thin strip above the viewport, as wide as it.
     let strip = Rect::from_min_max(
-        pos2(dock_rect.right() + g, body_top),
+        pos2(after_rail, body_top),
         pos2(screen.right() - g, body_top + size::TAB_HEIGHT),
     );
     // Docked windows (Outliner, Model Health, ...) take a column on the
@@ -43,13 +58,13 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
     });
     chrome.side_rect = side;
     let viewport = Rect::from_min_max(
-        pos2(dock_rect.right() + g, strip.bottom() + size::TAB_GAP),
+        pos2(after_rail, strip.bottom() + size::TAB_GAP),
         pos2(side.map_or(screen.right(), |r| r.left()) - g, body_bottom),
     );
 
     top_bar(chrome, ctx, top);
     tabs(chrome, ctx, strip);
-    dock::show(chrome, ctx, dock_rect);
+    dock::show(chrome, ctx, dock_rect, top_dock, viewport);
 
     // The viewport: a sunken well showing the renderer's picture, with the
     // well's inner shadow over its edge. The app handles the mouse over it.

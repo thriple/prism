@@ -11,10 +11,11 @@
 ## Requirements (part 1)
 - **New buttons:** X-ray and Hidden Geometry, in a new **View** toolbar, as toggle buttons that show their state.
 - **Layout model** (pure, tested, in `prism-app`): each toolbar is closed, docked (left rail or top dock, with an order), or floating (a position). It is saved in the user's settings (not in documents), and **Reset Toolbars** puts back the default (everything on the left rail, as now).
-- **Shapes:**
-  - A floating toolbar has 1 column with 5 tools or fewer, and 2 columns with 6 or more.
-  - A docked toolbar fills its dock's thickness: the left rail is 2 buttons wide, so toolbars there wrap into 2 columns. The top dock is 2 buttons tall, so toolbars there take the same shape turned sideways (2 rows).
+- **Shapes** (owner, 2026-11-09: as flexible as possible, so a short toolbar is not spread over two lines):
+  - Every toolbar is 1 button thick with 5 tools or fewer, and 2 with 6 or more. This applies floating and docked alike.
+  - A dock is as thick as its thickest toolbar. Down the left rail, toolbars fill rows; across the top dock they take the same shape turned sideways. So Principal alone makes a one-row top dock.
   - A dock that is too long scrolls (left) or wraps onto another line (top).
+  - Part 2 lets the user reshape a toolbar by dragging its edge.
 - **Docks:**
   - the left rail;
   - a top dock between the menu bar and the document tabs. It takes no space when empty. While a toolbar is being dragged, an empty dock shows a thin strip to drop on.

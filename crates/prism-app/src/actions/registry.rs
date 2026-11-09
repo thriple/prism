@@ -95,7 +95,10 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 18] = [
+const COMMANDS: [&str; 20] = [
+    // Toolbars (brief 19).
+    "view.edittoolbars",
+    "view.resettoolbars",
     // View Settings: these open the View Settings window.
     "view.sunset",
     "view.settings",

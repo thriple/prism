@@ -113,6 +113,8 @@ pub struct Chrome {
     /// The column on the right of the viewport where those windows dock,
     /// while one is open (set by the frame each frame).
     pub(crate) side_rect: Option<egui::Rect>,
+    /// Where the toolbars are, edit mode, and one being dragged (brief 19).
+    pub(crate) toolbars: dock::Toolbars,
     pub(crate) status: String,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
@@ -148,6 +150,12 @@ impl Chrome {
             .unwrap_or_else(|| Keymap::from_preset(Preset::SketchUp, &reg));
         let mut c = Self::with_keymap(platform, keymap);
         c.persist = true;
+        let names = dock::names(&c);
+        if let Some(l) = storage::load_toolbars()
+            .and_then(|text| crate::toolbars::Layout::from_json(&text, &names))
+        {
+            c.toolbars = dock::Toolbars::new(l);
+        }
         c
     }
 
@@ -184,6 +192,9 @@ impl Chrome {
             panel_data: Default::default(),
             panel_ops: Vec::new(),
             side_rect: None,
+            toolbars: dock::Toolbars::new(crate::toolbars::Layout::default_for(
+                &Registry::new().dock().iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+            )),
             hotkeys: None,
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
@@ -346,6 +357,11 @@ impl Chrome {
                     "win.info" => self.panels.info = true,
                     "win.tags" => self.panels.tags = true,
                     "win.health" => self.panels.health = true,
+                    "view.edittoolbars" => self.toolbars.editing = true,
+                    "view.resettoolbars" => {
+                        let names = dock::names(self);
+                        self.toolbars.layout = crate::toolbars::Layout::default_for(&names);
+                    }
                     "view.settings" | "view.linew" | "view.outline" | "view.edges"
                     | "view.faces" | "view.styles" | "view.sunset" => self.panels.view = true,
                     "help.search" => self.palette = Some(palette::Palette::default()),
@@ -370,6 +386,7 @@ impl Chrome {
             || self.palette.is_some()
             || self.features_open
             || self.hotkeys.is_some()
+            || self.toolbars.editing
     }
 
     /// Whether a window is docked in the side column. These windows do
@@ -382,6 +399,8 @@ impl Chrome {
     fn close_top(&mut self) {
         if self.menu.is_some() {
             self.menu = None;
+        } else if self.toolbars.editing {
+            self.toolbars.editing = false;
         } else if self.palette.is_some() {
             self.palette = None;
         } else if let Some(h) = &mut self.hotkeys {
@@ -464,7 +483,13 @@ impl Chrome {
     /// Draw the frame and everything that floats over it.
     pub fn show(&mut self, ctx: &Context) -> Layout {
         let layout = frame::show(self, ctx);
+        if let Some(l) = self.toolbars.take_changed()
+            && self.persist
+        {
+            storage::save_toolbars(&l.to_json());
+        }
         menus::show(self, ctx);
+        dock::open_menu(self);
         palette::show(self, ctx);
         features::show(self, ctx);
         hotkeys::show(self, ctx);

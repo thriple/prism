@@ -996,3 +996,34 @@ Brief: `docs/briefs/18-view-settings-2.md`. View Settings is done (2 parts).
   - Fog, ground opacity, below ground, edge shadows, and a time slider in
     a toolbar are not built.
   - Not yet run on the web build or clicked through by the owner.
+
+## Toolbars (part 1: layout, docks, floating, edit mode)
+Brief: `docs/briefs/19-toolbars.md` (owner request, built before Updates).
+- **Layout** (`prism-app/src/toolbars.rs`, pure): each toolbar is docked
+  on the left rail or in the top dock (with an order), floating at a point
+  from the app's corner, or closed. Saved in the user's settings
+  (`toolbars.json`, as the keymap), not in documents. View > Reset
+  Toolbars puts everything back on the left rail.
+- **Shapes:** a toolbar is 1 button thick with 5 tools or fewer, 2 with 6
+  or more, docked or floating; a dock is as thick as its thickest toolbar
+  (the top dock runs the same shapes sideways). Principal alone in the top
+  dock is one row.
+- **Docks:** the left rail and a top dock between the menu bar and the
+  tabs. Both take no space when empty, and show a thin strip to drop on
+  while a toolbar is dragged.
+- **Floating toolbars:** small windows in the app (egui areas, above the
+  viewport and under menus), tighter padding, a grip to drag them, kept on
+  screen when the window shrinks, and snapping to each other's and the
+  viewport's edges within 8 points.
+- **Edit mode:** right-click a toolbar's empty space (or View > Edit
+  Toolbars): each toolbar gets a box, a title bar to drag and an ×; Done
+  or Esc leaves it. Buttons do not run and show no tooltips meanwhile. The
+  right-click menu opens after the menus are drawn (the same click closed
+  it otherwise), and the frame asks for a redraw.
+- **New buttons:** a View toolbar with X-ray and Hidden Geometry (new
+  icons).
+- **Left over (part 2):** the Toolbars window (View > Toolbars and Panels,
+  still greyed) with drag-out, and reshaping a toolbar by dragging its
+  edge. Docking on the right or bottom is not planned.
+- Checked in the real app under Xvfb: right-click menu, edit mode, docking
+  on top, floating, dragging back, Done. Not yet tried by the owner.

@@ -24,7 +24,10 @@ impl Dock {
 pub enum Place {
     Docked(Dock),
     /// The top-left corner, in points from the app's corner.
-    Floating { x: f32, y: f32 },
+    Floating {
+        x: f32,
+        y: f32,
+    },
 }
 
 /// One open toolbar.
@@ -163,7 +166,11 @@ pub fn grid(n: usize, lines: usize, vertical: bool) -> (Vec<(usize, usize)>, (us
             if vertical { (a, b) } else { (b, a) }
         })
         .collect();
-    let size = if vertical { (lines, long) } else { (long, lines) };
+    let size = if vertical {
+        (lines, long)
+    } else {
+        (long, lines)
+    };
     (cells, size)
 }
 
@@ -262,17 +269,42 @@ mod tests {
 
     #[test]
     fn floating_toolbars_snap_to_nearby_edges_only() {
-        let area = Box2 { x: 0.0, y: 0.0, w: 1000.0, h: 800.0 };
-        let other = Box2 { x: 100.0, y: 100.0, w: 50.0, h: 200.0 };
+        let area = Box2 {
+            x: 0.0,
+            y: 0.0,
+            w: 1000.0,
+            h: 800.0,
+        };
+        let other = Box2 {
+            x: 100.0,
+            y: 100.0,
+            w: 50.0,
+            h: 200.0,
+        };
         // 5 points right of the other's right edge: snaps to touch it, and
         // its top lines up with the other's top (3 points away).
-        let r = Box2 { x: 155.0, y: 103.0, w: 50.0, h: 100.0 };
+        let r = Box2 {
+            x: 155.0,
+            y: 103.0,
+            w: 50.0,
+            h: 100.0,
+        };
         assert_eq!(snap(r, &[other], area), (150.0, 100.0));
         // 30 points away: stays put.
-        let far = Box2 { x: 180.0, y: 400.0, w: 50.0, h: 100.0 };
+        let far = Box2 {
+            x: 180.0,
+            y: 400.0,
+            w: 50.0,
+            h: 100.0,
+        };
         assert_eq!(snap(far, &[other], area), (180.0, 400.0));
         // Near the area's corner: snaps into it.
-        let corner = Box2 { x: 4.0, y: 795.0 - 100.0, w: 50.0, h: 100.0 };
+        let corner = Box2 {
+            x: 4.0,
+            y: 795.0 - 100.0,
+            w: 50.0,
+            h: 100.0,
+        };
         assert_eq!(snap(corner, &[], area), (0.0, 700.0));
     }
 
