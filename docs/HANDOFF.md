@@ -20,8 +20,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
 - **State:** `main` = session branch = `16a4648`, CI green, web page
   updated. Nothing uncommitted.
 - **Next: View Settings part 2** (lighting and the sun, Show Hidden).
-  Part 1 is built (brief 17). Then the next row of the PLAN 6.0 table
-  (see the standing rule below).
+  Part 1 is built (brief 17). Then Updates and MCP Server (the owner
+  placed them right after View Settings), then the next rows of the PLAN
+  6.0 table (see the standing rule below).
 - **Waiting on the owner to try by hand:** groups and components (make,
   select, open, close, explode, copy), the Components, Outliner, Entity
   Info, Tags and Model Health windows, and the Push/Pull cases they
