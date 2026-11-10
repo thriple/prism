@@ -695,6 +695,16 @@ impl Model {
     /// A face's area: its outer loop minus its holes, exact for arcs.
     pub fn face_area(&self, id: FaceId) -> f64 {
         let Some(f) = self.face(id) else { return 0.0 };
+        if let Some(t) = f.surface.turned() {
+            // A cone, sphere or torus: by Green's theorem unrolled.
+            let a: f64 = (0..=f.holes.len())
+                .map(|k| {
+                    let p: Vec<DVec2> = self.unrolled(f, k).into_iter().map(|x| x.1).collect();
+                    t.loop_integrals(&p).0
+                })
+                .sum();
+            return a.abs();
+        }
         let Some(n) = f.plane().map(|p| p.normal) else {
             // A curved face is flat when unrolled.
             let area = |k: usize| {
@@ -737,7 +747,13 @@ impl Model {
     /// cylinder, height along its axis), walking the loop's sides so the
     /// angle never jumps. The sides of a cylinder face are lines along the
     /// axis and arcs round it, which unroll straight. Empty for a flat face.
+    ///
+    /// A cone, sphere or torus face unrolls as (angle about the axis, place
+    /// along the profile): see [`Model::unrolled_turned`].
     pub fn unrolled(&self, f: &Face, k: usize) -> Vec<(DVec3, DVec2)> {
+        if let Some(t) = f.surface.turned() {
+            return self.unrolled_turned(f, k, &t);
+        }
         let Surface::Cylinder(c) = f.surface else {
             return Vec::new();
         };
@@ -770,6 +786,95 @@ impl Model {
                     out.push((x, DVec2::new(t * c.radius, height(x))));
                 }
                 turned += sign * sweep;
+            }
+        }
+        out
+    }
+
+    /// Loop `k` of a cone, sphere or torus face unrolled as (θ, s): its
+    /// drawn points, the angle about the axis never jumping. A point on the
+    /// axis (a pole, a tip) has no angle: it unrolls as a run along the
+    /// pole's line, from the angle the loop came in at to the one it
+    /// leaves at, turning the way that keeps the face on the loop's left.
+    /// A loop that goes once round the axis (the edge of a dome) is closed
+    /// along the pole on its face's side.
+    pub fn unrolled_turned(&self, f: &Face, k: usize, t: &prism_geom::Turned) -> Vec<(DVec3, DVec2)> {
+        use std::f64::consts::TAU;
+        let pts = self.loop_points(f, k);
+        let tol = self.tol().dist;
+        let poles = t.poles();
+        // The pole `p` is at, if any: its place and whether it is the high
+        // end.
+        let pole = |p: DVec3| -> Option<(f64, bool)> {
+            let q = p - t.origin;
+            if (q - t.axis * q.dot(t.axis)).length() > tol {
+                return None;
+            }
+            let s = t.param(p).y;
+            poles
+                .iter()
+                .enumerate()
+                .filter_map(|(i, x)| x.map(|x| (x, i == 1)))
+                .min_by(|a, b| (a.0 - s).abs().total_cmp(&(b.0 - s).abs()))
+        };
+        let Some(start) = pts.iter().position(|p| pole(*p).is_none()) else {
+            return Vec::new();
+        };
+        let wrap = |x: f64, period: f64| x - period * (x / period).round();
+        // Across a pole: down in angle at the high end of a face facing
+        // out (its loops wind counter-clockwise unrolled), up at the low.
+        let across = |from: f64, to_raw: f64, high: bool| {
+            let dir = if high == t.outward { -1.0 } else { 1.0 };
+            from + dir * (dir * (to_raw - from)).rem_euclid(TAU)
+        };
+        let period = t.s_period();
+        let mut out: Vec<(DVec3, DVec2)> = Vec::with_capacity(pts.len() + 4);
+        let mut prev: Option<DVec2> = None;
+        let mut at_pole: Option<(DVec3, f64, bool)> = None;
+        for i in 0..pts.len() {
+            let p = pts[(start + i) % pts.len()];
+            if let Some((s, high)) = pole(p) {
+                at_pole = Some((p, s, high));
+                continue;
+            }
+            let raw = t.param(p);
+            let mut q = match prev {
+                Some(pr) => DVec2::new(
+                    pr.x + wrap(raw.x - pr.x, TAU),
+                    period.map_or(raw.y, |w| pr.y + wrap(raw.y - pr.y, w)),
+                ),
+                None => raw,
+            };
+            if let (Some((pp, s, high)), Some(pr)) = (at_pole.take(), prev) {
+                let out_angle = across(pr.x, raw.x, high);
+                out.push((pp, DVec2::new(pr.x, s)));
+                out.push((pp, DVec2::new(out_angle, s)));
+                q.x = out_angle + wrap(raw.x - out_angle, TAU);
+            }
+            out.push((p, q));
+            prev = Some(q);
+        }
+        let (Some(last), Some(&(first_p, first))) = (prev, out.first()) else {
+            return out;
+        };
+        if let Some((pp, s, high)) = at_pole {
+            // The loop ends at a pole and comes back to its start.
+            let out_angle = across(last.x, first.x, high);
+            out.push((pp, DVec2::new(last.x, s)));
+            out.push((pp, DVec2::new(out_angle, s)));
+            return out;
+        }
+        // Back to the start: once round the axis or not.
+        let back = last.x + wrap(first.x - last.x, TAU);
+        let turns = ((back - first.x) / TAU).round();
+        if turns != 0.0 {
+            // Facing out, a loop going up in angle has its face above.
+            let high = (turns > 0.0) == t.outward;
+            if let Some(s) = poles[usize::from(high)] {
+                let pp = t.point(DVec2::new(0.0, s));
+                out.push((first_p, DVec2::new(back, first.y)));
+                out.push((pp, DVec2::new(back, s)));
+                out.push((pp, DVec2::new(first.x, s)));
             }
         }
         out
@@ -966,13 +1071,7 @@ impl Model {
         }
         if let Some((id, _)) = p.faces.iter().find(|(_, f)| match f.surface {
             Surface::Plane(pl) => !(pl.origin.is_finite() && pl.normal.is_finite()),
-            Surface::Cylinder(c) => {
-                !(c.origin.is_finite()
-                    && c.axis.is_finite()
-                    && c.axis != DVec3::ZERO
-                    && c.radius.is_finite()
-                    && c.radius > 0.0)
-            }
+            s => !s.is_valid(),
         }) {
             return Err(format!("face {id:?} has no finite surface"));
         }
@@ -1101,11 +1200,19 @@ impl Model {
                                     ));
                                 }
                             }
-                            Surface::Cylinder(c) => {
+                            Surface::Cylinder(_) => {
                                 let (p, q) = (self.vertex(x.a), self.vertex(x.b));
-                                if !c.holds(&x.curve, p, q, self.tol().dist) {
+                                if !f.surface.holds(&x.curve, p, q, self.tol().dist) {
                                     out.push(format!(
                                         "face {id:?} uses edge {e:?}, which is not on its cylinder"
+                                    ));
+                                }
+                            }
+                            s => {
+                                let (p, q) = (self.vertex(x.a), self.vertex(x.b));
+                                if !s.holds(&x.curve, p, q, self.tol().dist) {
+                                    out.push(format!(
+                                        "face {id:?} uses edge {e:?}, which is not on its surface"
                                     ));
                                 }
                             }

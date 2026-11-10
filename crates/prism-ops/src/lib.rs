@@ -13,6 +13,7 @@ pub mod check;
 pub mod fillet;
 pub mod health;
 pub mod intersect;
+pub mod lathe;
 pub mod offset;
 pub mod pushpull;
 pub mod radius;

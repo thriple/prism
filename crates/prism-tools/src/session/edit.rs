@@ -837,7 +837,7 @@ impl Session {
         // A cylinder face pulls straight out from its axis at the click
         // (a new radius).
         let n = self.scene.face(face).map_or(DVec3::Z, |f| match &f.curved {
-            Some(c) => c.cylinder.normal_at(p0),
+            Some(c) => c.surface.normal_at(p0),
             None => f.normal,
         });
         self.edit = Some(EditOp::Push {

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use prism_geom::{Curve, Surface, circle_distance};
 use prism_math::{DVec2, DVec3, Tol};
-use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 use crate::intersect::{Flat, crossings};
 use crate::regions::interior_points;
@@ -114,22 +114,16 @@ pub fn check(model: &Model) -> Report {
 fn off_surface(model: &Model, tol: &Tol) -> BTreeMap<FaceId, Vec<(VertexId, DVec3)>> {
     let mut out = BTreeMap::new();
     for (id, f) in model.faces() {
-        let prism_geom::Surface::Cylinder(c) = f.surface else {
+        if !f.is_curved() {
             continue;
-        };
+        }
+        let surface = f.surface;
         let off: Vec<(VertexId, DVec3)> = f
             .loops()
             .flatten()
             .filter_map(|v| {
                 let p = model.vertex(*v);
-                if c.distance(p).abs() <= tol.dist {
-                    return None;
-                }
-                let at = c.axis_point(p);
-                let dir = (p - at)
-                    .try_normalize()
-                    .unwrap_or_else(|| prism_math::Plane::new(at, c.axis).frame().u);
-                Some((*v, at + dir * c.radius))
+                (surface.distance(p).abs() > tol.dist).then(|| (*v, surface.closest(p)))
             })
             .collect();
         if !off.is_empty() {
@@ -225,16 +219,29 @@ fn duplicates(model: &Model, tol: &Tol) -> Found {
         f.vertices.insert(a);
         f.vertices.insert(b);
     }
-    let mut ends: BTreeMap<(VertexId, VertexId), EdgeId> = BTreeMap::new();
+    // Edges with the same two ends along the same curve (a circle's two
+    // halves join the same two points the two ways round).
+    let mut ends: BTreeMap<(VertexId, VertexId), Vec<(EdgeId, Curve)>> = BTreeMap::new();
     for (id, e) in model.edges() {
-        if let Some(first) = ends.insert(pair(e.a, e.b), id) {
-            f.edges.insert(first);
-            f.edges.insert(id);
+        let curve = if e.a < e.b { e.curve } else { e.curve.reversed() };
+        let same = |c: &Curve| match (c, &curve) {
+            (Curve::Line, Curve::Line) => true,
+            (Curve::Arc { axis: x, .. }, Curve::Arc { axis: y, .. }) => x.dot(*y) > 0.0,
+            _ => false,
+        };
+        let list = ends.entry(pair(e.a, e.b)).or_default();
+        for (other, c) in list.iter() {
+            if same(c) {
+                f.edges.insert(*other);
+                f.edges.insert(id);
+            }
         }
+        list.push((id, curve));
     }
-    let mut loops: BTreeMap<Vec<VertexId>, FaceId> = BTreeMap::new();
+    // Faces whose outer loops run along the same edges.
+    let mut loops: BTreeMap<Vec<EdgeId>, FaceId> = BTreeMap::new();
     for (id, face) in model.faces() {
-        let mut key = face.outer.clone();
+        let mut key = face.loop_edge_ids(0).to_vec();
         key.sort();
         if let Some(first) = loops.insert(key, id) {
             f.faces.insert(first);
@@ -281,11 +288,14 @@ fn shells(model: &Model, edge_faces: &BTreeMap<EdgeId, Vec<FaceId>>) -> (usize, 
 }
 
 /// Which way each face runs along each of its edges.
-fn runs(model: &Model) -> BTreeMap<(VertexId, VertexId), Vec<(FaceId, bool)>> {
-    let mut out: BTreeMap<(VertexId, VertexId), Vec<(FaceId, bool)>> = BTreeMap::new();
+/// Each edge's faces, with whether each runs it from its start. By edge,
+/// not by its two ends: a circle's two halves join the same two points.
+fn runs(model: &Model) -> BTreeMap<EdgeId, Vec<(FaceId, bool)>> {
+    let mut out: BTreeMap<EdgeId, Vec<(FaceId, bool)>> = BTreeMap::new();
     for (id, f) in model.faces() {
-        for (a, b) in f.loops().flat_map(|l| loop_pairs(l)) {
-            out.entry(pair(a, b)).or_default().push((id, a < b));
+        for s in f.sides() {
+            let forward = model.edge(s.edge).is_some_and(|e| e.a == s.from);
+            out.entry(s.edge).or_default().push((id, forward));
         }
     }
     out
@@ -397,6 +407,16 @@ pub fn face_volume(model: &Model, id: FaceId) -> f64 {
                 }
             }
             sum / 3.0
+        }
+        // A cone, sphere or torus: by Green's theorem unrolled, exact.
+        s => {
+            let Some(t) = s.turned() else { return 0.0 };
+            (0..f.loops().count())
+                .map(|k| {
+                    let p: Vec<DVec2> = model.unrolled(f, k).into_iter().map(|x| x.1).collect();
+                    t.loop_integrals(&p).1
+                })
+                .sum()
         }
     }
 }

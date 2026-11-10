@@ -12,6 +12,7 @@ pub mod pick;
 pub mod scene;
 pub mod style;
 pub mod tess;
+pub mod turned;
 pub mod view_style;
 
 pub use camera::{Camera, Motion, View};

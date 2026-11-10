@@ -45,6 +45,9 @@ pub const CURVED_PULL: &str = "This pull would bend a curved face, or a face bes
 /// cylinder), so it only stretches.
 pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static str> {
     let f = model.face(face)?;
+    if f.surface.turned().is_some() {
+        return Some(NOT_PULLABLE);
+    }
     let Some(plane) = f.plane() else {
         return crate::radius::refusal(model, face, distance);
     };
@@ -57,10 +60,15 @@ pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static st
                         && x.loops().flatten().any(|v| f.uses_vertex(*v))
                 }
                 Surface::Plane(_) => false,
+                // A cone, sphere or torus beside it would bend.
+                _ => x.loops().flatten().any(|v| f.uses_vertex(*v)),
             }
     });
     bends.then_some(CURVED_PULL)
 }
+
+/// Said when Push/Pull is used on a cone, sphere or torus.
+pub const NOT_PULLABLE: &str = "Push/Pull works on flat faces and cylinders.";
 
 /// Pull `face` by `distance` along its normal. A curved face takes a new
 /// radius instead (Alt's new loop does not apply to it).
@@ -132,6 +140,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             let runs_along = match g.surface {
                 Surface::Plane(p) => tol.perpendicular(p.normal, n),
                 Surface::Cylinder(c) => tol.parallel(c.axis, n),
+                _ => false,
             };
             runs_along && (centre - origin).dot(n) < 0.0
         })

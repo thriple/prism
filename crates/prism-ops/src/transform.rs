@@ -250,21 +250,47 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
 /// A curved face moved whole: its surface follows `m` exactly. False for a
 /// flat face.
 fn move_curved(model: &mut Model, id: FaceId, m: &DAffine3) -> bool {
-    let Some(Surface::Cylinder(c)) = model.face(id).map(|f| f.surface) else {
+    let Some(surface) = model.face(id).map(|f| f.surface).filter(|s| s.is_curved()) else {
         return false;
     };
-    let moved = c.transformed(m).unwrap_or_else(|| {
+    let moved = surface.transformed(m).unwrap_or_else(|| {
         // Uneven: the model check reports it off its surface until the
         // segment fallback (DECISIONS #32).
         let k = m.matrix3.determinant().abs().cbrt();
-        prism_geom::Cylinder {
-            origin: m.transform_point3(c.origin),
-            axis: m.transform_vector3(c.axis).normalize(),
-            radius: c.radius * k,
-            outward: c.outward != (m.matrix3.determinant() < 0.0),
+        let flip = m.matrix3.determinant() < 0.0;
+        let at = |p: DVec3| m.transform_point3(p);
+        let dir = |v: DVec3| m.transform_vector3(v).normalize();
+        match surface {
+            Surface::Plane(_) => surface,
+            Surface::Cylinder(c) => Surface::Cylinder(prism_geom::Cylinder {
+                origin: at(c.origin),
+                axis: dir(c.axis),
+                radius: c.radius * k,
+                outward: c.outward != flip,
+            }),
+            Surface::Cone(c) => Surface::Cone(prism_geom::Cone {
+                origin: at(c.origin),
+                axis: dir(c.axis),
+                radius: c.radius * k,
+                slope: c.slope,
+                outward: c.outward != flip,
+            }),
+            Surface::Sphere(c) => Surface::Sphere(prism_geom::Sphere {
+                centre: at(c.centre),
+                axis: dir(c.axis),
+                radius: c.radius * k,
+                outward: c.outward != flip,
+            }),
+            Surface::Torus(c) => Surface::Torus(prism_geom::Torus {
+                centre: at(c.centre),
+                axis: dir(c.axis),
+                major: c.major * k,
+                minor: c.minor * k,
+                outward: c.outward != flip,
+            }),
         }
     });
-    model.edit_face(id, |f| f.surface = Surface::Cylinder(moved));
+    model.edit_face(id, |f| f.surface = moved);
     true
 }
 

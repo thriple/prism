@@ -2,6 +2,64 @@
 
 Written 2026-11-06, updated 2026-11-09 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
+## Work in progress: Exact Curves 5b (paused 2026-11-10, owner asked to compact)
+
+The owner asked for 5b. It is about half done, committed as WIP on
+`claude/youthful-cray-bhisnc` only (not on `main`; the branch does not build
+yet: `prism-file` fails). Since then, on `main` and green: `f0eafa3` (erase
+merges a face back, Scale box follows the drag, Push/Pull midpoint snap) and
+`42f5517` (a seam round a face left inside draws flat).
+
+**Done (tested):**
+- `prism-geom/src/turned.rs`: `Cone` (origin, axis, radius, slope),
+  `Sphere` (centre, axis for unrolling, radius), `Torus` (centre, axis,
+  major, minor), each with `outward`. Shared core `Turned` (a profile in
+  (ρ, h) turned about the axis): param (θ, s = length along profile),
+  point, normal, distance, closest, holds (5 / 9 samples), numeric
+  ray_hits, poles, and `loop_integrals` (exact area and volume by Green on
+  the unrolled loop, Gauss in short pieces). `Surface` got the 3 variants
+  and `turned()`, `outward()`, `closest()`, `holds()`, `transformed()`,
+  `is_valid()`. Unit tests: exact sphere / cone / torus area and volume.
+- `prism-topo`: `unrolled_turned` (θ unwrapped; a pole is a run along its
+  line, turning the way that keeps the face on the left; a loop once round
+  the axis closes along the pole on its side); `face_area` uses it;
+  file validity uses `is_valid`; link check uses `holds`.
+- `prism-ops`: `lathe.rs` (closed (ρ, h) profile turned a full circle, two
+  halves split by seams like cylinders; tangent seams soft and smooth) for
+  tests now and Follow Me in 5d. Health: `face_volume` for turned faces,
+  off-surface Repair via `closest`, and two fixes: `runs` and duplicates
+  now go by edge, not by vertex pair (a circle's two halves were flagged
+  as duplicates and confused the reversed check; this affected cylinders
+  too). Check: winding uses `outward()`. Push/Pull: `NOT_PULLABLE` for a
+  cone / sphere / torus face, and they count as bending neighbours.
+  Transforms: `move_curved` handles all curved surfaces.
+  `tests/turned.rs` (7 tests: ball, cone, ring, vase; exact volumes; moves,
+  turns, mirror via `affine`, even scale; uneven refused / flagged; Push/Pull
+  refusal; JSON round trip) all pass; all prism-geom/topo/ops tests pass.
+- `prism-view/src/turned.rs`: mesh for a turned face (unrolled,
+  triangulated, edges split where the surface's middle is off the chord,
+  exact points and normals). `scene.rs`: `Curved { surface, start,
+  start_uv, outer }` (was `cylinder`), picking by exact ray hits then
+  inside test unrolled (θ relative to `start`), `add_turned`, moved and
+  transformed previews. Builds; not yet tested.
+
+**Left for 5b:**
+1. `prism-file/src/geometry.rs`: `SurfaceV1` add `Cone`, `Sphere`,
+   `Torus` at the end; encode and decode them; `VERSION` 5 (decode `4 | 5`
+   with the same struct); `SCHEMA` 6 with `5 => raw` in migrate; copy the
+   current golden `.prism` files to `docs/acceptance/files/schema-5/`, add
+   it to the old-schemas test, add a turned golden file (a lathe ball /
+   vase), rewrite with `PRISM_WRITE_GOLDEN=1`.
+2. `prism-file/src/mesh/mod.rs`: export turned faces with
+   `prism_view::turned::mesh`.
+3. `prism-app` MCP `get_geometry`: list `cone` / `sphere` / `torus` with
+   parameters (as `cylinder`); test with a lathe model.
+4. Build the workspace and fix the remaining matches (clippy too); view
+   tests (a ball shades with normals from the surface, picking hits it).
+5. Brief 26: mark 5b built and note that picking uses exact ray hits (not
+   the triangles); NOTES section; PLAN "Where we are"; push to both
+   branches; check CI.
+
 ## Where the project is
 Updated 2026-11-09 (Guam), before a context compaction.
 - **Built, in order:** Skeleton, Soft Theme, Actions & Keys, Core Model,

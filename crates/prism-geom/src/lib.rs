@@ -9,6 +9,9 @@ use std::f64::consts::TAU;
 use prism_math::{DAffine3, DVec3, Plane};
 use serde::{Deserialize, Serialize};
 
+mod turned;
+pub use turned::{Cone, Profile, Sphere, Torus, Turned};
+
 /// Segments per full turn when an arc is drawn or used as a polygon. Fine
 /// enough for now; adaptive tessellation by screen error is part 4.
 pub const SEGMENTS_PER_TURN: usize = 128;
@@ -485,6 +488,10 @@ impl Cylinder {
 pub enum Surface {
     Plane(Plane),
     Cylinder(Cylinder),
+    /// Exact Curves 5b.
+    Cone(Cone),
+    Sphere(Sphere),
+    Torus(Torus),
 }
 
 impl Surface {
@@ -492,7 +499,7 @@ impl Surface {
     pub fn plane(&self) -> Option<&Plane> {
         match self {
             Surface::Plane(p) => Some(p),
-            Surface::Cylinder(_) => None,
+            _ => None,
         }
     }
 
@@ -500,30 +507,161 @@ impl Surface {
         !matches!(self, Surface::Plane(_))
     }
 
+    /// A cone, sphere or torus, as a profile turned about an axis.
+    pub fn turned(&self) -> Option<Turned> {
+        match self {
+            Surface::Cone(c) => Some(c.turned()),
+            Surface::Sphere(c) => Some(c.turned()),
+            Surface::Torus(c) => Some(c.turned()),
+            Surface::Plane(_) | Surface::Cylinder(_) => None,
+        }
+    }
+
+    /// Whether a curved face points away from its axis, centre or tube
+    /// (true for a plane): then its loops wind counter-clockwise unrolled.
+    pub fn outward(&self) -> bool {
+        match self {
+            Surface::Plane(_) => true,
+            Surface::Cylinder(c) => c.outward,
+            Surface::Cone(c) => c.outward,
+            Surface::Sphere(c) => c.outward,
+            Surface::Torus(c) => c.outward,
+        }
+    }
+
     /// Which way the face points at `p` (a point on it).
     pub fn normal_at(&self, p: DVec3) -> DVec3 {
         match self {
             Surface::Plane(pl) => pl.normal,
             Surface::Cylinder(c) => c.normal_at(p),
+            s => s.turned().map_or(DVec3::Z, |t| t.normal_at(p)),
         }
     }
 
     /// How far `p` is from the surface, signed by the face's side.
     pub fn distance(&self, p: DVec3) -> f64 {
+        let (d, out) = match self {
+            Surface::Plane(pl) => return pl.distance(p),
+            Surface::Cylinder(c) => (c.distance(p), c.outward),
+            s => match s.turned() {
+                Some(t) => (t.distance(p), t.outward),
+                None => return 0.0,
+            },
+        };
+        if out { d } else { -d }
+    }
+
+    /// The nearest point of the surface to `p`.
+    pub fn closest(&self, p: DVec3) -> DVec3 {
         match self {
-            Surface::Plane(pl) => pl.distance(p),
+            Surface::Plane(pl) => p - pl.normal * pl.distance(p),
             Surface::Cylinder(c) => {
-                let d = c.distance(p);
-                if c.outward { d } else { -d }
+                let at = c.axis_point(p);
+                let dir = (p - at)
+                    .try_normalize()
+                    .unwrap_or_else(|| Plane::new(at, c.axis).frame().u);
+                at + dir * c.radius
+            }
+            s => s.turned().map_or(p, |t| t.closest(p)),
+        }
+    }
+
+    /// Whether `curve` from `a` to `b` lies on a curved surface, within
+    /// `eps` (always true for a plane: arcs are checked against planes
+    /// elsewhere).
+    pub fn holds(&self, curve: &Curve, a: DVec3, b: DVec3, eps: f64) -> bool {
+        match self {
+            Surface::Plane(_) => true,
+            Surface::Cylinder(c) => c.holds(curve, a, b, eps),
+            s => s.turned().is_some_and(|t| t.holds(curve, a, b, eps)),
+        }
+    }
+
+    /// A curved surface after `m`, if it keeps its shape (moves, turns,
+    /// mirrors and even scales). A mirror turns the face's loops round, so
+    /// the face then points the other way. Not for a plane.
+    pub fn transformed(&self, m: &DAffine3) -> Option<Surface> {
+        match *self {
+            Surface::Plane(_) => None,
+            Surface::Cylinder(c) => c.transformed(m).map(Surface::Cylinder),
+            Surface::Cone(c) => {
+                let (origin, axis, k, outward) = c.turned().transformed(m)?;
+                Some(Surface::Cone(Cone {
+                    origin,
+                    axis,
+                    radius: c.radius * k,
+                    slope: c.slope,
+                    outward,
+                }))
+            }
+            Surface::Sphere(c) => {
+                let (centre, axis, k, outward) = c.turned().transformed(m)?;
+                Some(Surface::Sphere(Sphere {
+                    centre,
+                    axis,
+                    radius: c.radius * k,
+                    outward,
+                }))
+            }
+            Surface::Torus(c) => {
+                let (centre, axis, k, outward) = c.turned().transformed(m)?;
+                Some(Surface::Torus(Torus {
+                    centre,
+                    axis,
+                    major: c.major * k,
+                    minor: c.minor * k,
+                    outward,
+                }))
+            }
+        }
+    }
+
+    /// Whether its numbers are finite and its sizes make sense.
+    pub fn is_valid(&self) -> bool {
+        let unit = |v: DVec3| v.is_finite() && v != DVec3::ZERO;
+        match *self {
+            Surface::Plane(pl) => pl.origin.is_finite() && unit(pl.normal),
+            Surface::Cylinder(c) => {
+                c.origin.is_finite() && unit(c.axis) && c.radius.is_finite() && c.radius > 0.0
+            }
+            Surface::Cone(c) => {
+                c.origin.is_finite()
+                    && unit(c.axis)
+                    && c.radius.is_finite()
+                    && c.slope.is_finite()
+                    && c.slope != 0.0
+            }
+            Surface::Sphere(c) => {
+                c.centre.is_finite() && unit(c.axis) && c.radius.is_finite() && c.radius > 0.0
+            }
+            Surface::Torus(c) => {
+                c.centre.is_finite()
+                    && unit(c.axis)
+                    && c.minor.is_finite()
+                    && c.major.is_finite()
+                    && c.minor > 0.0
+                    && c.major > c.minor
             }
         }
     }
 
     /// The same surface, facing the other way.
     pub fn flipped(&self) -> Surface {
-        match self {
+        match *self {
             Surface::Plane(p) => Surface::Plane(p.flipped()),
             Surface::Cylinder(c) => Surface::Cylinder(c.flipped()),
+            Surface::Cone(c) => Surface::Cone(Cone {
+                outward: !c.outward,
+                ..c
+            }),
+            Surface::Sphere(c) => Surface::Sphere(Sphere {
+                outward: !c.outward,
+                ..c
+            }),
+            Surface::Torus(c) => Surface::Torus(Torus {
+                outward: !c.outward,
+                ..c
+            }),
         }
     }
 }

@@ -139,7 +139,7 @@ pub fn planar(model: &Model, tol: &Tol) -> Vec<String> {
             let area: f64 = (0..p.len())
                 .map(|i| p[i].perp_dot(p[(i + 1) % p.len()]))
                 .sum();
-            let outward = matches!(f.surface, prism_geom::Surface::Cylinder(c) if c.outward);
+            let outward = f.surface.outward();
             if (area > 0.0) != outward {
                 out.push(format!("face {id:?} winds against its normal"));
             }

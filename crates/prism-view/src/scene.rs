@@ -42,24 +42,60 @@ pub struct SceneFace {
 /// What picking a curved face needs.
 #[derive(Clone, Debug)]
 pub struct Curved {
-    pub cylinder: prism_geom::Cylinder,
-    /// The first corner of the outer loop: distance 0 round, unrolled.
+    /// A cylinder, cone, sphere or torus.
+    pub surface: prism_geom::Surface,
+    /// The first corner of the outer loop: distance 0 round, unrolled (a
+    /// cylinder); for the others, at `start_uv` unrolled.
     pub start: DVec3,
+    pub start_uv: DVec2,
     /// The outer loop's points in space.
     pub outer: Vec<DVec3>,
 }
 
 impl Curved {
     /// `p` (on the surface) unrolled, as each way round it could be.
-    fn unrolled(&self, p: DVec3) -> [DVec2; 3] {
-        let c = &self.cylinder;
-        let r0 = (self.start - c.axis_point(self.start)).normalize_or_zero();
-        let w = c.axis.cross(r0);
-        let q = p - c.axis_point(p);
-        let phi = q.dot(w).atan2(q.dot(r0));
-        let h = (p - c.origin).dot(c.axis);
+    fn unrolled(&self, p: DVec3) -> Vec<DVec2> {
         let tau = std::f64::consts::TAU;
-        [phi, phi + tau, phi - tau].map(|a| DVec2::new(a * c.radius, h))
+        if let prism_geom::Surface::Cylinder(c) = &self.surface {
+            let r0 = (self.start - c.axis_point(self.start)).normalize_or_zero();
+            let w = c.axis.cross(r0);
+            let q = p - c.axis_point(p);
+            let phi = q.dot(w).atan2(q.dot(r0));
+            let h = (p - c.origin).dot(c.axis);
+            return [phi, phi + tau, phi - tau]
+                .map(|a| DVec2::new(a * c.radius, h))
+                .to_vec();
+        }
+        let Some(t) = self.surface.turned() else {
+            return Vec::new();
+        };
+        // The angle from the start's, so a moved face needs no new frame.
+        let (q, q0) = (t.param(p), t.param(self.start));
+        let d = q.x - q0.x;
+        let theta = self.start_uv.x + d - tau * (d / tau).round();
+        let ss: Vec<f64> = match t.s_period() {
+            Some(w) => vec![q.y, q.y + w, q.y - w],
+            None => vec![q.y],
+        };
+        [theta, theta + tau, theta - tau]
+            .into_iter()
+            .flat_map(|a| ss.iter().map(move |s| DVec2::new(a, *s)))
+            .collect()
+    }
+
+    /// The surface moved by a rigid motion (`f` for points, `nf` for
+    /// directions).
+    fn moved(&mut self, f: impl Fn(DVec3) -> DVec3, nf: impl Fn(DVec3) -> DVec3) {
+        use prism_geom::Surface as S;
+        match &mut self.surface {
+            S::Plane(_) => {}
+            S::Cylinder(c) => (c.origin, c.axis) = (f(c.origin), nf(c.axis)),
+            S::Cone(c) => (c.origin, c.axis) = (f(c.origin), nf(c.axis)),
+            S::Sphere(c) => (c.centre, c.axis) = (f(c.centre), nf(c.axis)),
+            S::Torus(c) => (c.centre, c.axis) = (f(c.centre), nf(c.axis)),
+        }
+        self.start = f(self.start);
+        self.outer.iter_mut().for_each(|q| *q = f(*q));
     }
 }
 
@@ -105,12 +141,16 @@ impl SceneFace {
     /// Where the ray hits this face (distance along it), if it does.
     pub fn hit(&self, o: DVec3, d: DVec3) -> Option<f64> {
         if let Some(c) = &self.curved {
-            if !ray_box(o, d, self.lo, self.hi) {
-                return None;
-            }
-            return c
-                .cylinder
-                .ray_hits(o, d)
+            let (t0, t1) = ray_box_range(o, d, self.lo, self.hi)?;
+            let hits = match &c.surface {
+                prism_geom::Surface::Cylinder(cy) => cy.ray_hits(o, d),
+                s => s.turned().map_or(Vec::new(), |t| {
+                    // A little past the box, so faces at its walls are met.
+                    let pad = (t1 - t0) * 1e-3 + 1e-9;
+                    t.ray_hits(o, d, (t0 - pad).max(0.0), t1 + pad)
+                }),
+            };
+            return hits
                 .into_iter()
                 .filter(|t| *t > 0.0)
                 .find(|t| c.unrolled(o + d * *t).iter().any(|q| self.inside(*q)));
@@ -138,6 +178,12 @@ impl SceneFace {
 
 /// A slab test, slightly widened so faces lying in the box's own walls pass.
 fn ray_box(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> bool {
+    ray_box_range(o, d, lo, hi).is_some()
+}
+
+/// Where the ray is in the (slightly widened) box: from and to, in units
+/// of `d`, from 0 on.
+fn ray_box_range(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> Option<(f64, f64)> {
     let pad = (hi - lo).max_element() * 1e-9 + 1e-300;
     let (lo, hi) = (lo - DVec3::splat(pad), hi + DVec3::splat(pad));
     let mut t0 = 0.0f64;
@@ -145,7 +191,7 @@ fn ray_box(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> bool {
     for k in 0..3 {
         if d[k].abs() < 1e-300 {
             if o[k] < lo[k] || o[k] > hi[k] {
-                return false;
+                return None;
             }
             continue;
         }
@@ -154,10 +200,10 @@ fn ray_box(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> bool {
         t0 = t0.max(a.min(b));
         t1 = t1.min(a.max(b));
         if t0 > t1 {
-            return false;
+            return None;
         }
     }
-    true
+    Some((t0, t1))
 }
 
 /// One edge, with the normals of the faces that use it (for the profile pass).
@@ -269,6 +315,10 @@ impl Scene {
         for (id, f) in model.faces() {
             if let prism_geom::Surface::Cylinder(c) = f.surface {
                 s.add_curved(model, id, f, c);
+                continue;
+            }
+            if let Some(t) = f.surface.turned() {
+                s.add_turned(model, id, f, &t);
                 continue;
             }
             let Some(&plane) = f.plane() else { continue };
@@ -503,8 +553,9 @@ impl Scene {
             tris: 0..0,
             faded: false,
             curved: Some(Curved {
-                cylinder: c,
+                surface: prism_geom::Surface::Cylinder(c),
                 start: first,
+                start_uv: DVec2::ZERO,
                 outer: loops[0].iter().map(|x| x.0).collect(),
             }),
         };
@@ -524,6 +575,57 @@ impl Scene {
                 t.swap(1, 2);
             }
             self.mesh.indices.extend(t.iter().map(|&i| base + i as u32));
+        }
+        face.tris = start..self.mesh.indices.len() as u32;
+        self.face_index.insert(id, self.faces.len());
+        self.faces.push(face);
+    }
+
+    /// A cone, sphere or torus face (Exact Curves 5b): triangles on the
+    /// exact surface, with its normals ([`crate::turned::mesh`]).
+    fn add_turned(&mut self, model: &Model, id: FaceId, f: &prism_topo::Face, t: &prism_geom::Turned) {
+        let m = crate::turned::mesh(model, f, t);
+        let (Some(&first), Some(&owner)) = (m.positions.first(), f.outer.first()) else {
+            return;
+        };
+        let (mut lo, mut hi) = (first, first);
+        for p in &m.positions {
+            lo = lo.min(*p);
+            hi = hi.max(*p);
+        }
+        let frame = prism_math::Plane::new(t.origin, t.axis).frame();
+        let mut face = SceneFace {
+            id,
+            normal: t.normal_at(m.start),
+            origin: t.origin,
+            u: frame.u,
+            v: frame.v,
+            outer: m.outer.clone(),
+            holes: m.holes.clone(),
+            lo,
+            hi,
+            tris: 0..0,
+            faded: false,
+            curved: Some(Curved {
+                surface: f.surface,
+                start: m.start,
+                start_uv: m.outer.first().copied().unwrap_or_default(),
+                outer: model.loop_points(f, 0),
+            }),
+        };
+        let start = self.mesh.indices.len() as u32;
+        let base = self.mesh.positions.len() as u32;
+        self.mesh.positions.extend_from_slice(&m.positions);
+        // Inner points belong to the face's first corner: the face moves
+        // whole or is rebuilt.
+        self.mesh_vertex_ids
+            .extend(std::iter::repeat_n(owner, m.positions.len()));
+        self.mesh.normals.extend_from_slice(&m.normals);
+        self.mesh
+            .faces
+            .extend(std::iter::repeat_n(self.faces.len() as u32, m.positions.len()));
+        for t in &m.tris {
+            self.mesh.indices.extend(t.iter().map(|i| base + i));
         }
         face.tris = start..self.mesh.indices.len() as u32;
         self.face_index.insert(id, self.faces.len());
@@ -579,10 +681,7 @@ impl Scene {
                 face.v = nf(face.v);
                 face.normal = nf(face.normal);
                 if let Some(c) = &mut face.curved {
-                    c.cylinder.origin = f(c.cylinder.origin);
-                    c.cylinder.axis = nf(c.cylinder.axis);
-                    c.start = f(c.start);
-                    c.outer.iter_mut().for_each(|q| *q = f(*q));
+                    c.moved(&f, &nf);
                 }
             }
         }
@@ -746,14 +845,24 @@ impl Scene {
             }
             if let Some(c) = &mut f.curved {
                 // Unrolled: lengths scale; a mirror turns the way round.
-                let unroll = |q: &DVec2| DVec2::new(if mirror { -q.x } else { q.x }, q.y) * k;
+                // A turned face's angles do not scale.
+                let turned = c.surface.turned().is_some();
+                let unroll = |q: &DVec2| {
+                    let x = if mirror { -q.x } else { q.x };
+                    if turned {
+                        DVec2::new(x, q.y * k)
+                    } else {
+                        DVec2::new(x, q.y) * k
+                    }
+                };
+                c.start_uv = unroll(&c.start_uv);
                 f.outer = f.outer.iter().map(unroll).collect();
                 f.holes = f
                     .holes
                     .iter()
                     .map(|h| h.iter().map(unroll).collect())
                     .collect();
-                c.cylinder = c.cylinder.transformed(m).unwrap_or(c.cylinder);
+                c.surface = c.surface.transformed(m).unwrap_or(c.surface);
                 c.start = p(c.start);
                 c.outer.iter_mut().for_each(|q| *q = p(*q));
             } else {
