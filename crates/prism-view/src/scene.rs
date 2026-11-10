@@ -338,14 +338,28 @@ impl Scene {
             s.faces.push(face);
         }
         for (id, e) in model.edges() {
-            let fs = edge_faces.get(&id);
-            let fid = |k: usize| fs.and_then(|v| v.get(k)).copied();
             let mid = model.vertex(e.a).lerp(model.vertex(e.b), 0.5);
-            let n = |k: usize| {
-                fid(k)
-                    .and_then(|f| model.face(f))
-                    .map(|f| f.surface.normal_at(mid))
-            };
+            let normal = |f: FaceId| model.face(f).map(|f| f.surface.normal_at(mid));
+            let mut fs: Vec<FaceId> = edge_faces.get(&id).cloned().unwrap_or_default();
+            // An edge with three or more faces (a face left inside a solid,
+            // as after Push/Pull's new loop): where two of them lie flat on
+            // one side, those two are the ones seen, so the edge is not an
+            // outline from some views only.
+            if fs.len() > 2 {
+                let flat = (0..fs.len()).find_map(|i| {
+                    (i + 1..fs.len()).find_map(|j| {
+                        let (a, b) = (normal(fs[i])?, normal(fs[j])?);
+                        (a.dot(b) > 0.0 && s.tol.parallel(a, b)).then_some((i, j))
+                    })
+                });
+                if let Some((i, j)) = flat {
+                    let (a, b) = (fs[i], fs[j]);
+                    fs.retain(|f| *f != a && *f != b);
+                    fs.splice(0..0, [a, b]);
+                }
+            }
+            let fid = |k: usize| fs.get(k).copied();
+            let n = |k: usize| fid(k).and_then(normal);
             s.edge_index.insert(id, s.edges.len());
             s.edges.push(SceneEdge {
                 id,

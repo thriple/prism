@@ -1769,3 +1769,14 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   near wins. Hidden endpoints are still matched, as before.
 - Tests: a line through each face of a box, both ways, erased; the drag
   test checks the grips move; a pull matched to an upright edge's middle.
+
+### Owner's session 4 (2026-11-10): a seam drawn as an outline from some views
+- The line was the seam round a face left inside the solid: Push/Pull's
+  new loop (Alt) keeps the face it starts from, as SketchUp does, so the
+  seam's edges have three faces (two walls and the inside face; Model
+  Health lists it as an inside face). The renderer judged outlines by an
+  edge's first two faces; after a wall was erased and drawn back, those
+  were a wall and the inside face, so the seam was an outline from views
+  where one faced you and the other away. Now, where two of an edge's
+  faces lie flat on one side, those two are used. Test: `prism-view`
+  `tests/inside.rs`.
