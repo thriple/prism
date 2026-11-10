@@ -254,6 +254,35 @@ impl AppHost<'_> {
                             "outward": c.outward,
                         });
                     }
+                    // Exact Curves 5b, as placed in the world.
+                    other => match other.transformed(&t).unwrap_or(other) {
+                        prism_geom::Surface::Cone(c) => {
+                            j["cone"] = json!({
+                                "apex": point(c.apex),
+                                "axis": point(c.axis),
+                                "half_angle_degrees": round(c.half_angle.to_degrees()),
+                                "outward": c.outward,
+                            });
+                        }
+                        prism_geom::Surface::Sphere(x) => {
+                            j["sphere"] = json!({
+                                "centre": point(x.centre),
+                                "axis": point(x.axis),
+                                "radius": round(x.radius),
+                                "outward": x.outward,
+                            });
+                        }
+                        prism_geom::Surface::Torus(x) => {
+                            j["torus"] = json!({
+                                "centre": point(x.centre),
+                                "axis": point(x.axis),
+                                "major_radius": round(x.major),
+                                "minor_radius": round(x.minor),
+                                "outward": x.outward,
+                            });
+                        }
+                        _ => {}
+                    },
                 }
                 j
             })
@@ -662,6 +691,42 @@ mod tests {
         assert!(has([-1.0, 0.0, 0.0]), "by centre: {g}");
         assert!(has([-1.0, 1.0, 0.0]), "the pie: {g}");
         assert_eq!(g["faces_total"], 1, "the pie is a face");
+    }
+
+    /// Exact Curves 5b: cones, spheres and tori are listed with their
+    /// parameters.
+    #[test]
+    fn get_geometry_lists_cones_spheres_and_tori() {
+        let mut m = prism_tools::scenes::sphere(prism_math::DVec3::new(0.0, 0.0, 5.0), 2.0);
+        m.append(&prism_tools::scenes::cone(1.0, 2.0));
+        m.append(&prism_tools::scenes::torus(3.0, 0.5));
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::with_model(m));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let g = value(h.call("get_geometry", &json!({})));
+        let of = |kind: &str| -> Vec<Value> {
+            g["faces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|f| f.get(kind).cloned())
+                .collect()
+        };
+        let (spheres, cones, tori) = (of("sphere"), of("cone"), of("torus"));
+        assert_eq!((spheres.len(), cones.len(), tori.len()), (2, 2, 4), "{g}");
+        assert_eq!(spheres[0]["radius"], 2.0);
+        assert_eq!(spheres[0]["centre"], json!([0.0, 0.0, 5.0]));
+        assert_eq!(cones[0]["apex"], json!([0.0, 0.0, 2.0]));
+        assert_eq!(cones[0]["axis"], json!([0.0, 0.0, -1.0]));
+        assert_eq!(tori[0]["major_radius"], 3.0);
+        assert_eq!(tori[0]["minor_radius"], 0.5);
+        assert_eq!(tori[0]["outward"], true);
     }
 
     #[test]

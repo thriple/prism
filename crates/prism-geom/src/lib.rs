@@ -1,4 +1,5 @@
-//! Curves and surfaces: lines, exact arcs (Exact Curves part 2) and planes.
+//! Curves and surfaces: lines, exact arcs (Exact Curves part 2), planes,
+//! cylinders (part 4), and cones, spheres and tori (part 5b).
 //! The enums leave room for NURBS (PLAN 1.1).
 //!
 //! A curve does not hold its ends: an edge's two vertices are its ends, and
@@ -8,6 +9,9 @@ use std::f64::consts::TAU;
 
 use prism_math::{DAffine3, DVec3, Plane};
 use serde::{Deserialize, Serialize};
+
+mod revolved;
+pub use revolved::{Cone, Profile, Revolution, Sphere, Torus, axis_frame};
 
 /// Segments per full turn when an arc is drawn or used as a polygon. Fine
 /// enough for now; adaptive tessellation by screen error is part 4.
@@ -485,6 +489,9 @@ impl Cylinder {
 pub enum Surface {
     Plane(Plane),
     Cylinder(Cylinder),
+    Cone(Cone),
+    Sphere(Sphere),
+    Torus(Torus),
 }
 
 impl Surface {
@@ -492,7 +499,7 @@ impl Surface {
     pub fn plane(&self) -> Option<&Plane> {
         match self {
             Surface::Plane(p) => Some(p),
-            Surface::Cylinder(_) => None,
+            _ => None,
         }
     }
 
@@ -505,17 +512,44 @@ impl Surface {
         match self {
             Surface::Plane(pl) => pl.normal,
             Surface::Cylinder(c) => c.normal_at(p),
+            Surface::Cone(c) => c.normal_at(p),
+            Surface::Sphere(x) => x.normal_at(p),
+            Surface::Torus(t) => t.normal_at(p),
+        }
+    }
+
+    /// Whether a curved face points out of its surface (away from the axis,
+    /// the centre or the tube's middle). True for a plane.
+    pub fn outward(&self) -> bool {
+        match self {
+            Surface::Plane(_) => true,
+            Surface::Cylinder(c) => c.outward,
+            Surface::Cone(c) => c.outward,
+            Surface::Sphere(x) => x.outward,
+            Surface::Torus(t) => t.outward,
         }
     }
 
     /// How far `p` is from the surface, signed by the face's side.
     pub fn distance(&self, p: DVec3) -> f64 {
+        let (d, out) = match self {
+            Surface::Plane(pl) => return pl.distance(p),
+            Surface::Cylinder(c) => (c.distance(p), c.outward),
+            Surface::Cone(c) => (c.distance(p), c.outward),
+            Surface::Sphere(x) => (x.distance(p), x.outward),
+            Surface::Torus(t) => (t.distance(p), t.outward),
+        };
+        if out { d } else { -d }
+    }
+
+    /// The nearest point of the surface to `p`.
+    pub fn project(&self, p: DVec3) -> DVec3 {
         match self {
-            Surface::Plane(pl) => pl.distance(p),
-            Surface::Cylinder(c) => {
-                let d = c.distance(p);
-                if c.outward { d } else { -d }
-            }
+            Surface::Plane(pl) => p - pl.normal * pl.distance(p),
+            Surface::Cylinder(c) => c.project(p),
+            Surface::Cone(c) => c.project(p),
+            Surface::Sphere(x) => x.project(p),
+            Surface::Torus(t) => t.project(p),
         }
     }
 
@@ -524,6 +558,100 @@ impl Surface {
         match self {
             Surface::Plane(p) => Surface::Plane(p.flipped()),
             Surface::Cylinder(c) => Surface::Cylinder(c.flipped()),
+            Surface::Cone(c) => Surface::Cone(c.flipped()),
+            Surface::Sphere(x) => Surface::Sphere(x.flipped()),
+            Surface::Torus(t) => Surface::Torus(t.flipped()),
+        }
+    }
+
+    /// The surface after `m`, if it keeps its kind exactly (moves, turns,
+    /// mirrors and even scales). A mirror turns a face's loops round, so a
+    /// curved face then points the other way.
+    pub fn transformed(&self, m: &DAffine3) -> Option<Surface> {
+        let (s, even) = revolved::scale_of(m);
+        even.then(|| revolved::moved(self, m, s))
+    }
+
+    /// As [`Surface::transformed`], but an uneven scale gives the nearest
+    /// even one (the model check then finds points off the surface, until
+    /// the segment fallback of DECISIONS #32).
+    pub fn transformed_loosely(&self, m: &DAffine3) -> Surface {
+        let (s, _) = revolved::scale_of(m);
+        revolved::moved(self, m, s)
+    }
+
+    /// The surface after a rigid motion given as `f` for points and `nf`
+    /// for directions (sizes are kept).
+    pub fn mapped(&self, f: impl Fn(DVec3) -> DVec3, nf: impl Fn(DVec3) -> DVec3) -> Surface {
+        match *self {
+            Surface::Plane(p) => Surface::Plane(Plane::new(f(p.origin), nf(p.normal))),
+            Surface::Cylinder(c) => Surface::Cylinder(Cylinder {
+                origin: f(c.origin),
+                axis: nf(c.axis),
+                ..c
+            }),
+            Surface::Cone(c) => Surface::Cone(Cone {
+                apex: f(c.apex),
+                axis: nf(c.axis),
+                ..c
+            }),
+            Surface::Sphere(x) => Surface::Sphere(Sphere {
+                centre: f(x.centre),
+                axis: nf(x.axis),
+                ..x
+            }),
+            Surface::Torus(t) => Surface::Torus(Torus {
+                centre: f(t.centre),
+                axis: nf(t.axis),
+                ..t
+            }),
+        }
+    }
+
+    /// Whether `curve` from `a` to `b` lies on a curved surface, within
+    /// `eps`. For a plane: whether an arc lies in its plane.
+    pub fn holds(&self, curve: &Curve, a: DVec3, b: DVec3, eps: f64) -> bool {
+        match self {
+            Surface::Plane(pl) => match curve {
+                Curve::Line => true,
+                Curve::Arc { axis, .. } => (axis.dot(pl.normal).abs() - 1.0).abs() <= 1e-9,
+            },
+            Surface::Cylinder(c) => c.holds(curve, a, b, eps),
+            Surface::Cone(c) => c.holds(curve, a, b, eps),
+            Surface::Sphere(x) => x.holds(curve, a, b, eps),
+            Surface::Torus(t) => t.holds(curve, a, b, eps),
+        }
+    }
+
+    /// The surface as a turned profile; None for a plane.
+    pub fn revolution(&self) -> Option<Revolution> {
+        match self {
+            Surface::Plane(_) => None,
+            Surface::Cylinder(c) => Some(c.revolution()),
+            Surface::Cone(c) => Some(c.revolution()),
+            Surface::Sphere(x) => Some(x.revolution()),
+            Surface::Torus(t) => Some(t.revolution()),
+        }
+    }
+
+    /// Every number finite and every size sensible.
+    pub fn is_valid(&self) -> bool {
+        let unit = |a: DVec3| a.is_finite() && a != DVec3::ZERO;
+        let len = |x: f64| x.is_finite() && x > 0.0;
+        match *self {
+            Surface::Plane(pl) => pl.origin.is_finite() && pl.normal.is_finite(),
+            Surface::Cylinder(c) => c.origin.is_finite() && unit(c.axis) && len(c.radius),
+            Surface::Cone(c) => {
+                c.apex.is_finite()
+                    && unit(c.axis)
+                    && c.half_angle.is_finite()
+                    && c.half_angle > 0.0
+                    && c.half_angle < std::f64::consts::FRAC_PI_2
+            }
+            Surface::Sphere(x) => x.centre.is_finite() && unit(x.axis) && len(x.radius),
+            Surface::Torus(t) => {
+                t.centre.is_finite() && unit(t.axis) && len(t.major) && len(t.minor)
+            }
         }
     }
 }

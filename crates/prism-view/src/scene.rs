@@ -42,17 +42,21 @@ pub struct SceneFace {
 /// What picking a curved face needs.
 #[derive(Clone, Debug)]
 pub struct Curved {
-    pub cylinder: prism_geom::Cylinder,
+    pub surface: prism_geom::Surface,
     /// The first corner of the outer loop: distance 0 round, unrolled.
     pub start: DVec3,
     /// The outer loop's points in space.
     pub outer: Vec<DVec3>,
+    /// Cones, spheres and tori (Exact Curves 5b): the drawn triangles, which
+    /// a ray meets first; the point is then put on the exact surface. Empty
+    /// for a cylinder, which is met exactly.
+    pub tris: Vec<[DVec3; 3]>,
 }
 
 impl Curved {
-    /// `p` (on the surface) unrolled, as each way round it could be.
-    fn unrolled(&self, p: DVec3) -> [DVec2; 3] {
-        let c = &self.cylinder;
+    /// `p` (on the surface) unrolled, as each way round it could be. Only
+    /// for a cylinder.
+    fn unrolled(&self, c: &prism_geom::Cylinder, p: DVec3) -> [DVec2; 3] {
         let r0 = (self.start - c.axis_point(self.start)).normalize_or_zero();
         let w = c.axis.cross(r0);
         let q = p - c.axis_point(p);
@@ -61,6 +65,65 @@ impl Curved {
         let tau = std::f64::consts::TAU;
         [phi, phi + tau, phi - tau].map(|a| DVec2::new(a * c.radius, h))
     }
+
+    /// The nearest drawn triangle the ray meets, then along the ray onto
+    /// the exact surface (a few Newton steps on the distance).
+    fn hit_turned(&self, o: DVec3, d: DVec3) -> Option<f64> {
+        let mut best: Option<f64> = None;
+        for t in &self.tris {
+            if let Some(x) = ray_triangle(o, d, t)
+                && best.is_none_or(|b| x < b)
+            {
+                best = Some(x);
+            }
+        }
+        let mut t = best?;
+        let t0 = t;
+        for _ in 0..4 {
+            let p = o + d * t;
+            let slope = self.surface.normal_at(p).dot(d);
+            if slope.abs() < 1e-9 * d.length() {
+                break;
+            }
+            t -= self.surface.distance(p) / slope;
+        }
+        // Keep the triangle's point if the steps wandered off.
+        let near = (t - t0).abs() * d.length() <= 0.1 * self.size();
+        Some(if t > 0.0 && near { t } else { t0 })
+    }
+
+    fn size(&self) -> f64 {
+        let (mut lo, mut hi) = (self.start, self.start);
+        for p in &self.outer {
+            lo = lo.min(*p);
+            hi = hi.max(*p);
+        }
+        (hi - lo).length().max(f64::MIN_POSITIVE)
+    }
+}
+
+/// Where the ray from `o` along `d` meets triangle `t` (distance along it,
+/// in units of `d`), from either side.
+fn ray_triangle(o: DVec3, d: DVec3, t: &[DVec3; 3]) -> Option<f64> {
+    let (e1, e2) = (t[1] - t[0], t[2] - t[0]);
+    let p = d.cross(e2);
+    let det = e1.dot(p);
+    if det.abs() <= 1e-300 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    let s = o - t[0];
+    let u = s.dot(p) * inv;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = d.dot(q) * inv;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let x = e2.dot(q) * inv;
+    (x > 0.0).then_some(x)
 }
 
 impl SceneFace {
@@ -108,12 +171,14 @@ impl SceneFace {
             if !ray_box(o, d, self.lo, self.hi) {
                 return None;
             }
-            return c
-                .cylinder
+            let prism_geom::Surface::Cylinder(cyl) = c.surface else {
+                return c.hit_turned(o, d);
+            };
+            return cyl
                 .ray_hits(o, d)
                 .into_iter()
                 .filter(|t| *t > 0.0)
-                .find(|t| c.unrolled(o + d * *t).iter().any(|q| self.inside(*q)));
+                .find(|t| c.unrolled(&cyl, o + d * *t).iter().any(|q| self.inside(*q)));
         }
         let den = self.normal.dot(d);
         if den.abs() < 1e-12 || !ray_box(o, d, self.lo, self.hi) {
@@ -269,6 +334,10 @@ impl Scene {
         for (id, f) in model.faces() {
             if let prism_geom::Surface::Cylinder(c) = f.surface {
                 s.add_curved(model, id, f, c);
+                continue;
+            }
+            if f.surface.is_curved() {
+                s.add_turned(model, id, f);
                 continue;
             }
             let Some(&plane) = f.plane() else { continue };
@@ -503,9 +572,10 @@ impl Scene {
             tris: 0..0,
             faded: false,
             curved: Some(Curved {
-                cylinder: c,
+                surface: prism_geom::Surface::Cylinder(c),
                 start: first,
                 outer: loops[0].iter().map(|x| x.0).collect(),
+                tris: Vec::new(),
             }),
         };
         let start = self.mesh.indices.len() as u32;
@@ -526,6 +596,66 @@ impl Scene {
             self.mesh.indices.extend(t.iter().map(|&i| base + i as u32));
         }
         face.tris = start..self.mesh.indices.len() as u32;
+        self.face_index.insert(id, self.faces.len());
+        self.faces.push(face);
+    }
+
+    /// A cone, sphere or torus face (Exact Curves 5b): drawn from a grid on
+    /// the surface (`tess::turned`), with the surface's normals.
+    fn add_turned(&mut self, model: &Model, id: FaceId, f: &prism_topo::Face) {
+        let Some(t) = crate::tess::turned(model, f) else {
+            return;
+        };
+        let Some(&first) = t.points.first() else {
+            return;
+        };
+        let (mut lo, mut hi) = (first, first);
+        for p in &t.points {
+            lo = lo.min(*p);
+            hi = hi.max(*p);
+        }
+        let rev = f.surface.revolution().expect("a turned surface");
+        let outer: Vec<DVec3> = model.loop_points(f, 0);
+        let start = outer.first().copied().unwrap_or(first);
+        let flat =
+            |k: usize| -> Vec<DVec2> { model.param_loop(f, k).into_iter().map(|x| x.1).collect() };
+        let mut face = SceneFace {
+            id,
+            normal: f.surface.normal_at(start),
+            origin: rev.origin,
+            u: rev.u,
+            v: rev.v,
+            outer: flat(0),
+            holes: (1..=f.holes.len()).map(flat).collect(),
+            lo,
+            hi,
+            tris: 0..0,
+            faded: false,
+            curved: Some(Curved {
+                surface: f.surface,
+                start,
+                outer,
+                tris: t.tris.iter().map(|x| x.map(|i| t.points[i])).collect(),
+            }),
+        };
+        let start_index = self.mesh.indices.len() as u32;
+        let base = self.mesh.positions.len() as u32;
+        // The grid's points belong to the face's first corner (a moving
+        // preview takes a face whole or not at all).
+        let owner = f.outer[0];
+        self.mesh.positions.extend_from_slice(&t.points);
+        self.mesh_vertex_ids
+            .extend(std::iter::repeat_n(owner, t.points.len()));
+        self.mesh.normals.extend_from_slice(&t.normals);
+        self.mesh
+            .faces
+            .extend(std::iter::repeat_n(self.faces.len() as u32, t.points.len()));
+        for tri in &t.tris {
+            self.mesh
+                .indices
+                .extend(tri.iter().map(|&i| base + i as u32));
+        }
+        face.tris = start_index..self.mesh.indices.len() as u32;
         self.face_index.insert(id, self.faces.len());
         self.faces.push(face);
     }
@@ -579,8 +709,10 @@ impl Scene {
                 face.v = nf(face.v);
                 face.normal = nf(face.normal);
                 if let Some(c) = &mut face.curved {
-                    c.cylinder.origin = f(c.cylinder.origin);
-                    c.cylinder.axis = nf(c.cylinder.axis);
+                    c.surface = c.surface.mapped(&f, &nf);
+                    for t in &mut c.tris {
+                        *t = t.map(&f);
+                    }
                     c.start = f(c.start);
                     c.outer.iter_mut().for_each(|q| *q = f(*q));
                 }
@@ -753,7 +885,10 @@ impl Scene {
                     .iter()
                     .map(|h| h.iter().map(unroll).collect())
                     .collect();
-                c.cylinder = c.cylinder.transformed(m).unwrap_or(c.cylinder);
+                c.surface = c.surface.transformed(m).unwrap_or(c.surface);
+                for t in &mut c.tris {
+                    *t = t.map(p);
+                }
                 c.start = p(c.start);
                 c.outer.iter_mut().for_each(|q| *q = p(*q));
             } else {

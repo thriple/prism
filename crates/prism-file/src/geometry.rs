@@ -12,8 +12,10 @@ use crate::FileError;
 /// The geometry layout this version writes. Layout 2 (Exact Curves part 1)
 /// adds each loop's edges; a layout 1 file finds them when read. Layout 3
 /// (part 2) adds arcs and curve ids. Layout 4 (part 4) adds soft and
-/// smooth edges.
-pub const VERSION: u32 = 4;
+/// smooth edges. Layout 5 (part 5b) adds cone, sphere and torus faces; it
+/// is layout 4 with more kinds of surface, so a layout 4 entry reads as it
+/// is.
+pub const VERSION: u32 = 5;
 
 type P = [f64; 3];
 
@@ -33,6 +35,27 @@ enum SurfaceV1 {
         origin: P,
         axis: P,
         radius: f64,
+        outward: bool,
+    },
+    /// Exact Curves 5b (layout 5): added at the end, so older entries
+    /// read unchanged.
+    Cone {
+        apex: P,
+        axis: P,
+        half_angle: f64,
+        outward: bool,
+    },
+    Sphere {
+        centre: P,
+        axis: P,
+        radius: f64,
+        outward: bool,
+    },
+    Torus {
+        centre: P,
+        axis: P,
+        major: f64,
+        minor: f64,
         outward: bool,
     },
 }
@@ -273,6 +296,25 @@ pub fn encode(m: &Model) -> Vec<u8> {
                         radius: c.radius,
                         outward: c.outward,
                     },
+                    Surface::Cone(c) => SurfaceV1::Cone {
+                        apex: p(c.apex),
+                        axis: p(c.axis),
+                        half_angle: c.half_angle,
+                        outward: c.outward,
+                    },
+                    Surface::Sphere(x) => SurfaceV1::Sphere {
+                        centre: p(x.centre),
+                        axis: p(x.axis),
+                        radius: x.radius,
+                        outward: x.outward,
+                    },
+                    Surface::Torus(t) => SurfaceV1::Torus {
+                        centre: p(t.centre),
+                        axis: p(t.axis),
+                        major: t.major,
+                        minor: t.minor,
+                        outward: t.outward,
+                    },
                 },
             })
             .collect(),
@@ -314,7 +356,7 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
         3 => postcard::from_bytes::<GeometryV3>(bytes)
             .map_err(bad)?
             .into(),
-        4 => postcard::from_bytes(bytes).map_err(bad)?,
+        4 | 5 => postcard::from_bytes(bytes).map_err(bad)?,
         _ => {
             return Err(FileError::Damaged(format!(
                 "unknown geometry layout {version}"
@@ -382,6 +424,41 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                                 origin: DVec3::from_array(origin),
                                 axis: DVec3::from_array(axis),
                                 radius,
+                                outward,
+                            }),
+                            SurfaceV1::Cone {
+                                apex,
+                                axis,
+                                half_angle,
+                                outward,
+                            } => Surface::Cone(prism_geom::Cone {
+                                apex: DVec3::from_array(apex),
+                                axis: DVec3::from_array(axis),
+                                half_angle,
+                                outward,
+                            }),
+                            SurfaceV1::Sphere {
+                                centre,
+                                axis,
+                                radius,
+                                outward,
+                            } => Surface::Sphere(prism_geom::Sphere {
+                                centre: DVec3::from_array(centre),
+                                axis: DVec3::from_array(axis),
+                                radius,
+                                outward,
+                            }),
+                            SurfaceV1::Torus {
+                                centre,
+                                axis,
+                                major,
+                                minor,
+                                outward,
+                            } => Surface::Torus(prism_geom::Torus {
+                                centre: DVec3::from_array(centre),
+                                axis: DVec3::from_array(axis),
+                                major,
+                                minor,
                                 outward,
                             }),
                         },

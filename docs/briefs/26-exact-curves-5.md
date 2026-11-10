@@ -6,7 +6,7 @@
 
 ## Steps (each one is tested, documented and pushed on its own)
 - **5a. Fillet and chamfer of an edge:** the Fillet / Chamfer tool on straight edges between two flat faces. *(Built.)*
-- **5b. Cones, spheres and tori in the core:** the surfaces, files, shading, picking, MCP. No new tool.
+- **5b. Cones, spheres and tori in the core:** the surfaces, files, shading, picking, MCP. No new tool. *(Built.)*
 - **5c. Follow Me along lines.**
 - **5d. Follow Me along arcs** (turned shapes), and Alt (a face's perimeter as the path).
 - **5e. The curve tools become active:** Circle, Polygon, the Arc tools, Follow Me and Fillet / Chamfer in menus, toolbars and releases.

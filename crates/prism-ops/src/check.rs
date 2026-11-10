@@ -18,6 +18,16 @@ pub fn problems(model: &Model) -> Vec<String> {
     out
 }
 
+/// Loop `k` of a curved face, flat: a cylinder unrolled, other turned
+/// surfaces as (θ, s). Counter-clockwise when the face points outward.
+fn curved_2d(model: &Model, face: &prism_topo::Face, k: usize) -> Vec<DVec2> {
+    let pts = match face.surface {
+        prism_geom::Surface::Cylinder(_) => model.unrolled(face, k),
+        _ => model.param_loop(face, k),
+    };
+    pts.into_iter().map(|x| x.1).collect()
+}
+
 fn loops_2d(model: &Model, f: FaceId) -> Vec<Vec<DVec2>> {
     let Some(face) = model.face(f) else {
         return vec![];
@@ -25,7 +35,7 @@ fn loops_2d(model: &Model, f: FaceId) -> Vec<Vec<DVec2>> {
     let Some(pl) = face.plane() else {
         // A curved face, unrolled flat.
         return (0..=face.holes.len())
-            .map(|k| model.unrolled(face, k).into_iter().map(|x| x.1).collect())
+            .map(|k| curved_2d(model, face, k))
             .collect();
     };
     let fr = pl.frame();
@@ -86,12 +96,39 @@ pub fn no_duplicates(model: &Model, tol: &Tol) -> Vec<String> {
     let fs: Vec<_> = model.faces().collect();
     for (i, (a, fa)) in fs.iter().enumerate() {
         for (b, fb) in &fs[i + 1..] {
-            if same_cycle(fa.loop_edge_ids(0), fb.loop_edge_ids(0)) {
+            if same_cycle(fa.loop_edge_ids(0), fb.loop_edge_ids(0))
+                && !(closed(fa) && closed(fb) && !same_way(fa, fb))
+            {
                 out.push(format!("faces {a:?} and {b:?} have the same loop"));
             }
         }
     }
     out
+}
+
+/// On a closed surface (a sphere or a torus), a loop walked one way and the
+/// same loop walked back bound the two sides of it: two faces, not one
+/// repeated (the two halves of a sphere between two half circles).
+fn closed(f: &prism_topo::Face) -> bool {
+    matches!(
+        f.surface,
+        prism_geom::Surface::Sphere(_) | prism_geom::Surface::Torus(_)
+    )
+}
+
+/// Whether two faces walk the same loop the same way round: the same
+/// vertices with the same edges after each.
+fn same_way(a: &prism_topo::Face, b: &prism_topo::Face) -> bool {
+    let pairs = |f: &prism_topo::Face| -> Vec<_> {
+        f.outer
+            .iter()
+            .copied()
+            .zip(f.loop_edge_ids(0).iter().copied())
+            .collect()
+    };
+    let (pa, pb) = (pairs(a), pairs(b));
+    let n = pa.len();
+    n == pb.len() && (0..n).any(|k| (0..n).all(|i| pa[i] == pb[(k + i) % n]))
 }
 
 /// Every hole is strictly inside its outer loop, and holes do not touch
@@ -135,11 +172,11 @@ pub fn planar(model: &Model, tol: &Tol) -> Vec<String> {
                 out.push(format!("face {id:?} is off its surface"));
             }
             // Unrolled, the outer loop winds about the outward normal.
-            let p: Vec<DVec2> = model.unrolled(f, 0).into_iter().map(|x| x.1).collect();
+            let p = curved_2d(model, f, 0);
             let area: f64 = (0..p.len())
                 .map(|i| p[i].perp_dot(p[(i + 1) % p.len()]))
                 .sum();
-            let outward = matches!(f.surface, prism_geom::Surface::Cylinder(c) if c.outward);
+            let outward = f.surface.outward();
             if (area > 0.0) != outward {
                 out.push(format!("face {id:?} winds against its normal"));
             }

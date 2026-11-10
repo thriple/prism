@@ -189,6 +189,16 @@ pub fn to_mesh(
             }
             continue;
         }
+        if let Some(t) = prism_view_tess::turned(m, f) {
+            // A cone, sphere or torus face: its grid of points on the
+            // surface.
+            let base = mesh.positions.len() as u32;
+            mesh.positions.extend(t.points.iter().map(|p| out(*p, o)));
+            for tri in t.tris {
+                mesh.polygons.push(tri.map(|i| base + i as u32).to_vec());
+            }
+            continue;
+        }
         if polygons && f.holes.is_empty() {
             let poly: Vec<u32> = f.outer.iter().map(|v| idx(*v, &mut mesh)).collect();
             mesh.polygons.push(poly);

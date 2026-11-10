@@ -1780,3 +1780,64 @@ Brief 25 (`docs/briefs/25-exact-curves-4.md`) splits part 4 into 4a–4d.
   where one faced you and the other away. Now, where two of an edge's
   faces lie flat on one side, those two are used. Test: `prism-view`
   `tests/inside.rs`.
+
+## Exact Curves (part 5, step 5b): cones, spheres and tori in the core
+
+Built 2026-11-10 (brief 26). No new tool: Follow Me (5c, 5d) makes these.
+
+- **Surfaces** (`prism-geom/src/revolved.rs`): `Cone` (apex, axis into the
+  cone, half angle; one nappe), `Sphere` (centre, the axis it was turned
+  about, radius) and `Torus` (centre, axis, major and minor radius), each
+  with the side it faces. Distance, nearest point (`project`), normal,
+  flipped, moves (`Surface::transformed`; an uneven scale gives None, and
+  `transformed_loosely` the nearest even one), and which curves lie on them
+  (`holds`): lines through a cone's apex, circles round the axis, any circle
+  on a sphere, a torus's tube circles.
+- **One description for all turned surfaces:** `Revolution` gives a place
+  on any of them (cylinders too) as θ round the axis and s along the
+  profile. `Model::param_loop` walks a face's loop in (θ, s) without jumps;
+  a point on the axis (a pole, an apex) comes twice, at the angle of the
+  side before and after, crossing the way an outward face goes. The model
+  check uses it for winding, and the volume uses it too (Green's theorem in
+  (θ, s), Gauss-Legendre along the profile sides): a sphere, a cone and a
+  torus give their exact volumes at 1e-3, 1 and 1e3 m.
+- **The duplicate check:** on a sphere or torus, a loop walked one way and
+  walked back are two faces (the two halves of a sphere between two half
+  circles), so it only counts faces walking a loop the same way.
+- **Push/Pull** refuses a cone, sphere or torus face, and faces beside one
+  (`CURVED_PULL`): no new size for them yet.
+- **Model Health:** points off these surfaces are found and put back
+  (nearest point). A point on two circles (a torus's corner) is now moved
+  onto each in turn until it settles where they meet (it used to follow
+  the first only).
+- **Files:** geometry layout 5, schema 6. The new surfaces were added at
+  the end of the stored list, so layout 4 entries read unchanged (layout 5
+  is layout 4 with more kinds of surface). Golden files rewritten; the
+  schema 5 ones are kept in `docs/acceptance/files/schema-5`, and a new
+  golden file `turned.prism` holds a sphere, a cone and a torus.
+- **Drawing** (`prism_view::tess::turned`): a grid over the face's extent
+  in (θ, s), with as many steps as an arc of that sweep is drawn with, so
+  the grid meets the edges at their own drawn points, and points on the
+  outline reuse the outline's own points (no cracks between faces). A face
+  that is a rectangle in (θ, s) (every face Follow Me makes) is one shared
+  grid: a torus draws in about 4 ms (release). Other faces are triangulated
+  in (θ, s) and cut by the grid. Normals come from the exact surface. Slivers
+  at a pole are turned to face out. Mesh export uses the same grid.
+- **Picking:** a ray meets the drawn triangles, then a few Newton steps put
+  the point on the exact surface (tested to 1e-12).
+- **MCP:** `get_geometry` lists `cone` (apex, axis, half angle in degrees),
+  `sphere` (centre, axis, radius) and `torus` (centre, axis, major and minor
+  radius), each with `outward`.
+- **Test shapes:** `prism_tools::scenes::{sphere, cone, torus}` build them
+  by hand (two lunes; two cone halves and a base; four torus patches).
+- **Tests:** geom unit tests; `prism-tools/tests/turned.rs` (check, exact
+  volumes, moves and mirrors, shading on the surface, picking, Model Health,
+  the general grid path); a screenshot test (no back face shows from two
+  views); golden files; mesh export; MCP.
+- **Known gaps:** the grid is fixed (128 steps per turn each way: a torus
+  is 32k triangles); faces must not go all the way round their axis (seams
+  split them, as for cylinders); a lune's winding can't be checked (at the
+  poles the crossing direction is chosen from the face's side); Intersect
+  Faces, sticky crossings and `reach::limit` ignore these surfaces;
+  Push/Pull gives them no new size.
+

@@ -50,6 +50,241 @@ pub fn triangulate(outer: &[DVec2], holes: &[Vec<DVec2>]) -> Vec<[usize; 3]> {
     clip(&pts, &ring)
 }
 
+/// A cone, sphere or torus face drawn (Exact Curves 5b): points on the
+/// exact surface with its normals there, and triangles that turn
+/// counter-clockwise seen from the face's front.
+#[derive(Clone, Debug, Default)]
+pub struct Turned {
+    pub points: Vec<prism_math::DVec3>,
+    pub normals: Vec<prism_math::DVec3>,
+    pub tris: Vec<[usize; 3]>,
+}
+
+/// Draw a face on a turned surface from a grid: the face's loops as (θ, s)
+/// places (`Model::param_loop`) are triangulated, and each triangle is cut
+/// by a grid of θ (and, for a profile circle, of s) so no piece spans much
+/// of the curve. Every corner is then put on the surface. None for a flat
+/// face or a cylinder (cylinders are drawn unrolled).
+pub fn turned(model: &prism_topo::Model, face: &prism_topo::Face) -> Option<Turned> {
+    turned_with(model, face, true)
+}
+
+/// [`turned`], with the fast path for rectangles in (θ, s) on or off (off
+/// only to test the general path).
+#[doc(hidden)]
+pub fn turned_with(
+    model: &prism_topo::Model,
+    face: &prism_topo::Face,
+    fast: bool,
+) -> Option<Turned> {
+    use prism_geom::{Profile, Surface};
+    if matches!(face.surface, Surface::Plane(_) | Surface::Cylinder(_)) {
+        return None;
+    }
+    let rev = face.surface.revolution()?;
+    let loops: Vec<Vec<DVec2>> = (0..face.loops().count())
+        .map(|k| model.param_loop(face, k).into_iter().map(|x| x.1).collect())
+        .collect();
+    let outer = loops.first()?;
+    let pts: Vec<DVec2> = loops.iter().flatten().copied().collect();
+    // The grid spans the face's own extent in equal steps no longer than
+    // a 64th of a turn, so a face bounded by circles and profile lines
+    // (every face Follow Me makes) is whole cells. A cone's profile is
+    // straight: one row.
+    let (mut lo, mut hi) = (outer[0], outer[0]);
+    for q in outer {
+        lo = lo.min(*q);
+        hi = hi.max(*q);
+    }
+    // As many steps as an arc of that sweep is drawn with, so the grid's
+    // lines meet the face's edges at the edges' own drawn points.
+    let cols = prism_geom::segments(hi.x - lo.x);
+    let rows = match rev.profile {
+        Profile::Line { .. } => 1,
+        Profile::Circle { .. } => prism_geom::segments(hi.y - lo.y),
+    };
+    let (dx, dy) = ((hi.x - lo.x) / cols as f64, (hi.y - lo.y) / rows as f64);
+    let cell_of = |q: DVec2| {
+        let i = (((q.x - lo.x) / dx).floor().max(0.0) as usize).min(cols - 1);
+        let j = (((q.y - lo.y) / dy).floor().max(0.0) as usize).min(rows - 1);
+        (i, j)
+    };
+    let edge = |i: usize, n: usize, lo: f64, d: f64, hi: f64| {
+        if i == n { hi } else { lo + d * i as f64 }
+    };
+    let bounds = |i: usize, j: usize| {
+        (
+            edge(i, cols, lo.x, dx, hi.x),
+            edge(i + 1, cols, lo.x, dx, hi.x),
+            edge(j, rows, lo.y, dy, hi.y),
+            edge(j + 1, rows, lo.y, dy, hi.y),
+        )
+    };
+    // The face's outline as drawn: a grid point on it takes the outline's
+    // own point, so the faces either side share points exactly (no cracks).
+    let outline: Vec<(DVec2, prism_math::DVec3)> = (0..face.loops().count())
+        .flat_map(|k| model.param_loop(face, k))
+        .map(|(p, q)| (q, p))
+        .collect();
+    let eps = model.tol().dist;
+    let mut bins: std::collections::BTreeMap<(usize, usize), Vec<prism_math::DVec3>> =
+        std::collections::BTreeMap::new();
+    let mut poles: Vec<prism_math::DVec3> = Vec::new();
+    for (q, p) in &outline {
+        bins.entry(cell_of(*q)).or_default().push(*p);
+        if rev.axis_distance(*p) <= eps {
+            poles.push(*p);
+        }
+    }
+    let place = |q: DVec2| -> prism_math::DVec3 {
+        let p = rev.point(q.x, q.y);
+        let (i, j) = cell_of(q);
+        let near = |x: &&prism_math::DVec3| x.distance(p) <= eps;
+        for di in [0, 1, 2] {
+            for dj in [0, 1, 2] {
+                let (Some(a), Some(b)) = ((i + di).checked_sub(1), (j + dj).checked_sub(1)) else {
+                    continue;
+                };
+                if let Some(x) = bins.get(&(a, b)).and_then(|v| v.iter().find(near)) {
+                    return *x;
+                }
+            }
+        }
+        poles.iter().find(near).copied().unwrap_or(p)
+    };
+    let mut out = Turned::default();
+    let flip = !face.surface.outward();
+    let normal = |q: DVec2| {
+        let n = rev.normal(q.x, q.y);
+        if flip { -n } else { n }
+    };
+    // Faces round the axis and along the profile, with no holes, are
+    // rectangles in (θ, s) (every face Follow Me makes): one shared grid,
+    // with only its rim matched to the outline.
+    let w = 2.0 * (hi.x - lo.x) * (hi.y - lo.y);
+    if fast && loops.len() == 1 && (signed_area2(outer).abs() - w).abs() <= 1e-9 * w {
+        let at = |i: usize, j: usize| {
+            DVec2::new(edge(i, cols, lo.x, dx, hi.x), edge(j, rows, lo.y, dy, hi.y))
+        };
+        for j in 0..=rows {
+            for i in 0..=cols {
+                let q = at(i, j);
+                let rim = i == 0 || j == 0 || i == cols || j == rows;
+                out.points
+                    .push(if rim { place(q) } else { rev.point(q.x, q.y) });
+                out.normals.push(normal(q));
+            }
+        }
+        let id = |i: usize, j: usize| j * (cols + 1) + i;
+        for j in 0..rows {
+            for i in 0..cols {
+                let quad = [id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1)];
+                for t in [[quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]]] {
+                    let [a, b, c] = t.map(|k| out.points[k]);
+                    let n = (b - a).cross(c - a);
+                    if n.length_squared() == 0.0 {
+                        continue; // two corners at a pole
+                    }
+                    let front = out.normals[t[0]] + out.normals[t[1]] + out.normals[t[2]];
+                    out.tris.push(if n.dot(front) < 0.0 {
+                        [t[0], t[2], t[1]]
+                    } else {
+                        t
+                    });
+                }
+            }
+        }
+        return Some(out);
+    }
+    // Each triangle of the face cut into the cells it covers.
+    let mut cells: std::collections::BTreeMap<(usize, usize), Vec<Vec<DVec2>>> =
+        std::collections::BTreeMap::new();
+    for t in triangulate(outer, &loops[1..]) {
+        let tri = t.map(|i| pts[i]);
+        let a = cell_of(tri[0].min(tri[1]).min(tri[2]));
+        let b = cell_of(tri[0].max(tri[1]).max(tri[2]));
+        for i in a.0..=b.0 {
+            for j in a.1..=b.1 {
+                let (x0, x1, y0, y1) = bounds(i, j);
+                let piece = clip_box(&tri, x0, x1, y0, y1);
+                if piece.len() >= 3 && signed_area2(&piece) > 0.0 {
+                    cells.entry((i, j)).or_default().push(piece);
+                }
+            }
+        }
+    }
+    let emit = |poly: &[DVec2], out: &mut Turned| {
+        let base = out.points.len();
+        for q in poly {
+            out.points.push(place(*q));
+            out.normals.push(normal(*q));
+        }
+        for k in 1..poly.len() - 1 {
+            let mut t = [base, base + k, base + k + 1];
+            let [a, b, c] = t.map(|i| out.points[i]);
+            if (b - a).cross(c - a).length_squared() == 0.0 {
+                continue; // two corners at a pole
+            }
+            // Near a pole the map to space pinches, and a sliver can come
+            // out turned over: face it the surface's way.
+            let front = out.normals[t[0]] + out.normals[t[1]] + out.normals[t[2]];
+            if (b - a).cross(c - a).dot(front) < 0.0 {
+                t.swap(1, 2);
+            }
+            out.tris.push(t);
+        }
+    };
+    for ((i, j), pieces) in cells {
+        let (x0, x1, y0, y1) = bounds(i, j);
+        let area: f64 = pieces.iter().map(|p| signed_area2(p)).sum();
+        let full = 2.0 * (x1 - x0) * (y1 - y0);
+        if (area - full).abs() <= 1e-9 * full {
+            // A whole cell: one clean quad.
+            let quad = [
+                DVec2::new(x0, y0),
+                DVec2::new(x1, y0),
+                DVec2::new(x1, y1),
+                DVec2::new(x0, y1),
+            ];
+            emit(&quad, &mut out);
+        } else {
+            for p in &pieces {
+                emit(p, &mut out);
+            }
+        }
+    }
+    Some(out)
+}
+
+/// A convex polygon clipped to the box `x0..x1`, `y0..y1` (Sutherland and
+/// Hodgman).
+fn clip_box(poly: &[DVec2], x0: f64, x1: f64, y0: f64, y1: f64) -> Vec<DVec2> {
+    let mut p = poly.to_vec();
+    let sides: [(usize, f64, bool); 4] =
+        [(0, x0, true), (0, x1, false), (1, y0, true), (1, y1, false)];
+    for (axis, at, above) in sides {
+        if !at.is_finite() || p.is_empty() {
+            continue;
+        }
+        let keep = |q: DVec2| if above { q[axis] >= at } else { q[axis] <= at };
+        let mut next = Vec::with_capacity(p.len() + 2);
+        for i in 0..p.len() {
+            let (a, b) = (p[i], p[(i + 1) % p.len()]);
+            if keep(a) {
+                next.push(a);
+            }
+            if keep(a) != keep(b) {
+                let t = (at - a[axis]) / (b[axis] - a[axis]);
+                let mut q = a.lerp(b, t);
+                q[axis] = at;
+                next.push(q);
+            }
+        }
+        p = next;
+    }
+    p
+}
+
 /// Join one hole to the ring with a bridge from the hole's rightmost vertex
 /// to the nearest ring vertex it can see.
 /// [`triangulate`] for a curved face unrolled flat (Exact Curves part 4),

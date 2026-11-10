@@ -1,6 +1,6 @@
 # Handoff for the next Claude Code session
 
-Written 2026-11-06, updated 2026-11-09 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
+Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
 ## Where the project is
 Updated 2026-11-09 (Guam), before a context compaction.
@@ -57,10 +57,15 @@ Updated 2026-11-09 (Guam), before a context compaction.
   edges, file schema 5; Push/Pull on a side changes the radius,
   `prism_ops::radius`). **Part 5 is under way** (brief 26, steps
   5a–5e): 5a is built (`prism_ops::round`, `Command::RoundEdge`, the
-  Fillet / Chamfer tool `tool.fillet`, greyed). Next is 5b: cones,
-  spheres and tori in the core (surfaces, check, files layout 5 / schema
-  6, grid shading, picking by triangles then onto the surface, MCP).
-  Then 5c and 5d (Follow Me), then 5e ungreys the curve tools. The
+  Fillet / Chamfer tool `tool.fillet`, greyed). 5b is built (2026-11-10:
+  `Cone`, `Sphere`, `Torus` in `prism-geom/src/revolved.rs`, all turned
+  surfaces described by `Revolution` in (θ, s), `Model::param_loop`,
+  exact volumes, file layout 5 / schema 6, grid shading
+  `prism_view::tess::turned`, picking onto the surface, MCP; NOTES has
+  the details and gaps). Next is 5c: Follow Me along lines. Then 5d
+  (Follow Me along arcs, making cones, spheres and tori: lay faces out as
+  rectangles in (θ, s), split by seams like `scenes::sphere`/`torus`, so
+  they take the fast grid), then 5e ungreys the curve tools. The
   DECISIONS #32 fallback comes after part 5.
   - Part 4 lessons: `Face::new` links edges by corners, which is wrong
     when two arcs join the same two points: make faces with
@@ -115,8 +120,11 @@ Updated 2026-11-09 (Guam), before a context compaction.
   stopping at faces, Option/Alt/Ctrl taps, the web wheel, Toolbars part 2, ghosts,
   Updates, MCP Server, and the curve tools over MCP (Exact Curves 2–3).
 - **Disk in cloud sessions:** the build cache can fill the session's disk
-  (a linker bus error). Delete `target/debug/incremental` and build with
-  `CARGO_INCREMENTAL=0`.
+  (a linker bus error, or "No space left on device"). Delete
+  `target/debug` and build with `CARGO_INCREMENTAL=0` (about 5 GB then,
+  against 27 GB with stale copies).
+- **Work on `main`** (owner, 2026-11-10); keep the session branch level
+  with it.
 - **MCP spec:** 2026-07-28 is the newest release (stateless, no
   `initialize`); the server speaks it and the older handshake. The spec
   site is blocked here; the spec repository on GitHub is reachable

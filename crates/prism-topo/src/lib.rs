@@ -775,6 +775,67 @@ impl Model {
         out
     }
 
+    /// Loop `k` of a curved face as places on its turned surface: each drawn
+    /// point with (θ round the axis, s along the profile), unwrapped so
+    /// neither jumps by a turn. A point on the axis (a sphere's pole, a
+    /// cone's apex) has no angle of its own: it comes twice, at the angle
+    /// of the side before and of the side after, crossing the way a face
+    /// pointing out of its surface goes (counter-clockwise in (θ, s)).
+    /// Empty for a flat face.
+    pub fn param_loop(&self, f: &Face, k: usize) -> Vec<(DVec3, DVec2)> {
+        let Some(rev) = f.surface.revolution() else {
+            return Vec::new();
+        };
+        let pts = self.loop_points(f, k);
+        let eps = self.tol().dist;
+        let n = pts.len();
+        // Start at a point off the axis.
+        let Some(first) = (0..n).find(|i| rev.axis_distance(pts[*i]) > eps) else {
+            return Vec::new();
+        };
+        let turn = std::f64::consts::TAU;
+        let near = |x: f64, to: f64| x + ((to - x) / turn).round() * turn;
+        let circle = matches!(rev.profile, prism_geom::Profile::Circle { .. });
+        let mut out: Vec<(DVec3, DVec2)> = Vec::with_capacity(n + 4);
+        let (mut t0, mut s0) = rev.param(pts[first]);
+        out.push((pts[first], DVec2::new(t0, s0)));
+        let mut j = 1;
+        while j < n {
+            let p = pts[(first + j) % n];
+            let (t, s) = rev.param(p);
+            let s = if circle { near(s, s0) } else { s };
+            if rev.axis_distance(p) > eps {
+                t0 = near(t, t0);
+                s0 = s;
+                out.push((p, DVec2::new(t0, s0)));
+                j += 1;
+                continue;
+            }
+            // On the axis: the angle of the next point off it.
+            let next = (1..n)
+                .map(|d| pts[(first + j + d) % n])
+                .find(|q| rev.axis_distance(*q) > eps);
+            let Some(q) = next else { break };
+            let tq = rev.param(q).0;
+            // Top of the region (s at its highest here): counter-clockwise
+            // goes towards smaller θ; at the bottom towards larger.
+            let top = s > s0;
+            let back = top == f.surface.outward();
+            let mut t1 = near(tq, t0);
+            if back && t1 > t0 {
+                t1 -= turn;
+            } else if !back && t1 < t0 {
+                t1 += turn;
+            }
+            out.push((p, DVec2::new(t0, s)));
+            out.push((p, DVec2::new(t1, s)));
+            t0 = t1;
+            s0 = s;
+            j += 1;
+        }
+        out
+    }
+
     /// The points of loop `k` of a face, walking its edges (arcs give their
     /// drawn points): the polygon to test points and triangulate with.
     pub fn loop_points(&self, f: &Face, k: usize) -> Vec<DVec3> {
@@ -964,16 +1025,7 @@ impl Model {
         if let Some((id, _)) = p.guides.iter().find(|(_, g)| !finite(g)) {
             return Err(format!("guide {id:?} is not finite"));
         }
-        if let Some((id, _)) = p.faces.iter().find(|(_, f)| match f.surface {
-            Surface::Plane(pl) => !(pl.origin.is_finite() && pl.normal.is_finite()),
-            Surface::Cylinder(c) => {
-                !(c.origin.is_finite()
-                    && c.axis.is_finite()
-                    && c.axis != DVec3::ZERO
-                    && c.radius.is_finite()
-                    && c.radius > 0.0)
-            }
-        }) {
+        if let Some((id, _)) = p.faces.iter().find(|(_, f)| !f.surface.is_valid()) {
             return Err(format!("face {id:?} has no finite surface"));
         }
         let mut m = Model {
@@ -1101,11 +1153,11 @@ impl Model {
                                     ));
                                 }
                             }
-                            Surface::Cylinder(c) => {
+                            curved => {
                                 let (p, q) = (self.vertex(x.a), self.vertex(x.b));
-                                if !c.holds(&x.curve, p, q, self.tol().dist) {
+                                if !curved.holds(&x.curve, p, q, self.tol().dist) {
                                     out.push(format!(
-                                        "face {id:?} uses edge {e:?}, which is not on its cylinder"
+                                        "face {id:?} uses edge {e:?}, which is not on its surface"
                                     ));
                                 }
                             }

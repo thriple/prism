@@ -250,21 +250,16 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
 /// A curved face moved whole: its surface follows `m` exactly. False for a
 /// flat face.
 fn move_curved(model: &mut Model, id: FaceId, m: &DAffine3) -> bool {
-    let Some(Surface::Cylinder(c)) = model.face(id).map(|f| f.surface) else {
+    let Some(surface) = model.face(id).map(|f| f.surface) else {
         return false;
     };
-    let moved = c.transformed(m).unwrap_or_else(|| {
-        // Uneven: the model check reports it off its surface until the
-        // segment fallback (DECISIONS #32).
-        let k = m.matrix3.determinant().abs().cbrt();
-        prism_geom::Cylinder {
-            origin: m.transform_point3(c.origin),
-            axis: m.transform_vector3(c.axis).normalize(),
-            radius: c.radius * k,
-            outward: c.outward != (m.matrix3.determinant() < 0.0),
-        }
-    });
-    model.edit_face(id, |f| f.surface = Surface::Cylinder(moved));
+    if !surface.is_curved() {
+        return false;
+    }
+    // Uneven scales take the nearest even one: the model check reports the
+    // face off its surface until the segment fallback (DECISIONS #32).
+    let moved = surface.transformed_loosely(m);
+    model.edit_face(id, |f| f.surface = moved);
     true
 }
 

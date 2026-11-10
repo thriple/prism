@@ -46,6 +46,10 @@ pub const CURVED_PULL: &str = "This pull would bend a curved face, or a face bes
 pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static str> {
     let f = model.face(face)?;
     let Some(plane) = f.plane() else {
+        if !matches!(f.surface, Surface::Cylinder(_)) {
+            // Cones, spheres and tori take no new size yet.
+            return Some(CURVED_PULL);
+        }
         return crate::radius::refusal(model, face, distance);
     };
     let tol = model.tol();
@@ -57,6 +61,8 @@ pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static st
                         && x.loops().flatten().any(|v| f.uses_vertex(*v))
                 }
                 Surface::Plane(_) => false,
+                // Cones, spheres and tori bend under any pull beside them.
+                _ => x.loops().flatten().any(|v| f.uses_vertex(*v)),
             }
     });
     bends.then_some(CURVED_PULL)
@@ -132,6 +138,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             let runs_along = match g.surface {
                 Surface::Plane(p) => tol.perpendicular(p.normal, n),
                 Surface::Cylinder(c) => tol.parallel(c.axis, n),
+                _ => false,
             };
             runs_along && (centre - origin).dot(n) < 0.0
         })

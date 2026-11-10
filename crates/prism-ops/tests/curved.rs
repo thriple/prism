@@ -96,7 +96,7 @@ fn all(m: &Model) -> BTreeSet<VertexId> {
 fn cylinder_of(m: &Model, f: FaceId) -> Cylinder {
     match m.face(f).expect("face").surface {
         Surface::Cylinder(c) => c,
-        Surface::Plane(_) => panic!("flat"),
+        _ => panic!("not a cylinder"),
     }
 }
 
@@ -258,6 +258,7 @@ fn volume(m: &Model) -> f64 {
                     let s = if c.outward { 1.0 } else { -1.0 };
                     s * a * c.radius / 3.0
                 }
+                _ => panic!("only planes and cylinders here"),
             }
         })
         .sum()

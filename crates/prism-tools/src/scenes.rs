@@ -76,6 +76,138 @@ pub fn cylinder(r: f64, h: f64) -> Model {
     m
 }
 
+/// An arc from `a` to `b`, counter-clockwise about `axis`, as a new edge.
+fn arc_edge(
+    m: &mut Model,
+    a: VertexId,
+    b: VertexId,
+    centre: DVec3,
+    axis: DVec3,
+    curve: prism_topo::CurveId,
+) -> prism_topo::EdgeId {
+    let radius = m.vertex(a).distance(centre);
+    m.add_curve_edge(
+        a,
+        b,
+        prism_geom::Curve::Arc {
+            centre,
+            axis,
+            radius,
+        },
+        Some(curve),
+    )
+    .expect("an arc")
+}
+
+/// A sphere of radius `r` about `centre`, built by hand for tests (Follow
+/// Me makes them from Exact Curves 5d): two half circles from pole to pole,
+/// and the two faces between them, facing out.
+pub fn sphere(centre: DVec3, r: f64) -> Model {
+    let mut m = Model::new();
+    let n = m.add_vertex(centre + DVec3::Z * r);
+    let s = m.add_vertex(centre - DVec3::Z * r);
+    let (c0, c1) = (m.new_curve_id(), m.new_curve_id());
+    // Pole to pole through +x, and through -x.
+    let m0 = arc_edge(&mut m, n, s, centre, DVec3::Y, c0);
+    let m1 = arc_edge(&mut m, n, s, centre, -DVec3::Y, c1);
+    let surface = Surface::Sphere(prism_geom::Sphere {
+        centre,
+        axis: DVec3::Z,
+        radius: r,
+        outward: true,
+    });
+    for edges in [vec![m0, m1], vec![m1, m0]] {
+        m.add_face(Face::with_edges(vec![n, s], vec![], surface, vec![edges]));
+    }
+    m
+}
+
+/// A cone of base radius `r` and height `h` standing on the ground, built
+/// by hand for tests: the base disc, two seams up to the apex, and two
+/// cone faces facing out.
+pub fn cone(r: f64, h: f64) -> Model {
+    let mut m = Model::new();
+    let b0 = m.add_vertex(DVec3::X * r);
+    let b1 = m.add_vertex(-DVec3::X * r);
+    let apex = m.add_vertex(DVec3::Z * h);
+    let base = m.new_curve_id();
+    // Round the base, counter-clockwise about +z: through +y, then -y.
+    let a01 = arc_edge(&mut m, b0, b1, DVec3::ZERO, DVec3::Z, base);
+    let a10 = arc_edge(&mut m, b1, b0, DVec3::ZERO, DVec3::Z, base);
+    let e0 = m.add_new_edge(apex, b0);
+    let e1 = m.add_new_edge(apex, b1);
+    m.add_face(Face::with_edges(
+        vec![b0, b1],
+        vec![],
+        Surface::Plane(Plane::new(DVec3::ZERO, -DVec3::Z)),
+        vec![vec![a10, a01]],
+    ));
+    let side = Surface::Cone(prism_geom::Cone {
+        apex: DVec3::Z * h,
+        axis: -DVec3::Z,
+        half_angle: (r / h).atan(),
+        outward: true,
+    });
+    m.add_face(Face::with_edges(
+        vec![b0, b1, apex],
+        vec![],
+        side,
+        vec![vec![a01, e1, e0]],
+    ));
+    m.add_face(Face::with_edges(
+        vec![b1, b0, apex],
+        vec![],
+        side,
+        vec![vec![a10, e0, e1]],
+    ));
+    m
+}
+
+/// A torus about the z axis through the origin: its tube of radius
+/// `minor` runs round a circle of radius `major`. Built by hand for tests:
+/// two tube circles, the outer and inner circles round the axis, and four
+/// faces between them, facing out.
+pub fn torus(major: f64, minor: f64) -> Model {
+    let mut m = Model::new();
+    let (o0, i0) = (
+        m.add_vertex(DVec3::X * (major + minor)),
+        m.add_vertex(DVec3::X * (major - minor)),
+    );
+    let (o1, i1) = (
+        m.add_vertex(-DVec3::X * (major + minor)),
+        m.add_vertex(-DVec3::X * (major - minor)),
+    );
+    let ids: Vec<_> = (0..4).map(|_| m.new_curve_id()).collect();
+    let (k0, k1) = (DVec3::X * major, -DVec3::X * major);
+    // The tube's circles at +x and -x: over the top, then under.
+    let top0 = arc_edge(&mut m, o0, i0, k0, -DVec3::Y, ids[0]);
+    let bottom0 = arc_edge(&mut m, i0, o0, k0, -DVec3::Y, ids[0]);
+    let top1 = arc_edge(&mut m, o1, i1, k1, DVec3::Y, ids[1]);
+    let bottom1 = arc_edge(&mut m, i1, o1, k1, DVec3::Y, ids[1]);
+    // Round the axis, counter-clockwise about +z: through +y, then -y.
+    let out_a = arc_edge(&mut m, o0, o1, DVec3::ZERO, DVec3::Z, ids[2]);
+    let out_b = arc_edge(&mut m, o1, o0, DVec3::ZERO, DVec3::Z, ids[2]);
+    let in_a = arc_edge(&mut m, i0, i1, DVec3::ZERO, DVec3::Z, ids[3]);
+    let in_b = arc_edge(&mut m, i1, i0, DVec3::ZERO, DVec3::Z, ids[3]);
+    let surface = Surface::Torus(prism_geom::Torus {
+        centre: DVec3::ZERO,
+        axis: DVec3::Z,
+        major,
+        minor,
+        outward: true,
+    });
+    let faces = [
+        (vec![o0, o1, i1, i0], vec![out_a, top1, in_a, top0]),
+        (vec![o0, i0, i1, o1], vec![bottom0, in_a, bottom1, out_a]),
+        (vec![o1, o0, i0, i1], vec![out_b, top0, in_b, top1]),
+        (vec![o1, i1, i0, o0], vec![bottom1, in_b, bottom0, out_b]),
+    ];
+    for (l, e) in faces {
+        m.add_face(Face::with_edges(l, vec![], surface, vec![e]));
+    }
+    m
+}
+
 pub fn by_action(id: &str) -> Option<Document> {
     Some(match id {
         "help.scene.cube" => cube(),

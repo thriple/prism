@@ -110,26 +110,19 @@ pub fn check(model: &Model) -> Report {
 }
 
 /// Curved faces with a point off their surface, and where each such point
-/// belongs (straight out from the axis).
+/// belongs (the nearest point of the surface).
 fn off_surface(model: &Model, tol: &Tol) -> BTreeMap<FaceId, Vec<(VertexId, DVec3)>> {
     let mut out = BTreeMap::new();
     for (id, f) in model.faces() {
-        let prism_geom::Surface::Cylinder(c) = f.surface else {
+        if !f.surface.is_curved() {
             continue;
-        };
+        }
         let off: Vec<(VertexId, DVec3)> = f
             .loops()
             .flatten()
             .filter_map(|v| {
                 let p = model.vertex(*v);
-                if c.distance(p).abs() <= tol.dist {
-                    return None;
-                }
-                let at = c.axis_point(p);
-                let dir = (p - at)
-                    .try_normalize()
-                    .unwrap_or_else(|| prism_math::Plane::new(at, c.axis).frame().u);
-                Some((*v, at + dir * c.radius))
+                (f.surface.distance(p).abs() > tol.dist).then(|| (*v, f.surface.project(p)))
             })
             .collect();
         if !off.is_empty() {
@@ -172,28 +165,33 @@ fn off_circle(model: &Model, tol: &Tol) -> BTreeMap<EdgeId, Vec<(VertexId, DVec3
 
 /// Repair Arcs: move each end that left its arc's circle back onto it (the
 /// nearest point), and each point of a curved face back onto its surface.
-/// A point shared by two such arcs or faces follows the first. Returns how
-/// many arcs and faces were repaired.
+/// A point on two circles or surfaces (a torus's corner) is moved onto each
+/// in turn until it settles where they meet. Returns how many arcs and
+/// faces were repaired.
 pub fn repair_arcs(model: &mut Model) -> usize {
     let tol = model.tol();
-    let found = off_circle(model, &tol);
-    let mut moved = BTreeSet::new();
-    for ends in found.values() {
-        for &(v, p) in ends {
-            if moved.insert(v) {
-                model.set_vertex(v, p);
-            }
+    let mut count = None;
+    for _ in 0..200 {
+        let found = off_circle(model, &tol);
+        let faces = off_surface(model, &tol);
+        count.get_or_insert(found.len() + faces.len());
+        if found.is_empty() && faces.is_empty() {
+            break;
+        }
+        // Each point onto one circle or surface per round: the last that
+        // wants it. The next round finds what is still off.
+        let mut to: BTreeMap<VertexId, DVec3> = BTreeMap::new();
+        for ends in found.values() {
+            to.extend(ends.iter().copied());
+        }
+        for points in faces.values() {
+            to.extend(points.iter().copied());
+        }
+        for (v, p) in to {
+            model.set_vertex(v, p);
         }
     }
-    let faces = off_surface(model, &tol);
-    for points in faces.values() {
-        for &(v, p) in points {
-            if moved.insert(v) {
-                model.set_vertex(v, p);
-            }
-        }
-    }
-    found.len() + faces.len()
+    count.unwrap_or(0)
 }
 
 fn pair(a: VertexId, b: VertexId) -> (VertexId, VertexId) {
@@ -394,6 +392,49 @@ pub fn face_volume(model: &Model, id: FaceId) -> f64 {
                     };
                     sum +=
                         c.radius * a.perp_dot(b) / 2.0 + (along(p) + along(q)) / 2.0 * (b.y - a.y);
+                }
+            }
+            sum / 3.0
+        }
+        // Cones, spheres and tori: by Green's theorem in (θ, s), the share
+        // is a third of the loop integral of ∫ g dθ along s. Circles round
+        // the axis keep s and add nothing; the sides along the profile are
+        // integrated with Gauss-Legendre (exact to rounding on their short
+        // drawn steps).
+        ref other => {
+            let Some(rev) = other.revolution() else {
+                return 0.0;
+            };
+            const X: [f64; 4] = [
+                0.183_434_642_495_649_8,
+                0.525_532_409_916_329,
+                0.796_666_477_413_626_7,
+                0.960_289_856_497_536_3,
+            ];
+            const W: [f64; 4] = [
+                0.362_683_783_378_362,
+                0.313_706_645_877_887_3,
+                0.222_381_034_453_374_5,
+                0.101_228_536_290_376_3,
+            ];
+            let mut sum = 0.0;
+            for k in 0..f.loops().count() {
+                let pts = model.param_loop(f, k);
+                let n = pts.len();
+                for i in 0..n {
+                    let (a, b) = (pts[i].1, pts[(i + 1) % n].1);
+                    let ds = b.y - a.y;
+                    if ds == 0.0 {
+                        continue;
+                    }
+                    let mut part = 0.0;
+                    for (x, w) in X.iter().zip(W) {
+                        for t in [0.5 - x / 2.0, 0.5 + x / 2.0] {
+                            let q = a.lerp(b, t);
+                            part += w / 2.0 * rev.volume_potential(q.x, q.y);
+                        }
+                    }
+                    sum += part * ds;
                 }
             }
             sum / 3.0

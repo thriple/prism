@@ -893,3 +893,32 @@ fn the_sun_casts_shadows_on_faces() {
     );
     assert!(lum(&night, open) < lum(&off, open), "night is darker");
 }
+
+/// Exact Curves 5b: a sphere, a cone and a torus are shaded round, and no
+/// back face shows from outside (every grid triangle faces out).
+#[test]
+fn cones_spheres_and_tori_shade_round() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let mut m = prism_tools::scenes::sphere(DVec3::new(-4.0, 0.0, 2.0), 2.0);
+    m.append(&prism_tools::scenes::cone(1.5, 3.0));
+    let mut t = prism_tools::scenes::torus(1.5, 0.5);
+    prism_ops::transform::affine(
+        &mut t,
+        &prism_math::DAffine3::from_translation(DVec3::new(4.0, 0.0, 0.5)),
+    );
+    m.append(&t);
+    for (name, cam) in [
+        (
+            "turned",
+            looking_at(DVec3::new(0.0, 0.0, 1.0), 14.0, -70.0, 25.0),
+        ),
+        (
+            "turned-above",
+            looking_at(DVec3::new(0.0, 0.0, 1.0), 14.0, -60.0, 70.0),
+        ),
+    ] {
+        let img = g.shot(&m, cam, 640, 400, 1.0, &tell_tale(), &Highlight::default());
+        img.save(name);
+        assert_eq!(back_pixels(&img), 0, "{name}: no back face shows");
+    }
+}

@@ -37,8 +37,9 @@ pub use migrate::{Raw, migrate};
 /// The schema this version writes. Older schemas are migrated on open;
 /// newer ones are refused. Schema 3: loops name their edges (geometry
 /// layout 2). Schema 4: arcs and curve ids (geometry layout 3). Schema 5:
-/// soft and smooth edges (geometry layout 4; cylinder faces too).
-pub const SCHEMA: u32 = 5;
+/// soft and smooth edges (geometry layout 4; cylinder faces too). Schema 6:
+/// cone, sphere and torus faces (geometry layout 5).
+pub const SCHEMA: u32 = 6;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.

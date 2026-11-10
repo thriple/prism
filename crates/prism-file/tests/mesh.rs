@@ -298,3 +298,36 @@ fn cylinder_sides_export_as_triangles_on_the_surface() {
     let exact = std::f64::consts::TAU * r * h;
     assert!((area - exact).abs() < exact * 1e-3, "{area} vs {exact}");
 }
+
+/// Spheres export as triangles on their surface, facing out (Exact Curves
+/// 5b), covering it.
+#[test]
+fn spheres_export_as_triangles_on_the_surface() {
+    let r = 1.5;
+    let m = prism_tools::scenes::sphere(prism_math::DVec3::ZERO, r);
+    let o = ExportOptions {
+        format: Format::Stl,
+        unit: prism_math::LengthUnit::Metres,
+        y_up: false,
+    };
+    let mesh = mesh::to_mesh(&m, None, &o, false);
+    let mut area = 0.0;
+    for t in &mesh.polygons {
+        let [a, b, c] = [0, 1, 2].map(|i| mesh.positions[t[i] as usize]);
+        let n = (b - a).cross(c - a);
+        area += n.length() / 2.0;
+        for p in [a, b, c] {
+            assert!((p.length() - r).abs() < 1e-9, "on the surface");
+        }
+    }
+    let exact = 4.0 * std::f64::consts::PI * r * r;
+    assert!((area - exact).abs() < exact * 1e-3, "{area} vs {exact}");
+    // And it writes and reads back.
+    let bytes = mesh::export(&m, None, &o);
+    assert!(
+        mesh::read(&bytes, Format::Stl)
+            .expect("reads")
+            .triangle_count()
+            > 1000
+    );
+}
