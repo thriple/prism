@@ -133,6 +133,23 @@ pub fn tools() -> Value {
             },
         },
         {
+            "name": "paint",
+            "title": "Paint faces or groups",
+            "description": "Paint faces (by id, from get_geometry) or the selection with a material, in one undoable step. The material is an existing one by `material` (its id or name, from get_model), a new plain colour by `colour` (\"#rrggbb\", with an optional `name`), or `default` (back to Default). `side` is front (the outside, the default), back, or both. With `selection`, the selected faces and groups are painted (a group as a whole: its Default faces show the material). The Paint Bucket itself is tool.paint in use_tool, whose clicks take `keys` (ctrl fills connected, shift replaces everywhere, ctrl+shift in the open group, alt samples).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "faces": {"type": "array", "items": {"type": "integer"}, "description": "Face ids in the open group."},
+                    "selection": {"type": "boolean", "description": "Paint the selected faces and groups."},
+                    "side": {"type": "string", "enum": ["front", "back", "both"]},
+                    "material": {"description": "An existing material's id or name."},
+                    "colour": {"type": "string", "description": "A new plain colour, #rrggbb."},
+                    "name": {"type": "string", "description": "The new colour's name."},
+                    "default": {"type": "boolean", "description": "Back to Default."}
+                },
+            },
+        },
+        {
             "name": "screenshot",
             "title": "Screenshot",
             "description": "A picture of the viewport as it is after the latest change (PNG, at most 1024 pixels wide).",
@@ -373,6 +390,7 @@ mod tests {
                 "list_actions",
                 "get_geometry",
                 "use_tool",
+                "paint",
                 "screenshot",
                 "replay_session",
                 "run_action"

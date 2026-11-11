@@ -3,6 +3,7 @@
 //! command search, the hotkeys window and the Planned Features window.
 
 mod components;
+mod materials;
 mod panels;
 pub use panels::{PanelData, PanelOp};
 mod dock;
@@ -381,6 +382,7 @@ impl Chrome {
                     "win.info" => self.panels.info = true,
                     "win.tags" => self.panels.tags = true,
                     "win.health" => self.panels.health = true,
+                    "win.materials" => self.panels.materials = true,
                     "view.edittoolbars" => self.toolbars.editing = true,
                     "view.toolbars" => self.toolbars.window = true,
                     "help.mcp" => self.mcp_open = true,

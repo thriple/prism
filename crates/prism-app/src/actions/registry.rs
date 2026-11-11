@@ -95,7 +95,7 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 23] = [
+const COMMANDS: [&str; 24] = [
     // MCP Server (brief 21).
     "help.mcp",
     // Updates (brief 20).
@@ -113,6 +113,7 @@ const COMMANDS: [&str; 23] = [
     "view.faces",
     "view.styles",
     "win.health",
+    "win.materials",
     "win.components",
     "win.outliner",
     "win.info",
@@ -177,6 +178,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Model Health.
         || id == "edit.revface"
         || id == "edit.orient"
+        // Basic Materials 1c.
+        || id == "edit.selmat"
         // Exact Curves 4c.
         || id == "edit.soften"
         // Part 3: hiding.
@@ -459,7 +462,11 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         ),
     ];
     if sel.faces > 0 {
-        items.extend([A("edit.revface"), A("edit.orient")]);
+        items.extend([
+            A("edit.revface"),
+            A("edit.orient"),
+            Sub("Select", vec![A("edit.selmat")]),
+        ]);
     }
     if sel.edges > 0 {
         items.extend([A("edit.soften"), A("edit.weld")]);

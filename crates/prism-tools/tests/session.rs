@@ -3145,3 +3145,97 @@ fn typing_right_after_a_circle_or_polygon_changes_it() {
     assert_eq!(sides(&d), 8);
     assert_eq!(d.faces(), 1);
 }
+
+// ---------- the Materials window (Basic Materials 1c) ----------
+
+use prism_tools::session::{EntityInfo, MaterialOp};
+
+#[test]
+fn the_materials_window_makes_picks_edits_and_deletes_materials() {
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    // New: a palette colour, picked, with the Paint Bucket.
+    assert_eq!(d.s.material_op(MaterialOp::New), Some(PAINT));
+    let rows = d.s.material_rows();
+    assert_eq!(rows.len(), 1);
+    let a = rows[0].id;
+    assert_eq!(d.s.brush(), Brush::Material(a));
+    assert!(!rows[0].used, "not painted yet");
+    // Paint the top with it: used now, listed first.
+    d.tool(PAINT);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.material_op(MaterialOp::Duplicate(a)), Some(PAINT));
+    let rows = d.s.material_rows();
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].used && rows[0].id == a, "used ones first");
+    assert!(rows[1].name.ends_with("#2"), "{}", rows[1].name);
+    // Editing a colour many times in a row (a picker dragged) is one step.
+    let steps = d.s.document().log().count();
+    for k in 0..5u8 {
+        let mut m = rows[0].material.clone();
+        m.surface_mut().base[0] = f32::from(k) / 10.0;
+        d.s.material_op(MaterialOp::Edit(a, m));
+    }
+    assert_eq!(d.s.document().log().count(), steps + 1, "one undo step");
+    let base =
+        d.s.document()
+            .assembly()
+            .material(a)
+            .expect("a")
+            .surface()
+            .base[0];
+    assert!((base - 0.4).abs() < 1e-6);
+    // Entity Info names the selected face's materials.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    match d.s.entity_info() {
+        EntityInfo::Geometry {
+            materials: Some((front, back)),
+            ..
+        } => {
+            assert_eq!(front, rows[0].name);
+            assert_eq!(back, "Default");
+        }
+        other => panic!("{other:?}"),
+    }
+    // Model Health: one unused material, and Purge removes it.
+    let row = |d: &Driver| {
+        d.s.health_rows()
+            .into_iter()
+            .find(|r| r.key == "materials")
+            .expect("row")
+    };
+    assert_eq!((row(&d).count, row(&d).fix), (1, Some("Purge")));
+    d.s.health_fix("materials");
+    assert_eq!(d.s.material_rows().len(), 1);
+    assert_eq!(row(&d).count, 0);
+    // Delete the one the bucket holds: the top goes back to Default.
+    assert_eq!(
+        d.s.material_op(MaterialOp::Pick(Brush::Material(a))),
+        Some(PAINT)
+    );
+    d.s.material_op(MaterialOp::Delete(a));
+    assert!(d.s.material_rows().is_empty());
+    assert!(paint_of(&d, DVec3::new(1.0, 1.0, 2.0)).is_default());
+    assert_eq!(d.s.brush(), Brush::default(), "the brush lets it go");
+}
+
+#[test]
+fn select_all_with_the_same_material() {
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    d.tool(PAINT);
+    // Two sides red, the top teal.
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    d.click(DVec3::new(2.0, 1.0, 1.0));
+    d.s.set_brush(Brush::Palette(6));
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    act(&mut d, "edit.selmat");
+    assert_eq!(d.s.selection().faces.len(), 2, "the two red sides");
+    // From the teal top: just the top.
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    act(&mut d, "edit.selmat");
+    assert_eq!(d.s.selection().faces.len(), 1, "the top");
+}

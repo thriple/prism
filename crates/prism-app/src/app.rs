@@ -436,6 +436,9 @@ impl App {
                     tags: s.tag_rows(),
                     health,
                     view: s.view_style().clone(),
+                    materials: s.material_rows(),
+                    brush: s.brush(),
+                    default_colour: s.style.face_front.0,
                 };
             }
             for op in std::mem::take(&mut chrome.panel_ops) {
@@ -449,6 +452,12 @@ impl App {
                     crate::chrome::PanelOp::HealthSelect(k) => s.select_health(k),
                     crate::chrome::PanelOp::HealthFix(k) => s.health_fix(k),
                     crate::chrome::PanelOp::View(v) => s.set_view_style(v),
+                    crate::chrome::PanelOp::Material(op) => {
+                        // A swatch picks the Paint Bucket with it.
+                        if let Some(tool) = s.material_op(op) {
+                            chrome.active_tool = tool;
+                        }
+                    }
                 }
                 s.mark_all_dirty();
             }

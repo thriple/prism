@@ -3,22 +3,21 @@
 Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
 ## Start here (2026-11-12, Guam)
-- **State:** `main` = session branch, clean. Exact Curves is done
-  (released at 6e). Basic Materials 1a (core) and 1b (the Paint Bucket,
-  colours in the viewport) are built; 1b is not released (the bucket
-  can only start with Brick Red until the Materials window exists).
-- **CI:** the Linux job failed for hours at the Mesa install (Ubuntu DNS
-  outage); the step now retries. Check the latest run and re-run red ones.
-- **Next: Basic Materials step 1c** (brief 28): the Materials window
-  (Window > Materials, Soft glass: In Model swatches, the palette from
-  `material::PALETTE`, New, Duplicate, Delete, Purge Unused, Edit name,
-  colour, roughness, metalness; a click on a swatch picks the Paint
-  Bucket with it via `Session::set_brush`), Entity Info (face front and
-  back materials, an instance's material), right-click > Select > All
-  with the Same Material, a Model Health "unused materials" row, MCP
-  (`get_geometry`/`get_model` materials, a `paint` tool, `use_tool`
-  holding Alt), and a `[release]`. Then the Fillet panel (owner), then
-  parts 2 and 3.
+- **State:** `main` = session branch, clean. Basic Materials part 1
+  (colours) is done and released (1a core, 1b Paint Bucket and viewport
+  colours, 1c the Materials window, Entity Info, Select by material,
+  Model Health, MCP `paint`). A known-gaps session and owner fixes also
+  went out (faces closing a hole face out, pulled bases keep colour and
+  close beside another face, inside-out cylinders found, a fast model
+  check, circle retyping). NOTES has a section for each.
+- **CI:** the Linux job skips the Mesa install until the owner says
+  otherwise (screenshot tests skip there unless `PRISM_REQUIRE_GPU` is
+  set); they run locally before each push. Ubuntu's servers looked
+  reachable again on 2026-11-12.
+- **Next: the Fillet panel** (owner request, NOTES "Owner feedback on the
+  6e build"): a panel to set the size, fillet or chamfer, with a live
+  preview before applying; write its brief first. Then Basic Materials
+  part 2 (textures, brief 28) and part 3.
 - **After Basic Materials: NURBS Spike, then Freeform NURBS** (owner
   moved them up, 2026-11-11).
 - **Owner's answers (2026-11-12):** the Fillet panel comes after part 1

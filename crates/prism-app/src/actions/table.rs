@@ -146,6 +146,15 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "cmd:desel",
         when: "sel",
     },
+    // Basic Materials 1c (PLAN 1.6): every face with the material of the
+    // first selected face's front.
+    RawAction {
+        id: "edit.selmat",
+        name: "Select All with the Same Material",
+        key: "",
+        proto_run: "",
+        when: "sel",
+    },
     RawAction {
         id: "edit.hide",
         name: "Hide Selected",
@@ -1508,6 +1517,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Separator,
             Item::Action("edit.selall"),
             Item::Action("edit.desel"),
+            Item::Action("edit.selmat"),
             Item::Separator,
             Item::Sub(
                 "Hide & Lock",

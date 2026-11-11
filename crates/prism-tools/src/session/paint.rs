@@ -342,7 +342,7 @@ impl Session {
         let fb = &self.style.feedback;
         o.labels.push(Label {
             at: at.point,
-            offset: [14.0, -16.0],
+            offset: [22.0, 14.0],
             text: if self.samples_now() {
                 "Sample".to_owned()
             } else {

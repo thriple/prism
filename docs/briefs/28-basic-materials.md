@@ -22,7 +22,7 @@ Materials), 1.13 (files), 1.14 (Shaded with textures, transparency), 4
     paint kept through edits, the file (schema 8). *(Built.)*
   - **1b:** the Paint Bucket and the viewport's colours. *(Built.)*
   - **1c:** the Materials window, Entity Info, Select by material, Model
-    Health and MCP; a `[release]`.
+    Health and MCP; a `[release]`. *(Built.)*
 - **Part 2. Textures:** images in the file, placement on flat and curved
   faces, Shaded with textures, texture size, opacity.
 - **Part 3. Placing and exchanging:** moving, turning and sizing a texture

@@ -56,6 +56,7 @@ impl Host for AppHost<'_> {
                     .map_or(GEOMETRY_LIMIT, |n| n as usize),
             ),
             "use_tool" => self.use_tool(args)?,
+            "paint" => self.paint(args)?,
             "replay_session" => replay(args)?,
             "run_action" => self.run(args.get("id").and_then(Value::as_str))?,
             // The app takes it after drawing the next frame.
@@ -121,6 +122,15 @@ impl AppHost<'_> {
             "groups_and_components": groups,
             "selection": self.counts(),
             "view_style": s.view_style().name,
+            "materials": s.material_rows().into_iter().map(|r| json!({
+                "id": r.id.0,
+                "name": r.name,
+                "colour": format!("#{:02x}{:02x}{:02x}", r.srgba[0], r.srgba[1], r.srgba[2]),
+                "opacity": f32::from(r.srgba[3]) / 255.0,
+                "roughness": r.roughness,
+                "metalness": r.metalness,
+                "used": r.used,
+            })).collect::<Vec<_>>(),
             "can_undo": self.viewport.can_undo(),
             "can_redo": self.viewport.can_redo(),
         })
@@ -134,12 +144,14 @@ impl AppHost<'_> {
                 kind,
                 tag,
                 hidden,
+                material,
                 ..
             } => json!({
                 "kind": kind,
                 "name": name,
                 "tag": tag.map(|t| t.0),
                 "hidden": hidden,
+                "material": material,
             }),
             EntityInfo::Geometry {
                 groups,
@@ -147,12 +159,14 @@ impl AppHost<'_> {
                 edges,
                 points,
                 area,
+                materials,
             } => json!({
                 "groups": groups,
                 "faces": faces,
                 "edges": edges,
                 "points": points,
                 "face_area": area,
+                "materials": materials.map(|(f, b)| json!({"front": f, "back": b})),
             }),
         }
     }
@@ -238,6 +252,9 @@ impl AppHost<'_> {
                     "area": round(m.face_area(id)),
                     "outer": outer,
                     "holes": f.holes.len(),
+                    // Material ids (get_model lists them); null is Default.
+                    "front_material": f.paint.front.map(|m| m.0),
+                    "back_material": f.paint.back.map(|m| m.0),
                 });
                 match f.surface {
                     prism_geom::Surface::Plane(pl) => {
@@ -345,6 +362,72 @@ impl AppHost<'_> {
         })
     }
 
+    /// MCP `paint`: faces by id or the selection, with a material.
+    fn paint(&mut self, args: &Value) -> Result<Value, String> {
+        use prism_doc::FaceSide;
+        use prism_tools::session::PaintWith;
+        let s = &mut self.viewport.session;
+        let sides: Vec<FaceSide> = match args.get("side").and_then(Value::as_str).unwrap_or("front")
+        {
+            "front" => vec![FaceSide::Front],
+            "back" => vec![FaceSide::Back],
+            "both" => vec![FaceSide::Front, FaceSide::Back],
+            other => return Err(format!("side is front, back or both, not {other}.")),
+        };
+        let mut faces: Vec<prism_topo::FaceId> = args
+            .get("faces")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_u64)
+                    .map(|n| prism_topo::FaceId(n as u32))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut groups = std::collections::BTreeSet::new();
+        if args.get("selection").and_then(Value::as_bool) == Some(true) {
+            faces.extend(s.selection().faces.iter().copied());
+            groups = s.selected_groups().clone();
+        }
+        let with = if args.get("default").and_then(Value::as_bool) == Some(true) {
+            PaintWith::Default
+        } else if let Some(hex) = args.get("colour").and_then(Value::as_str) {
+            let h = hex.trim_start_matches('#');
+            let byte = |i: usize| h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok());
+            let (Some(r), Some(g), Some(b), 6) = (byte(0), byte(2), byte(4), h.len()) else {
+                return Err(format!("colour is #rrggbb, not {hex}."));
+            };
+            let name = args
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or(hex)
+                .to_owned();
+            PaintWith::New(prism_doc::Material::colour(&name, [r, g, b]))
+        } else {
+            let m = args.get("material");
+            let id = match m {
+                Some(Value::Number(n)) => n.as_u64().map(|n| prism_topo::MaterialId(n as u32)),
+                Some(Value::String(name)) => s.material_named(name),
+                _ => {
+                    return Err(
+                        "Say what to paint with: material (id or name), colour, or default.".into(),
+                    );
+                }
+            };
+            PaintWith::Existing(id.ok_or("No material with that name (get_model lists them).")?)
+        };
+        let set = faces
+            .iter()
+            .flat_map(|f| sides.iter().map(move |sd| (*f, *sd)))
+            .collect();
+        let m = s.paint_with(set, groups, with)?;
+        Ok(json!({
+            "painted_with": m.map(|m| m.0),
+            "material": s.material_name(m),
+            "model": self.model()["materials"],
+        }))
+    }
+
     fn use_tool(&mut self, args: &Value) -> Result<Value, String> {
         if let Some(tool) = args.get("tool").and_then(Value::as_str) {
             let is_tool = self
@@ -388,13 +471,20 @@ impl AppHost<'_> {
                     let landed = self.viewport.session.inference().map(
                         |f| json!({"point": point(f.point), "snapped_to": format!("{:?}", f.kind)}),
                     );
+                    // Keys held for this click: "ctrl", "shift", "alt".
+                    let held: Vec<&str> = step
+                        .get("keys")
+                        .and_then(Value::as_array)
+                        .map(|a| a.iter().filter_map(Value::as_str).collect())
+                        .unwrap_or_default();
+                    let has = |k: &str| held.contains(&k);
                     self.viewport.drive(Input::Press {
                         button: Button::Left,
                         x: s.x,
                         y: s.y,
-                        shift: false,
-                        ctrl: false,
-                        alt: false,
+                        shift: has("shift"),
+                        ctrl: has("ctrl"),
+                        alt: has("alt"),
                     });
                     self.viewport.drive(Input::Release {
                         button: Button::Left,
@@ -1155,5 +1245,97 @@ mod tests {
         assert_eq!(row["key"], "Ctrl+A");
         // Model Health answers.
         assert!(value(h.call("get_health", &none)).as_array().is_some());
+    }
+
+    /// MCP `paint` (Basic Materials 1c): a new colour on faces by id, one
+    /// undo step; an existing material by name on the selection; the
+    /// Paint Bucket through use_tool, with keys held.
+    #[test]
+    fn paint_colours_faces_and_the_bucket_takes_keys() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_tools::scenes::cube());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let g = value(h.call("get_geometry", &json!({})));
+        let faces = g["faces"].as_array().unwrap().clone();
+        let top = faces
+            .iter()
+            .find(|f| f["normal"] == json!([0.0, 0.0, 1.0]))
+            .expect("top")["id"]
+            .clone();
+        let r = value(h.call(
+            "paint",
+            &json!({"faces": [top], "colour": "#cc3322", "name": "Brick"}),
+        ));
+        assert_eq!(r["material"], "Brick", "{r}");
+        let id = r["painted_with"].clone();
+        let g = value(h.call("get_geometry", &json!({})));
+        let painted: Vec<&Value> = g["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["front_material"] == id)
+            .collect();
+        assert_eq!(painted.len(), 1);
+        let m = value(h.call("get_model", &json!({})));
+        assert_eq!(m["materials"][0]["name"], "Brick");
+        assert_eq!(m["materials"][0]["colour"], "#cc3322");
+        assert_eq!(m["materials"][0]["used"], true);
+        // One step: Undo takes the paint and the new material away.
+        value(h.call("run_action", &json!({"id": "edit.undo"})));
+        assert!(
+            value(h.call("get_model", &json!({})))["materials"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        value(h.call("run_action", &json!({"id": "edit.redo"})));
+        // By name, on the selection (every face), both sides.
+        value(h.call("run_action", &json!({"id": "edit.selall"})));
+        value(h.call(
+            "paint",
+            &json!({"selection": true, "material": "brick", "side": "both"}),
+        ));
+        let g = value(h.call("get_geometry", &json!({})));
+        assert!(
+            g["faces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|f| f["front_material"] == id && f["back_material"] == id)
+        );
+        assert!(
+            h.call("paint", &json!({"faces": [top], "material": "nothing"}))
+                .is_err()
+        );
+        assert!(
+            h.call("paint", &json!({"faces": [top], "colour": "red"}))
+                .is_err()
+        );
+        // The bucket: Ctrl held fills every joined Default face.
+        value(h.call(
+            "paint",
+            &json!({"selection": true, "default": true, "side": "both"}),
+        ));
+        value(h.call("run_action", &json!({"id": "edit.desel"})));
+        value(h.call("run_action", &json!({"id": "cam.extents"})));
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.paint", "steps": [{"click": [0, 0, 2], "keys": ["ctrl"]}]}),
+        ));
+        assert!(r.get("clicks").is_some(), "{r}");
+        let g = value(h.call("get_geometry", &json!({})));
+        let filled = g["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| !f["front_material"].is_null())
+            .count();
+        assert_eq!(filled, 6, "Ctrl filled every connected Default face");
     }
 }

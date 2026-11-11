@@ -31,6 +31,7 @@ mod edit;
 mod follow;
 mod groups;
 mod health;
+mod materials;
 mod paint;
 mod round;
 mod scalebox;
@@ -43,6 +44,7 @@ use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
+pub use materials::{MaterialOp, MaterialRow, PaintWith};
 pub use paint::{Brush, PAINT};
 pub use round::FILLET;
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
@@ -1225,6 +1227,7 @@ impl Session {
                 self.set_groups(BTreeSet::new());
             }
             "edit.delete" => self.delete(),
+            "edit.selmat" => self.select_same_material(),
             "edit.group" => self.make_group(),
             "edit.comp" => self.make_component(),
             // Edit > Reverse Faces and Orient Faces (Model Health).

@@ -2478,6 +2478,59 @@ No `[release]` yet (1c has it).
   - Colours other than Brick Red, and editing them: the Materials window,
     1c.
 
+## Basic Materials (part 1, step 1c): the Materials window
+
+Built 2026-11-12 (brief 28). Part 1 (colours) is done, with a `[release]`.
+
+- **Window > Materials** (a side card, Soft glass, `chrome/materials.rs`):
+  - **In Model:** Default, then the document's materials, used ones
+    first; the one the Paint Bucket holds is ringed; hovering names it
+    ("not used" for unused ones);
+  - **Colours:** the 16 built-in colours (`material::PALETTE`; no
+    textures are bundled, DECISIONS #34);
+  - clicking any swatch picks the Paint Bucket with it (`MaterialOp::Pick`,
+    the app chooses `tool.paint`);
+  - **New** (the next palette colour, added and picked), **Duplicate**
+    ("Name #2"), **Delete** (faces using it go back to Default), **Purge
+    Unused (n)**;
+  - **Edit** the chosen material: name, colour (egui's picker in the Soft
+    theme, with its hex), roughness and metalness. A colour dragged in the
+    picker is one undo step (an edit right after an edit of the same
+    material replaces it). The edit works on a copy of the stored
+    material, so nothing is rounded through 8-bit colour.
+  - A swatch widget joined the theme layer (`prism_ui::widgets::swatch`,
+    sizes and strokes in `theme.rs`).
+- **Entity Info:** the selected faces' front and back materials (a name,
+  Default, or "Several"), and a group's material.
+- **Select > All with the Same Material** (`edit.selmat`: Edit menu, and
+  right-click on faces): every face in the open group with the first
+  selected face's front material, on either side (Default: Default
+  fronts).
+- **Model Health:** an "Unused materials" row (information) with Purge.
+- **MCP:** `get_model` lists the materials (id, name, #rrggbb, opacity,
+  roughness, metalness, used); `get_geometry` gives each face's
+  `front_material` and `back_material`; `get_selection` names them; a new
+  `paint` tool paints faces by id or the selection (and selected groups
+  as a whole) with a material by id or name, a new colour (#rrggbb, with
+  a name), or Default, front, back or both, in one undo step;
+  `use_tool`'s clicks take `keys` (ctrl, shift, alt), so the Paint Bucket
+  and its modifiers work from MCP.
+- **The cursor's label** moved below the pointer, clear of the pail.
+- **Checked in the real app under Xvfb:** the painted golden file opens in
+  its colours; the window lists them; a swatch picks the bucket and
+  shows the edit fields; a palette colour painted a face and was added.
+- **Tests:** session (`the_materials_window_makes_picks_edits_and_deletes_materials`:
+  New, Duplicate, one-step edits, Entity Info, the Health row and Purge,
+  Delete; `select_all_with_the_same_material`), MCP
+  (`paint_colours_faces_and_the_bucket_takes_keys`), and the registry.
+- **Known gaps, sorted (DECISIONS #33):**
+  - Opacity is stored but drawn from part 2 (as planned); the window has
+    no opacity field until then.
+  - Render > Materials… stays greyed: it is the Rendering chunk's
+    material editor.
+  - Select by material looks in the open group only (as Select All
+    does). Minor: NOTES only.
+
 ## Known gaps session (owner, 2026-11-12)
 
 The owner asked for a session of known gaps. Each was checked against

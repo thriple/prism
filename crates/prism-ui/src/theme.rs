@@ -40,6 +40,17 @@ pub mod color {
     pub const CURSOR_INK: Color32 = Color32::from_rgb(0x16, 0x18, 0x1c);
     pub const CURSOR_BODY: Color32 = Color32::WHITE;
 
+    /// A swatch's edge, and its ring when chosen (or hovered).
+    pub fn swatch_edge() -> egui::Stroke {
+        egui::Stroke::new(1.0, FLOAT_EDGE)
+    }
+    pub fn swatch_ring(chosen: bool) -> egui::Stroke {
+        egui::Stroke::new(
+            super::size::SWATCH_RING,
+            if chosen { ACCENT } else { MUTED },
+        )
+    }
+
     /// A tool cursor's outline, its white halo, and the pail's rim.
     pub fn cursor_ink() -> egui::Stroke {
         egui::Stroke::new(1.5, CURSOR_INK)
@@ -252,6 +263,9 @@ pub mod size {
     pub const FIELD_PAD: f32 = 12.0;
     /// Small buttons (table cells, dialog actions).
     pub const SMALL_BUTTON_HEIGHT: f32 = 30.0;
+    /// A material's swatch in the Materials window, and its ring when chosen.
+    pub const SWATCH: f32 = 30.0;
+    pub const SWATCH_RING: f32 = 2.0;
     pub const SMALL_BUTTON_PAD: f32 = 12.0;
 }
 

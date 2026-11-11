@@ -452,6 +452,7 @@ impl Session {
                     .map_or("Group".to_owned(), |n| format!("Component \"{n}\"")),
                 tag: asm.tag_of(id),
                 hidden: asm.is_hidden(id),
+                material: self.material_name(asm.painted_with(id)),
             };
         }
         let m = self.work_model();
@@ -461,6 +462,7 @@ impl Session {
             edges: self.selection.edges.len(),
             points: self.selection.vertices.len(),
             area: self.selection.faces.iter().map(|f| m.face_area(*f)).sum(),
+            materials: self.selection_materials(),
         }
     }
 
@@ -862,6 +864,8 @@ pub enum EntityInfo {
         kind: String,
         tag: Option<prism_doc::TagId>,
         hidden: bool,
+        /// Painted as a whole with it ("Default": not painted).
+        material: String,
     },
     Geometry {
         groups: usize,
@@ -869,6 +873,9 @@ pub enum EntityInfo {
         edges: usize,
         points: usize,
         area: f64,
+        /// The selected faces' front and back materials ("Several" when
+        /// they differ); None with no face selected.
+        materials: Option<(String, String)>,
     },
 }
 

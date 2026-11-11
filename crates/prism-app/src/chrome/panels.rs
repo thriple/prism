@@ -25,6 +25,8 @@ pub enum PanelOp {
     HealthFix(&'static str),
     /// View Settings: the new view style.
     View(prism_view::ViewStyle),
+    /// The Materials window.
+    Material(prism_tools::session::MaterialOp),
 }
 
 /// The panels' data, set by the app each frame.
@@ -38,6 +40,11 @@ pub struct PanelData {
     pub health: Vec<prism_tools::HealthRow>,
     /// View Settings' style.
     pub view: prism_view::ViewStyle,
+    /// The Materials window: the document's materials, the Paint Bucket's
+    /// brush, and Default's colour (the style's front colour).
+    pub materials: Vec<prism_tools::session::MaterialRow>,
+    pub brush: prism_tools::session::Brush,
+    pub default_colour: [u8; 4],
 }
 
 /// Which panels are open, and text being edited.
@@ -49,6 +56,9 @@ pub struct Panels {
     pub health: bool,
     /// View Settings.
     pub view: bool,
+    /// The Materials window, and the chosen material's name being edited.
+    pub materials: bool,
+    pub material_name: Option<(prism_topo::MaterialId, String)>,
     /// Model Health's problems not drawn in the model (its switch off).
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
@@ -61,7 +71,7 @@ pub struct Panels {
 
 impl Panels {
     pub fn any_open(&self) -> bool {
-        self.outliner || self.info || self.tags || self.health || self.view
+        self.outliner || self.info || self.tags || self.health || self.view || self.materials
     }
 }
 
@@ -86,6 +96,7 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                 .show(ui, |ui| {
                     ui.set_width(rect.width());
                     info(ui, &mut p, &data, &mut ops);
+                    super::materials::card(ui, &mut p, &data, &mut ops);
                     outliner(ui, &mut p, &data, &mut ops);
                     super::components::card(chrome, ui, &mut p.folded);
                     tags(ui, &mut p, &data, &mut ops);
@@ -185,6 +196,7 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     kind,
                     tag,
                     hidden,
+                    material,
                 }) => {
                     ui.label(RichText::new(kind).color(color::MUTED));
                     ui.add_space(size::MENU_PAD);
@@ -220,6 +232,10 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                             }
                         }
                     });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Material");
+                        ui.label(RichText::new(material).color(color::MUTED));
+                    });
                     if ui
                         .add(SoftButton::new(if *hidden { "Show" } else { "Hide" }).small())
                         .clicked()
@@ -233,6 +249,7 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     edges,
                     points,
                     area,
+                    materials,
                 }) => {
                     p.name_edit = None;
                     let line =
@@ -252,6 +269,14 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                                 .font(theme::mono())
                                 .color(color::MUTED),
                         );
+                    }
+                    if let Some((front, back)) = materials {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("Front");
+                            ui.label(RichText::new(front).color(color::MUTED));
+                            ui.label("Back");
+                            ui.label(RichText::new(back).color(color::MUTED));
+                        });
                     }
                 }
                 None => {

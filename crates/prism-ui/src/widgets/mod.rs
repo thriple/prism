@@ -10,6 +10,7 @@ mod panel;
 mod select;
 mod side_card;
 mod slider;
+mod swatch;
 mod toggle;
 mod tool_button;
 pub mod tooltip;
@@ -23,6 +24,7 @@ pub use panel::SoftPanel;
 pub use select::SoftSelect;
 pub use side_card::{SideCard, SideCardResponse};
 pub use slider::SoftSlider;
+pub use swatch::swatch;
 pub use toggle::SoftToggle;
 pub use tool_button::ToolButton;
 

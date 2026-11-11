@@ -108,6 +108,19 @@ impl Session {
             ),
             fix: None,
         });
+        // Information: materials nothing uses (Basic Materials 1c).
+        let unused = asm.unused_materials().len();
+        rows.push(HealthRow {
+            key: "materials",
+            label: "Unused materials",
+            count: unused,
+            detail: if unused == 0 {
+                String::new()
+            } else {
+                "in the document, painted on nothing".into()
+            },
+            fix: (unused > 0).then_some("Purge"),
+        });
         rows.push(HealthRow {
             key: "scale",
             label: "Scale",
@@ -173,6 +186,7 @@ impl Session {
             "stray" => Command::RemoveStray,
             "arcs" => Command::RepairArcs,
             "crossing" => Command::IntersectFaces { faces: None },
+            "materials" => Command::PurgeMaterials,
             _ => return,
         };
         self.cancel();
