@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use prism_geom::{Curve, Surface, circle_distance};
 use prism_math::{DVec2, DVec3, Tol};
-use prism_topo::{EdgeId, FaceId, Model, VertexId, loop_pairs};
+use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 use crate::intersect::{Flat, crossings};
 use crate::regions::interior_points;
@@ -287,11 +287,20 @@ fn shells(model: &Model, edge_faces: &BTreeMap<EdgeId, Vec<FaceId>>) -> (usize, 
 }
 
 /// Which way each face runs along each of its edges.
-fn runs(model: &Model) -> BTreeMap<(VertexId, VertexId), Vec<(FaceId, bool)>> {
-    let mut out: BTreeMap<(VertexId, VertexId), Vec<(FaceId, bool)>> = BTreeMap::new();
+fn runs(model: &Model) -> BTreeMap<EdgeId, Vec<(FaceId, bool)>> {
+    // By edge, not by its two points: two arcs between the same points (a
+    // cylinder's rim) are different edges with different neighbours.
+    let mut out: BTreeMap<EdgeId, Vec<(FaceId, bool)>> = BTreeMap::new();
     for (id, f) in model.faces() {
-        for (a, b) in f.loops().flat_map(|l| loop_pairs(l)) {
-            out.entry(pair(a, b)).or_default().push((id, a < b));
+        for s in f.sides() {
+            let Some(e) = model.edge(s.edge) else {
+                continue;
+            };
+            // A closed edge (one point) has no direction to compare.
+            if e.a == e.b {
+                continue;
+            }
+            out.entry(s.edge).or_default().push((id, s.from == e.a));
         }
     }
     out

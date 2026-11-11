@@ -571,3 +571,30 @@ mod random {
         }
     }
 }
+
+/// Model Health finds an inside-out cylinder, and a single face of it
+/// turned round, and Orient Faces puts them right (the enclosed volume
+/// decides which way is out where a shell has curved faces).
+#[test]
+fn model_health_turns_an_inside_out_cylinder_round() {
+    let (mut m, f) = disc(1.0);
+    let n = m
+        .face(f)
+        .and_then(|x| x.plane())
+        .map_or(1.0, |p| p.normal.z);
+    prism_ops::push_pull(&mut m, f, 2.0 * n.signum(), false);
+    clean(&m);
+    let v0 = volume(&m);
+    assert!(v0 > 0.0);
+    let every: BTreeSet<FaceId> = m.faces().map(|(id, _)| id).collect();
+    prism_ops::health::reverse(&mut m, &every);
+    let found = prism_ops::health::check(&m).reversed.faces;
+    assert_eq!(found, every, "every face faces in");
+    prism_ops::health::orient(&mut m, None);
+    assert!(prism_ops::health::check(&m).reversed.is_empty());
+    assert!((volume(&m) - v0).abs() < 1e-9 * v0, "out again");
+    // One curved face turned: just that one is found.
+    let side = sides(&m)[0];
+    prism_ops::health::reverse(&mut m, &[side].into());
+    assert_eq!(prism_ops::health::check(&m).reversed.faces, [side].into());
+}

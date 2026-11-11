@@ -78,6 +78,7 @@ impl Session {
                     at: i.point,
                 });
                 self.last_op = None;
+                self.last_shape = None;
             }
             Some(op) => {
                 // A double-click (or a second click on the centre) places
@@ -131,8 +132,27 @@ impl Session {
         };
         if self.run(c) {
             self.shape_radius = Some(radius);
+            // Typing right after changes it (as for the Rectangle).
+            self.last_shape = Some((op, radius, self.doc.revision()));
         }
         self.mem.clear();
+    }
+
+    /// The circle or polygon just drawn, if nothing has changed since:
+    /// typing redraws it.
+    fn retypable(&self) -> Option<(ShapeOp, f64)> {
+        self.last_shape
+            .filter(|(_, _, rev)| *rev == self.doc.revision() && self.shape.is_none())
+            .map(|(op, r, _)| (op, r))
+    }
+
+    /// Undo the last shape and draw it again with a new radius.
+    fn redraw_shape(&mut self, op: ShapeOp, radius: f64) {
+        if self.doc.undo() {
+            self.model_changed();
+        }
+        self.commit_shape(op, radius);
+        self.refresh();
     }
 
     /// Typed text for these tools: `6s` sets the side count, a length the
@@ -149,17 +169,24 @@ impl Session {
                 && (3..=MAX_SIDES).contains(&n)
             {
                 self.sides = n;
+                // Right after a polygon: it gets the new count.
+                if let Some((op, r)) = self.retypable() {
+                    self.redraw_shape(op, r);
+                }
                 self.overlay_dirty = true;
                 self.refresh();
             }
             return true;
         }
-        if let Some(op) = self.shape
-            && let Some(r) = self.number.length(t)
-            && r.abs() > 0.0
-        {
-            self.commit_shape(op, r.abs());
+        let Some(r) = self.number.length(t).map(f64::abs).filter(|r| *r > 0.0) else {
+            return true;
+        };
+        if let Some(op) = self.shape {
+            self.commit_shape(op, r);
             self.refresh();
+        } else if let Some((op, _)) = self.retypable() {
+            // Right after a circle or polygon: a new radius for it.
+            self.redraw_shape(op, r);
         }
         true
     }
@@ -170,13 +197,13 @@ impl Session {
                 "Click to set the radius · type a radius + Enter · arrows pick the plane · Esc cancels"
             }
             (CIRCLE, false) => {
-                "Click the centre. It draws on the face or plane under the cursor · double-click places the last size"
+                "Click the centre. It draws on the face or plane under the cursor · double-click places the last size · type a radius + Enter to change the last circle"
             }
             (POLYGON, true) => {
                 "Click to set the radius · type a radius, or sides as 8s, + Enter · arrows pick the plane · Esc cancels"
             }
             (POLYGON, false) => {
-                "Click the centre · type sides as 8s + Enter · double-click places the last size"
+                "Click the centre · type sides as 8s + Enter · double-click places the last size · a radius or 8s + Enter right after changes the last one"
             }
             _ => return None,
         })

@@ -353,6 +353,9 @@ pub struct Session {
     scale_grip: Option<[u8; 3]>,
     scale_centre: bool,
     shape_radius: Option<f64>,
+    /// The circle or polygon just drawn, its radius, and the document's
+    /// revision then (typing a radius changes it while nothing else has).
+    last_shape: Option<(shapes::ShapeOp, f64, u64)>,
     sides: u32,
     last_op: Option<LastOp>,
     pub settings: Settings,
@@ -490,6 +493,7 @@ impl Session {
             scale_grip: None,
             scale_centre: false,
             shape_radius: None,
+            last_shape: None,
             sides: shapes::DEFAULT_SIDES,
             last_op: None,
             settings: Settings::default(),
@@ -926,6 +930,7 @@ impl Session {
         self.alt_loop = false;
         self.sampling = false;
         self.paint_at = None;
+        self.last_shape = None;
         self.rot_lock = None;
         self.ctrl_copy = false;
         self.mem.clear();

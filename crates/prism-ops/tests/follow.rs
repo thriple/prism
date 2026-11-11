@@ -195,3 +195,36 @@ fn a_tilted_free_profile_is_squared_up_first() {
     // Projected square to x: the section is 1 x 1, swept 5 from x = 0.
     assert!((volume(&m) - 5.0).abs() < 1e-9, "{}", volume(&m));
 }
+
+/// Checking a sweep and then making it (as the tool does) reuses the
+/// checked sweep: the model is exactly the one a sweep alone makes, and a
+/// different model is not given the old result.
+#[test]
+fn checking_then_sweeping_makes_the_same_model_as_sweeping() {
+    let make = |w: f64| {
+        let mut m = Model::new();
+        let prof = square(&mut m, 0.0, 0.0, 2.0, w);
+        let p = path(
+            &mut m,
+            &[
+                DVec3::ZERO,
+                DVec3::new(5.0, 0.0, 0.0),
+                DVec3::new(5.0, 4.0, 0.0),
+            ],
+            false,
+        );
+        (m, p, prof)
+    };
+    let (mut alone, p, prof) = make(1.0);
+    assert!(follow::follow(&mut alone, &p, prof));
+    let (mut checked, p, prof) = make(1.0);
+    assert_eq!(follow::refusal(&checked, &p, prof), None);
+    assert!(follow::follow(&mut checked, &p, prof));
+    assert_eq!(checked.geometry_json(), alone.geometry_json());
+    // A wider profile right after: its own sweep, not the last one.
+    let (mut wide, p, prof) = make(1.5);
+    assert_eq!(follow::refusal(&wide, &p, prof), None);
+    assert!(follow::follow(&mut wide, &p, prof));
+    let v = 1.5 * 1.5 * 9.0;
+    assert!((volume(&wide) - v).abs() < 1e-9 * v, "{}", volume(&wide));
+}

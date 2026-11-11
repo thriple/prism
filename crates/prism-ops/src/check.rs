@@ -2,7 +2,7 @@
 //! Each returns a list of problems; an empty list means the rule holds.
 
 use prism_math::predicates::{Inside, point_in_polygon};
-use prism_math::{DVec2, Tol};
+use prism_math::{DVec2, DVec3, Tol};
 use prism_topo::{FaceId, Model};
 
 use crate::regions::{interior_point, same_cycle};
@@ -57,61 +57,126 @@ fn loops_2d(model: &Model, f: FaceId) -> Vec<Vec<DVec2>> {
 }
 
 /// No two coplanar faces overlap: a point inside one is not inside another.
+///
+/// Each flat face's plane, outline and box are found once, and a face is
+/// only tested against faces whose box holds its point (sorted along x),
+/// so thousands of faces check in moments, not seconds.
 pub fn no_overlaps(model: &Model, tol: &Tol) -> Vec<String> {
+    struct Entry {
+        id: FaceId,
+        plane: prism_math::Plane,
+        frame: prism_math::plane::Frame,
+        loops: Vec<Vec<DVec2>>,
+        lo: DVec3,
+        hi: DVec3,
+    }
     let mut out = Vec::new();
-    let faces: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
-    for &f in &faces {
-        // Curved faces are not checked for overlaps yet.
-        let Some(fp) = model.face(f).and_then(|x| x.plane()) else {
+    let pad = DVec3::splat(tol.dist * 2.0);
+    let mut flats: Vec<Entry> = model
+        .faces()
+        .filter_map(|(id, f)| {
+            // Curved faces are not checked for overlaps yet.
+            let plane = *f.plane()?;
+            let pts: Vec<DVec3> = model.face_loop_points(f).into_iter().flatten().collect();
+            let lo = pts.iter().fold(DVec3::INFINITY, |a, p| a.min(*p)) - pad;
+            let hi = pts.iter().fold(DVec3::NEG_INFINITY, |a, p| a.max(*p)) + pad;
+            Some(Entry {
+                id,
+                plane,
+                frame: plane.frame(),
+                loops: loops_2d(model, id),
+                lo,
+                hi,
+            })
+        })
+        .collect();
+    flats.sort_by(|a, b| a.lo.x.total_cmp(&b.lo.x).then(a.id.cmp(&b.id)));
+    let mut found: Vec<(FaceId, FaceId)> = Vec::new();
+    for f in &flats {
+        let Some(sample) = interior_point(&f.loops) else {
+            out.push(format!("face {:?} has no inside", f.id));
             continue;
         };
-        let fr = fp.frame();
-        let Some(sample) = interior_point(&loops_2d(model, f)) else {
-            out.push(format!("face {f:?} has no inside"));
-            continue;
-        };
-        let p3 = fr.to_3d(sample);
-        for &g in &faces {
-            let Some(gp) = model.face(g).and_then(|x| x.plane()) else {
-                continue;
-            };
-            if g == f || !gp.same_surface(fp, tol) {
+        let p3 = f.frame.to_3d(sample);
+        // Only faces starting at or before the point along x can hold it.
+        let end = flats.partition_point(|g| g.lo.x <= p3.x);
+        for g in &flats[..end] {
+            if g.id == f.id
+                || p3.cmplt(g.lo).any()
+                || p3.cmpgt(g.hi).any()
+                || !g.plane.same_surface(&f.plane, tol)
+            {
                 continue;
             }
-            let q = gp.frame().to_2d(p3);
-            let polys = loops_2d(model, g);
-            if point_in_polygon(q, &polys[0]) == Inside::Inside
-                && polys[1..]
+            let q = g.frame.to_2d(p3);
+            if point_in_polygon(q, &g.loops[0]) == Inside::Inside
+                && g.loops[1..]
                     .iter()
                     .all(|h| point_in_polygon(q, h) == Inside::Outside)
             {
-                out.push(format!("faces {f:?} and {g:?} overlap"));
+                found.push((f.id, g.id));
             }
         }
     }
+    // In the order the faces are numbered, as before.
+    found.sort();
+    out.extend(
+        found
+            .into_iter()
+            .map(|(f, g)| format!("faces {f:?} and {g:?} overlap")),
+    );
     out
 }
 
 /// No two vertices closer than the tolerance, and no two faces with the same loop.
 pub fn no_duplicates(model: &Model, tol: &Tol) -> Vec<String> {
     let mut out = Vec::new();
-    let vs: Vec<_> = model.vertices().collect();
+    // Sorted along x: only points within the tolerance along x can be the
+    // same point.
+    let mut vs: Vec<_> = model.vertices().collect();
+    vs.sort_by(|a, b| a.1.x.total_cmp(&b.1.x).then(a.0.cmp(&b.0)));
+    let mut pairs = Vec::new();
     for (i, (a, pa)) in vs.iter().enumerate() {
         for (b, pb) in &vs[i + 1..] {
+            if pb.x - pa.x >= tol.dist {
+                break;
+            }
             if tol.same_point(*pa, *pb) {
-                out.push(format!("vertices {a:?} and {b:?} are in the same place"));
+                pairs.push(((*a).min(*b), (*a).max(*b)));
             }
         }
     }
-    let fs: Vec<_> = model.faces().collect();
-    for (i, (a, fa)) in fs.iter().enumerate() {
-        for (b, fb) in &fs[i + 1..] {
-            if same_cycle(fa.loop_edge_ids(0), fb.loop_edge_ids(0))
-                && !(closed(fa) && closed(fb) && !same_way(fa, fb))
-            {
-                out.push(format!("faces {a:?} and {b:?} have the same loop"));
+    pairs.sort();
+    for (a, b) in pairs {
+        out.push(format!("vertices {a:?} and {b:?} are in the same place"));
+    }
+    // Faces with the same outer loop have the same edges: only faces that
+    // share a set of edges are compared.
+    let mut by_edges: std::collections::BTreeMap<Vec<prism_topo::EdgeId>, Vec<FaceId>> =
+        Default::default();
+    for (id, f) in model.faces() {
+        let mut key = f.loop_edge_ids(0).to_vec();
+        key.sort();
+        by_edges.entry(key).or_default().push(id);
+    }
+    let mut same = Vec::new();
+    for ids in by_edges.values().filter(|v| v.len() > 1) {
+        for (i, a) in ids.iter().enumerate() {
+            for b in &ids[i + 1..] {
+                let (Some(fa), Some(fb)) = (model.face(*a), model.face(*b)) else {
+                    continue;
+                };
+                if same_cycle(fa.loop_edge_ids(0), fb.loop_edge_ids(0))
+                    && !(closed(fa) && closed(fb) && !same_way(fa, fb))
+                {
+                    same.push((*a, *b));
+                }
             }
         }
+    }
+    same.sort();
+    for (a, b) in same {
+        out.push(format!("faces {a:?} and {b:?} have the same loop"));
     }
     out
 }

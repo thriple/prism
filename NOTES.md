@@ -1334,7 +1334,7 @@ and inference, 2d the Circle and Polygon tools).
   the undo property test draws a circle across both squares.
 - Checked in the app (Xvfb): two circles across a square and a line open
   as twelve faces, drawn smooth.
-- **Not yet:** the tools still do not say why a move was refused (2c/2d).
+- **Not yet:** the tools still do not say why a move was refused (2c/2d). *(Done since: the hint shows the reason while a move is refused.)*
 - **CI for 2b (59f7db9):** all code jobs green. The Web build failed twice
   at "Install trunk": the download from GitHub releases returned a 504
   page. If it happens again, make that step retry
@@ -1397,7 +1397,7 @@ and inference, 2d the Circle and Polygon tools).
   read back with `get_geometry` (arc centre, radius and curve id: brief
   23's 2a MCP test).
 - **Not yet:** retyping the radius after a circle is finished (Rectangle
-  and Line can) does nothing; a centre that lands on a guide over empty
+  and Line can) does nothing; *(Fixed 2026-11-12: a radius, or a polygon's 8s, typed right after changes it.)* a centre that lands on a guide over empty
   ground takes the view's main axis as its plane, as the Rectangle does
   (an arrow key picks the plane). Not checked by eye in the app; brief 23's
   acceptance asks the owner to draw circles over MCP in a build and move
@@ -1880,12 +1880,12 @@ Built 2026-11-11 (brief 26).
   - A sweep that overlaps itself further along (a profile wider than a
     later line, turning back) is not caught: only folding at a corner is.
     Step 6c (Push/Pull booleans) adds the solid overlap test and uses it
-    here too.
+    here too. *(Done in 6c-2.)*
   - The sweep is not stuck to what it touches (no welding or splitting
-    against existing faces). Step 6b (sticky crossings) covers it.
+    against existing faces). Step 6b (sticky crossings) covers it. *(Done in 6b-2.)*
   - A path through the profile's own face (drawn from its middle, as in
     SketchUp) is not tested: step 5d's tests add it.
-  - Arcs in the path and Alt (a face's perimeter): step 5d.
+  - Arcs in the path and Alt (a face's perimeter): step 5d. *(Done in 5d.)*
 
 
 ## Exact Curves (part 5, step 5d): Follow Me along arcs, and Alt
@@ -1933,7 +1933,7 @@ Built 2026-11-11 (brief 26). Greyed like the other curve tools until part
 - **Known gaps, sorted (DECISIONS #33):**
   - A sphere's profile arc of more than half a circle (centred on the
     axis) reaches round past the poles and overlaps itself: not caught.
-    It goes with 6c's solid overlap test, with 5c's overlap gap.
+    It goes with 6c's solid overlap test, with 5c's overlap gap. *(Done in 6c-2: refused, test `a_sphere_profile_past_the_poles_is_refused`.)*
   - A profile arc whose circle reaches the axis but whose arc does not (a
     lemon or apple shape) is refused (`CROSSES_AXIS`): a torus with a
     minor radius at least its major one is not handled. Minor: NOTES only.
@@ -1994,13 +1994,13 @@ Built 2026-11-11 (brief 27, DECISIONS #32).
   - Only curved faces that are rectangles in (θ, s) can be faceted (every
     face Push/Pull, Fillet and Follow Me make today). Once 6b cuts curved
     faces, a cut face scaled unevenly would keep a wrong surface (the
-    check reports it): **step 6b** makes `approx::facet` handle cut faces.
+    check reports it): **step 6b** makes `approx::facet` handle cut faces. *(Done in 6b-2.)*
   - Follow Me's fallback facets the whole sweep where the brief hoped for
     exact cylinder walls ending on approximate ellipses. It looks smooth
     (soft, smooth seams) and is within the chord rule. Minor: NOTES only.
   - The model check is slow on thousands of facets (about 2.5 s in a debug
     build for a sphere's 2,592): it compares faces in pairs. Minor for now
-    (Model Health and tests); NOTES only, look again if big imports suffer.
+    (Model Health and tests); NOTES only, look again if big imports suffer. *(Fixed 2026-11-12: see "Known gaps session".)*
   - A line meeting an arc at a corner, with a wide profile, is still
     refused (`CROSSES_ITSELF`): the arc's first chord is short, and the
     sweep really does fold there. Correct, not a gap.
@@ -2062,11 +2062,11 @@ welded, and faceting cut faces) is next.
   - Two crossings that cross each other in the middle of a curved face are
     not split where they meet, so the face is not cut along them there.
     Intersect Faces' crossings meet at their ends in every case tested;
-    drawing across a face (6b-2) needs it: **step 6b-2**.
+    drawing across a face (6b-2) needs it: **step 6b-2**. *(Done in 6b-2.)*
   - Drawing a line, rectangle or circle across a curved face does not cut
     it yet; Follow Me's result is not welded where it meets other faces;
     snapping only sees crossings once they are edges: **step 6b-2**, as
-    planned.
+    planned. *(Done in 6b-2.)*
   - A crossing smaller than a grid step (about 2.5°, or a plane barely
     grazing a sphere) can be missed, and a plane only touching a surface
     (along a line, or at a point) adds nothing. Minor: NOTES only.
@@ -2135,7 +2135,7 @@ Built 2026-11-11 (brief 27). Step 6b is done.
     a slanted curve crosses a cell corner to corner (up to about 1.4 times
     the rule's stray). Minor: NOTES only.
   - The model check is slow on many facets (10 s in a debug build for a
-    torus's 5,184); unchanged from 6a. Minor: NOTES only.
+    torus's 5,184); unchanged from 6a. Minor: NOTES only. *(Fixed 2026-11-12.)*
 
 ## Exact Curves (part 6, step 6c-1): Push/Pull booleans with curved faces
 
@@ -2183,12 +2183,12 @@ test for Follow Me) is next.
 - **Known gaps, sorted (DECISIONS #33):**
   - A pull stops at the first face in its way only by corners and edges
     when that face is curved, and a new radius is not stopped at all:
-    **step 6c-2**, as planned.
+    **step 6c-2**, as planned. *(Done in 6c-2.)*
   - The solid overlap test (a Follow Me sweep overlapping itself further
-    along): **step 6c-2**, as planned.
+    along): **step 6c-2**, as planned. *(Done in 6c-2.)*
   - Model Health's "faces inward" check still counts flat faces only (it
     goes by the enclosed volume when a shell has curved faces, as before).
-    Minor: NOTES only.
+    Minor: NOTES only. *(2026-11-12: the volume rule is exact for a closed shell, but checking it found a real bug: a cylinder's rim, two arcs between the same two points, cut the caps off from the sides, so an inside-out cylinder was half found. Fixed; see "Known gaps session".)*
 
 ## Exact Curves (part 6, step 6c-2): stops at curved faces, Follow Me overlap
 
@@ -2242,14 +2242,14 @@ Built 2026-11-11 (brief 27).
     hardly do this. Minor: NOTES only.
   - A face that already crosses the moving face is passed over, and the
     pull goes on to the next face, as with flat faces before. Minor: NOTES
-    only.
+    only. *(2026-11-12: not a gap. Stopping there would block every pull from a face that already touches another.)*
   - A ray from the outline that only grazes a curved surface between
     sample steps can be missed. The face then goes a hair past a surface it
     only just touches. Minor: NOTES only.
   - Follow Me builds the sweep twice, once to check it and once to make
-    it, so big sweeps are slower. Minor: NOTES only.
+    it, so big sweeps are slower. Minor: NOTES only. *(Fixed 2026-11-12.)*
   - Push/Pull on a cone, sphere or torus face is still refused: **step
-    6d**, as planned.
+    6d**, as planned. *(Done in 6d-1.)*
 
 ## Exact Curves (part 6, step 6d-1): new sizes for cones, spheres and tori
 
@@ -2409,9 +2409,9 @@ Model Health, MCP, and a release). Nothing is visible yet.
 - **Known gaps, sorted (DECISIONS #33):**
   - A pulled lone rectangle's new base is Default, so its paint stays on
     the moved face only. SketchUp keeps the original face as the base,
-    with its paint. Minor: check with the owner in 1b.
+    with its paint. Minor: check with the owner in 1b. *(Fixed 2026-11-12: the owner asked for it; the base shows the colour outside.)*
   - Fillet and chamfer faces are Default. SketchUp gives them a
-    neighbour's material. Minor: NOTES only.
+    neighbour's material. Minor: NOTES only. *(Fixed 2026-11-12.)*
   - Imported meshes have no materials until part 3 (glTF, OBJ, 3MF), as
     planned.
 
@@ -2477,6 +2477,54 @@ No `[release]` yet (1c has it).
   - MCP's `use_tool` cannot hold Alt yet: in 1c, with the `paint` tool.
   - Colours other than Brick Red, and editing them: the Materials window,
     1c.
+
+## Known gaps session (owner, 2026-11-12)
+
+The owner asked for a session of known gaps. Each was checked against
+the code first; some had been closed by later steps (marked where they
+are listed above).
+
+- **Fillet and chamfer faces take their faces' colour:** the one they
+  share, else the painted one (`round.rs`). Test:
+  `a_rounded_edge_takes_its_faces_colour`.
+- **Model Health: an inside-out cylinder.** The check that finds faces
+  turned the wrong way linked neighbours by the two points an edge joins.
+  A cylinder's rim is two arcs between the same two points, so the caps
+  were never linked to the sides, and an inside-out cylinder was only
+  half found (and Orient Faces could leave it half wrong). It now links
+  them by the edge itself (`health::runs`). Test:
+  `model_health_turns_an_inside_out_cylinder_round`.
+- **The model check is fast on big models.** The overlap rule worked out
+  each face's outline again for every pair of faces: 10 s for 1,600
+  faces on one plane (debug build). Each face's plane, outline and box
+  are now found once, and only faces whose box holds the test point are
+  compared: 0.07 s. Doubled points are found by sorting along x (0.42 s
+  to 0.01 s), repeated faces by grouping faces with the same edges.
+  Tests: `prism-ops/tests/check_rules.rs` (each rule still finds its
+  fault; the old code finds the same).
+- **Follow Me builds a sweep once.** The tool checks a sweep and then
+  runs it; the check's result is kept (for the same model, path and
+  profile) and used by the run (`follow::attempt`). Test:
+  `checking_then_sweeping_makes_the_same_model_as_sweeping`.
+- **Typing right after a circle or polygon changes it** (a radius, or
+  the polygon's sides as 8s), as the Rectangle and Line already did, one
+  undo step, and not once anything else has changed. Test:
+  `typing_right_after_a_circle_or_polygon_changes_it`.
+- **Checked and already closed:** a sphere profile past its poles (6c-2),
+  moves saying why they are refused (the hint), and the step-planned
+  items of 5c, 6a, 6b-1 and 6c-1.
+- **Not a gap:** a face already crossing the moving face is passed over
+  by Push/Pull (stopping there would block every pull).
+- **For the owner:** a rectangle drawn against another (sharing an edge)
+  and pulled up leaves the box open underneath, as SketchUp does (it
+  leaves a base only under a face that touches nothing else). Prism keeps
+  that until the owner decides.
+- **Still open (minor, NOTES only):** a lemon-shaped torus, a profile
+  turned away from its arc's start, a flat ring's soft seam, sweeps
+  wholly inside themselves, rays grazing a curved surface, outline lines
+  on the CPU, a cone's apex held by a flat face, X-ray's single layer,
+  shadow cascades, the solids property test's rare failures (pinched
+  loops), Move and Rotate not applying the solid rule.
 
 ## Owner fixes (2026-11-12): a pulled face's base, faces closing holes
 

@@ -2124,7 +2124,10 @@ fn the_polygon_tool_takes_a_side_count_and_its_sides_are_one_curve() {
     same(&areas(&d), &[hex]);
     // The first corner is where the radius was clicked (inscribed).
     assert!(prism_ops::vertex_at(m, DVec3::new(3.0, 2.0, 0.0)).is_some());
-    // Eight sides, typed first.
+    // Eight sides, typed first (after choosing the tool again: typed
+    // right after the hexagon, it would change the hexagon).
+    d.tool(SELECT);
+    d.tool(POLYGON);
     d.typed("8s");
     // Up picks the ground plane (the centre may land on a guide).
     d.send(Input::Key { key: Key::Up });
@@ -3107,4 +3110,38 @@ fn the_paint_preview_follows_the_keys_held() {
     // A plain click while Alt is held samples, and paints nothing.
     d.click(top);
     assert!(paint_of(&d, top).is_default());
+}
+
+/// Right after a circle or polygon, typing a radius (or a polygon's sides
+/// as 8s) changes it, as for the Rectangle; after any other change it
+/// does not (owner's known gaps session, 2026-11-12).
+#[test]
+fn typing_right_after_a_circle_or_polygon_changes_it() {
+    use prism_tools::session::{CIRCLE, POLYGON};
+    let mut d = Driver::empty();
+    d.tool(CIRCLE);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.click(DVec3::new(2.0, 1.0, 0.0));
+    same(&areas(&d), &[std::f64::consts::PI]);
+    d.typed("2");
+    same(&areas(&d), &[4.0 * std::f64::consts::PI]);
+    assert_eq!(d.faces(), 1, "the same circle, larger");
+    // One step: Undo goes back to nothing.
+    act(&mut d, "edit.undo");
+    assert_eq!(d.faces(), 0);
+    // After Undo, typing no longer changes anything.
+    d.typed("3");
+    assert_eq!(d.faces(), 0);
+    // A polygon: a new radius, then a new side count.
+    d.tool(POLYGON);
+    d.click(DVec3::new(5.0, 1.0, 0.0));
+    d.click(DVec3::new(6.0, 1.0, 0.0));
+    let sides = |d: &Driver| d.s.model().edge_count();
+    assert_eq!(sides(&d), 6);
+    d.typed("2");
+    let (lo, hi) = d.s.model().bbox().expect("polygon");
+    assert!((hi.x - lo.x - 4.0).abs() < 1e-9, "radius 2: {lo:?} {hi:?}");
+    d.typed("8s");
+    assert_eq!(sides(&d), 8);
+    assert_eq!(d.faces(), 1);
 }

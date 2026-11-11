@@ -343,3 +343,52 @@ fn follow_me_walls_take_the_profile_paint() {
     assert_eq!(d.model().face_count(), 6);
     assert!(d.model().faces().all(|(_, f)| f.paint.front == Some(red)));
 }
+
+/// The edge whose middle is `p`.
+fn edge_at(d: &Document, p: DVec3) -> Option<prism_topo::EdgeId> {
+    let m = d.model();
+    m.edges()
+        .find(|(_, e)| ((m.vertex(e.a) + m.vertex(e.b)) / 2.0).distance(p) < 1e-9)
+        .map(|(id, _)| id)
+}
+
+/// A fillet or chamfer takes its faces' colour (as SketchUp gives it a
+/// neighbour's material); with one face painted, that one's.
+#[test]
+fn a_rounded_edge_takes_its_faces_colour() {
+    for fillet in [true, false] {
+        let mut d = cube();
+        let red = add(&mut d, "Red", [255, 0, 0]);
+        paint_all(&mut d, red);
+        let edge = edge_at(&d, DVec3::new(1.0, 0.0, 2.0)).expect("top front edge");
+        assert!(d.run(Command::RoundEdge {
+            edge,
+            size: 0.3,
+            fillet,
+        }));
+        assert!(
+            d.model().faces().all(|(_, f)| f.paint.front == Some(red)),
+            "every face red, fillet {fillet}"
+        );
+        // Only the top painted: the new face takes the top's.
+        let mut d = cube();
+        let blue = add(&mut d, "Blue", [0, 0, 255]);
+        let top = face_at(&d, DVec3::new(1.0, 1.0, 2.0));
+        d.run(Command::Paint {
+            sides: [(top, FaceSide::Front)].into(),
+            material: Some(blue),
+        });
+        let edge = edge_at(&d, DVec3::new(1.0, 0.0, 2.0)).expect("edge");
+        assert!(d.run(Command::RoundEdge {
+            edge,
+            size: 0.3,
+            fillet,
+        }));
+        let blue_faces = d
+            .model()
+            .faces()
+            .filter(|(_, f)| f.paint.front == Some(blue))
+            .count();
+        assert_eq!(blue_faces, 2, "the top and the new face, fillet {fillet}");
+    }
+}

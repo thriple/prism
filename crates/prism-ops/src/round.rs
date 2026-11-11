@@ -203,6 +203,15 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
     let Ok(plan) = plan(model, edge, size, fillet) else {
         return false;
     };
+    // The new face takes the faces' colour: the one they share, else the
+    // painted one (as SketchUp gives it a neighbour's material).
+    let paint = sides(model, edge)
+        .map(|[(f1, ..), (f2, ..)]| {
+            let get = |f| model.face(f).map(|x| x.paint).unwrap_or_default();
+            let (p1, p2) = (get(f1), get(f2));
+            if p1.is_default() { p2 } else { p1 }
+        })
+        .unwrap_or_default();
     let tol = model.tol();
     let corner_a = model.vertex(plan.ends[0].v);
     let half = plan.u1.dot(plan.u2).clamp(-1.0, 1.0).acos() / 2.0;
@@ -331,7 +340,7 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
     edges.extend(at_a.1.iter().rev().copied());
     let edges = vec![edges];
     let out = (plan.n1 + plan.n2).normalize_or_zero();
-    match plan.radius {
+    let made = match plan.radius {
         None => {
             // Drawing its last side may have closed the flat loop already.
             let corners: std::collections::BTreeSet<VertexId> = outer.iter().copied().collect();
@@ -368,6 +377,7 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
             {
                 model.edit_face(id, |f| f.reverse());
             }
+            id
         }
         Some(r) => {
             let origin = centre(corner_a, r);
@@ -401,7 +411,10 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
             });
             model.set_soft(top, true, true);
             model.set_soft(bottom, true, true);
+            id
         }
-    }
+    };
+    // Set after it was turned to face out.
+    model.edit_face(made, |f| f.paint = paint);
     true
 }

@@ -717,30 +717,74 @@ fn best(
     Err(err)
 }
 
+/// The last sweep checked: the model before, the path and profile, and
+/// the model after (None when refused). The tools check a sweep and then
+/// run it, so `follow` reuses what `refusal` built rather than building
+/// it twice. Same inputs, same result: it only saves the work.
+type Swept = (
+    Model,
+    BTreeSet<EdgeId>,
+    FaceId,
+    Result<Model, Option<&'static str>>,
+);
+
+thread_local! {
+    static LAST: std::cell::RefCell<Option<Swept>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Build the sweep in a copy of the model: the result, or why not (None:
+/// it could not be built, with no reason to give, as before).
+fn attempt(
+    model: &Model,
+    path: &BTreeSet<EdgeId>,
+    profile: FaceId,
+) -> Result<Model, Option<&'static str>> {
+    let cached = LAST.with(|c| {
+        c.borrow().as_ref().and_then(|(m, p, f, out)| {
+            (*f == profile && p == path && m == model).then(|| out.clone())
+        })
+    });
+    if let Some(out) = cached {
+        return out;
+    }
+    let out = (|| {
+        best(model, path, profile).map_err(Some)?;
+        let mut m = model.clone();
+        let before = build(&mut m, path, profile).ok_or(None)?;
+        if crosses_itself(&m, model, profile) {
+            return Err(Some(OVERLAPS));
+        }
+        let tol = m.tol();
+        stick(&mut m, &before, &tol);
+        Ok(m)
+    })();
+    // A plan refused for its own reason is not kept (it is quick to find).
+    if !matches!(out, Err(Some(e)) if e != OVERLAPS) {
+        LAST.with(|c| {
+            *c.borrow_mut() = Some((model.clone(), path.clone(), profile, out.clone()));
+        });
+    }
+    out
+}
+
 /// Why following `path` with `profile` is refused, if it is.
 pub fn refusal(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Option<&'static str> {
     if let Err(e) = best(model, path, profile) {
         return Some(e);
     }
-    let mut m = model.clone();
-    build(&mut m, path, profile)?;
-    crosses_itself(&m, model, profile).then_some(OVERLAPS)
+    attempt(model, path, profile).err().flatten()
 }
 
 /// Sweep `profile` along `path`. Returns whether anything was made:
 /// nothing when it is refused, or when the sweep would cross itself.
 pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bool {
-    let mut m = model.clone();
-    let Some(before) = build(&mut m, path, profile) else {
-        return false;
-    };
-    if crosses_itself(&m, model, profile) {
-        return false;
+    match attempt(model, path, profile) {
+        Ok(m) => {
+            *model = m;
+            true
+        }
+        Err(_) => false,
     }
-    let tol = m.tol();
-    stick(&mut m, &before, &tol);
-    *model = m;
-    true
 }
 
 /// Whether the sweep just built in `after` (from `before`) crosses itself:
