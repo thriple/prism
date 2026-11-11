@@ -68,7 +68,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   about each arc's axis; lathes make cones, spheres and tori; Alt follows
   the selected face's edge; NOTES has its sorted gaps): **part 5 is
   done**. Then **part 6** (owner, 2026-11-11, DECISIONS
-  #33; brief `docs/briefs/27-exact-curves-6.md`, written 2026-11-11; **6a is built**, `prism_ops::approx`, `Edge.approx`, schema 7; **6b-1 is built**, `prism_ops::cut` (curved faces split in (θ, s)) and `prism_ops::crossing` (crossings traced in (θ, s), exact lines and arcs else fine segments), Intersect Faces with curved faces; **6b-2 is built**, drawing and Follow Me stick to curved faces (`cut::split_along`, `follow::stick`), crossings meeting mid-face are split, `approx::facet` facets any cut face; next is 6c, Push/Pull booleans and stops with curved faces): the
+  #33; brief `docs/briefs/27-exact-curves-6.md`, written 2026-11-11; **6a is built**, `prism_ops::approx`, `Edge.approx`, schema 7; **6b-1 is built**, `prism_ops::cut` (curved faces split in (θ, s)) and `prism_ops::crossing` (crossings traced in (θ, s), exact lines and arcs else fine segments), Intersect Faces with curved faces; **6b-2 is built**, drawing and Follow Me stick to curved faces (`cut::split_along`, `follow::stick`), crossings meeting mid-face are split, `approx::facet` facets any cut face; **6c-1 is built**, `prism_ops::shell` (the inside test with exact arcs and curved faces) and Push/Pull booleans with curved faces; next is 6c-2, stops at curved faces and the solid overlap test): the
   segment fallback (#32), exact plane crossings with curved faces,
   Intersect Faces, sticky crossings, Push/Pull booleans and stops with
   curved faces, a new size for cones/spheres/tori, then the curve tools

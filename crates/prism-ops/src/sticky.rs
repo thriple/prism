@@ -606,14 +606,18 @@ pub fn face_at(model: &Model, p: DVec3) -> Option<FaceId> {
         .filter(|(_, f)| {
             let Some(pl) = f.plane() else { return false };
             let fr = pl.frame();
-            let poly = |l: &[VertexId]| -> Vec<prism_math::DVec2> {
-                l.iter().map(|v| fr.to_2d(model.vertex(*v))).collect()
-            };
+            // The drawn outline (arcs as their points): a disc has only two
+            // corners.
+            let loops: Vec<Vec<prism_math::DVec2>> = model
+                .face_loop_points(f)
+                .iter()
+                .map(|l| l.iter().map(|x| fr.to_2d(*x)).collect())
+                .collect();
             let q = fr.to_2d(p);
-            point_in_polygon(q, &poly(&f.outer)) == Inside::Inside
-                && f.holes
+            point_in_polygon(q, &loops[0]) == Inside::Inside
+                && loops[1..]
                     .iter()
-                    .all(|h| point_in_polygon(q, &poly(h)) != Inside::Inside)
+                    .all(|h| point_in_polygon(q, h) != Inside::Inside)
         })
         .map(|(id, _)| (id, model.face_area(id)))
         .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))

@@ -100,11 +100,9 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     }
     let n = plane.normal;
     let shift = n * distance;
-    // On a solid, Push/Pull is a boolean with the block the face sweeps.
-    // Not yet with arcs or curved faces (the block's test goes by flat
-    // faces' corners).
-    let curved = model.face_has_arcs(face) || model.faces().any(|(_, g)| g.is_curved());
-    let swept = if new_loop || curved {
+    // On a solid, Push/Pull is a boolean with the block the face sweeps,
+    // arcs and curved faces included (Exact Curves 6c).
+    let swept = if new_loop {
         None
     } else {
         crate::solid::Swept::of(model, face, distance)
@@ -236,8 +234,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         });
         faces_ok && edges_ok
     };
-    let staying: BTreeSet<VertexId> = verts.iter().copied().filter(|v| !in_place(*v)).collect();
-    let moving: BTreeSet<VertexId> = verts.difference(&staying).copied().collect();
+    let mut staying: BTreeSet<VertexId> = verts.iter().copied().filter(|v| !in_place(*v)).collect();
     // An arc with one end staying and one moving would bend; one that
     // slides would need a stretched arc in its neighbour. Not yet.
     let arc_sides: Vec<(VertexId, VertexId)> = f
@@ -247,13 +244,22 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         .collect();
     let bends = arc_sides.iter().any(|(a, b)| {
         staying.contains(a) != staying.contains(b)
-            || slides
-                .iter()
-                .any(|(k, _)| *k == key(*a, *b) && (staying.contains(a) || staying.contains(b)))
+            || slides.iter().any(|(k, _)| {
+                key(k.0, k.1) == key(*a, *b) && (staying.contains(a) || staying.contains(b))
+            })
     });
     if bends {
-        return Pulled::Nothing;
+        // On a solid, every side gets a wall instead, and the solid rule
+        // takes away what ends up inside (part of a cylinder's cap pushed
+        // in: Exact Curves 6c). Off a solid it would bend: refused.
+        if swept.is_none() {
+            return Pulled::Nothing;
+        }
+        walls_at = pairs.iter().map(|&(a, b)| key(a, b)).collect();
+        slides.clear();
+        staying = verts.clone();
     }
+    let moving: BTreeSet<VertexId> = verts.difference(&staying).copied().collect();
 
     // New points for the vertices that stay behind.
     let mut to: BTreeMap<VertexId, VertexId> = BTreeMap::new();
@@ -478,9 +484,16 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let test: Option<&dyn Fn(DVec3) -> Option<bool>> =
         test.as_ref().map(|f| f as &dyn Fn(DVec3) -> Option<bool>);
     crate::settle::settle_with(model, &touched, &around_planes, test);
-    // Alt keeps the original face on purpose, inside or not. Its inside
-    // test goes by flat faces, so not yet with curved ones.
-    if !new_loop && !curved {
+    // New edges lying on a curved face beside it (a wall on a cylinder's
+    // own surface) split it, so the solid rule can take its pieces.
+    let added: Vec<EdgeId> = model
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| !before_ids.contains(id))
+        .collect();
+    crate::cut::split_along(model, &added);
+    // Alt keeps the original face on purpose, inside or not.
+    if !new_loop {
         crate::solid::keep_boundary(model, &touched, swept.as_ref());
     }
     crate::settle::dedupe_faces(model);

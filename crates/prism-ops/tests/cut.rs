@@ -234,16 +234,16 @@ fn any_plane_cuts_a_sphere_in_an_exact_circle() {
 #[test]
 fn a_box_through_a_cylinder_cuts_where_they_meet() {
     let mut m = cylinder(1.0, 4.0);
-    add_rect(&mut m, -2.0, -0.5, 2.0, 0.5, 1.0);
-    let face = m
-        .faces()
-        .find(|(_, f)| f.plane().is_some_and(|p| (p.origin.z - 1.0).abs() < 1e-9))
-        .map(|(id, _)| id)
-        .expect("the box's base");
+    // The box is made on its own and placed (pulled through the cylinder,
+    // it would join it: Exact Curves 6c).
+    let mut b = Model::new();
+    add_rect(&mut b, -2.0, -0.5, 2.0, 0.5, 1.0);
+    let face = b.faces().next().map(|(id, _)| id).expect("the box's base");
     assert!(!matches!(
-        push_pull(&mut m, face, 2.0, false),
+        push_pull(&mut b, face, 2.0, false),
         Pulled::Nothing
     ));
+    m.append(&b);
     let before = curved_volume(&m);
     // Model Health sees the faces crossing, and not once they are cut.
     let crossing = prism_ops::health::check(&m).crossing;

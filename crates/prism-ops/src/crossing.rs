@@ -63,19 +63,19 @@ fn grid_step() -> f64 {
 }
 
 /// A curved face laid out in (θ, s).
-struct Laid {
-    face: FaceId,
-    surface: Surface,
-    rev: Revolution,
-    polys: Vec<Vec<DVec2>>,
+pub(crate) struct Laid {
+    pub(crate) face: FaceId,
+    pub(crate) surface: Surface,
+    pub(crate) rev: Revolution,
+    pub(crate) polys: Vec<Vec<DVec2>>,
     circle: bool,
     /// How long a step in θ and in s is, near the face (to measure
     /// distances in (θ, s) as lengths).
-    scale: DVec2,
+    pub(crate) scale: DVec2,
 }
 
 impl Laid {
-    fn new(m: &Model, face: FaceId) -> Option<Laid> {
+    pub(crate) fn new(m: &Model, face: FaceId) -> Option<Laid> {
         let (rev, polys) = layout(m, face)?;
         let surface = m.face(face)?.surface;
         let circle = matches!(rev.profile, Profile::Circle { .. });
@@ -110,11 +110,11 @@ impl Laid {
 
     /// Whether (θ, s), as laid out, is in the face or within `d` of its
     /// outline.
-    fn holds_2d(&self, q: DVec2, d: f64) -> bool {
+    pub(crate) fn holds_2d(&self, q: DVec2, d: f64) -> bool {
         inside(q, &self.polys) || self.near_outline(q, d)
     }
 
-    fn near_outline(&self, q: DVec2, d: f64) -> bool {
+    pub(crate) fn near_outline(&self, q: DVec2, d: f64) -> bool {
         let k = self.scale;
         let m = |p: DVec2| DVec2::new(p.x * k.x, p.y * k.y);
         let q = m(q);
@@ -131,7 +131,30 @@ impl Laid {
 
     /// Where a point of the surface falls in the layout: its (θ, s), moved
     /// by whole turns into the face, if it is in it.
-    fn place(&self, p: DVec3, d: f64) -> Option<DVec2> {
+    /// Whether a point of the surface is in the face: None within `d` of
+    /// its outline (too close to tell).
+    pub(crate) fn classify(&self, p: DVec3, d: f64) -> Option<bool> {
+        let (t, s) = self.rev.param(p);
+        let s_turns: &[f64] = if self.circle {
+            &[0.0, -1.0, 1.0]
+        } else {
+            &[0.0]
+        };
+        for kt in [0.0, -1.0, 1.0, -2.0, 2.0] {
+            for ks in s_turns {
+                let q = DVec2::new(t + kt * TAU, s + ks * TAU);
+                if self.near_outline(q, d) {
+                    return None;
+                }
+                if self.holds_2d(q, 0.0) {
+                    return Some(true);
+                }
+            }
+        }
+        Some(false)
+    }
+
+    pub(crate) fn place(&self, p: DVec3, d: f64) -> Option<DVec2> {
         let (t, s) = self.rev.param(p);
         let s_turns: &[f64] = if self.circle {
             &[0.0, -1.0, 1.0]
@@ -577,7 +600,18 @@ impl Tracer<'_> {
             vec![run]
         };
         let mut out = Vec::new();
-        for pts in halves {
+        for mut pts in halves {
+            // Only its ends traced: put a point between them on the
+            // crossing, so a short arc is not taken for a line.
+            if pts.len() == 2
+                && let (Some(qa), Some(qb)) = (
+                    self.a.place(pts[0], f64::INFINITY),
+                    self.a.place(pts[1], f64::INFINITY),
+                )
+                && let Some(m) = self.refine(qa.lerp(qb, 0.5))
+            {
+                pts.insert(1, self.point(m));
+            }
             let len: f64 = pts.windows(2).map(|w| w[0].distance(w[1])).sum();
             if len <= self.tol.dist * 10.0 {
                 continue;

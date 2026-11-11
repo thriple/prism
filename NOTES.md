@@ -2136,3 +2136,56 @@ Built 2026-11-11 (brief 27). Step 6b is done.
     the rule's stray). Minor: NOTES only.
   - The model check is slow on many facets (10 s in a debug build for a
     torus's 5,184); unchanged from 6a. Minor: NOTES only.
+
+## Exact Curves (part 6, step 6c-1): Push/Pull booleans with curved faces
+
+Built 2026-11-11 (brief 27). Step 6c was split as 6b was: **6c-1** (the
+inside test with curved faces, and Push/Pull booleans) is this; **6c-2**
+(stops at curved faces for a pull and a new radius, and the solid overlap
+test for Follow Me) is next.
+
+- **The inside test** (`prism_ops::shell`, used by `solid::Swept` and
+  `solid::keep_boundary`): a ray from a point counts the faces it crosses.
+  Flat faces have exact arcs: an outline with each arc's chord, then the
+  arc's piece of its circle beyond the chord added or taken away. A ray
+  meets a curved surface where the distance to it changes sign along the
+  ray, found in steps of a twentieth of the surface's size and halved down
+  to the crossing (no quartic for a torus; a ray grazing the surface
+  between steps crosses it twice or not at all, which counts the same).
+  A crossing near a face's outline, or tangent, is unsure: the next ray.
+- **Push/Pull** is now a boolean with arcs and curved faces too: the
+  exclusion of faces with arcs and of models with curved faces is gone.
+  `keep_boundary` splits the touched faces where they cross others with
+  `intersect::all_crossings` (arcs exact) and `crossing::curved_crossings`,
+  and tests a point inside each face (on a curved face, from its (θ, s)
+  layout, `shell::interior`). New edges lying on a curved face split it
+  (`cut::split_along`), so a wall on a cylinder's own surface takes its
+  piece of the cylinder with it.
+- **Part of a cap pushed in** (an arc side that would slide down a
+  cylinder with its ends staying): on a solid, every side gets a wall and
+  the solid rule takes what ends up inside (a notch in a cylinder's rim);
+  off a solid it is refused as before.
+- **Fixed on the way:**
+  - Push/Pull's check for an arc that would slide compared the side's
+    points sorted with the slide list's, which keeps them in walking
+    order, so it missed half the cases (the neighbour then got a straight
+    chord where the arc was);
+  - `face_at` goes by the drawn outline, so it finds a disc (it went by
+    corners: a disc has two);
+  - a crossing traced as only its two ends gets a point between them on
+    the crossing first, so a short arc is not taken for a line.
+- **Tests:** `prism-ops/tests/booleans_curved.rs` (a disc pushed into a box:
+  blind hole, then through; a slot pushed across a hole's wall; a notch in
+  a cylinder's rim; a cup in a cylinder's cap; a hole pushed up into a
+  cone; all with exact volumes and the check clean), the inside test on a
+  sphere and a torus (`shell` unit test). `cut.rs`'s box through a
+  cylinder is now placed, not pulled (pulled, it joins the cylinder).
+- **Known gaps, sorted (DECISIONS #33):**
+  - A pull stops at the first face in its way only by corners and edges
+    when that face is curved, and a new radius is not stopped at all:
+    **step 6c-2**, as planned.
+  - The solid overlap test (a Follow Me sweep overlapping itself further
+    along): **step 6c-2**, as planned.
+  - Model Health's "faces inward" check still counts flat faces only (it
+    goes by the enclosed volume when a shell has curved faces, as before).
+    Minor: NOTES only.

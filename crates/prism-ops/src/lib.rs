@@ -25,6 +25,7 @@ mod regions;
 pub mod round;
 pub mod select;
 pub mod settle;
+mod shell;
 pub mod solid;
 pub mod sticky;
 pub mod transform;

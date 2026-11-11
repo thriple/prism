@@ -19,8 +19,8 @@ use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
-use crate::intersect::{Flat, crossings};
-use crate::regions::interior_points;
+use crate::intersect::Flat;
+use crate::shell::{self, Planar, ShellFace};
 
 /// Ray directions for the inside test, tried in turn until one passes
 /// cleanly (not through an edge or along a face). Fixed, so results are
@@ -45,11 +45,11 @@ pub(crate) fn step(tol: &Tol) -> f64 {
 /// block the face sweeps through, pushing in removes it. Knows exactly what
 /// is inside the result, from the solids as they were before the edit.
 pub struct Swept {
-    before: Vec<Flat>,
+    before: Vec<ShellFace>,
     /// Faces of solids before the edit, and every face before the edit.
     solid_ids: BTreeSet<FaceId>,
     all_ids: BTreeSet<FaceId>,
-    face: Flat,
+    face: Planar,
     d: f64,
     tol: Tol,
 }
@@ -62,7 +62,7 @@ impl Swept {
         if !shells.iter().any(|s| s.contains(&face)) {
             return None;
         }
-        let flat = Flat::of(model, face)?;
+        let flat = Planar::of(model, face)?;
         let tol = model.tol();
         // Only solids whose box overlaps the swept block can contain a point
         // near the edit; a ray passes in and out of any other, adding zero.
@@ -75,17 +75,22 @@ impl Swept {
         let mut before = Vec::new();
         let mut solid_ids = BTreeSet::new();
         for shell in shells {
-            let flats: Vec<Flat> = shell.iter().filter_map(|f| Flat::of(model, *f)).collect();
-            let (slo, shi) = flats
+            let faces: Vec<ShellFace> = shell
                 .iter()
-                .fold((DVec3::INFINITY, DVec3::NEG_INFINITY), |(l, h), f| {
-                    (l.min(f.lo), h.max(f.hi))
-                });
+                .filter_map(|f| ShellFace::of(model, *f))
+                .collect();
+            let (slo, shi) =
+                faces
+                    .iter()
+                    .fold((DVec3::INFINITY, DVec3::NEG_INFINITY), |(l, h), f| {
+                        let (a, b) = f.bounds();
+                        (l.min(a), h.max(b))
+                    });
             if shi.cmplt(lo).any() || hi.cmplt(slo).any() {
                 continue;
             }
             solid_ids.extend(shell.iter().copied());
-            before.extend(flats);
+            before.extend(faces);
         }
         Some(Swept {
             before,
@@ -99,7 +104,7 @@ impl Swept {
 
     /// Whether `x` is inside the result. None if the ray test was unsure.
     pub fn inside(&self, x: DVec3) -> Option<bool> {
-        let was = winding(&self.before, x, &self.tol)? >= 1;
+        let was = shell::winding(&self.before, x, &self.tol)? >= 1;
         let swept = self.in_block(x)?;
         Some(if self.d > 0.0 {
             was || swept
@@ -130,15 +135,11 @@ impl Swept {
         if h < lo - t || h > hi + t {
             return Some(false);
         }
-        let q = DVec2::new((x - f.origin).dot(f.u), (x - f.origin).dot(f.v));
-        if near_outline(f, q, t) {
+        let q = f.to_2d(x);
+        if f.near(q, t) {
             return None;
         }
-        let over = point_in_polygon(q, &f.outer) == Inside::Inside
-            && f.holes
-                .iter()
-                .all(|l| point_in_polygon(q, l) == Inside::Outside);
-        if !over {
+        if !f.contains(q) {
             return Some(false);
         }
         if (h - lo).abs() <= t || (h - hi).abs() <= t {
@@ -165,28 +166,16 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
         return;
     }
 
-    // 1. Split where the touched faces cross others.
-    let flats: Vec<(FaceId, Flat)> = model
-        .faces()
-        .filter_map(|(id, _)| Flat::of(model, id).map(|f| (id, f)))
-        .collect();
-    let mut segs = Vec::new();
-    for (i, (a, fa)) in flats.iter().enumerate() {
-        if !near.contains(a) {
-            continue;
-        }
-        for (j, (b, fb)) in flats.iter().enumerate() {
-            if i == j || (near.contains(b) && j < i) {
-                continue;
-            }
-            segs.extend(crossings(fa, fb, &tol));
-        }
-    }
+    // 1. Split where the touched faces cross others: flat with flat (arcs
+    //    exact), and curved with anything (Exact Curves 6c).
+    let segs = crate::intersect::all_crossings(model, Some(&near));
+    let pieces = crate::crossing::curved_crossings(model, Some(&near));
     let (mut lo, mut hi) = (DVec3::INFINITY, DVec3::NEG_INFINITY);
-    for (id, f) in &flats {
-        if near.contains(id) {
-            lo = lo.min(f.lo);
-            hi = hi.max(f.hi);
+    for id in &near {
+        if let Some(f) = ShellFace::of(model, *id) {
+            let (a, b) = f.bounds();
+            lo = lo.min(a);
+            hi = hi.max(b);
         }
     }
     if let Some(sw) = swept {
@@ -197,11 +186,18 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
     for (a, b) in &segs {
         crate::add_segment(model, *a, *b);
     }
+    for p in &pieces {
+        crate::crossing::add_piece(model, p);
+    }
+    if !pieces.is_empty() {
+        crate::cut::split_curved(model, None);
+    }
+    let cut = !segs.is_empty() || !pieces.is_empty();
     // Rebuild the planes around the edit, so every face is cut along every
     // edge in its plane (a crossing can run along an edge that was there
     // already, which adds nothing).
     if let Some(sw) = swept
-        && !segs.is_empty()
+        && cut
     {
         // Every face that reaches into the swept block (where the solid
         // changed), cut along every edge in its plane.
@@ -228,7 +224,7 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
     //    sweep: faces of the solids before, and faces the edit made (a lone
     //    rectangle nearby is never touched). Without: closed shells now.
     let candidates: Vec<FaceId>;
-    let counted: Vec<Flat>;
+    let counted: Vec<ShellFace>;
     match swept {
         Some(sw) => {
             candidates = model
@@ -242,14 +238,14 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
             candidates = closed_faces(model);
             counted = candidates
                 .iter()
-                .filter_map(|id| Flat::of(model, *id))
+                .filter_map(|id| ShellFace::of(model, *id))
                 .collect();
         }
     }
     let inside = |x: DVec3| -> Option<bool> {
         match swept {
             Some(sw) => sw.inside(x),
-            None => winding(&counted, x, &tol).map(|w| w >= 1),
+            None => shell::winding(&counted, x, &tol).map(|w| w >= 1),
         }
     };
 
@@ -261,20 +257,17 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
     let mut inside_faces = Vec::new();
     let mut backwards = Vec::new();
     for id in &candidates {
-        let Some(f) = Flat::of(model, *id) else {
+        let Some(sf) = ShellFace::of(model, *id) else {
             continue;
         };
-        if (f.hi + pad).cmplt(lo).any() || (hi + pad).cmplt(f.lo).any() {
+        let (flo, fhi) = sf.bounds();
+        if (fhi + pad).cmplt(lo).any() || (hi + pad).cmplt(flo).any() {
             continue;
         }
-        let loops: Vec<Vec<DVec2>> = std::iter::once(f.outer.clone())
-            .chain(f.holes.iter().cloned())
-            .collect();
         // The first point on the face where both sides give a clear answer.
-        let sides = interior_points(&loops).into_iter().find_map(|q| {
-            let c = f.origin + f.u * q.x + f.v * q.y;
-            Some((inside(c + f.normal * step)?, inside(c - f.normal * step)?))
-        });
+        let sides = shell::interior(model, *id)
+            .into_iter()
+            .find_map(|(c, n)| Some((inside(c + n * step)?, inside(c - n * step)?)));
         let Some((front, back)) = sides else {
             continue;
         };
