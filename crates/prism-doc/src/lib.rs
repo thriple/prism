@@ -221,6 +221,12 @@ pub enum Command {
         size: f64,
         fillet: bool,
     },
+    /// Sweep a profile face along a path of lines (Follow Me, Exact Curves
+    /// 5c).
+    FollowMe {
+        path: BTreeSet<prism_topo::EdgeId>,
+        profile: FaceId,
+    },
 }
 
 /// How groups are moved, turned or scaled.
@@ -369,6 +375,7 @@ impl Command {
             Command::EraseInstances { .. } => "Erase",
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
+            Command::FollowMe { .. } => "Follow Me",
         }
     }
 
@@ -618,6 +625,7 @@ impl Command {
             Command::RoundEdge { edge, size, fillet } => {
                 prism_ops::round::refusal(m, *edge, *size, *fillet)
             }
+            Command::FollowMe { path, profile } => prism_ops::follow::refusal(m, path, *profile),
             Command::Offset { face, .. } if m.face(*face).is_some_and(|f| f.is_curved()) => {
                 Some(prism_ops::offset::CURVED_OFFSET)
             }
@@ -665,6 +673,9 @@ impl Command {
             }
             Command::RoundEdge { edge, size, fillet } => {
                 prism_ops::round::round(m, *edge, *size, *fillet);
+            }
+            Command::FollowMe { path, profile } => {
+                prism_ops::follow::follow(m, path, *profile);
             }
             Command::Arc {
                 centre,

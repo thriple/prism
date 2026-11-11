@@ -1841,3 +1841,49 @@ Built 2026-11-10 (brief 26). No new tool: Follow Me (5c, 5d) makes these.
   Faces, sticky crossings and `reach::limit` ignore these surfaces;
   Push/Pull gives them no new size.
 
+## Exact Curves (part 5, step 5c): Follow Me along lines
+
+Built 2026-11-11 (brief 26).
+
+- **The operation** (`prism_ops::follow`): a flat profile face swept along a
+  chain of lines. The path starts at the end (or, closed, the corner)
+  nearest the profile; lines in a row are merged. The profile is projected
+  square to the first line (moved only if no other face shares its points,
+  else refused), carried along each line to the corner's halving (mitre)
+  plane, and ends square to the last line. An open path keeps the profile
+  as the start cap and adds an end cap; a closed path makes a ring and the
+  profile face goes.
+- **Walls:** profile lines make flat walls; profile arcs make cylinder
+  walls, so only on a single straight line square to them (`ARCS`
+  otherwise). Where the profile turns smoothly into or between arcs, the
+  lines along the sweep are soft and smooth.
+- **Refusals** (through `Command::refusal`): no path (`NO_PATH`), not one
+  chain of lines (`NOT_A_PATH`, also when the path uses the profile's own
+  edges), not a flat profile, a profile along the first line, a tilted
+  profile joined to other faces, arcs at a corner or tilted, and a corner
+  too sharp for the profile's width (a point would travel backwards to the
+  mitre: `CROSSES_ITSELF`).
+- **A closed path always closes.** Carrying points along each line onto
+  the corners' halving planes brings the profile back exactly, flat path
+  or not (checked numerically and by test), so `RING_TWISTS` is only a
+  safety net.
+- **The command** `Command::FollowMe { path, profile }` ("Follow Me" in
+  Undo). **The tool** `tool.followme` (`session/follow.rs`): select the
+  path, then click the profile face; with nothing selected the hint says to
+  select a path first; a refusal shows its reason in the hint. Greyed
+  until part 6 ends; MCP `use_tool` reaches it.
+- **Tests:** an L path (mitred, exact volume at three sizes), a ring (and a
+  ring whose path is not flat), a disc along a line (a cylinder, soft
+  seams, exact volume), a tilted free profile squared up, each refusal; the
+  tool by clicks with undo; MCP `use_tool`.
+- **Known gaps, sorted (DECISIONS #33):**
+  - A sweep that overlaps itself further along (a profile wider than a
+    later line, turning back) is not caught: only folding at a corner is.
+    Step 6c (Push/Pull booleans) adds the solid overlap test and uses it
+    here too.
+  - The sweep is not stuck to what it touches (no welding or splitting
+    against existing faces). Step 6b (sticky crossings) covers it.
+  - A path through the profile's own face (drawn from its middle, as in
+    SketchUp) is not tested: step 5d's tests add it.
+  - Arcs in the path and Alt (a face's perimeter): step 5d.
+

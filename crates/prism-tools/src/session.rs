@@ -28,6 +28,7 @@ use crate::select::box_select;
 mod arcs;
 mod construct;
 mod edit;
+mod follow;
 mod groups;
 mod health;
 mod round;
@@ -38,6 +39,7 @@ pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
+pub use follow::FOLLOW;
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
 pub use round::FILLET;
@@ -295,6 +297,7 @@ pub struct Session {
     round_size: Option<f64>,
     round_last: Option<(prism_topo::EdgeId, bool)>,
     round_notice: Option<&'static str>,
+    follow_notice: Option<&'static str>,
     /// The Scale tool: the grip under the cursor, and whether it scales
     /// about the centre (Alt).
     scale_grip: Option<[u8; 3]>,
@@ -414,6 +417,7 @@ impl Session {
             round_size: None,
             round_last: None,
             round_notice: None,
+            follow_notice: None,
             scale_grip: None,
             scale_centre: false,
             shape_radius: None,
@@ -822,6 +826,7 @@ impl Session {
         self.last_fillet = None;
         self.round_last = None;
         self.round_notice = None;
+        self.follow_notice = None;
         self.boxing = None;
         self.typed.clear();
         self.lock = Lock::None;

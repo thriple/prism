@@ -2601,3 +2601,46 @@ fn a_cube_has_a_box_with_grips_all_round() {
     assert!((hi.x - 2.0).abs() < 1e-9);
     valid(&d);
 }
+
+/// Follow Me (brief 26, step 5c): select a path, then click the profile.
+#[test]
+fn follow_me_sweeps_the_clicked_profile_along_the_selected_path() {
+    use prism_tools::session::FOLLOW;
+    let mut m = prism_topo::Model::new();
+    let c = [(-0.5, 1.5), (0.5, 1.5), (0.5, 2.5), (-0.5, 2.5)].map(|(y, z)| DVec3::new(0.0, y, z));
+    for i in 0..4 {
+        prism_ops::add_segment(&mut m, c[i], c[(i + 1) % 4]);
+    }
+    prism_ops::add_segment(&mut m, DVec3::ZERO, DVec3::new(4.0, 0.0, 0.0));
+    prism_ops::add_segment(&mut m, DVec3::new(4.0, 0.0, 0.0), DVec3::new(4.0, 3.0, 0.0));
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(6.0, -8.0, 9.0),
+        target: DVec3::new(2.0, 1.0, 1.0),
+    });
+    // With nothing selected it says to select a path.
+    d.tool(FOLLOW);
+    assert_eq!(d.s.hint(), prism_ops::follow::NO_PATH);
+    d.click(DVec3::new(0.0, 0.0, 2.0));
+    assert_eq!(d.faces(), 1, "nothing made");
+    // Select the two lines, then click the profile.
+    d.tool(SELECT);
+    let a = d.screen(DVec3::new(2.0, 0.0, 0.0));
+    d.click_px(a, false, false);
+    let b = d.screen(DVec3::new(4.0, 1.5, 0.0));
+    d.click_px(b, true, false);
+    assert_eq!(d.s.selection().edges.len(), 2);
+    d.tool(FOLLOW);
+    assert!(d.s.hint().contains("profile"), "{}", d.s.hint());
+    d.click(DVec3::new(0.0, 0.0, 2.0));
+    assert_eq!(d.faces(), 2 + 4 * 2, "two caps, four walls a line");
+    valid(&d);
+    let v: f64 =
+        d.s.model()
+            .faces()
+            .map(|(id, _)| prism_ops::health::face_volume(d.s.model(), id))
+            .sum();
+    assert!((v - 7.0).abs() < 1e-9, "{v}");
+    undo(&mut d);
+    assert_eq!(d.faces(), 1, "one undo");
+}

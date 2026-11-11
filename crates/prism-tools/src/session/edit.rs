@@ -15,6 +15,7 @@ use prism_view::pick::{self, Hit};
 use prism_view::style::alpha;
 
 use super::construct::{OFFSET, PROTRACTOR, TAPE};
+use super::follow::FOLLOW;
 use super::round::FILLET;
 use super::{LastOp, Session, rect_basis};
 
@@ -120,7 +121,7 @@ pub(super) enum EditOp {
 pub(super) fn is_edit(t: &str) -> bool {
     matches!(
         t,
-        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR | FILLET
+        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR | FILLET | FOLLOW
     )
 }
 
@@ -238,6 +239,7 @@ impl Session {
     pub(super) fn edit_hover(&mut self, s: DVec2, view: &View) {
         match self.tool.as_str() {
             FILLET => self.round_hover(s, view),
+            FOLLOW => self.follow_hover(s, view),
             PUSH => {
                 if let Some(EditOp::Push { .. }) = &self.edit {
                     self.push_drag(s, view);
@@ -712,6 +714,7 @@ impl Session {
     pub(super) fn edit_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
         match self.tool.as_str() {
             FILLET => self.round_press(s, ctrl),
+            FOLLOW => self.follow_press(),
             PUSH => self.push_press(s, n_clicks),
             ERASE => {
                 let mut edges = BTreeSet::new();
@@ -1272,6 +1275,7 @@ impl Session {
                 "Drag a grip: corners scale evenly, edges two ways, faces one way · Alt toggles scaling about the centre · click something to pick it"
             }
             (FILLET, _) => self.round_hint(),
+            (FOLLOW, _) => self.follow_hint(),
             (ERASE, _) => {
                 "Click or drag over edges to erase them (with the faces they bound) · Ctrl softens · Ctrl+Shift unsoftens"
             }

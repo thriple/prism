@@ -62,7 +62,9 @@ Updated 2026-11-09 (Guam), before a context compaction.
   surfaces described by `Revolution` in (θ, s), `Model::param_loop`,
   exact volumes, file layout 5 / schema 6, grid shading
   `prism_view::tess::turned`, picking onto the surface, MCP; NOTES has
-  the details and gaps). Next is 5c: Follow Me along lines. Then 5d
+  the details and gaps). 5c is built (2026-11-11: `prism_ops::follow`,
+  `Command::FollowMe`, the tool `tool.followme`, greyed; NOTES has its
+  sorted gaps). Next is 5d
   (Follow Me along arcs, making cones, spheres and tori: lay faces out as
   rectangles in (θ, s), split by seams like `scenes::sphere`/`torus`, so
   they take the fast grid). Then **part 6** (owner, 2026-11-11, DECISIONS

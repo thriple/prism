@@ -11,6 +11,7 @@
 
 pub mod check;
 pub mod fillet;
+pub mod follow;
 pub mod health;
 pub mod intersect;
 pub mod offset;

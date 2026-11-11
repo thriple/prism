@@ -834,6 +834,42 @@ mod tests {
         assert_eq!(radii, [&json!(0.25)], "{g}");
     }
 
+    /// Follow Me is greyed until Exact Curves is done, but reachable here
+    /// (brief 26, step 5c): select a line, then click the profile.
+    #[test]
+    fn use_tool_follows_a_path_with_a_profile() {
+        let mut m = prism_topo::Model::new();
+        let c = [(-0.5, 1.5), (0.5, 1.5), (0.5, 2.5), (-0.5, 2.5)]
+            .map(|(y, z)| prism_math::DVec3::new(0.0, y, z));
+        for i in 0..4 {
+            prism_ops::add_segment(&mut m, c[i], c[(i + 1) % 4]);
+        }
+        prism_ops::add_segment(
+            &mut m,
+            prism_math::DVec3::ZERO,
+            prism_math::DVec3::new(3.0, 0.0, 0.0),
+        );
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::with_model(m));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        value(h.call("run_action", &json!({"id": "cam.extents"})));
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.select", "steps": [{"click": [1.5, 0, 0]}]}),
+        ));
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.followme", "steps": [{"click": [0, 0, 2]}]}),
+        ));
+        assert_eq!(r["model"]["faces"], 6, "a box along the line: {r}");
+    }
+
     #[test]
     fn geometry_lists_a_cylinder_face() {
         let mut doc = prism_doc::Document::new();
