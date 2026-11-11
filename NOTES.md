@@ -2004,3 +2004,73 @@ Built 2026-11-11 (brief 27, DECISIONS #32).
   - A line meeting an arc at a corner, with a wide profile, is still
     refused (`CROSSES_ITSELF`): the arc's first chord is short, and the
     sweep really does fold there. Correct, not a gap.
+
+## Exact Curves (part 6, step 6b-1): planes meet curved faces exactly
+
+Built 2026-11-11 (brief 27). Step 6b was split as the brief allowed:
+**6b-1** (crossings, cutting curved faces, Intersect Faces) is this;
+**6b-2** (sticky geometry: drawing across curved faces, Follow Me's result
+welded, and faceting cut faces) is next.
+
+- **Cutting a curved face** (`prism_ops::cut::split_face`,
+  `split_curved`): the edges lying on a face's surface inside it split it,
+  by the same region tracing flat faces use, done in (θ, s). Each loop is
+  walked side by side and unwrapped; a pole (or a cone's apex) is a short
+  stretch along s = constant between the angles of the sides at it, and a
+  cut ending at the pole lands on that stretch at its own angle. Islands
+  become holes. A face laid out clockwise (pointing into its surface) is
+  mirrored for the tracing. Faces that wind round the axis (a band with no
+  seam) cannot be laid out and are left alone (Prism never makes one).
+- **Where a curved face crosses another face** (`prism_ops::crossing`):
+  traced on a grid in the curved face's (θ, s) (half the chord rule's
+  step), every point then put on the crossing by Newton steps; cut where
+  it leaves either face, each end put exactly on the edge it crosses (on
+  that edge and on the other surface). A crossing whose exact points all
+  lie on one line or circle is kept as that line or arc, so the exact
+  cases of the table (a plane square to the axis or through it, any plane
+  through a sphere, a plane parallel to a cylinder's axis, surfaces on one
+  axis) need no case list. Everything else (a slanted cut through a
+  cylinder or cone, two cylinders crossing) is fine segments marked
+  approximate, chosen from the traced points by the chord rule.
+  Two faces on one surface (neighbouring halves of a cylinder) are skipped.
+- **Intersect Faces** now includes curved faces, and flat faces with arcs
+  (a cylinder's end discs): those are clipped by their drawn outline and
+  the ends then put exactly on the arcs. **Model Health**'s Crossing faces
+  row finds curved crossings too. MCP: `run_action isect.model` cuts a
+  cylinder (tested).
+- **The model check** lays out every curved face in (θ, s) by
+  `param_loop` (cylinders used the older `unrolled`, which starts each
+  loop at 0, so a hole in a cylinder face was reported outside it), and
+  moves each hole by whole turns into its outer loop.
+- **Fixed on the way:** an arc drawn between two points already joined by
+  an arc of the same centre and radius in another plane was taken for that
+  arc and not added (`sticky::add_arc_from`'s "the same arc" test only
+  checked that the axes pointed the same half-way).
+- **Tests:** `prism-ops/tests/cut.rs` (a cylinder cut square to its axis,
+  through it and slanted; a sphere cut by a slanted plane and through its
+  poles; a torus cut square to its axis; a box through a cylinder; two
+  cylinders crossing; check clean, volumes kept, nothing left to cut, Model
+  Health), `curved.rs` (a square through a cylinder and its discs), the
+  MCP test.
+- **Known gaps, sorted (DECISIONS #33):**
+  - Faceting a cut curved face (an uneven Scale of it) still needs a
+    rectangle in (θ, s) (6a's gap). Until then an uneven Scale of a curved
+    face that is not one is refused (`CUT_CURVED_SCALE`, checked with
+    `approx::can_facet`; the undo property test found the wrong surface it
+    left before): **step 6b-2** facets any loop and drops the refusal.
+  - Two crossings that cross each other in the middle of a curved face are
+    not split where they meet, so the face is not cut along them there.
+    Intersect Faces' crossings meet at their ends in every case tested;
+    drawing across a face (6b-2) needs it: **step 6b-2**.
+  - Drawing a line, rectangle or circle across a curved face does not cut
+    it yet; Follow Me's result is not welded where it meets other faces;
+    snapping only sees crossings once they are edges: **step 6b-2**, as
+    planned.
+  - A crossing smaller than a grid step (about 2.5°, or a plane barely
+    grazing a sphere) can be missed, and a plane only touching a surface
+    (along a line, or at a point) adds nothing. Minor: NOTES only.
+  - Fine segments follow the chord rule alone, not the drawing minimum
+    `fine_count` uses. Within the 1/1000 rule; minor, NOTES only.
+  - A crossing ending on an approximate edge ends on its chord, not on the
+    curve the chord stands for (it cannot do better), and the face it lies
+    on is then not cut there. Minor: NOTES only.

@@ -610,6 +610,26 @@ fn crossing_faces(model: &Model, tol: &Tol) -> BTreeSet<FaceId> {
             }
         }
     }
+    // Curved faces, traced in (θ, s) against every other face (Exact
+    // Curves 6b); `crossings_with` skips pairs whose boxes miss.
+    let curved: Vec<FaceId> = model
+        .faces()
+        .filter(|(_, f)| f.is_curved())
+        .map(|(id, _)| id)
+        .collect();
+    let all: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
+    for &a in &curved {
+        for &b in &all {
+            let b_curved = model.face(b).is_some_and(|f| f.is_curved());
+            if b == a || (b_curved && b < a) {
+                continue;
+            }
+            if !crate::crossing::crossings_with(model, a, b).is_empty() {
+                out.insert(a);
+                out.insert(b);
+            }
+        }
+    }
     out
 }
 

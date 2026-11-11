@@ -8,6 +8,7 @@
 
 use std::collections::BTreeSet;
 
+use prism_geom::{Curve, circle_line};
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Tol};
 use prism_topo::{FaceId, Model};
@@ -52,6 +53,36 @@ impl Flat {
         })
     }
 
+    /// A flat face's form with its arcs as their drawn points (a curved
+    /// crossing is clipped against it, then put exactly on the edge).
+    pub(crate) fn drawn(m: &Model, id: FaceId) -> Option<Flat> {
+        let f = m.face(id)?;
+        let plane = *f.plane()?;
+        let frame = plane.frame();
+        let loops = m.face_loop_points(f);
+        let to2 = |l: &[DVec3]| -> Vec<DVec2> { l.iter().map(|p| frame.to_2d(*p)).collect() };
+        let pts: Vec<DVec3> = loops.iter().flatten().copied().collect();
+        let (lo, hi) = pts
+            .iter()
+            .fold((pts[0], pts[0]), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+        Some(Flat {
+            origin: frame.origin,
+            u: frame.u,
+            v: frame.v,
+            normal: plane.normal,
+            outer: to2(&loops[0]),
+            holes: loops[1..].iter().map(|h| to2(h)).collect(),
+            lo,
+            hi,
+        })
+    }
+
+    /// Whether a point of the plane is inside the face or on its outline.
+    pub(crate) fn holds(&self, p: DVec3, d: f64) -> bool {
+        let q = self.to_2d(p);
+        self.inside(q) || self.on_outline(q, d)
+    }
+
     fn to_2d(&self, p: DVec3) -> DVec2 {
         let d = p - self.origin;
         DVec2::new(d.dot(self.u), d.dot(self.v))
@@ -66,6 +97,10 @@ impl Flat {
     }
 
     /// Within `d` of the outline or a hole's outline.
+    pub(crate) fn on_outline_3d(&self, p: DVec3, d: f64) -> bool {
+        self.on_outline(self.to_2d(p), d)
+    }
+
     fn on_outline(&self, q: DVec2, d: f64) -> bool {
         std::iter::once(&self.outer)
             .chain(self.holes.iter())
@@ -195,11 +230,18 @@ pub fn crossings(a: &Flat, b: &Flat, tol: &Tol) -> Vec<(DVec3, DVec3)> {
 /// Every crossing in the model, or only those involving `only`.
 pub fn all_crossings(m: &Model, only: Option<&BTreeSet<FaceId>>) -> Vec<(DVec3, DVec3)> {
     let tol = m.tol();
+    // Faces with arcs are clipped by their drawn outline, and the ends
+    // then put exactly on the arcs (Exact Curves 6b).
     let faces: Vec<(FaceId, Flat)> = m
         .faces()
-        // Faces with arcs cross other faces in curves: Exact Curves part 4.
-        .filter(|(id, _)| !m.face_has_arcs(*id))
-        .filter_map(|(id, _)| Flat::of(m, id).map(|f| (id, f)))
+        .filter_map(|(id, _)| {
+            if m.face_has_arcs(id) {
+                Flat::drawn(m, id)
+            } else {
+                Flat::of(m, id)
+            }
+            .map(|f| (id, f))
+        })
         .collect();
     let mut out = Vec::new();
     for i in 0..faces.len() {
@@ -210,19 +252,91 @@ pub fn all_crossings(m: &Model, only: Option<&BTreeSet<FaceId>>) -> Vec<(DVec3, 
             {
                 continue;
             }
-            out.extend(crossings(&faces[i].1, &faces[j].1, &tol));
+            let segs = crossings(&faces[i].1, &faces[j].1, &tol);
+            let (fi, fj) = (faces[i].0, faces[j].0);
+            if m.face_has_arcs(fi) || m.face_has_arcs(fj) {
+                out.extend(
+                    segs.into_iter()
+                        .map(|(a, b)| onto_arcs(m, &[fi, fj], a, b, &tol))
+                        .filter(|(a, b)| a.distance(*b) > tol.dist * 10.0),
+                );
+            } else {
+                out.extend(segs);
+            }
         }
     }
     out
 }
 
+/// Each end of the crossing `a`–`b` that lies on a drawn arc of `faces`,
+/// moved along the crossing's line onto the exact arc.
+fn onto_arcs(m: &Model, faces: &[FaceId], a: DVec3, b: DVec3, tol: &Tol) -> (DVec3, DVec3) {
+    let arcs: Vec<(Curve, DVec3, DVec3)> = faces
+        .iter()
+        .filter_map(|f| m.face(*f))
+        .flat_map(|f| f.edge_ids().collect::<Vec<_>>())
+        .filter_map(|e| m.edge(e))
+        .filter(|e| e.curve.is_arc())
+        .map(|e| (e.curve, m.vertex(e.a), m.vertex(e.b)))
+        .collect();
+    let dir = (b - a).normalize_or_zero();
+    let len = a.distance(b);
+    let snap = |x: DVec3| -> DVec3 {
+        arcs.iter()
+            .filter_map(|(c, pa, pb)| {
+                let Curve::Arc {
+                    centre,
+                    axis,
+                    radius,
+                } = *c
+                else {
+                    return None;
+                };
+                // Within the drawn arc's sag of the arc.
+                let near = radius * 0.05 + tol.dist;
+                if c.closest_point(*pa, *pb, x).distance(x) > near {
+                    return None;
+                }
+                circle_line(
+                    centre,
+                    axis,
+                    radius,
+                    a - dir * (len + radius),
+                    b + dir * (len + radius),
+                    tol.dist,
+                )
+                .into_iter()
+                .filter(|q| c.closest_point(*pa, *pb, *q).distance(*q) <= tol.dist)
+                .filter(|q| q.distance(x) <= near)
+                .min_by(|p, q| p.distance(x).total_cmp(&q.distance(x)))
+            })
+            .min_by(|p, q| p.distance(x).total_cmp(&q.distance(x)))
+            .unwrap_or(x)
+    };
+    (snap(a), snap(b))
+}
+
 /// Intersect Faces: every crossing (or those involving `only`) becomes an
-/// edge, and the faces split along them. Returns how many segments were
-/// added.
+/// edge, and the faces split along them: flat faces as drawing splits
+/// them, curved faces in (θ, s) (Exact Curves 6b). Returns how many
+/// crossings were added (a curved one counts once, however many segments
+/// it is).
 pub fn intersect_faces(m: &mut Model, only: Option<&BTreeSet<FaceId>>) -> usize {
     let segs = all_crossings(m, only);
+    let pieces = crate::crossing::curved_crossings(m, only);
+    let curved: BTreeSet<FaceId> = m
+        .faces()
+        .filter(|(_, f)| f.is_curved())
+        .map(|(id, _)| id)
+        .collect();
     for (a, b) in &segs {
         crate::add_segment(m, *a, *b);
     }
-    segs.len()
+    for p in &pieces {
+        crate::crossing::add_piece(m, p);
+    }
+    if !pieces.is_empty() {
+        crate::cut::split_curved(m, Some(&curved));
+    }
+    segs.len() + pieces.len()
 }

@@ -61,6 +61,11 @@ pub const HOLE_FACE_WOULD_FOLD: &str =
 /// Said when a move would bend a curved face.
 pub const CURVED_WOULD_BEND: &str = "Refused: a curved face would bend. Move all of it.";
 
+/// Said when an uneven scale meets a curved face that has been cut (it
+/// cannot be made into facets yet: Exact Curves step 6b-2).
+pub const CUT_CURVED_SCALE: &str =
+    "Refused: a cut curved face cannot be scaled unevenly yet. Scale it evenly.";
+
 /// Whether moving `vs` by `m` keeps every arc an arc and its faces flat:
 /// each arc with an end in `vs` has both there, `m` scales evenly if any
 /// does, and a face with arcs (or with holes and an arc's end) that moves
@@ -90,6 +95,17 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
     });
     if curved_bends {
         return Some(CURVED_WOULD_BEND);
+    }
+    // Scaled unevenly, a curved face moved whole becomes facets, which
+    // needs it uncut for now.
+    let cut = model.faces().any(|(id, f)| {
+        f.is_curved()
+            && f.surface.transformed(m).is_none()
+            && f.loops().flatten().all(|v| vs.contains(v))
+            && !crate::approx::can_facet(model, id)
+    });
+    if cut {
+        return Some(CUT_CURVED_SCALE);
     }
     let tol = model.tol();
     // Arc ends: a face with holes that bends is flattened by moving its

@@ -114,27 +114,26 @@ pub fn segment_arcs(model: &mut Model, edges: &[EdgeId]) {
     }
 }
 
-/// Replace curved face `id` by flat facets on a grid in (θ, s), if its
-/// loop is a rectangle there (as every face Push/Pull, Fillet and Follow
-/// Me make is). Facets between grid points are exactly flat on every
-/// turned surface (two points on each of two circles about the axis, at
-/// the same two angles, make an isosceles trapezoid), so they stay flat
-/// under any affine map. The lines between facets are soft, smooth and
-/// approximate; the face's own edges are split into approximate segments.
-/// False if the face is not such a rectangle (it is left as it is).
-pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
-    let Some(f) = model.face(id).cloned() else {
-        return false;
-    };
-    let Some(rev) = f.surface.revolution() else {
-        return false;
-    };
+/// What faceting a face needs, found without changing anything: None if
+/// the face is not a rectangle in (θ, s) with grid points on its border.
+struct Plan {
+    face: Face,
+    rev: prism_geom::Revolution,
+    grid: Grid,
+    sides: Vec<(EdgeId, DVec2, DVec2, bool)>,
+    nt: usize,
+    ns: usize,
+}
+
+fn plan(model: &Model, id: FaceId) -> Option<Plan> {
+    let f = model.face(id).cloned()?;
+    let rev = f.surface.revolution()?;
     if !f.holes.is_empty() {
-        return false;
+        return None;
     }
     let pl = model.param_loop(&f, 0);
     if pl.len() < 2 {
-        return false;
+        return None;
     }
     let ang = 1e-9;
     let (mut t0, mut t1, mut s0, mut s1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
@@ -145,7 +144,7 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
         s1 = s1.max(q.y);
     }
     if t1 - t0 <= ang || s1 - s0 <= ang * (1.0 + s1.abs().max(s0.abs())) {
-        return false;
+        return None;
     }
     let near = |a: f64, b: f64| (a - b).abs() <= ang * (1.0 + a.abs().max(b.abs()));
     // Every side runs along the rectangle's border, square to an axis.
@@ -155,7 +154,7 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
         let along_s = near(a.y, b.y) && (near(a.y, s0) || near(a.y, s1));
         let along_t = near(a.x, b.x) && (near(a.x, t0) || near(a.x, t1));
         if !along_s && !along_t {
-            return false;
+            return None;
         }
     }
     let circle = matches!(rev.profile, prism_geom::Profile::Circle { .. });
@@ -195,12 +194,8 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
     let mut sides: Vec<(EdgeId, DVec2, DVec2, bool)> = Vec::with_capacity(m);
     for i in 0..m {
         let (va, vb) = (f.outer[i], f.outer[(i + 1) % m]);
-        let Some(e) = f.loop_edge_ids(0).get(i).copied() else {
-            return false;
-        };
-        let Some(x) = model.edge(e).copied() else {
-            return false;
-        };
+        let e = f.loop_edge_ids(0).get(i).copied()?;
+        let x = model.edge(e).copied()?;
         let mid = x.curve.point(model.vertex(x.a), model.vertex(x.b), 0.5);
         let (qa, qb) = (place(model, va, mid), place(model, vb, mid));
         // Points already on the border must be grid points.
@@ -208,11 +203,50 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
             let ok = ((near(q.y, s0) || near(q.y, s1)) && on_grid(q.x, &grid.t))
                 || ((near(q.x, t0) || near(q.x, t1)) && on_grid(q.y, &grid.s));
             if !ok {
-                return false;
+                return None;
             }
         }
         sides.push((e, qa, qb, x.a == va));
     }
+    Some(Plan {
+        face: f,
+        rev,
+        grid,
+        sides,
+        nt,
+        ns,
+    })
+}
+
+/// Whether [`facet`] can facet curved face `id` (a face cut by Intersect
+/// Faces cannot yet: step 6b-2).
+pub fn can_facet(model: &Model, id: FaceId) -> bool {
+    plan(model, id).is_some()
+}
+
+/// Replace curved face `id` by flat facets on a grid in (θ, s), if its
+/// loop is a rectangle there (as every face Push/Pull, Fillet and Follow
+/// Me make is). Facets between grid points are exactly flat on every
+/// turned surface (two points on each of two circles about the axis, at
+/// the same two angles, make an isosceles trapezoid), so they stay flat
+/// under any affine map. The lines between facets are soft, smooth and
+/// approximate; the face's own edges are split into approximate segments.
+/// False if the face is not such a rectangle (it is left as it is).
+pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
+    let Some(Plan {
+        face: f,
+        rev,
+        grid,
+        sides,
+        nt,
+        ns,
+    }) = plan(model, id)
+    else {
+        return false;
+    };
+    let ang = 1e-9;
+    let near = |a: f64, b: f64| (a - b).abs() <= ang * (1.0 + a.abs().max(b.abs()));
+    let tol = model.tol();
     // Split each side at the grid points inside it.
     for (e, qa, qb, forward) in sides {
         let Some(x) = model.edge(e).copied() else {

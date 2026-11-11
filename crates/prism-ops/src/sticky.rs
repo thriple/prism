@@ -467,7 +467,11 @@ fn add_arc_from(
                             axis: a2,
                             radius: r2,
                         },
-                    ) => tol.same_point(c1, c2) && a1.dot(a2) > 0.0 && (r1 - r2).abs() < tol.dist,
+                    ) => {
+                        tol.same_point(c1, c2)
+                            && a1.dot(a2) > 1.0 - 1e-9
+                            && (r1 - r2).abs() < tol.dist
+                    }
                     _ => false,
                 }
         })

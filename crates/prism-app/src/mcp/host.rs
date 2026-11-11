@@ -841,6 +841,62 @@ mod tests {
     }
 
     #[test]
+    fn intersect_faces_cuts_a_cylinder() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.circle", "steps": [{"click": [0, 0, 0]}, {"click": [0.5, 0, 0]}]}),
+        ));
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.push", "steps": [{"click": [0.1, 0.1, 0]}, {"move": [0.1, 0.1, 0.3]}, {"type": "1.5"}]}),
+        ));
+        // An upright square through the cylinder, at y = 0.2: up, across
+        // and down by typed lengths, then back to the start.
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.line", "steps": [
+                {"click": [-1, 0.2, 0]}, {"move": [-1, 0.2, 1]}, {"type": "2"},
+                {"move": [0, 0.2, 2]}, {"type": "2"},
+                {"move": [1, 0.2, 1]}, {"type": "2"},
+                {"click": [-1, 0.2, 0]}
+            ]}),
+        ));
+        let cylinders = |h: &mut AppHost| -> usize {
+            let g = value(h.call("get_geometry", &json!({})));
+            g["faces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|f| f["cylinder"].is_object())
+                .count()
+        };
+        assert_eq!(cylinders(&mut h), 2);
+        value(h.call("run_action", &json!({"id": "isect.model"})));
+        // Two lines down the side cut the half they cross in three
+        // (Exact Curves 6b).
+        assert_eq!(cylinders(&mut h), 4);
+        // Nothing crosses any more and nothing is off its curve (the
+        // square sticking through the solid leaves open and shared edges).
+        let health = value(h.call("get_health", &json!({})));
+        for row in health.as_array().unwrap() {
+            if ["crossing", "arcs", "approx", "degenerate"]
+                .contains(&row["check"].as_str().unwrap())
+            {
+                assert_eq!(row["count"], 0, "{health}");
+            }
+        }
+    }
+
+    #[test]
     fn use_tool_fillets_a_box_edge() {
         let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
         let (mut tabs, mut tool) = (Vec::new(), "tool.select");

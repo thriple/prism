@@ -18,14 +18,10 @@ pub fn problems(model: &Model) -> Vec<String> {
     out
 }
 
-/// Loop `k` of a curved face, flat: a cylinder unrolled, other turned
-/// surfaces as (θ, s). Counter-clockwise when the face points outward.
+/// Loop `k` of a curved face, flat, as (θ, s) on its turned surface.
+/// Counter-clockwise when the face points outward.
 fn curved_2d(model: &Model, face: &prism_topo::Face, k: usize) -> Vec<DVec2> {
-    let pts = match face.surface {
-        prism_geom::Surface::Cylinder(_) => model.unrolled(face, k),
-        _ => model.param_loop(face, k),
-    };
-    pts.into_iter().map(|x| x.1).collect()
+    model.param_loop(face, k).into_iter().map(|x| x.1).collect()
 }
 
 fn loops_2d(model: &Model, f: FaceId) -> Vec<Vec<DVec2>> {
@@ -33,10 +29,24 @@ fn loops_2d(model: &Model, f: FaceId) -> Vec<Vec<DVec2>> {
         return vec![];
     };
     let Some(pl) = face.plane() else {
-        // A curved face, unrolled flat.
-        return (0..=face.holes.len())
+        // A curved face, laid out flat; each hole moved by whole turns
+        // into the outer loop.
+        let mut loops: Vec<Vec<DVec2>> = (0..=face.holes.len())
             .map(|k| curved_2d(model, face, k))
             .collect();
+        let circle = matches!(
+            face.surface.revolution().map(|r| r.profile),
+            Some(prism_geom::Profile::Circle { .. })
+        );
+        for (h, d) in crate::cut::hole_shifts(&loops, circle)
+            .into_iter()
+            .enumerate()
+        {
+            for p in &mut loops[h + 1] {
+                *p += d;
+            }
+        }
+        return loops;
     };
     let fr = pl.frame();
     model

@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 5bd199dcd2e156269872b6461803f3dc4d697ca59f6d39850a4d22ca8485ece5 # shrinks to picks = [2, 7]
 cc 1320872fc0758eda10e2701e8d4c41df5725441ab9123522bb7fd3d80673864d # shrinks to picks = [3, 10, 11, 8]
+cc 996f64546d08ae78dc08449dec8c88699cc57e6dead492493f475d630b2c5c22 # shrinks to picks = [3, 7, 7, 19]

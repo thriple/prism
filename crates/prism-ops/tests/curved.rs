@@ -213,7 +213,7 @@ fn push_pull_refuses_a_radius_of_zero_and_offset_refuses_curved_faces() {
 }
 
 #[test]
-fn intersect_faces_skips_curved_faces() {
+fn intersect_faces_cuts_curved_faces() {
     let mut model = cylinder(1.0, 2.0);
     // An upright square through the cylinder.
     for (p, q) in [
@@ -225,8 +225,35 @@ fn intersect_faces_skips_curved_faces() {
         add_segment(&mut model, p, q);
     }
     prism_ops::intersect::intersect_faces(&mut model, None);
-    assert_eq!(sides(&model).len(), 2, "the sides are not cut");
+    // Exact Curves 6b: two lines down the side at y = 0.3 cut the half
+    // they cross in three.
+    assert_eq!(sides(&model).len(), 4);
     assert!(model.bookkeeping_problems().is_empty());
+    assert_eq!(check::problems(&model), Vec::<String>::new());
+    // The square crosses both discs too: each is cut by a line whose ends
+    // are exactly on its circle, and the square by the closed outline.
+    let discs = model
+        .faces()
+        .filter(|(_, f)| f.plane().is_some_and(|p| p.normal.z.abs() > 0.9))
+        .count();
+    assert_eq!(discs, 4);
+    for (_, e) in model.edges().filter(|(_, e)| !e.curve.is_arc()) {
+        let (a, b) = (model.vertex(e.a), model.vertex(e.b));
+        if (a.y - 0.3).abs() < 1e-9
+            && (b.y - 0.3).abs() < 1e-9
+            && (a.z - b.z).abs() < 1e-9
+            && a.z.abs() < 2.5
+            && a.z > -0.5
+        {
+            assert!((a.truncate().length() - 1.0).abs() < 1e-12, "{a}");
+            assert!((b.truncate().length() - 1.0).abs() < 1e-12, "{b}");
+        }
+    }
+    let upright = model
+        .faces()
+        .filter(|(_, f)| f.plane().is_some_and(|p| p.normal.y.abs() > 0.9))
+        .count();
+    assert_eq!(upright, 2);
 }
 
 #[test]

@@ -11,6 +11,8 @@
 
 pub mod approx;
 pub mod check;
+pub mod crossing;
+pub mod cut;
 pub mod fillet;
 pub mod follow;
 pub mod health;
