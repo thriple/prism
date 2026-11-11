@@ -16,6 +16,7 @@ use prism_view::style::alpha;
 
 use super::construct::{OFFSET, PROTRACTOR, TAPE};
 use super::follow::FOLLOW;
+use super::paint::PAINT;
 use super::round::FILLET;
 use super::{LastOp, Session, rect_basis};
 
@@ -121,7 +122,7 @@ pub(super) enum EditOp {
 pub(super) fn is_edit(t: &str) -> bool {
     matches!(
         t,
-        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR | FILLET | FOLLOW
+        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR | FILLET | FOLLOW | PAINT
     )
 }
 
@@ -238,6 +239,7 @@ impl Session {
     /// Hover and previews for the edit tools, after inference ran.
     pub(super) fn edit_hover(&mut self, s: DVec2, view: &View) {
         match self.tool.as_str() {
+            PAINT => self.paint_hover(s, view),
             FILLET => self.round_hover(s, view),
             FOLLOW => self.follow_hover(s, view),
             PUSH => {
@@ -713,6 +715,7 @@ impl Session {
     /// A left press with an edit tool.
     pub(super) fn edit_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
         match self.tool.as_str() {
+            PAINT => self.paint_press(shift, ctrl),
             FILLET => self.round_press(s, ctrl),
             FOLLOW => self.follow_press(),
             PUSH => self.push_press(s, n_clicks),
@@ -1284,6 +1287,7 @@ impl Session {
                 "Drag a grip: corners scale evenly, edges two ways, faces one way · Alt toggles scaling about the centre · click something to pick it"
             }
             (FILLET, _) => self.round_hint(),
+            (PAINT, _) => self.paint_hint(),
             (FOLLOW, _) => self.follow_hint(),
             (ERASE, _) => {
                 "Click or drag over edges to erase them (with the faces they bound) · Ctrl softens · Ctrl+Shift unsoftens"
@@ -1294,6 +1298,7 @@ impl Session {
 
     /// What the edit tools draw over the model.
     pub(super) fn edit_overlay(&self, o: &mut Overlay) {
+        self.paint_overlay(o);
         if self.tool == SCALE {
             self.scale_overlay(o);
         }

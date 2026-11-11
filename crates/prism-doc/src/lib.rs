@@ -386,7 +386,11 @@ impl Command {
             Command::CleanEnvelope { .. } => "Clean Envelope",
             Command::RemoveStray => "Remove Stray Edges",
             Command::RepairArcs => "Repair Arcs",
-            Command::Batch { commands } => commands.first().map_or("Edit", |c| c.name()),
+            // A new material added for the step is named by the step.
+            Command::Batch { commands } => match commands.as_slice() {
+                [Command::AddMaterial { .. }, rest @ ..] if !rest.is_empty() => rest[0].name(),
+                _ => commands.first().map_or("Edit", |c| c.name()),
+            },
             Command::MakeGroup { .. } => "Make Group",
             Command::Explode { .. } => "Explode",
             Command::MakeComponent { .. } => "Make Component",

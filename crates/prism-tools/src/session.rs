@@ -31,6 +31,7 @@ mod edit;
 mod follow;
 mod groups;
 mod health;
+mod paint;
 mod round;
 mod scalebox;
 mod shapes;
@@ -42,6 +43,7 @@ use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
+pub use paint::{Brush, PAINT};
 pub use round::FILLET;
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
 
@@ -55,7 +57,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 23] = [
+pub const TOOLS: [&str; 24] = [
     SELECT,
     LINE,
     RECT,
@@ -80,6 +82,8 @@ pub const TOOLS: [&str; 23] = [
     arcs::PIE,
     round::FILLET,
     follow::FOLLOW,
+    // Basic Materials 1b.
+    paint::PAINT,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -124,6 +128,9 @@ pub enum Input {
         y: f64,
         shift: bool,
         ctrl: bool,
+        /// Alt (Option) held: the Paint Bucket samples.
+        #[serde(default)]
+        alt: bool,
     },
     Release {
         button: Button,
@@ -191,6 +198,12 @@ pub struct Recording {
     /// Whether Push/Pull's new loop was on when recording started.
     #[serde(default)]
     pub alt_loop: bool,
+    /// The Paint Bucket's brush when recording started, and a copy of its
+    /// material (the recording's model does not hold the material table).
+    #[serde(default)]
+    pub brush: Brush,
+    #[serde(default)]
+    pub brush_copy: Option<prism_doc::Material>,
 }
 
 impl Recording {
@@ -358,6 +371,14 @@ pub struct Session {
     /// Copy (Ctrl) and new loop (Alt) toggles.
     ctrl_copy: bool,
     alt_loop: bool,
+    /// Alt was held at the last press (the Paint Bucket samples).
+    press_alt: bool,
+    /// The Paint Bucket: what it paints with, whether the next click
+    /// samples (Alt tapped), and what is under it.
+    brush: Brush,
+    brush_copy: Option<prism_doc::Material>,
+    sampling: bool,
+    paint_at: Option<paint::PaintAt>,
     /// Push/Pull's last distance, for double-click.
     last_push: Option<(f64, bool)>,
     /// Offset's and Tape Measure's last distances, for double-click.
@@ -399,6 +420,11 @@ impl Session {
             shift_held: false,
             ctrl_copy: false,
             alt_loop: false,
+            press_alt: false,
+            brush: Brush::default(),
+            brush_copy: None,
+            sampling: false,
+            paint_at: None,
             last_push: None,
             last_offset: None,
             last_tape: None,
@@ -715,6 +741,16 @@ impl Session {
             events: Vec::new(),
             result: String::new(),
             alt_loop: self.alt_loop,
+            brush: self.brush,
+            brush_copy: match self.brush {
+                Brush::Material(id) => self
+                    .doc
+                    .assembly()
+                    .material(id)
+                    .or(self.brush_copy.as_ref())
+                    .cloned(),
+                _ => None,
+            },
         });
     }
 
@@ -734,6 +770,8 @@ impl Session {
         s.settings = r.settings;
         s.ease = false;
         s.alt_loop = r.alt_loop;
+        s.brush = r.brush;
+        s.brush_copy = r.brush_copy.clone();
         for e in &r.events {
             s.handle(e);
         }
@@ -769,7 +807,11 @@ impl Session {
                 y,
                 shift,
                 ctrl,
-            } => self.press(*button, DVec2::new(*x, *y), *shift, *ctrl, &mut resp),
+                alt,
+            } => {
+                self.press_alt = *alt;
+                self.press(*button, DVec2::new(*x, *y), *shift, *ctrl, &mut resp);
+            }
             Input::Release { button } => self.release(*button),
             Input::Wheel { x, y, notches } => {
                 let s = DVec2::new(*x, *y);
@@ -811,6 +853,7 @@ impl Session {
             Input::CtrlTap => self.toggle_copy(),
             Input::AltTap if self.tool == SCALE => self.toggle_scale_centre(),
             Input::AltTap if self.tool == FOLLOW => self.toggle_follow_perimeter(),
+            Input::AltTap if self.tool == PAINT => self.toggle_sampling(),
             Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {
                 self.shift_held = false;
@@ -845,6 +888,8 @@ impl Session {
         self.tool = id.to_owned();
         // A new loop is for one pull at a time, never left on unseen.
         self.alt_loop = false;
+        self.sampling = false;
+        self.paint_at = None;
         self.rot_lock = None;
         self.ctrl_copy = false;
         self.mem.clear();

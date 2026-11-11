@@ -65,6 +65,23 @@ fn ghost(mut s: Scene) -> Scene {
 /// share of their largest size.
 const OPEN_BOX_MARGIN: f64 = 0.05;
 
+/// The material of the nearest painted instance on a path (DECISIONS #35).
+fn group_paint(asm: &prism_doc::Assembly, path: &[InstanceId]) -> Option<prism_topo::MaterialId> {
+    path.iter().rev().find_map(|i| asm.painted_with(*i))
+}
+
+/// The open group's own scene: its group's material on Default faces, and
+/// the colours of the document's materials.
+fn dress(asm: &prism_doc::Assembly, ctx: &[InstanceId], scene: &mut Scene) {
+    scene.set_inherited(group_paint(asm, ctx));
+    scene.palette = asm
+        .materials()
+        .0
+        .iter()
+        .map(|(id, m)| (*id, prism_view::style::Rgba(m.srgba())))
+        .collect();
+}
+
 impl Session {
     /// The open group, as a path of instances from the root (empty at the root).
     pub fn open_path(&self) -> &[InstanceId] {
@@ -171,11 +188,12 @@ impl Session {
             let base = local
                 .entry(placed.def)
                 .or_insert_with(|| Scene::build_with(&d.model, false));
-            let scene = base.placed(&placed.world).unwrap_or_else(|| {
+            let mut scene = base.placed(&placed.world).unwrap_or_else(|| {
                 let mut m = d.model.clone();
                 prism_ops::transform::affine(&mut m, &placed.world);
                 Scene::build_with(&m, false)
             });
+            scene.set_inherited(group_paint(asm, &placed.path));
             pieces.push(Piece {
                 scene: if hidden { ghost(scene) } else { scene },
                 owner: k as u32,
@@ -184,6 +202,7 @@ impl Session {
         }
         let mut scene =
             Scene::build_with(work.as_ref().unwrap_or(&asm.root().model), self.view.guides);
+        dress(asm, &self.ctx, &mut scene);
         for p in &pieces {
             scene.merge(p.scene.clone(), p.owner, p.faded);
         }
@@ -214,6 +233,7 @@ impl Session {
 
     /// The open group's scene with everything else merged in.
     pub(super) fn compose(&self, mut own: Scene) -> Scene {
+        dress(self.doc.assembly(), &self.ctx, &mut own);
         for p in &self.pieces {
             own.merge(p.scene.clone(), p.owner, p.faded);
         }

@@ -157,8 +157,12 @@ impl ViewStyle {
         };
         match self.face_style {
             FaceStyle::Shaded | FaceStyle::Wireframe => {}
-            FaceStyle::Monochrome => s.face_back = s.face_front,
+            FaceStyle::Monochrome => {
+                s.face_back = s.face_front;
+                s.materials = false;
+            }
             FaceStyle::HiddenLine => {
+                s.materials = false;
                 s.face_front = PAPER;
                 s.face_back = PAPER;
                 s.shadow_alpha = 0.0;

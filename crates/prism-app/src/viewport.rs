@@ -286,6 +286,7 @@ impl Viewport {
                             y,
                             shift: modifiers.shift,
                             ctrl: modifiers.command,
+                            alt: modifiers.alt,
                         });
                         if let Some(at) = r.context_menu {
                             let p = rect.min + egui::vec2(at.x as f32, at.y as f32);

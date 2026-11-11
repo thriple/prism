@@ -105,6 +105,8 @@ struct FaceIn {
     @location(2) normal: vec3<f32>,
     @location(3) face: u32,
     @location(4) faded: u32,
+    @location(5) front: vec4<f32>,
+    @location(6) back: vec4<f32>,
 };
 
 struct FaceOut {
@@ -115,6 +117,9 @@ struct FaceOut {
     @location(2) @interpolate(flat) faded: u32,
     // The point relative to the eye (for the face's plane in the id pass).
     @location(3) r: vec3<f32>,
+    // Material colours, front and back (alpha 0: the style's colour).
+    @location(4) @interpolate(flat) front: vec4<f32>,
+    @location(5) @interpolate(flat) back: vec4<f32>,
 };
 
 @vertex
@@ -125,6 +130,8 @@ fn face_vs(v: FaceIn) -> FaceOut {
     o.normal = v.normal;
     o.face = v.face;
     o.faded = v.faded;
+    o.front = v.front;
+    o.back = v.back;
     return o;
 }
 
@@ -160,9 +167,15 @@ fn sun_lit(r: vec3<f32>) -> f32 {
 fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     var n = normalize(in.normal);
     var base = g.front;
+    if (in.front.a > 0.5) {
+        base = vec4<f32>(in.front.rgb, g.front.a);
+    }
     if (!front) {
         n = -n;
         base = g.back;
+        if (in.back.a > 0.5) {
+            base = vec4<f32>(in.back.rgb, g.back.a);
+        }
     }
     let sh = g.light.w + g.params.x * max(0.0, dot(n, g.light.xyz)) * sun_lit(in.r);
     var c = base.rgb * sh;
@@ -194,7 +207,16 @@ fn id_fs(in: FaceOut) -> IdOut {
 
 // A tint over faces already drawn (hover, selection): plain or stipple.
 @fragment
-fn tint_fs(in: FaceOut) -> @location(0) vec4<f32> {
+fn tint_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    // The Paint Bucket's preview: the colour lit as the face would be.
+    if (d.mode.x > 1.5) {
+        var n = normalize(in.normal);
+        if (!front) {
+            n = -n;
+        }
+        let sh = g.light.w + g.params.x * max(0.0, dot(n, g.light.xyz)) * sun_lit(in.r);
+        return vec4<f32>(d.color.rgb * sh, 1.0);
+    }
     if (d.mode.x > 0.5) {
         let p = in.pos.xy / g.viewport.z;
         let tile = g.stipple.x;

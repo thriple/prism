@@ -49,6 +49,8 @@ impl Driver {
             events: vec![],
             result: String::new(),
             alt_loop: false,
+            brush: Brush::default(),
+            brush_copy: None,
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -90,6 +92,7 @@ impl Driver {
             y: s.y,
             shift,
             ctrl,
+            alt: false,
         });
         self.send(Input::Release {
             button: Button::Left,
@@ -244,6 +247,7 @@ fn wake_a_corner_then_draw_to_where_the_guides_cross() {
         y: s.y,
         shift: false,
         ctrl: false,
+        alt: false,
     });
     assert!(prism_ops::vertex_at(d.s.model(), target).is_some());
 }
@@ -287,6 +291,7 @@ fn box_select_window_and_crossing_with_shift_and_ctrl() {
             y: a.y,
             shift,
             ctrl,
+            alt: false,
         });
         d.send(Input::Move { x: b.x, y: b.y });
         d.send(Input::Release {
@@ -427,6 +432,7 @@ fn shift_double_and_triple_click_add_and_remove_without_touching_the_rest() {
                 y: s.y,
                 shift,
                 ctrl: false,
+                alt: false,
             });
             d.send(Input::Release {
                 button: Button::Left,
@@ -459,6 +465,7 @@ fn shift_double_and_triple_click_add_and_remove_without_touching_the_rest() {
             y: ring.y,
             shift: true,
             ctrl: false,
+            alt: false,
         });
         d.send(Input::Release {
             button: Button::Left,
@@ -525,6 +532,7 @@ fn double_click_repeats_the_last_pull() {
             y: s.y,
             shift: false,
             ctrl: false,
+            alt: false,
         });
         d.send(Input::Release {
             button: Button::Left,
@@ -685,6 +693,7 @@ fn drag_from_the_centre_sets_the_start_arm() {
         y: c.y,
         shift: false,
         ctrl: false,
+        alt: false,
     });
     d.send(Input::Move { x: a.x, y: a.y });
     d.send(Input::Release {
@@ -835,6 +844,7 @@ fn the_eraser_drags_over_an_edge_and_merges_the_faces() {
         y: a.y,
         shift: false,
         ctrl: false,
+        alt: false,
     });
     d.send(Input::Move { x: mid.x, y: mid.y });
     d.send(Input::Move { x: b.x, y: b.y });
@@ -960,6 +970,7 @@ fn double_click(d: &mut Driver, p: DVec3) {
             y: s.y,
             shift: false,
             ctrl: false,
+            alt: false,
         });
         d.send(Input::Release {
             button: Button::Left,
@@ -1135,6 +1146,7 @@ fn the_eraser_takes_a_guide_and_an_edge_in_one_step() {
         y: a.y,
         shift: false,
         ctrl: false,
+        alt: false,
     });
     d.send(Input::Move { x: b.x, y: b.y });
     d.send(Input::Release {
@@ -1316,6 +1328,7 @@ fn dragging_a_pull_over_a_parallel_face_lifts_it_level() {
         y: low.y,
         shift: false,
         ctrl: false,
+        alt: false,
     });
     d.send(Input::Move {
         x: high.x,
@@ -1524,6 +1537,7 @@ fn double_and_triple_click_work_inside_an_open_group() {
             y: s.y,
             shift: false,
             ctrl: false,
+            alt: false,
         });
         d.send(Input::Release {
             button: Button::Left,
@@ -1637,6 +1651,7 @@ fn box_select_takes_groups_inside_the_window() {
         y: lo.y,
         shift: false,
         ctrl: false,
+        alt: false,
     });
     d.send(Input::Move { x: hi.x, y: hi.y });
     d.send(Input::Release {
@@ -2733,4 +2748,320 @@ fn a_new_loop_is_shown_and_lasts_one_pull() {
     d.tool("tool.select");
     d.tool(PUSH);
     assert!(!d.s.hint().contains("NEW LOOP"));
+}
+
+// ---------- the Paint Bucket (Basic Materials 1b) ----------
+
+use prism_tools::session::{Brush, PAINT, PUSH as PAINT_PUSH};
+
+/// A 2 m box at the origin (not grouped).
+fn paint_box(d: &mut Driver) {
+    rect_on_ground(d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PAINT_PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+}
+
+fn face_at(d: &Driver, p: DVec3) -> prism_topo::FaceId {
+    prism_ops::face_at(d.s.model(), p).expect("a face there")
+}
+
+fn paint_of(d: &Driver, p: DVec3) -> prism_topo::Paint {
+    d.s.model().face(face_at(d, p)).expect("face").paint
+}
+
+fn press_with(d: &mut Driver, p: DVec3, shift: bool, ctrl: bool, alt: bool) {
+    let s = d.screen(p);
+    d.send(Input::Move { x: s.x, y: s.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: s.x,
+        y: s.y,
+        shift,
+        ctrl,
+        alt,
+    });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.t += 0.5;
+}
+
+#[test]
+fn the_paint_bucket_paints_the_side_clicked_and_undo_takes_it_back() {
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    d.tool(PAINT);
+    let top = DVec3::new(1.0, 1.0, 2.0);
+    // Hovering previews the paint on the face, in the brush's colour.
+    d.hover(top);
+    let (faces, colour) = d.s.paint_preview().expect("a preview");
+    assert_eq!(faces, [face_at(&d, top)]);
+    assert_eq!(colour, prism_view::style::Rgba::rgb(0xb0, 0x4a, 0x3a));
+    d.click(top);
+    let mats = d.s.document().assembly().materials().0.clone();
+    assert_eq!(mats.len(), 1, "the palette colour went into the document");
+    let (id, m) = mats.iter().next().expect("one");
+    assert_eq!(m.name, "Brick Red");
+    assert_eq!(paint_of(&d, top).front, Some(*id), "the outside, seen");
+    assert_eq!(paint_of(&d, top).back, None);
+    assert_eq!(d.s.brush(), Brush::Material(*id));
+    assert_eq!(d.s.document().undo_name(), Some("Paint"), "one step");
+    // The drawn scene has its colour.
+    let f = face_at(&d, top);
+    assert_eq!(d.s.scene().material_on(f, true), Some(*id));
+    assert!(d.s.scene().palette.contains_key(id));
+    // Undo takes the paint and the new material away; painting again
+    // brings the material back.
+    act(&mut d, "edit.undo");
+    assert!(paint_of(&d, top).is_default());
+    assert!(d.s.document().assembly().materials().0.is_empty());
+    d.click(top);
+    let mats = d.s.document().assembly().materials().0.clone();
+    assert_eq!(mats.len(), 1);
+    assert_eq!(paint_of(&d, top).front, mats.keys().next().copied());
+    valid(&d);
+}
+
+/// A rectangle on the ground faces down: seen from above, its back is
+/// painted.
+#[test]
+fn the_paint_bucket_paints_the_back_when_the_back_is_seen() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    let p = DVec3::new(1.0, 1.0, 0.0);
+    let f = face_at(&d, p);
+    let up =
+        d.s.model()
+            .face(f)
+            .and_then(|x| x.plane().map(|pl| pl.normal.z > 0.0));
+    d.tool(PAINT);
+    d.click(p);
+    let paint = paint_of(&d, p);
+    match up {
+        Some(true) => assert!(paint.front.is_some() && paint.back.is_none()),
+        _ => assert!(paint.back.is_some() && paint.front.is_none()),
+    }
+}
+
+#[test]
+fn ctrl_fills_connected_and_shift_replaces_everywhere() {
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    d.tool(PAINT);
+    let top = DVec3::new(1.0, 1.0, 2.0);
+    let side = DVec3::new(1.0, 0.0, 1.0);
+    // Ctrl: every Default face joined to the top.
+    press_with(&mut d, top, false, true, false);
+    let red = paint_of(&d, top).front.expect("painted");
+    assert!(
+        d.s.model().faces().all(|(_, f)| f.paint.front == Some(red)),
+        "all six outsides"
+    );
+    // A plain click on a side with another colour.
+    d.s.set_brush(Brush::Palette(7));
+    d.click(side);
+    let sky = paint_of(&d, side).front.expect("painted");
+    assert_ne!(sky, red);
+    // Ctrl on the top: the red faces joined to it, not the sky side.
+    d.s.set_brush(Brush::Palette(4));
+    press_with(&mut d, top, false, true, false);
+    let olive = paint_of(&d, top).front.expect("painted");
+    let count = |d: &Driver, m| {
+        d.s.model()
+            .faces()
+            .filter(|(_, f)| f.paint.front == Some(m))
+            .count()
+    };
+    assert_eq!((count(&d, olive), count(&d, sky)), (5, 1));
+    // Shift on the sky side: sky replaced everywhere (one face here).
+    d.s.set_brush(Brush::Material(olive));
+    press_with(&mut d, side, true, false, false);
+    assert_eq!(count(&d, olive), 6);
+    valid(&d);
+}
+
+#[test]
+fn alt_samples_held_or_tapped() {
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    d.tool(PAINT);
+    let top = DVec3::new(1.0, 1.0, 2.0);
+    let side = DVec3::new(1.0, 0.0, 1.0);
+    d.click(top);
+    let red = paint_of(&d, top).front.expect("painted");
+    // Held: Alt+click picks up the side's Default.
+    press_with(&mut d, side, false, false, true);
+    assert_eq!(d.s.brush(), Brush::Default);
+    assert!(paint_of(&d, side).is_default(), "sampling paints nothing");
+    // Tapped: the next click samples, then the bucket paints again.
+    d.send(Input::AltTap);
+    assert!(d.s.paint_sampling());
+    assert!(d.s.hint().contains("SAMPLE"));
+    d.hover(top);
+    assert!(d.s.paint_preview().is_none(), "no preview while sampling");
+    d.click(top);
+    assert_eq!(d.s.brush(), Brush::Material(red));
+    assert!(!d.s.paint_sampling());
+    d.click(side);
+    assert_eq!(paint_of(&d, side).front, Some(red));
+}
+
+/// A closed group is painted as a whole: its Default faces show the
+/// material, its own faces are untouched, and the nearest painted group
+/// wins.
+#[test]
+fn a_group_is_painted_as_a_whole_and_the_nearest_wins() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.desel");
+    // Group the group: an outer group holding it.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    act(&mut d, "edit.group");
+    let outer = *d.s.selected_groups().iter().next().expect("outer");
+    assert_ne!(outer, g);
+    act(&mut d, "edit.desel");
+    d.tool(PAINT);
+    let side = DVec3::new(1.0, 0.0, 1.0);
+    d.click(side);
+    let asm = d.s.document().assembly();
+    let red = asm.painted_with(outer).expect("the outer group is painted");
+    assert_eq!(asm.painted_with(g), None);
+    let inner_def = asm.context_def(&[outer, g]).expect("inner");
+    assert!(
+        asm.def(inner_def)
+            .expect("def")
+            .model
+            .faces()
+            .all(|(_, f)| f.paint.is_default()),
+        "nothing is copied onto faces"
+    );
+    let shown = |d: &Driver| {
+        let sc = d.s.scene();
+        sc.faces
+            .iter()
+            .map(|f| sc.material_on(f.id, true))
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(shown(&d), [Some(red)].into());
+    // Inside the outer group, the inner one painted blue: blue wins there.
+    d.tool(SELECT);
+    double_click(&mut d, side);
+    assert_eq!(d.s.open_path(), [outer]);
+    d.tool(PAINT);
+    d.s.set_brush(Brush::Palette(8));
+    d.click(side);
+    let blue =
+        d.s.document()
+            .assembly()
+            .painted_with(g)
+            .expect("the inner group is painted");
+    assert_eq!(shown(&d), [Some(blue)].into());
+    // Undo: red again.
+    act(&mut d, "edit.undo");
+    assert_eq!(shown(&d), [Some(red)].into());
+}
+
+/// A cylinder's side is painted as a whole, like a click selects it.
+#[test]
+fn a_cylinders_side_is_painted_whole() {
+    let mut d = Driver::new(Document::with_model(prism_tools::scenes::cylinder(
+        1.0, 2.0,
+    )));
+    d.look(Camera {
+        eye: DVec3::new(6.0, -8.0, 5.0),
+        target: DVec3::new(0.0, 0.0, 1.0),
+    });
+    d.tool(PAINT);
+    let p = DVec3::new(0.6, -0.8, 1.0);
+    d.hover(p);
+    let (faces, _) = d.s.paint_preview().expect("a preview");
+    d.click(p);
+    let painted: Vec<_> =
+        d.s.model()
+            .faces()
+            .filter(|(_, f)| f.paint.front.is_some())
+            .map(|(id, _)| id)
+            .collect();
+    assert!(!painted.is_empty());
+    assert_eq!(painted, faces, "the preview showed what was painted");
+    let side = prism_ops::select::surface(d.s.model(), painted[0]);
+    assert_eq!(painted.len(), side.len(), "the whole side");
+}
+
+/// Ctrl+Shift replaces a material in the open group only; Shift alone
+/// everywhere.
+#[test]
+fn ctrl_shift_replaces_in_the_open_group_only() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.desel");
+    // A second box at the root, beside the group.
+    rect_on_ground(&mut d, 4.0, 0.0, 6.0, 2.0);
+    d.tool(PAINT_PUSH);
+    d.click(DVec3::new(5.0, 1.0, 0.0));
+    d.typed("2");
+    d.tool(PAINT);
+    let root_top = DVec3::new(5.0, 1.0, 2.0);
+    press_with(&mut d, root_top, false, true, false);
+    let red = paint_of(&d, root_top).front.expect("painted");
+    // Into the group: fill it red too.
+    d.tool(SELECT);
+    let side = DVec3::new(1.0, 0.0, 1.0);
+    double_click(&mut d, side);
+    assert_eq!(d.s.open_path(), [g]);
+    d.tool(PAINT);
+    d.s.set_brush(Brush::Material(red));
+    press_with(&mut d, side, false, true, false);
+    let inside = |d: &Driver| {
+        let a = d.s.document().assembly();
+        let def = a.context_def(&[g]).expect("group");
+        a.def(def)
+            .expect("def")
+            .model
+            .faces()
+            .map(|(_, f)| f.paint.front)
+            .collect::<Vec<_>>()
+    };
+    assert!(inside(&d).iter().all(|m| *m == Some(red)));
+    // Ctrl+Shift with another colour: the group's red only.
+    d.s.set_brush(Brush::Palette(9));
+    press_with(&mut d, side, true, true, false);
+    let plum = inside(&d)[0].expect("painted");
+    assert_ne!(plum, red);
+    assert!(inside(&d).iter().all(|m| *m == Some(plum)));
+    let root = |d: &Driver| {
+        d.s.document()
+            .model()
+            .faces()
+            .filter(|(_, f)| f.paint.front == Some(red))
+            .count()
+    };
+    assert_eq!(root(&d), 6, "the root box keeps its red");
+    // Shift alone, from inside: plum replaced everywhere, red stays.
+    d.s.set_brush(Brush::Palette(10));
+    press_with(&mut d, side, true, false, false);
+    assert!(inside(&d).iter().all(|m| *m != Some(plum)));
+    assert_eq!(root(&d), 6);
+}
+
+/// A recording saves the brush it started with, so its replay paints the
+/// same colour (as new loop taught us, 2026-11-11).
+#[test]
+fn a_recording_replays_with_the_brush_it_started_with() {
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    d.tool(PAINT);
+    d.s.set_brush(Brush::Palette(6));
+    let top = DVec3::new(1.0, 1.0, 2.0);
+    d.click(top);
+    let teal = paint_of(&d, top).front.expect("painted");
+    d.s.start_recording();
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    let json = d.s.stop_recording().expect("recorded");
+    let r: Recording = serde_json::from_str(&json).expect("reads back");
+    assert_eq!(r.brush, Brush::Material(teal));
+    let replayed = Session::replay(&r);
+    assert!(r.ends_with(replayed.model()), "the replay paints the same");
 }

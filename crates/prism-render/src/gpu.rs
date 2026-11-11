@@ -88,6 +88,10 @@ struct FaceVertex {
     face: u32,
     /// 1 for faces outside the open group, drawn faded (PLAN 1.2).
     faded: u32,
+    /// The material colours of the front and back (alpha 0: Default, drawn
+    /// in the style's colour).
+    front: [u8; 4],
+    back: [u8; 4],
 }
 
 /// One line segment: two ends, the normals of its faces, colour and shape.
@@ -245,6 +249,9 @@ pub struct Highlight {
     /// The rest of what the hover takes: the other faces of a smooth
     /// surface, the other pieces of a curve (as a click would select).
     pub hover_more: Selection,
+    /// The Paint Bucket's preview: these faces drawn lit in this colour,
+    /// on the side seen.
+    pub paint_preview: Option<(Vec<prism_topo::FaceId>, Rgba)>,
 }
 
 struct Target {
@@ -334,6 +341,9 @@ pub struct Renderer {
     face_vertices: Option<wgpu::Buffer>,
     face_indices: Indices,
     hover_faces: Indices,
+    /// The Paint Bucket's preview, and its colour.
+    preview_faces: Indices,
+    preview_color: [f32; 4],
     selected_faces: Indices,
     edges: Lines,
     /// Outline lines of curved faces (Exact Curves 6d): found again
@@ -366,6 +376,7 @@ const HOVER_TINT: usize = 1;
 const SELECT_TINT: usize = 2;
 const STIPPLE: usize = 3;
 const HIDDEN: usize = 4;
+const PREVIEW: usize = 5;
 
 /// Everything one frame needs.
 pub struct Frame<'a> {
@@ -418,7 +429,7 @@ impl Renderer {
             })
         };
         let globals_group = group(&globals_layout, &globals);
-        let draws = (0..5)
+        let draws = (0..6)
             .map(|_| {
                 let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("viewport draw"),
@@ -527,7 +538,7 @@ impl Renderer {
         let face_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<FaceVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Uint32],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Uint32, 5 => Unorm8x4, 6 => Unorm8x4],
         };
         let line_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineInstance>() as u64,
@@ -793,6 +804,11 @@ impl Renderer {
                 buffer: None,
                 count: 0,
             },
+            preview_faces: Indices {
+                buffer: None,
+                count: 0,
+            },
+            preview_color: [0.0; 4],
             selected_faces: Indices {
                 buffer: None,
                 count: 0,
@@ -983,12 +999,22 @@ impl Renderer {
             .zip(&scene.mesh.faces)
             .map(|((p, n), f)| {
                 let (hi, lo) = split(*p);
+                let face = &scene.faces[*f as usize];
+                let colour = |side: usize| -> [u8; 4] {
+                    let m = face.paint[side].or(face.inherited);
+                    match m.and_then(|m| scene.palette.get(&m)) {
+                        Some(c) if style.materials => [c.0[0], c.0[1], c.0[2], 255],
+                        _ => [0; 4],
+                    }
+                };
                 FaceVertex {
                     hi,
                     lo,
                     normal: n.as_vec3().to_array(),
                     face: f + 1,
-                    faded: u32::from(scene.faces[*f as usize].faded),
+                    faded: u32::from(face.faded),
+                    front: colour(0),
+                    back: colour(1),
                 }
             })
             .collect();
@@ -1098,6 +1124,12 @@ impl Renderer {
                     .chain(h.hover_more.faces.iter().copied()),
             ),
         );
+        let (preview, color) = match &h.paint_preview {
+            Some((faces, c)) => (tris(&mut faces.iter().copied()), c.to_f32()),
+            None => (Vec::new(), [0.0; 4]),
+        };
+        self.preview_faces.set(device, "paint preview", &preview);
+        self.preview_color = [color[0], color[1], color[2], 1.0];
         self.selected_faces.set(
             device,
             "selected faces",
@@ -1371,6 +1403,10 @@ impl Renderer {
                 color: [0.0; 4],
                 mode: hidden,
             },
+            Draw {
+                color: self.preview_color,
+                mode: [2.0, 1.0, 0.0, 0.0],
+            },
         ];
         for (slot, d) in self.draws.iter().zip(draws) {
             queue.write_buffer(&slot.buffer, 0, bytemuck::bytes_of(&d));
@@ -1453,6 +1489,7 @@ impl Renderer {
                 for (idx, slots) in [
                     (&self.selected_faces, &[SELECT_TINT, STIPPLE][..]),
                     (&self.hover_faces, &[HOVER_TINT][..]),
+                    (&self.preview_faces, &[PREVIEW][..]),
                 ] {
                     if let Some(b) = &idx.buffer {
                         pass.set_index_buffer(b.slice(..), wgpu::IndexFormat::Uint32);

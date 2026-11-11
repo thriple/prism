@@ -692,6 +692,23 @@ mod tests {
         assert_eq!(reg.get("tool.arc").map(|a| a.default_key), Some("A"));
     }
 
+    /// Basic Materials 1b: the Paint Bucket is built (B, on the dock).
+    #[test]
+    fn the_paint_bucket_is_active() {
+        let reg = Registry::new();
+        let ctx = Context::default();
+        let a = reg.get("tool.paint").expect("tool.paint");
+        assert!(a.built() && reg.enabled("tool.paint", &ctx));
+        assert_eq!(a.run, Run::Tool);
+        assert_eq!(a.default_key, "B");
+        assert!(!a.menu_path.is_empty());
+        assert!(
+            reg.dock()
+                .iter()
+                .any(|(_, ids)| ids.contains(&"tool.paint"))
+        );
+    }
+
     #[test]
     fn greyed_actions_cannot_run_and_say_why() {
         let reg = Registry::new();

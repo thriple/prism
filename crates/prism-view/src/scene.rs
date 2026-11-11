@@ -10,7 +10,9 @@ use std::ops::Range;
 
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Tol};
-use prism_topo::{EdgeId, FaceId, Guide, GuideId, Model, VertexId};
+use prism_topo::{EdgeId, FaceId, Guide, GuideId, MaterialId, Model, VertexId};
+
+use crate::style::Rgba;
 
 use crate::tess::triangulate;
 
@@ -37,6 +39,11 @@ pub struct SceneFace {
     /// its loops unrolled flat, `normal` is only its normal at the first
     /// corner, and it has no plane.
     pub curved: Option<Curved>,
+    /// Its own materials, front and back (None: Default).
+    pub paint: [Option<MaterialId>; 2],
+    /// The material of the nearest painted group it is in, drawn on its
+    /// Default sides (DECISIONS #35).
+    pub inherited: Option<MaterialId>,
 }
 
 /// What picking a curved face needs.
@@ -297,6 +304,14 @@ pub struct Scene {
     pub face_owner: BTreeMap<FaceId, u32>,
     pub edge_owner: BTreeMap<EdgeId, u32>,
     pub vertex_owner: BTreeMap<VertexId, u32>,
+    /// The colours of the materials faces use (filled by whoever knows the
+    /// document's materials; a face whose material is missing is drawn
+    /// Default).
+    pub palette: BTreeMap<MaterialId, Rgba>,
+}
+
+fn paint_of(f: &prism_topo::Face) -> [Option<MaterialId>; 2] {
+    [f.paint.front, f.paint.back]
 }
 
 /// Ids merged in from other models start here, clear of a model's own.
@@ -322,6 +337,7 @@ impl Scene {
             face_owner: BTreeMap::new(),
             edge_owner: BTreeMap::new(),
             vertex_owner: BTreeMap::new(),
+            palette: BTreeMap::new(),
             faces_hide: true,
             faces_pick: true,
             guides: if show_guides {
@@ -372,6 +388,8 @@ impl Scene {
             }
             let mut face = SceneFace {
                 id,
+                paint: paint_of(f),
+                inherited: None,
                 normal: plane.normal,
                 origin: plane.origin,
                 u,
@@ -561,6 +579,8 @@ impl Scene {
         let frame = prism_math::Plane::new(c.origin, c.axis).frame();
         let mut face = SceneFace {
             id,
+            paint: paint_of(f),
+            inherited: None,
             normal: c.normal_at(first),
             origin: c.origin,
             u: frame.u,
@@ -621,6 +641,8 @@ impl Scene {
             |k: usize| -> Vec<DVec2> { model.param_loop(f, k).into_iter().map(|x| x.1).collect() };
         let mut face = SceneFace {
             id,
+            paint: paint_of(f),
+            inherited: None,
             normal: f.surface.normal_at(start),
             origin: rev.origin,
             u: rev.u,
@@ -808,6 +830,7 @@ impl Scene {
             self.vertex_owner.insert(id, owner);
             self.vertices.push((id, p));
         }
+        self.palette.extend(other.palette);
         self.mesh.positions.extend(other.mesh.positions);
         self.mesh.normals.extend(other.mesh.normals);
         self.mesh
@@ -972,6 +995,37 @@ impl Scene {
 
     pub fn edge(&self, id: EdgeId) -> Option<&SceneEdge> {
         self.edge_index.get(&id).map(|&i| &self.edges[i])
+    }
+
+    /// The material drawn on a face's front (or back): its own, else its
+    /// group's.
+    pub fn material_on(&self, id: FaceId, front: bool) -> Option<MaterialId> {
+        let f = self.face(id)?;
+        f.paint[usize::from(!front)].or(f.inherited)
+    }
+
+    /// Give every face the material of the group it is in (None: no
+    /// painted group).
+    pub fn set_inherited(&mut self, m: Option<MaterialId>) {
+        for f in &mut self.faces {
+            f.inherited = m;
+        }
+    }
+
+    /// Whether the ray from `o` along `d` sees the front of face `id`
+    /// where it first meets it (None if it misses the face's triangles).
+    pub fn seen_front(&self, id: FaceId, o: DVec3, d: DVec3) -> Option<bool> {
+        let f = self.face(id)?;
+        let idx = &self.mesh.indices[f.tris.start as usize..f.tris.end as usize];
+        idx.chunks(3)
+            .filter(|t| t.len() == 3)
+            .filter_map(|t| {
+                let p = [0, 1, 2].map(|k| self.mesh.positions[t[k] as usize]);
+                let n: DVec3 = t.iter().map(|k| self.mesh.normals[*k as usize]).sum();
+                ray_triangle(o, d, &p).map(|x| (x, n.dot(d) < 0.0))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|x| x.1)
     }
 
     /// The nearest face the ray hits, and how far along.

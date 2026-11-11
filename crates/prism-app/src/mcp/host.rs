@@ -394,6 +394,7 @@ impl AppHost<'_> {
                         y: s.y,
                         shift: false,
                         ctrl: false,
+                        alt: false,
                     });
                     self.viewport.drive(Input::Release {
                         button: Button::Left,
@@ -1069,6 +1070,7 @@ mod tests {
                 y: 400.0,
                 shift: false,
                 ctrl: false,
+                alt: false,
             },
             Input::Release {
                 button: Button::Left,
@@ -1080,6 +1082,7 @@ mod tests {
                 y: 450.0,
                 shift: false,
                 ctrl: false,
+                alt: false,
             },
             Input::Release {
                 button: Button::Left,

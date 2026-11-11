@@ -88,6 +88,28 @@ impl Material {
     }
 }
 
+/// The built-in plain colours (sRGB), offered before a material exists
+/// (the Paint Bucket's first colour, and the Materials window's palette).
+/// No textures are bundled (DECISIONS #34).
+pub const PALETTE: [(&str, [u8; 3]); 16] = [
+    ("Brick Red", [0xb0, 0x4a, 0x3a]),
+    ("Terracotta", [0xc8, 0x6f, 0x4b]),
+    ("Sand", [0xd9, 0xc3, 0x9a]),
+    ("Butter", [0xf0, 0xd6, 0x6e]),
+    ("Olive", [0x7d, 0x86, 0x45]),
+    ("Leaf", [0x5c, 0x9a, 0x52]),
+    ("Teal", [0x3d, 0x8c, 0x8a]),
+    ("Sky", [0x7f, 0xb4, 0xdc]),
+    ("Slate Blue", [0x4e, 0x66, 0x9e]),
+    ("Plum", [0x7d, 0x4e, 0x82]),
+    ("Rose", [0xd6, 0x8c, 0x9f]),
+    ("Walnut", [0x6b, 0x4a, 0x32]),
+    ("Charcoal", [0x3a, 0x3c, 0x40]),
+    ("Concrete", [0x9a, 0x9a, 0x96]),
+    ("Chalk", [0xec, 0xea, 0xe4]),
+    ("White", [0xff, 0xff, 0xff]),
+];
+
 pub fn srgb_to_linear(c: f32) -> f32 {
     if c <= 0.04045 {
         c / 12.92

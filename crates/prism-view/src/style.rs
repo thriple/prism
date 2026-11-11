@@ -53,6 +53,9 @@ pub struct Style {
     pub axis_negative_dash: [f32; 2],
     pub face_front: Rgba,
     pub face_back: Rgba,
+    /// Faces are drawn in their materials' colours (the Shaded style);
+    /// else in the front and back colours.
+    pub materials: bool,
     /// Light direction for shading (towards the light).
     pub light: [f64; 3],
     /// Shading: ambient + diffuse * max(0, n · light).
@@ -248,6 +251,7 @@ impl Default for Style {
             axis_negative_dash: [2.0, 4.0],
             face_front: Rgba::rgb(248, 247, 244),
             face_back: Rgba::rgb(150, 168, 198),
+            materials: true,
             light: [0.3, -0.5, 0.8],
             ambient: 0.66,
             diffuse: 0.34,

@@ -2415,6 +2415,67 @@ Model Health, MCP, and a release). Nothing is visible yet.
   - Imported meshes have no materials until part 3 (glTF, OBJ, 3MF), as
     planned.
 
+## Basic Materials (part 1, step 1b): the Paint Bucket and colours
+
+Built 2026-11-12 (brief 28). The Paint Bucket (B) is active, and faces
+show their materials in the viewport. Choosing a colour waits for the
+Materials window (1c): until then the bucket starts with the first
+palette colour (Brick Red), and Alt picks up any material in the model.
+No `[release]` yet (1c has it).
+
+- **The tool** (`prism_tools::session::paint`):
+  - a click paints the side of the face you see (`Scene::seen_front`,
+    from the hit triangle's normals); a smooth surface (a cylinder's
+    side) is painted as a whole, as a click selects it;
+  - **Ctrl** fills the joined faces of the same material
+    (`material::connected_same`); **Shift** replaces that material
+    everywhere; **Ctrl+Shift** in the open group only
+    (`Command::ReplaceMaterial`);
+  - recordings save the brush (and its material), so a replay paints
+    the same colour (`a_recording_replays_with_the_brush_it_started_with`);
+  - **Alt** samples: held while clicking (`Input::Press` has a new `alt`
+    field, read as false from older recordings), or tapped, so the next
+    click samples (the hint says SAMPLE). Sampling picks up what is
+    drawn, a group's material included; Default is a brush too;
+  - a group or component inside the open one is painted as a whole
+    (`Command::PaintInstances`); faces outside the open group are not
+    paintable from inside it;
+  - **the brush** (`Brush`: Default, a document material, or a palette
+    colour). A palette colour is added to the document with the paint,
+    as one undo step ("Paint"). The brush keeps a copy of its material,
+    so after Undo took it away, the next click adds it again;
+  - **the palette:** 16 plain colours in code (`material::PALETTE`). No
+    textures are bundled (DECISIONS #34, owner);
+  - **hover** previews the paint: the faces a plain click would paint,
+    drawn lit in the brush's colour (`Session::paint_preview`, a new tint
+    mode in the renderer). The cursor has a swatch and the material's
+    name.
+- **The viewport:** each face vertex carries its front and back colours
+  (sRGB, alpha 0 for Default, which keeps the style's colours, so
+  reversed faces still show blue). A group's material is drawn on its
+  Default faces, the nearest painted group winning (`SceneFace.inherited`,
+  set when the scene is built). The scene holds the colours
+  (`Scene::palette`). Monochrome and Hidden Line ignore materials
+  (`Style::materials`). X-ray keeps its see-through alpha. Picking, the
+  id buffer and hidden lines are unchanged.
+- **Tests:** session tests for each side, Ctrl, Shift, Ctrl+Shift in an
+  open group, Alt held and tapped, Undo, a group and a nested group (the
+  nearest wins), a cylinder's whole side and the preview; a screenshot
+  (`painted_faces_show_their_colours`: colours, Monochrome without them,
+  the preview); the registry test (`the_paint_bucket_is_active`).
+- **Known gaps, sorted (DECISIONS #33):**
+  - The preview shows a plain click only, not what Ctrl or Shift would
+    paint. Minor: NOTES only.
+  - The cursor stays the arrow, with the swatch beside it; a bucket
+    cursor is for the Soft theme's cursor set. Minor: NOTES only.
+  - MCP's `use_tool` cannot hold Alt yet: in 1c, with the `paint` tool.
+  - Colours other than Brick Red, and editing them: the Materials window,
+    1c.
+  - A recording saves the brush and its material, but not the rest of
+    the document's materials (a recording keeps the root model only), so
+    a replay draws other painted faces Default. Minor: NOTES only, unless
+    a recording needs it.
+
 ## Owner feedback on the 6e build (2026-11-11, late)
 
 - **Edges showed through curved faces** (a cylinder's bottom rim through

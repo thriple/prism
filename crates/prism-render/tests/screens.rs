@@ -1018,3 +1018,72 @@ fn a_cylinders_far_rim_is_hidden_by_its_near_wall() {
         assert!(dark_near(DVec3::new(c, -s, 0.0)) > 0, "near rim at {a}°");
     }
 }
+
+/// Painted faces show their material's colour (Basic Materials 1b); the
+/// Monochrome style ignores materials; the Paint Bucket's preview draws
+/// a face lit in the brush's colour.
+#[test]
+fn painted_faces_show_their_colours() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    use prism_topo::MaterialId;
+    let mut m = golden::cube(1.0);
+    let top = prism_ops::face_at(&m, DVec3::new(0.0, 0.0, 3.0)).expect("top");
+    let front = prism_ops::face_at(&m, DVec3::new(0.0, -1.0, 2.0)).expect("front");
+    let side = prism_ops::face_at(&m, DVec3::new(1.0, 0.0, 2.0)).expect("side");
+    m.edit_face(top, |f| f.paint.front = Some(MaterialId(0)));
+    m.edit_face(front, |f| f.paint.front = Some(MaterialId(1)));
+    let mut scene = prism_render::Scene::build(&m);
+    scene.palette.insert(MaterialId(0), Rgba::rgb(210, 40, 40));
+    scene.palette.insert(MaterialId(1), Rgba::rgb(40, 190, 60));
+    let mut shot = |style: &Style, h: &Highlight, name: &str| {
+        g.renderer.resize(&g.device, 640, 400);
+        g.renderer.set_scene(&g.device, &scene, style);
+        g.renderer.set_highlight(&g.device, &scene, h, style);
+        let img = g.draw(Camera::home(), 640, 400, 1.0, style, scene.bounds);
+        img.save(name);
+        img
+    };
+    let red = |img: &common::Image| {
+        img.px
+            .iter()
+            .filter(|p| p[0] > 120 && p[1] < 60 && p[2] < 60)
+            .count()
+    };
+    let green = |img: &common::Image| {
+        img.px
+            .iter()
+            .filter(|p| p[1] > 110 && p[0] < 70 && p[2] < 90)
+            .count()
+    };
+    let blue = |img: &common::Image| {
+        img.px
+            .iter()
+            .filter(|p| p[2] > 120 && p[0] < 70 && p[1] < 90)
+            .count()
+    };
+    let style = Style::default();
+    let img = shot(&style, &Highlight::default(), "painted");
+    assert!(red(&img) > 1000, "the red top ({})", red(&img));
+    assert!(green(&img) > 1000, "the green front ({})", green(&img));
+    assert!(blue(&img) < 400, "nothing blue but the axis");
+    // Monochrome: no materials.
+    let vs = prism_view::ViewStyle {
+        face_style: prism_view::view_style::FaceStyle::Monochrome,
+        ..prism_view::ViewStyle::default()
+    };
+    let mono = vs.apply(&Style::default());
+    let img = shot(&mono, &Highlight::default(), "painted-monochrome");
+    assert!(
+        red(&img) < 400 && green(&img) < 400,
+        "no materials, only the axes ({} {})",
+        red(&img),
+        green(&img)
+    );
+    // The preview: the side drawn blue, lit.
+    let h = Highlight {
+        paint_preview: Some((vec![side], Rgba::rgb(40, 60, 230))),
+        ..Highlight::default()
+    };
+    let img = shot(&style, &h, "painted-preview");
+    assert!(blue(&img) > 1000, "the preview ({})", blue(&img));
+}

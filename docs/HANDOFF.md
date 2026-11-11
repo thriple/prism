@@ -2,29 +2,23 @@
 
 Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
-## Start here (2026-11-12 early morning, Guam; before a compaction)
+## Start here (2026-11-12, Guam)
 - **State:** `main` = session branch, clean. Exact Curves is done
-  (released at 6e). Basic Materials step 1a is built (no visible change).
-  Owner fixes pushed with `[release]`: hidden edges on curved faces,
-  whole-surface hover, and Push/Pull's new loop no longer turning on
-  unasked (NOTES, "Owner feedback on the 6e build").
-- **CI:** the Linux "Format, lint and test" job has failed since 6d-2 at
-  the Mesa install step only, because the runners could not resolve
-  Ubuntu's servers (DNS outage, hours). Everything passes locally, and
-  the Windows, macOS and web jobs pass. The install step now retries 5
-  times (owner approved). Check the latest run; when the outage ends,
-  re-run any red run.
-- **Next: Basic Materials step 1b** (brief 28): the Paint Bucket
-  (`tool.paint`, B): click paints the clicked side
-  (`Command::Paint`); Ctrl fills connected (`material::connected_same`);
-  Shift replaces everywhere and Ctrl+Shift in the open group
-  (`Command::ReplaceMaterial`); Alt samples (tap or hold); hover preview;
-  a closed group is painted as a whole (`Command::PaintInstances`).
-  The viewport draws face colours front and back (Default keeps the
-  style's colours, so reversed faces still show), and a painted group's
-  colour on its Default faces (nearest painted group wins). Then 1c (the
-  Materials window, Entity Info, Select by material, Model Health unused
-  row, MCP `paint`, a `[release]`), then parts 2 and 3.
+  (released at 6e). Basic Materials 1a (core) and 1b (the Paint Bucket,
+  colours in the viewport) are built; 1b is not released (the bucket
+  can only start with Brick Red until the Materials window exists).
+- **CI:** the Linux job failed for hours at the Mesa install (Ubuntu DNS
+  outage); the step now retries. Check the latest run and re-run red ones.
+- **Next: Basic Materials step 1c** (brief 28): the Materials window
+  (Window > Materials, Soft glass: In Model swatches, the palette from
+  `material::PALETTE`, New, Duplicate, Delete, Purge Unused, Edit name,
+  colour, roughness, metalness; a click on a swatch picks the Paint
+  Bucket with it via `Session::set_brush`), Entity Info (face front and
+  back materials, an instance's material), right-click > Select > All
+  with the Same Material, a Model Health "unused materials" row, MCP
+  (`get_geometry`/`get_model` materials, a `paint` tool, `use_tool`
+  holding Alt), and a `[release]`. Then the Fillet panel (owner), then
+  parts 2 and 3.
 - **After Basic Materials: NURBS Spike, then Freeform NURBS** (owner
   moved them up, 2026-11-11).
 - **Owner's answers (2026-11-12):** the Fillet panel comes after part 1
