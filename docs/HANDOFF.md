@@ -2,6 +2,30 @@
 
 Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
+## Start here (2026-11-11 evening, Guam)
+- **State:** `main` = session branch = 6fb5e3c (Exact Curves 6c-1), clean,
+  CI green. No release since 5d (part 6 is work in progress: no
+  `[release]` until 6e).
+- **Next: step 6c-2** (brief 27): (1) `reach::limit` stops a pull at a
+  curved face: today it meets one only by corners and edges (the `gplane`
+  None branch). Candidates: the surface's support point/line against the
+  pull, the curved face's edges (minimum height along each), and rays from
+  points along the moving face's outline onto the surface; keep those that
+  fall in both faces (`shell::Planar::classify`, `crossing::Laid::classify`).
+  (2) `radius.rs`: a new radius stops at what it would run into (the
+  `plane()` None branch of `limit` returns the distance unchanged). (3) The
+  solid overlap test: a Follow Me sweep whose faces cross each other away
+  from shared edges (`crossing::crossings_with` / `intersect::crossings`
+  between non-neighbouring faces of the result, or `shell::winding` > 1) is
+  refused (`follow::refusal`, 5c/5d gaps: overlap further along a path, a
+  sphere profile past half a circle). Then 6d, then 6e (`[release]`).
+- **Part 6 tools to know:** `cut` (split curved faces in (θ, s),
+  `split_along`, `layout`, `face_box`), `crossing` (trace crossings,
+  `Laid`, `add_piece`), `shell` (exact inside test), `approx::facet`
+  (any cut face). Test-model facts: a Push/Pull cylinder's seams are at
+  x = 0; a Follow Me cone's base halves meet along the y axis; drawing
+  across an open hole fills it (sticky geometry).
+
 ## Where the project is
 Updated 2026-11-09 (Guam), before a context compaction.
 - **Built, in order:** Skeleton, Soft Theme, Actions & Keys, Core Model,
