@@ -172,6 +172,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
   `PRISM_REQUIRE_GPU=1`; without it they skip silently.
 - **Platform code can be checked here:** `cargo clippy -p prism-app --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` both run in this container, without a Mac or a Windows machine.
 - **Risks ahead:** `docs/research/risks.md` (checked 2026-11-06).
+- **Chunks ahead:** `docs/research/chunks-ahead.md` (2026-11-11): Follow Me,
+  Exact Curves part 6 (how curved booleans work), Basic Materials,
+  Annotation & Sections, Inspector & Features; four decisions wait on the
+  owner there. Read it before writing those briefs.
 
 ## How the owner works
 - **Times:** the owner is in Guam (UTC+10). Give times in Guam time.
