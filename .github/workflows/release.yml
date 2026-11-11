@@ -1,13 +1,17 @@
 name: Release
 
-# Every push rebuilds the "latest" release (fixed download links, no versions).
-# A v* tag, if anyone ever makes one, gets its own release as well.
+# A push to main whose commit message says [release] rebuilds the "latest"
+# release (fixed download links, no versions): a finished feature or a fix
+# the owner should try. Work in progress is committed without it (owner,
+# 2026-11-11). It can also be started by hand from the Actions tab. A v*
+# tag, if anyone ever makes one, gets its own release as well.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
     tags: ["v*"]
     # Changes to documents only do not need a new build.
     paths-ignore: ["**.md", "docs/**", "LICENSE-*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -33,6 +37,7 @@ env:
 jobs:
   windows:
     name: Windows zip
+    if: github.event_name != 'push' || github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +57,7 @@ jobs:
 
   macos:
     name: macOS app (universal, ad-hoc signed)
+    if: github.event_name != 'push' || github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

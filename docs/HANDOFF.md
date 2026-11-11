@@ -187,7 +187,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - Unless the owner says otherwise, follow the order in PLAN 6.0 ("Suggested order").
 - **Language:** plain English in commits, docs and messages; short.
 - **Feedback:** the owner tests releases and the web page, then sends feedback in batches. Each answer becomes a DECISIONS row; feedback rounds so far are #16–#26.
-- **Releases:** every push to `main` builds a release (`latest`, plus a numbered build) whatever CI says. The web page https://thriple.github.io/prism/ updates only when CI is fully green.
+- **Releases:** only a push to `main` whose commit message contains `[release]` builds a release (`latest`, plus a numbered build), whatever CI says; it can also be run by hand (Actions tab, Release, Run workflow). Use `[release]` when a feature is finished or for a fix the owner should try, not for work in progress (owner, 2026-11-11). Pushes to the session branch no longer build releases. The web page https://thriple.github.io/prism/ updates only when CI is fully green.
   - So do not push untested app code to `main`.
   - Work in progress goes on the session's `claude/…` branch first, as was done this session.
 - **"Full auto":** the owner has asked for it before, overnight ("try not to chase too many rabbits"). Keep to the brief and report in the morning.
