@@ -2463,5 +2463,5 @@ Model Health, MCP, and a release). Nothing is visible yet.
   change the last one. But the tool does not show this. Owner request: a
   panel to set the size (and fillet or chamfer) with a live preview before
   applying. **Plan step:** "Fillet panel", after Basic Materials part 1
-  (owner to confirm where). Editable fillets after the fact belong to
+  (owner confirmed, 2026-11-12). Editable fillets after the fact belong to
   Inspector & Features.

@@ -136,7 +136,8 @@ piece remains.
   named by its content hash, so a texture used in many places or files
   costs nothing extra. This needs a new schema (8), with a migration from
   7 and a golden file.
-- **Bundled library:** Poly Haven's FAQ says all its assets are CC0
+- **Bundled library** (owner, 2026-11-12: **not done**, DECISIONS #34; no textures are bundled):
+  Poly Haven's FAQ says all its assets are CC0
   ("absolutely any purpose, including commercial"), and ambientCG is CC0
   too. CC0 is not on Prism's licence list, which covers code and fonts:
   **DECISIONS #34** (open; default: allow CC0 for bundled textures, as #12

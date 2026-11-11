@@ -24,7 +24,7 @@ Materials), 1.13 (files), 1.14 (Shaded with textures, transparency), 4
   - **1c:** the Materials window, Entity Info, Select by material, Model
     Health and MCP; a `[release]`.
 - **Part 2. Textures:** images in the file, placement on flat and curved
-  faces, Shaded with textures, texture size, opacity, the bundled library.
+  faces, Shaded with textures, texture size, opacity.
 - **Part 3. Placing and exchanging:** moving, turning and sizing a texture
   on a face; materials in glTF, OBJ and 3MF import and export.
 
@@ -127,11 +127,9 @@ Parts 2 and 3 add to an active tool.
   limit); the original stays in the file.
 - **Opacity:** faces with alpha below 1 are drawn after opaque ones,
   sorted back to front, and do not hide what is behind them from picking.
-- **Bundled library** (DECISIONS #34): about 30 textured materials
-  (brick, wood, concrete, stone, tile, metal, fabric, grass) at 1024
-  pixels, from CC0 sources, with a credits file naming them. Plus the
-  colour palette from part 1. They are shown in the Materials window under
-  Library. A material is copied into the document when first used.
+- **No bundled textures** (DECISIONS #34, owner): the only built-in
+  library is part 1's colour palette. Textures come from images the user
+  loads.
 
 ### Part 3. Placing and exchanging
 - **Texture position** (right-click a painted face > Texture > Position):
@@ -202,6 +200,6 @@ Parts 2 and 3 add to an active tool.
   DECISIONS #33), pushed; a `[release]` at the end of part 1 and part 2
   for the owner to try.
 - [ ] In a build made by hand: paint a box's faces and a group, fill
-  connected, replace, sample; a brick texture lines up round a house's
+  connected, replace, sample; a brick image (loaded by hand) lines up round a house's
   corners and wraps a round tower without stretching.
 - [ ] PLAN 6.0 updated.

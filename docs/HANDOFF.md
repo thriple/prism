@@ -27,14 +27,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   row, MCP `paint`, a `[release]`), then parts 2 and 3.
 - **After Basic Materials: NURBS Spike, then Freeform NURBS** (owner
   moved them up, 2026-11-11).
-- **Waiting on the owner:**
-  - where the **Fillet panel** goes (size, fillet or chamfer, live
-    preview before applying): after part 1 of Basic Materials, or before;
-  - whether new loop should last one pull (as now) or stay on, shown,
-    until Alt again;
-  - DECISIONS #34 (CC0 textures), #35, #36: defaults in use;
-  - an optional illustrated page of Push/Pull's rules (stop at faces,
-    new loop, other groups, faces that are not part of a solid).
+- **Owner's answers (2026-11-12):** the Fillet panel comes after part 1
+  of Basic Materials; new loop keeps lasting one pull; no illustrated
+  Push/Pull page; no bundled textures (DECISIONS #34). #35 and #36 still
+  use their defaults.
 - **Owner's recordings:** Help > Record Session JSON files. Each saves the
   real final model (`result`): compare it with `Session::replay` (via
   `Recording::ends_with`) before trusting a replay. A replay can differ
