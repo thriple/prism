@@ -2680,3 +2680,29 @@ fn follow_me_sweeps_the_clicked_profile_along_the_selected_path() {
     undo(&mut d);
     assert_eq!(d.faces(), 1, "one undo");
 }
+
+/// Owner, 2026-11-11: hovering a cylinder's side lit only half of it, and
+/// its rim only half a circle. The hover takes what a click would select.
+#[test]
+fn hovering_a_cylinder_takes_its_whole_side_and_whole_rim() {
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    let f = m.faces().next().map(|(id, _)| id).expect("disc");
+    let up = m
+        .face(f)
+        .and_then(|x| x.plane())
+        .map_or(1.0, |p| p.normal.z);
+    prism_ops::push_pull(&mut m, f, 2.0 * up, false);
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(0.0, -6.0, 4.0),
+        target: DVec3::new(0.0, 0.0, 1.0),
+    });
+    d.tool("tool.select");
+    d.hover(DVec3::new(0.3, -0.95, 1.0));
+    assert!(matches!(d.s.hover(), Some(prism_view::Hit::Face(_))));
+    assert_eq!(d.s.hover_more().faces.len(), 2, "both halves of the side");
+    d.hover(DVec3::new(0.6, -0.8, 2.0));
+    assert!(matches!(d.s.hover(), Some(prism_view::Hit::Edge(_))));
+    assert_eq!(d.s.hover_more().edges.len(), 2, "both halves of the rim");
+}

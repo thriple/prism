@@ -181,3 +181,32 @@ fn a_hole_pushed_up_into_a_cone() {
     clean(&m);
     close(cone(&m), 2.0 * PI / 3.0 - PI * 0.04 * 0.5);
 }
+
+/// Owner, 2026-11-11 (sessions 6 and 7): a circle on a box's side pulled
+/// out joins a post to the box (the side gets a hole where they join), and
+/// pushed right through makes a through hole (both sides get a hole).
+#[test]
+fn a_circle_on_a_side_pulled_out_joins_and_pushed_through_makes_a_hole() {
+    for (d, vol) in [(1.0, 32.0 + PI * 0.25), (-4.0, 32.0 - PI * 0.25 * 4.0)] {
+        let mut m = block();
+        add_circle(&mut m, DVec3::new(2.0, 0.0, 1.0), DVec3::X, 0.5);
+        let disc = face_at(&m, DVec3::new(2.0, 0.0, 1.0)).expect("the disc");
+        let n = m
+            .face(disc)
+            .and_then(|f| f.plane())
+            .map_or(1.0, |p| p.normal.x);
+        pull(&mut m, disc, d * n.signum());
+        clean(&m);
+        close(volume(&m), vol);
+        assert!(
+            face_at(&m, DVec3::new(2.0, 0.0, 1.0)).is_none(),
+            "{d}: open where the circle was"
+        );
+        if d < 0.0 {
+            assert!(
+                face_at(&m, DVec3::new(-2.0, 0.0, 1.0)).is_none(),
+                "open at the far side"
+            );
+        }
+    }
+}

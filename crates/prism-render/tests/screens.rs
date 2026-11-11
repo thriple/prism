@@ -58,6 +58,7 @@ fn cube_draws() {
     let h = Highlight {
         hover: Some(prism_render::Hit::Face(front)),
         selection: sel,
+        ..Highlight::default()
     };
     let img = g.shot(&m, Camera::home(), 640, 400, 2.0, &style, &h);
     img.save("cube-selected");
@@ -979,4 +980,41 @@ fn a_smooth_ball_shows_its_outline() {
     let cam = looking_at(DVec3::new(0.0, 0.0, 2.0), 12.0, -60.0, 10.0);
     let img = g.shot(&m, cam, 640, 400, 1.0, &wire, &Highlight::default());
     assert_eq!(img.count_near([255, 0, 0], 60), 0);
+}
+
+/// Owner, 2026-11-11: a cylinder's bottom rim showed through its front
+/// wall. Each half of the side wraps round, so the far rim is on the same
+/// face as the wall in front of it; a curved face now hides its own edges.
+#[test]
+fn a_cylinders_far_rim_is_hidden_by_its_near_wall() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let mut m = Model::new();
+    prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    let f = m.faces().next().map(|(id, _)| id).expect("disc");
+    let up = m
+        .face(f)
+        .and_then(|x| x.plane())
+        .map_or(1.0, |p| p.normal.z);
+    prism_ops::push_pull(&mut m, f, 2.0 * up, false);
+    let cam = Camera {
+        eye: DVec3::new(0.0, -6.0, 4.0),
+        target: DVec3::new(0.0, 0.0, 1.0),
+    };
+    let style = Style::default();
+    let img = g.shot(&m, cam, 640, 400, 1.0, &style, &Highlight::default());
+    img.save("cylinder-far-rim");
+    let edge = [style.edge.0[0], style.edge.0[1], style.edge.0[2]];
+    let dark_near = |p: DVec3| {
+        let (x, y) = cam_px(&cam, p);
+        (x.saturating_sub(2)..=x + 2)
+            .flat_map(|i| (y.saturating_sub(2)..=y + 2).map(move |j| (i, j)))
+            .filter(|(i, j)| common::near(img.at(*i, *j), edge, 40))
+            .count()
+    };
+    // The far rim (behind the wall) is hidden; the near rim shows.
+    for a in [60.0f64, 90.0, 120.0] {
+        let (s, c) = a.to_radians().sin_cos();
+        assert_eq!(dark_near(DVec3::new(c, s, 0.0)), 0, "far rim at {a}°");
+        assert!(dark_near(DVec3::new(c, -s, 0.0)) > 0, "near rim at {a}°");
+    }
 }

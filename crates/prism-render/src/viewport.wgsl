@@ -261,6 +261,13 @@ const POINT: u32 = 64u;
 const NO_TEST: u32 = 128u;
 // A glyph: shape number in the dash slot, radius in the gap slot.
 const MARK: u32 = 256u;
+// One of the line's faces is curved: a curved face wraps round, so it can
+// hide its own edges (a cylinder's back rim behind its front wall).
+const CURVED_OWN: u32 = 512u;
+// How far behind its own curved face a line may be and still show: the
+// face is drawn as flat facets, whose chords stray from the true surface
+// (and from the exact edge on it) by about this fraction of the distance.
+const CURVE_SLACK: f32 = 3e-3;
 // A line may be this fraction of its depth behind a face and still show.
 const DEPTH_SLACK: f32 = 5e-7;
 // A line lies in a face's plane when both its ends are within this
@@ -441,8 +448,20 @@ fn line_visible(in: LineOut) -> bool {
     let k = vec2<i32>(floor(pc));
     let t = face_at(k);
     let face = t.x;
-    if (face == 0u || face == in.faces.x || face == in.faces.y) {
+    if (face == 0u) {
         return true;
+    }
+    if (face == in.faces.x || face == in.faces.y) {
+        if ((in.flags & CURVED_OWN) == 0u) {
+            return true;
+        }
+        // Its own curved face: hidden only where the face is clearly in
+        // front of it (the far side of a cylinder seen through the near).
+        var zc = max(in.ends.x, in.ends.y);
+        if (len >= 1.0) {
+            zc = mix(in.ends.x, in.ends.y, tl / len);
+        }
+        return zc >= face_depth(face, bitcast<f32>(t.y), k, pc) * (1.0 - CURVE_SLACK);
     }
     // A face never hides a line lying in its own plane, however many faces
     // share the line (owner feedback, 2026-11-09). Not the ground grid and

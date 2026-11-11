@@ -115,6 +115,7 @@ const PUSH_BACK: u32 = 16;
 const POINT: u32 = 64;
 const NO_TEST: u32 = 128;
 const MARK: u32 = 256;
+const CURVED_OWN: u32 = 512;
 
 fn split(v: DVec3) -> ([f32; 3], [f32; 3]) {
     let hi = v.as_vec3();
@@ -241,6 +242,9 @@ fn sun_view_proj(light: DVec3, lo: DVec3, hi: DVec3, eye: DVec3) -> prism_math::
 pub struct Highlight {
     pub hover: Option<Hit>,
     pub selection: Selection,
+    /// The rest of what the hover takes: the other faces of a smooth
+    /// surface, the other pieces of a curve (as a click would select).
+    pub hover_more: Selection,
 }
 
 struct Target {
@@ -1037,6 +1041,14 @@ impl Renderer {
                             l.flags |= HAS_N2;
                         }
                         l.faces = face_numbers(scene, e.faces);
+                        if e.faces.iter().flatten().any(|f| {
+                            scene
+                                .face_index
+                                .get(f)
+                                .is_some_and(|i| scene.faces[*i].curved.is_some())
+                        }) {
+                            l.flags |= CURVED_OWN;
+                        }
                         l
                     })
                     .collect::<Vec<_>>()
@@ -1077,8 +1089,15 @@ impl Renderer {
             Some(Hit::Face(f)) => Some(f),
             _ => None,
         };
-        self.hover_faces
-            .set(device, "hovered face", &tris(&mut hover_face.into_iter()));
+        self.hover_faces.set(
+            device,
+            "hovered face",
+            &tris(
+                &mut hover_face
+                    .into_iter()
+                    .chain(h.hover_more.faces.iter().copied()),
+            ),
+        );
         self.selected_faces.set(
             device,
             "selected faces",
@@ -1104,6 +1123,9 @@ impl Renderer {
         );
         if let Some(Hit::Edge(e)) = h.hover {
             lines.extend(edge_line(e, style.hover));
+            for x in h.hover_more.edges.iter().filter(|x| **x != e) {
+                lines.extend(edge_line(*x, style.hover));
+            }
         }
         self.highlight_lines
             .set(device, "highlighted edges", &lines);
@@ -1163,6 +1185,7 @@ impl Renderer {
                 } else {
                     s.edge
                 };
+                // On the face's own rim as seen: its face never hides it.
                 let mut x = LineInstance::new(l.a, l.b, color, width);
                 x.faces = [l.index as u32 + 1, 0];
                 x

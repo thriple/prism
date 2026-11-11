@@ -522,6 +522,24 @@ impl Session {
     pub fn hover(&self) -> Option<Hit> {
         self.hover.map(|p| p.hit)
     }
+
+    /// What else the hover takes, as a click would select it: the whole
+    /// smooth surface of a hovered face, the whole curve of a hovered arc
+    /// (owner, 2026-11-11: hovering highlighted half a cylinder).
+    pub fn hover_more(&self) -> Selection {
+        let mut sel = Selection::default();
+        let m = self.work_model();
+        match self.hover() {
+            Some(Hit::Face(f)) if m.face(f).is_some() => {
+                sel.faces.extend(prism_ops::select::surface(m, f));
+            }
+            Some(Hit::Edge(e)) if m.edge(e).is_some() => {
+                sel.edges.extend(m.curve_edges(e));
+            }
+            _ => {}
+        }
+        sel
+    }
     pub fn inference(&self) -> Option<&Inference> {
         self.inference.as_ref()
     }

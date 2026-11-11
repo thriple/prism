@@ -2414,3 +2414,38 @@ Model Health, MCP, and a release). Nothing is visible yet.
     neighbour's material. Minor: NOTES only.
   - Imported meshes have no materials until part 3 (glTF, OBJ, 3MF), as
     planned.
+
+## Owner feedback on the 6e build (2026-11-11, late)
+
+- **Edges showed through curved faces** (a cylinder's bottom rim through
+  its wall; the edges of an extruded shape with arcs). Cause: a line is
+  never hidden by its own faces, which is right for flat faces. But each
+  half of a cylinder's side wraps round, so the far rim belongs to the
+  same face as the wall in front of it. Fix: a line with a curved face
+  (`CURVED_OWN`) gets a depth test against its own face, with a slack of
+  3/1000 of the distance for the facets' chords. Outline lines are exempt,
+  because they lie on their face's rim as seen. Screenshot test
+  `a_cylinders_far_rim_is_hidden_by_its_near_wall`.
+- **Hovering lit half a cylinder, and half a circle's edge.** A click
+  already selected the whole smooth surface and the whole curve; the hover
+  now highlights what a click would select (`Session::hover_more`,
+  `Highlight.hover_more`). Session test
+  `hovering_a_cylinder_takes_its_whole_side_and_whole_rim`.
+- **"A circle pushed through a box made a new circle face."** The owner's
+  sessions 6 and 7 were replayed command by command:
+  - session 6: a circle on a box's side pushed right through makes a
+    through hole (both sides open, volume exact);
+  - session 7: a circle pulled out makes a post joined to the box.
+
+  The live preview runs the same operation as the result. So what looked
+  wrong was most likely the edges showing through the curved walls (fixed
+  above). A regression test covers both
+  (`a_circle_on_a_side_pulled_out_joins_and_pushed_through_makes_a_hole`).
+  If it happens again, a recording of it will show the steps.
+- **Fillet / Chamfer:** it works: click an edge to round it with the
+  current size, Ctrl+click to chamfer, type a size and press Enter to
+  change the last one. But the tool does not show this. Owner request: a
+  panel to set the size (and fillet or chamfer) with a live preview before
+  applying. **Plan step:** "Fillet panel", after Basic Materials part 1
+  (owner to confirm where). Editable fillets after the fact belong to
+  Inspector & Features.

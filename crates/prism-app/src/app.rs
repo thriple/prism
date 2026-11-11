@@ -528,6 +528,7 @@ impl App {
         let highlight = prism_render::gpu::Highlight {
             hover: s.hover(),
             selection: s.selection().clone(),
+            hover_more: s.hover_more(),
         };
         let (scene, style) = (s.display_scene(), &s.style);
         let shadow = style.ground_shadow;

@@ -17,6 +17,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   material, Model Health unused row, MCP `paint`, a `[release]`).
 - **Build order changed (owner, 2026-11-11):** after Basic Materials
   come the NURBS Spike, then Freeform NURBS (PLAN 6.0 table moved).
+- **Owner feedback fixed (2026-11-11 late, NOTES):** edges through
+  curved faces, hover of whole smooth surfaces and curves; Push/Pull
+  checked against the owner's sessions (correct). Planned: a Fillet panel
+  (size, fillet or chamfer, live preview), placement to confirm.
 - **Owner to try by hand:** a cylinder pushed through a box makes a hole;
   a slanted cut through a cylinder; the curve tools active.
 - **6d-2 added:** `prism_view::outline` (outline lines from the curved
