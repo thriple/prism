@@ -658,6 +658,40 @@ mod tests {
         assert!(reg.menubar().iter().any(|(m, _)| *m == "Scripting"));
     }
 
+    /// Exact Curves 6e: the curve tools are active, with menu paths, on
+    /// the dock, and with their hotkeys; none is greyed any more.
+    #[test]
+    fn the_curve_tools_are_active() {
+        let reg = Registry::new();
+        let ctx = Context::default();
+        for id in [
+            "tool.circle",
+            "tool.polygon",
+            "tool.arc",
+            "arc.2",
+            "arc.3",
+            "arc.c",
+            "arc.p",
+            "tool.fillet",
+            "tool.followme",
+        ] {
+            let a = reg.get(id).expect(id);
+            assert!(a.built() && reg.enabled(id, &ctx), "{id} is greyed");
+            assert_eq!(a.run, Run::Tool, "{id}");
+            assert!(!a.menu_path.is_empty(), "{id} has no menu path");
+        }
+        let docked: Vec<&str> = reg
+            .dock()
+            .iter()
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect();
+        for id in ["tool.circle", "tool.followme", "tool.fillet"] {
+            assert!(docked.contains(&id), "{id} is not on the dock");
+        }
+        assert_eq!(reg.get("tool.circle").map(|a| a.default_key), Some("C"));
+        assert_eq!(reg.get("tool.arc").map(|a| a.default_key), Some("A"));
+    }
+
     #[test]
     fn greyed_actions_cannot_run_and_say_why() {
         let reg = Registry::new();

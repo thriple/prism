@@ -1,3 +1,5 @@
+**New in this build: Exact Curves.** The curve tools are active: Circle (C), Polygon, the Arc tools (A), Fillet / Chamfer and Follow Me. Circles, arcs, cylinders, cones, spheres and tori stay exact: Push/Pull cuts holes and slots through them, stops where it meets them and gives them a new size; lines drawn across them split them; Intersect Faces works on them; smooth curved faces show their outline.
+
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
 **macOS** (universal: Apple Silicon and Intel)

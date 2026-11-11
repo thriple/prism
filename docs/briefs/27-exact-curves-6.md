@@ -15,7 +15,7 @@
 - **6d. A new size for cones, spheres and tori by Push/Pull; outline lines along curved faces.** Split in two:
   - **6d-1:** new sizes for cones, spheres and tori, stopped at what they meet. *(Built.)*
   - **6d-2:** outline lines. *(Built.)*
-- **6e. The curve tools become active** (moved from 5e): `GREYED_TOOLS` is emptied, a `[release]` build.
+- **6e. The curve tools become active** (moved from 5e): `GREYED_TOOLS` is emptied, a `[release]` build. *(Built.)*
 
 ## Requirements by step
 
@@ -67,6 +67,6 @@
 - **6e:** the action registry test: no greyed tools left.
 
 ## Acceptance
-- [ ] Every step: tests and CI green, NOTES updated (known gaps sorted, DECISIONS #33), pushed.
+- [x] Every step: tests and CI green, NOTES updated (known gaps sorted, DECISIONS #33), pushed.
 - [ ] In a build made by hand: a cylinder pushed through a box makes a hole; a slanted cut through a cylinder; the curve tools active.
-- [ ] PLAN 6.0 updated.
+- [x] PLAN 6.0 updated.

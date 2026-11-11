@@ -43,7 +43,7 @@ pub use follow::FOLLOW;
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
 pub use round::FILLET;
-pub use shapes::{CIRCLE, DEFAULT_SIDES, GREYED_TOOLS, POLYGON, polygon_points};
+pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -55,9 +55,31 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 14] = [
-    SELECT, LINE, RECT, ORBIT, PAN, ZOOM, PUSH, MOVE, ROTATE, SCALE, ERASE, OFFSET, TAPE,
+pub const TOOLS: [&str; 23] = [
+    SELECT,
+    LINE,
+    RECT,
+    ORBIT,
+    PAN,
+    ZOOM,
+    PUSH,
+    MOVE,
+    ROTATE,
+    SCALE,
+    ERASE,
+    OFFSET,
+    TAPE,
     PROTRACTOR,
+    // The curve tools, active since Exact Curves 6e.
+    CIRCLE,
+    POLYGON,
+    arcs::ARC,
+    arcs::ARC2,
+    arcs::ARC3,
+    arcs::ARC_CENTRE,
+    arcs::PIE,
+    round::FILLET,
+    follow::FOLLOW,
 ];
 
 fn is_nav(t: &str) -> bool {

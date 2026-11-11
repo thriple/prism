@@ -14,20 +14,6 @@ use super::{Session, plane_point};
 pub const CIRCLE: &str = "tool.circle";
 pub const POLYGON: &str = "tool.polygon";
 
-/// Built, but greyed in menus, toolbars and the dock until Exact Curves is
-/// done (owner, 2026-11-09). Only MCP `use_tool` reaches them.
-pub const GREYED_TOOLS: [&str; 9] = [
-    CIRCLE,
-    POLYGON,
-    super::arcs::ARC,
-    super::arcs::ARC2,
-    super::arcs::ARC3,
-    super::arcs::ARC_CENTRE,
-    super::arcs::PIE,
-    super::round::FILLET,
-    super::follow::FOLLOW,
-];
-
 /// A polygon's sides when none were typed.
 pub const DEFAULT_SIDES: u32 = 6;
 /// The most sides a polygon can have.

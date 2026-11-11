@@ -2329,3 +2329,28 @@ Built 2026-11-11 (brief 27).
     with the curved faces' triangles (a few thousand for a torus, well
     under a millisecond). If big models make orbiting slow, move it to the
     GPU. Minor: NOTES only.
+
+## Exact Curves (part 6, step 6e): the curve tools are active
+
+Built 2026-11-11 (brief 27). **Exact Curves is done.**
+
+- **The curve tools are active.** Circle (C), Polygon, the Arc tools (A,
+  and Arc by two points, by three points, by centre, and Pie), Fillet /
+  Chamfer and Follow Me are ordinary tools now (`session::TOOLS`): in the
+  menus, on the dock, in command search, and on their hotkeys.
+  `GREYED_TOOLS` is gone, and so is MCP `use_tool`'s special path for
+  greyed tools.
+- **Release:** this push carries `[release]`. The release notes
+  (`packaging/release-notes.md`) start with what Exact Curves brings.
+- **Tests:** `the_curve_tools_are_active` in the action registry. Each
+  tool is built, enabled and runs as a tool, has a menu path, and Circle,
+  Follow Me and Fillet are on the dock with their hotkeys. The MCP tests
+  now expect the tools to be enabled.
+- **For the owner to try by hand** (the brief's acceptance list):
+  - a cylinder pushed through a box makes a hole;
+  - a slanted cut through a cylinder;
+  - the curve tools active.
+- **Known gaps:** none new. Part 6's steps list theirs above. The ones
+  kept for later chunks are the NURBS work (freeform surfaces, bending a
+  curved face by moving a point) and booleans between groups (Inspector &
+  Features).

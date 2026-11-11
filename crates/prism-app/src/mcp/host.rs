@@ -347,18 +347,6 @@ impl AppHost<'_> {
 
     fn use_tool(&mut self, args: &Value) -> Result<Value, String> {
         if let Some(tool) = args.get("tool").and_then(Value::as_str) {
-            // The Circle and Polygon tools stay greyed in the menus until
-            // Exact Curves is done, but an assistant can use them (brief 23).
-            if let Some(&greyed) = prism_tools::session::GREYED_TOOLS
-                .iter()
-                .find(|t| **t == tool)
-            {
-                self.chrome.active_tool = greyed;
-                self.follow_tool();
-                self.viewport.session.mark_all_dirty();
-                return self
-                    .use_tool(&json!({"steps": args.get("steps").cloned().unwrap_or_default()}));
-            }
             let is_tool = self
                 .chrome
                 .reg
@@ -596,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn use_tool_draws_circles_and_polygons_that_stay_greyed_in_menus() {
+    fn use_tool_draws_circles_and_polygons() {
         let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
         let (mut tabs, mut tool) = (Vec::new(), "tool.select");
         let mut h = AppHost {
@@ -606,11 +594,9 @@ mod tests {
             tab_actions: &mut tabs,
             last_tool: &mut tool,
         };
-        assert!(
-            !h.chrome.enabled("tool.circle"),
-            "greyed until Exact Curves is done"
-        );
-        assert!(!h.chrome.enabled("tool.polygon"));
+        // Active since Exact Curves 6e.
+        assert!(h.chrome.enabled("tool.circle"));
+        assert!(h.chrome.enabled("tool.polygon"));
         let r = value(h.call(
             "use_tool",
             &json!({"tool": "tool.circle", "steps": [{"lock": "blue"}, {"click": [0, 0, 0]}, {"move": [0.5, 0, 0]}, {"type": "1"}]}),
@@ -638,7 +624,6 @@ mod tests {
             .collect();
         assert_eq!(sides.len(), 5);
         assert!(sides.iter().all(|e| e["curve"] == sides[0]["curve"]));
-        assert!(!h.chrome.enabled("tool.circle"), "still greyed");
     }
 
     #[test]
@@ -653,10 +638,7 @@ mod tests {
             last_tool: &mut tool,
         };
         for id in ["arc.2", "arc.3", "arc.c", "arc.p", "tool.arc"] {
-            assert!(
-                !h.chrome.enabled(id),
-                "{id} greyed until Exact Curves is done"
-            );
+            assert!(h.chrome.enabled(id), "{id} active since Exact Curves 6e");
         }
         let steps = [
             (
@@ -954,7 +936,7 @@ mod tests {
             &json!({"tool": "tool.push", "steps": [{"click": [1, 1, 0]}, {"move": [1, 1, 0.5]}, {"type": "2"}]}),
         ));
         assert_eq!(r["model"]["faces"], 6, "{r}");
-        // Greyed until Exact Curves is done, but reachable here (brief 26).
+        // Fillet (brief 26), active since Exact Curves 6e.
         let r = value(h.call(
             "use_tool",
             &json!({"tool": "tool.fillet", "steps": [{"click": [2, 0, 1]}, {"type": "0.25"}]}),
@@ -970,8 +952,7 @@ mod tests {
         assert_eq!(radii, [&json!(0.25)], "{g}");
     }
 
-    /// Follow Me is greyed until Exact Curves is done, but reachable here
-    /// (brief 26, step 5c): select a line, then click the profile.
+    /// Follow Me (brief 26, step 5c): select a line, then click the profile.
     #[test]
     fn use_tool_follows_a_path_with_a_profile() {
         let mut m = prism_topo::Model::new();
