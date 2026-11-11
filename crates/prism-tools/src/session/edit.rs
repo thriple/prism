@@ -857,6 +857,9 @@ impl Session {
     }
 
     fn commit_push(&mut self, face: FaceId, d: f64, new_loop: bool) {
+        // A new loop is for one pull (owner, 2026-11-11: it stayed on
+        // unseen and left faces behind).
+        self.alt_loop = false;
         if self.run(Command::PushPull {
             face,
             distance: d,
@@ -1247,8 +1250,14 @@ impl Session {
             return Some(h);
         }
         Some(match (self.tool.as_str(), &self.edit) {
+            (PUSH, Some(EditOp::Push { new_loop: true, .. })) => {
+                "NEW LOOP: the original face stays · move to pull · click to finish · Alt turns it off · Esc cancels"
+            }
             (PUSH, Some(_)) => {
                 "Move to pull · click to finish · type a distance + Enter · Alt toggles new loop · Esc cancels"
+            }
+            (PUSH, None) if self.alt_loop => {
+                "NEW LOOP on for the next pull: the original face stays · Alt turns it off"
             }
             (PUSH, None) => {
                 "Click a face to push or pull it · double-click repeats the last distance · Alt toggles new loop"

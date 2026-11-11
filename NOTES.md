@@ -2437,9 +2437,25 @@ Model Health, MCP, and a release). Nothing is visible yet.
     through hole (both sides open, volume exact);
   - session 7: a circle pulled out makes a post joined to the box.
 
-  The live preview runs the same operation as the result. So what looked
-  wrong was most likely the edges showing through the curved walls (fixed
-  above). A regression test covers both
+  **Corrected the same evening:** the replays were not what the owner saw.
+  Each recording also saves the real final model. Session 6's has the
+  circle's original face left over the hole, and replaying with that push
+  done as a **new loop** gives exactly that model. So new loop was on
+  unasked (it also explains the triangles pushed through a body that left
+  their faces). Causes, all fixed:
+  - a Ctrl or Alt counted as a tap when the key it went with never
+    reached the viewport: a menu shortcut (the recording shows a Ctrl tap
+    after every Ctrl+Z), or Alt+Tab to another window. Now any other key,
+    and a change of window focus, cancel the tap (`Viewport::cancel_tap`);
+  - once on, new loop stayed on for every later pull, and nothing showed
+    it. Now it lasts one pull, choosing a tool turns it off, and the hint
+    says "NEW LOOP" while it is on;
+  - recordings did not save whether it was on, so replays started
+    differently. `Recording.alt_loop` now saves it.
+
+  Tests: `a_new_loop_is_shown_and_lasts_one_pull` (session) and
+  `a_modifier_used_with_another_key_is_not_a_tap` (viewport). The first
+  explanation (edges showing through) was real too, but was not this. A regression test covers both
   (`a_circle_on_a_side_pulled_out_joins_and_pushed_through_makes_a_hole`).
   If it happens again, a recording of it will show the steps.
 - **Fillet / Chamfer:** it works: click an edge to round it with the

@@ -149,6 +149,13 @@ impl Viewport {
         self.send(Input::Tool { id: to.to_owned() });
     }
 
+    /// A modifier held now takes part in a shortcut or went with a key to
+    /// another window: letting it go is not a tap (owner, 2026-11-11: Alt
+    /// turned Push/Pull's new loop on unasked).
+    pub fn cancel_tap(&mut self) {
+        self.tap = None;
+    }
+
     /// A key the chrome did not use. Returns true if the viewport used it.
     pub fn key(&mut self, code: &str, pressed: bool, chrome: &mut Chrome) -> bool {
         if code.starts_with("Shift") {
@@ -443,6 +450,31 @@ fn start() -> web_time::Instant {
 mod tests {
     use super::{Step, Tap, WheelSort, is_mouse_wheel, tap_inputs};
     use prism_tools::Input;
+
+    #[test]
+    fn a_modifier_used_with_another_key_is_not_a_tap() {
+        let mut chrome = crate::chrome::Chrome::new(crate::actions::keymap::Platform::Windows);
+        let mut v = super::Viewport::new();
+        v.session.handle(&prism_tools::session::Event {
+            t: 0.0,
+            input: Input::Tool {
+                id: "tool.push".into(),
+            },
+        });
+        let tapped = |v: &super::Viewport| v.session.hint().contains("NEW LOOP");
+        // Alt alone: a tap, new loop on; again: off.
+        v.key("AltLeft", true, &mut chrome);
+        v.key("AltLeft", false, &mut chrome);
+        assert!(tapped(&v));
+        v.key("AltLeft", true, &mut chrome);
+        v.key("AltLeft", false, &mut chrome);
+        assert!(!tapped(&v));
+        // Alt with a key the menus took, or Alt+Tab away: not a tap.
+        v.key("AltLeft", true, &mut chrome);
+        v.cancel_tap();
+        v.key("AltLeft", false, &mut chrome);
+        assert!(!tapped(&v));
+    }
 
     #[test]
     fn modifier_taps_per_platform() {

@@ -724,6 +724,11 @@ impl ApplicationHandler<UserEvent> for App {
             let code_name = format!("{code:?}");
             let typing_elsewhere = self.egui_ctx.egui_wants_keyboard_input();
             let pressed = key.state == ElementState::Pressed;
+            // Any other key makes a held Ctrl or Alt part of a shortcut, not
+            // a tap, even when the menus use the key (Ctrl+Z).
+            if pressed && !code_name.starts_with("Control") && !code_name.starts_with("Alt") {
+                self.viewport.cancel_tap();
+            }
             let chrome_ui = self.chrome.ui_open_pub() || self.files.modal();
             if pressed
                 && !typing_elsewhere
@@ -761,6 +766,11 @@ impl ApplicationHandler<UserEvent> for App {
             && let (Some(window), Some(state)) = (&self.window, &mut self.egui_state)
         {
             redraw |= state.on_window_event(window, &event).repaint;
+        }
+        if let WindowEvent::Focused(_) = event {
+            // Alt+Tab and the like: the key that went with the modifier
+            // went to another window, so letting go is not a tap.
+            self.viewport.cancel_tap();
         }
         if let WindowEvent::Focused(true) = event {
             // The system setting may have changed while we were away.

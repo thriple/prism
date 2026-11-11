@@ -48,6 +48,7 @@ impl Driver {
             settings: self.s.settings,
             events: vec![],
             result: String::new(),
+            alt_loop: false,
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -2705,4 +2706,31 @@ fn hovering_a_cylinder_takes_its_whole_side_and_whole_rim() {
     d.hover(DVec3::new(0.6, -0.8, 2.0));
     assert!(matches!(d.s.hover(), Some(prism_view::Hit::Edge(_))));
     assert_eq!(d.s.hover_more().edges.len(), 2, "both halves of the rim");
+}
+
+/// Owner, 2026-11-11: Push/Pull's new loop came on unasked and stayed on,
+/// unseen, so pulls left their original faces behind. It is for one pull
+/// now, the hint says when it is on, and choosing a tool turns it off.
+#[test]
+fn a_new_loop_is_shown_and_lasts_one_pull() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.send(Input::AltTap);
+    assert!(d.s.hint().contains("NEW LOOP"), "{}", d.s.hint());
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("1");
+    assert!(!d.s.hint().contains("NEW LOOP"), "off after the pull");
+    // A pull after it is a plain one: no face left behind.
+    let faces = d.faces();
+    d.click(DVec3::new(1.0, 1.0, 1.0));
+    d.hover(DVec3::new(1.0, 1.0, 1.5));
+    d.typed("0.5");
+    assert_eq!(d.faces(), faces, "the top moved, nothing left behind");
+    // Choosing a tool turns it off too.
+    d.send(Input::AltTap);
+    d.tool("tool.select");
+    d.tool(PUSH);
+    assert!(!d.s.hint().contains("NEW LOOP"));
 }

@@ -188,6 +188,9 @@ pub struct Recording {
     pub events: Vec<Event>,
     /// The model's geometry at the end (`Model::geometry_json`).
     pub result: String,
+    /// Whether Push/Pull's new loop was on when recording started.
+    #[serde(default)]
+    pub alt_loop: bool,
 }
 
 impl Recording {
@@ -711,6 +714,7 @@ impl Session {
             settings: self.settings,
             events: Vec::new(),
             result: String::new(),
+            alt_loop: self.alt_loop,
         });
     }
 
@@ -729,6 +733,7 @@ impl Session {
         s.size = r.size;
         s.settings = r.settings;
         s.ease = false;
+        s.alt_loop = r.alt_loop;
         for e in &r.events {
             s.handle(e);
         }
@@ -838,6 +843,8 @@ impl Session {
         }
         self.cancel();
         self.tool = id.to_owned();
+        // A new loop is for one pull at a time, never left on unseen.
+        self.alt_loop = false;
         self.rot_lock = None;
         self.ctrl_copy = false;
         self.mem.clear();
