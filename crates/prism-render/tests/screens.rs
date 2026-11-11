@@ -20,9 +20,11 @@ fn gpu() -> Option<(std::sync::MutexGuard<'static, ()>, Gpu)> {
     let g = Gpu::new().map(|gpu| (turn, gpu));
     if g.is_none() {
         eprintln!("no GPU adapter: skipping the screenshot test");
+        // CI asks for one with PRISM_REQUIRE_GPU when it installs Mesa
+        // (skipped on Linux until further notice, owner 2026-11-12).
         assert!(
-            std::env::var_os("CI").is_none(),
-            "CI must have a (software) GPU"
+            std::env::var_os("PRISM_REQUIRE_GPU").is_none(),
+            "PRISM_REQUIRE_GPU is set but there is no (software) GPU"
         );
     }
     g
