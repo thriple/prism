@@ -922,3 +922,61 @@ fn cones_spheres_and_tori_shade_round() {
         assert_eq!(back_pixels(&img), 0, "{name}: no back face shows");
     }
 }
+
+/// Exact Curves 6d: a smooth ball shows its outline as a line, found
+/// again as the view turns; not in Wireframe, where faces are not drawn.
+#[test]
+fn a_smooth_ball_shows_its_outline() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let mut m = prism_tools::scenes::sphere(DVec3::new(0.0, 0.0, 2.0), 2.0);
+    // Its seams soft and smooth: no edges drawn on it at all.
+    let seams: Vec<_> = m.edges().map(|(id, _)| id).collect();
+    for e in seams {
+        m.set_soft(e, true, true);
+    }
+    let red = Style {
+        edge: Rgba::rgb(255, 0, 0),
+        show_ground: false,
+        show_grid: false,
+        show_axes: false,
+        ..Style::default()
+    };
+    let scene = prism_render::Scene::build(&m);
+    let outlines = prism_view::outline::Outlines::of(&scene);
+    for (name, cam) in [
+        (
+            "outline-side",
+            looking_at(DVec3::new(0.0, 0.0, 2.0), 12.0, -60.0, 10.0),
+        ),
+        (
+            "outline-above",
+            looking_at(DVec3::new(0.0, 0.0, 2.0), 12.0, 30.0, 60.0),
+        ),
+    ] {
+        let img = g.shot(&m, cam, 640, 400, 1.0, &red, &Highlight::default());
+        img.save(name);
+        let lines = outlines.lines(cam.eye);
+        assert!(!lines.is_empty(), "{name}");
+        // Every few pieces along the outline, the line is drawn there.
+        let mut hits = 0;
+        let mut tried = 0;
+        for l in lines.iter().step_by(7) {
+            let (x, y) = cam_px(&cam, (l.a + l.b) * 0.5);
+            tried += 1;
+            let found = (x.saturating_sub(2)..=(x + 2).min(639)).any(|i| {
+                (y.saturating_sub(2)..=(y + 2).min(399))
+                    .any(|j| common::near(img.at(i, j), [255, 0, 0], 60))
+            });
+            hits += usize::from(found);
+        }
+        assert!(hits * 10 >= tried * 9, "{name}: {hits} of {tried}");
+    }
+    // Wireframe: no faces, so no outline.
+    let wire = Style {
+        faces: prism_view::style::FaceDraw::None,
+        ..red
+    };
+    let cam = looking_at(DVec3::new(0.0, 0.0, 2.0), 12.0, -60.0, 10.0);
+    let img = g.shot(&m, cam, 640, 400, 1.0, &wire, &Highlight::default());
+    assert_eq!(img.count_near([255, 0, 0], 60), 0);
+}

@@ -332,6 +332,11 @@ pub struct Renderer {
     hover_faces: Indices,
     selected_faces: Indices,
     edges: Lines,
+    /// Outline lines of curved faces (Exact Curves 6d): found again
+    /// whenever the eye or the line style changes.
+    outlines: Lines,
+    outline_src: prism_view::outline::Outlines,
+    outline_key: Option<([f32; 3], [u8; 4], f32, u8)>,
     /// Every vertex as a dot (View > Show > Points).
     points: Lines,
     grid: Lines,
@@ -789,6 +794,9 @@ impl Renderer {
                 count: 0,
             },
             edges: Lines::empty(),
+            outlines: Lines::empty(),
+            outline_src: prism_view::outline::Outlines::default(),
+            outline_key: None,
             points: Lines::empty(),
             grid: Lines::empty(),
             grid_style: None,
@@ -1035,6 +1043,9 @@ impl Renderer {
             })
             .collect();
         self.edges.set(device, "edges", &edges);
+        self.outline_src = prism_view::outline::Outlines::of(scene);
+        self.outline_key = None;
+        self.outlines = Lines::empty();
         let points: Vec<LineInstance> = scene
             .vertices
             .iter()
@@ -1122,6 +1133,42 @@ impl Renderer {
             dot(p, style.hover);
         }
         self.dots.set(device, "vertex dots", &dots);
+    }
+
+    /// The outline lines seen from this frame's eye, found again when the
+    /// eye or the line style changed.
+    fn ensure_outlines(&mut self, device: &wgpu::Device, f: &Frame) {
+        if self.outline_src.is_empty() {
+            return;
+        }
+        let s = f.style;
+        let width = s.edge_width.max(s.profile_width);
+        let key = (
+            f.camera.eye.as_vec3().to_array(),
+            s.edge.0,
+            width,
+            s.faded_alpha,
+        );
+        if self.outline_key == Some(key) {
+            return;
+        }
+        self.outline_key = Some(key);
+        let lines: Vec<LineInstance> = self
+            .outline_src
+            .lines(f.camera.eye)
+            .iter()
+            .map(|l| {
+                let color = if l.faded {
+                    s.edge.with_alpha(s.faded_alpha)
+                } else {
+                    s.edge
+                };
+                let mut x = LineInstance::new(l.a, l.b, color, width);
+                x.faces = [l.index as u32 + 1, 0];
+                x
+            })
+            .collect();
+        self.outlines.set(device, "outlines", &lines);
     }
 
     fn ensure_grid(&mut self, device: &wgpu::Device, style: &Style) {
@@ -1214,6 +1261,7 @@ impl Renderer {
         f: &Frame,
     ) {
         self.ensure_grid(device, f.style);
+        self.ensure_outlines(device, f);
         let Some(target) = &self.target else {
             return;
         };
@@ -1455,6 +1503,9 @@ impl Renderer {
         self.grid.draw(&mut pass);
         if s.show_lines {
             self.edges.draw(&mut pass);
+            if s.faces != FaceDraw::None {
+                self.outlines.draw(&mut pass);
+            }
             if s.hidden_lines != HiddenLines::Off {
                 pass.set_bind_group(1, &self.draws[HIDDEN].group, &[]);
                 self.edges.draw(&mut pass);

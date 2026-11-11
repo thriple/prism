@@ -2293,3 +2293,39 @@ this; **6d-2** (outline lines) is next.
   - Where several flat faces meet at one point of the surface and they are
     not all along the move, the pull is refused, even where a single
     position would satisfy them all. Minor: NOTES only.
+
+## Exact Curves (part 6, step 6d-2): outline lines
+
+Built 2026-11-11 (brief 27).
+
+- **Outline lines** (`prism_view::outline`). Where a smooth curved face
+  turns away from the eye, a line is drawn along its outline, as SketchUp
+  does with profile lines on smooth surfaces. Each drawn triangle of a
+  curved face knows the surface's normal at its corners. The outline runs
+  where the normal is square to the line of sight, and the line joins the
+  two places on the triangle's sides where that happens. The lines are
+  on screen only: not edges, not pickable, never saved.
+- **Drawing:** `prism-render` keeps the curved faces' triangles from
+  `set_scene`, and finds the outline again whenever the eye or the line
+  style changes. It draws them with the edges, in the edge colour, as wide
+  as the profile lines (or the edge width if profiles are off), faint
+  outside the open group. Its own face never hides an outline line. There
+  are no outlines in Wireframe, where faces are not drawn.
+- **Tests:**
+  - `prism-view/tests/outline.rs`: a ball seen from afar has a round
+    outline where the line of sight grazes it, which moves when the view
+    turns; a cylinder has outline lines up its sides, and none seen down
+    its axis; flat faces have none.
+  - The screenshot test `a_smooth_ball_shows_its_outline` in
+    `prism-render/tests/screens.rs`: a ball with soft seams, from two
+    views; the line is drawn along the outline, and not in Wireframe.
+- **Known gaps, sorted (DECISIONS #33):**
+  - The outline follows the drawn triangles, so it is within the chord
+    rule of the true outline, not on it. Minor: NOTES only.
+  - Outline lines hidden behind faces are not drawn dashed in the
+    hidden-line modes, as hidden edges are. SketchUp does not draw them
+    either. Not a gap.
+  - The outline is found on the CPU whenever the eye moves. The cost grows
+    with the curved faces' triangles (a few thousand for a torus, well
+    under a millisecond). If big models make orbiting slow, move it to the
+    GPU. Minor: NOTES only.

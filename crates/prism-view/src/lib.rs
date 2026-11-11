@@ -7,6 +7,7 @@
 
 pub mod camera;
 pub mod clicks;
+pub mod outline;
 pub mod overlay;
 pub mod pick;
 pub mod scene;
