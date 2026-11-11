@@ -7,8 +7,10 @@
 //!
 //! Arcs move with their ends and stay exact (Exact Curves part 2): a move,
 //! turn or even scale of both ends moves the arc's centre, turns its axis
-//! and scales its radius. A transform that would bend an arc (one end
-//! moving, or an uneven scale) is refused for now: it changes nothing.
+//! and scales its radius. An uneven scale of a whole arc or curved face
+//! falls back to approximate segments and flat facets (DECISIONS #32,
+//! `approx`). A transform that would bend an arc or a curved face (moving
+//! part of it) is refused: it changes nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,7 +75,8 @@ pub fn arcs_follow(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> bool
 pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Option<&'static str> {
     let arcs_ok = model.edges().all(|(_, e)| {
         let (a, b) = (vs.contains(&e.a), vs.contains(&e.b));
-        !e.curve.is_arc() || (!a && !b) || (a && b && e.curve.transformed(m).is_some())
+        // A whole arc scaled unevenly falls back to segments (`approx`).
+        !e.curve.is_arc() || a == b
     });
     if !arcs_ok {
         return Some(ARC_WOULD_BEND);
@@ -170,10 +173,20 @@ pub fn rotate_only(
     apply_only(model, vs, &turn(centre, axis, angle));
 }
 
+/// Before an uneven scale, what it moves whole and cannot keep exact
+/// becomes approximate (DECISIONS #32); `vs` grows by the new points.
+fn fallback(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> BTreeSet<VertexId> {
+    if prism_geom::even_scale(m).is_some() || !arcs_follow(model, vs, m) {
+        return vs.clone();
+    }
+    crate::approx::flatten_for(model, vs, m)
+}
+
 fn apply(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
     if !arcs_follow(model, vs, m) {
         return;
     }
+    let vs = &fallback(model, vs, m);
     let targets: Vec<(VertexId, DVec3)> = vs
         .iter()
         .map(|v| (*v, m.transform_point3(model.vertex(*v))))
@@ -226,6 +239,7 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
     if !arcs_follow(model, vs, m) {
         return;
     }
+    let vs = &fallback(model, vs, m);
     keep_straight(model, vs);
     for v in vs {
         let p = model.vertex(*v);
@@ -490,6 +504,10 @@ fn same_direction(a: &[VertexId], b: &[VertexId]) -> bool {
 /// its parent, Explode). Faces get their planes refitted; a mirroring
 /// transform turns every loop round, so faces still face out.
 pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
+    if prism_geom::even_scale(m).is_none() {
+        let all: BTreeSet<VertexId> = model.vertices().map(|(id, _)| id).collect();
+        crate::approx::flatten_for(model, &all, m);
+    }
     let verts: Vec<(VertexId, DVec3)> = model.vertices().collect();
     for (v, p) in verts {
         model.set_vertex(v, m.transform_point3(p));
@@ -509,38 +527,9 @@ pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
         model.remove_guide(id);
         model.add_guide(moved);
     }
-    // Arcs follow. Under an uneven scale an arc would become an ellipse:
-    // it keeps its moved centre, its turned axis and its radius scaled by
-    // the average stretch, and the model check reports its ends off it
-    // until the segment fallback (DECISIONS #32, after Exact Curves).
+    // Arcs follow (an uneven scale made them approximate segments first).
     let all: BTreeSet<VertexId> = model.vertices().map(|(id, _)| id).collect();
     move_arcs(model, &all, m);
-    let uneven: Vec<(prism_topo::EdgeId, prism_geom::Curve)> = model
-        .edges()
-        .filter_map(|(id, e)| match e.curve {
-            prism_geom::Curve::Arc {
-                centre,
-                axis,
-                radius,
-            } if e.curve.transformed(m).is_none() => {
-                let k = m.matrix3.determinant().abs().cbrt();
-                let flip = m.matrix3.determinant().signum();
-                let n = (m.matrix3.inverse().transpose() * axis).normalize() * flip;
-                Some((
-                    id,
-                    prism_geom::Curve::Arc {
-                        centre: m.transform_point3(centre),
-                        axis: n,
-                        radius: radius * k,
-                    },
-                ))
-            }
-            _ => None,
-        })
-        .collect();
-    for (id, c) in uneven {
-        model.set_curve(id, c);
-    }
     let mirror = m.matrix3.determinant() < 0.0;
     let tol = model.tol();
     let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();

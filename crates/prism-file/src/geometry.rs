@@ -14,8 +14,8 @@ use crate::FileError;
 /// (part 2) adds arcs and curve ids. Layout 4 (part 4) adds soft and
 /// smooth edges. Layout 5 (part 5b) adds cone, sphere and torus faces; it
 /// is layout 4 with more kinds of surface, so a layout 4 entry reads as it
-/// is.
-pub const VERSION: u32 = 5;
+/// is. Layout 6 (part 6a) adds approximate edges (DECISIONS #32).
+pub const VERSION: u32 = 6;
 
 type P = [f64; 3];
 
@@ -139,6 +139,54 @@ struct EdgeV4 {
     smooth: bool,
 }
 
+#[derive(Serialize, Deserialize)]
+struct EdgeV6 {
+    id: u32,
+    a: u32,
+    b: u32,
+    curve: CurveV3,
+    curve_id: Option<u32>,
+    soft: bool,
+    smooth: bool,
+    approx: bool,
+}
+
+/// Layout 6: as layout 5, and edges may be approximate (Exact Curves 6a).
+#[derive(Serialize, Deserialize)]
+struct GeometryV6 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV6>,
+    faces: Vec<FaceV2>,
+    guides: Vec<(u32, GuideV1)>,
+    /// Vertex, edge, face, guide and curve counters.
+    counters: [u32; 5],
+}
+
+impl From<GeometryV4> for GeometryV6 {
+    fn from(g: GeometryV4) -> GeometryV6 {
+        GeometryV6 {
+            vertices: g.vertices,
+            edges: g
+                .edges
+                .into_iter()
+                .map(|e| EdgeV6 {
+                    id: e.id,
+                    a: e.a,
+                    b: e.b,
+                    curve: e.curve,
+                    curve_id: e.curve_id,
+                    soft: e.soft,
+                    smooth: e.smooth,
+                    approx: false,
+                })
+                .collect(),
+            faces: g.faces,
+            guides: g.guides,
+            counters: g.counters,
+        }
+    }
+}
+
 /// Layout 3: as layout 2, and edges may be arcs and share curve ids.
 #[derive(Serialize, Deserialize)]
 struct GeometryV3 {
@@ -249,12 +297,12 @@ fn ids(l: &[VertexId]) -> Vec<u32> {
 
 pub fn encode(m: &Model) -> Vec<u8> {
     let parts = m.to_parts();
-    let g = GeometryV4 {
+    let g = GeometryV6 {
         vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
         edges: parts
             .edges
             .iter()
-            .map(|(id, e)| EdgeV4 {
+            .map(|(id, e)| EdgeV6 {
                 id: id.0,
                 a: e.a.0,
                 b: e.b.0,
@@ -273,6 +321,7 @@ pub fn encode(m: &Model) -> Vec<u8> {
                 curve_id: e.curve_id.map(|c| c.0),
                 soft: e.soft,
                 smooth: e.smooth,
+                approx: e.approx,
             })
             .collect(),
         faces: parts
@@ -347,16 +396,18 @@ pub fn encode(m: &Model) -> Vec<u8> {
 
 pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
     let bad = |e: postcard::Error| FileError::Damaged(format!("geometry: {e}"));
-    let g: GeometryV4 = match version {
-        1 => GeometryV3::from(GeometryV2::from(
+    let v4 = |g: GeometryV4| GeometryV6::from(g);
+    let g: GeometryV6 = match version {
+        1 => v4(GeometryV3::from(GeometryV2::from(
             postcard::from_bytes::<GeometryV1>(bytes).map_err(bad)?,
         ))
-        .into(),
-        2 => GeometryV3::from(postcard::from_bytes::<GeometryV2>(bytes).map_err(bad)?).into(),
-        3 => postcard::from_bytes::<GeometryV3>(bytes)
+        .into()),
+        2 => v4(GeometryV3::from(postcard::from_bytes::<GeometryV2>(bytes).map_err(bad)?).into()),
+        3 => v4(postcard::from_bytes::<GeometryV3>(bytes)
             .map_err(bad)?
-            .into(),
-        4 | 5 => postcard::from_bytes(bytes).map_err(bad)?,
+            .into()),
+        4 | 5 => v4(postcard::from_bytes(bytes).map_err(bad)?),
+        6 => postcard::from_bytes(bytes).map_err(bad)?,
         _ => {
             return Err(FileError::Damaged(format!(
                 "unknown geometry layout {version}"
@@ -394,6 +445,7 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                         curve_id: e.curve_id.map(CurveId),
                         soft: e.soft,
                         smooth: e.smooth,
+                        approx: e.approx,
                     },
                 )
             })

@@ -1,6 +1,8 @@
 //! Model Health in the session (PLAN 1.10): the panel's rows, selecting a
 //! row's items, and running its fix, on the open group's model.
 
+use std::collections::BTreeSet;
+
 use prism_doc::Command;
 use prism_ops::Selection;
 use prism_ops::health::{Found, check};
@@ -70,7 +72,27 @@ impl Session {
             row("tiny", "Tiny pieces", &r.tiny, None),
             row("arcs", "Off their curve", &r.off_circle, Some("Repair")),
         ];
-        // Information only: nesting and scale.
+        // Information only: approximate curves, nesting and scale.
+        let curves: BTreeSet<_> = r
+            .approximate
+            .edges
+            .iter()
+            .filter_map(|e| self.work_model().edge(*e).map(|x| x.curve_id))
+            .collect();
+        rows.push(HealthRow {
+            key: "approx",
+            label: "Approximate curves",
+            count: curves.len(),
+            detail: if curves.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "{} fine segments standing in for curves that are not lines or arcs",
+                    r.approximate.edges.len()
+                )
+            },
+            fix: None,
+        });
         let asm = self.doc.assembly();
         let placed = asm.placed();
         let comps = asm.components().len();
@@ -115,6 +137,7 @@ impl Session {
             "crossing" => r.crossing,
             "tiny" => r.tiny,
             "arcs" => r.off_circle,
+            "approx" => r.approximate,
             _ => return,
         };
         let sel = Selection {

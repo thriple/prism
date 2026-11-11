@@ -162,9 +162,22 @@ struct Plan {
     along: bool,
     /// The profile's vertices must move to the path's start.
     squares_up: bool,
+    /// Pieces that are chords of a path arc followed as fine segments
+    /// (DECISIONS #32): what they make is approximate.
+    chords: Vec<bool>,
+    /// Sections between two chords of one arc: their seams are soft,
+    /// smooth and approximate.
+    seams: Vec<bool>,
 }
 
-fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan, &'static str> {
+/// Plan a sweep. With `chords`, the path's arcs are followed as fine
+/// segments (the fallback, when they cannot be turned about exactly).
+fn plan(
+    model: &Model,
+    path: &BTreeSet<EdgeId>,
+    profile: FaceId,
+    chords: bool,
+) -> Result<Plan, &'static str> {
     if path.is_empty() {
         return Err(NO_PATH);
     }
@@ -206,20 +219,55 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
         vs.reverse();
         es.reverse();
     }
-    let mut pts: Vec<DVec3> = vs.iter().map(|v| model.vertex(*v)).collect();
-    let n = pts.len();
+    let corners: Vec<DVec3> = vs.iter().map(|v| model.vertex(*v)).collect();
+    let nc = corners.len();
+    let mut pts: Vec<DVec3> = Vec::with_capacity(nc);
     let mut steps: Vec<Step> = Vec::with_capacity(es.len());
+    // Which path piece each step comes from, when it is a chord of an arc.
+    let mut from_arc: Vec<Option<usize>> = Vec::with_capacity(es.len());
     for (k, id) in es.iter().enumerate() {
         let e = model.edge(*id).ok_or(NOT_A_PATH)?;
-        steps.push(match e.curve {
-            Curve::Line => Step::Line((pts[(k + 1) % n] - pts[k]).normalize_or_zero()),
-            Curve::Arc { centre, axis, .. } => Step::Arc {
-                centre,
-                axis: if e.a == vs[k] { axis } else { -axis },
-                angle: e.curve.sweep(model.vertex(e.a), model.vertex(e.b)),
-                curve: e.curve_id,
-            },
-        });
+        let (p, q) = (corners[k], corners[(k + 1) % nc]);
+        match e.curve {
+            Curve::Line => {
+                pts.push(p);
+                steps.push(Step::Line((q - p).normalize_or_zero()));
+                from_arc.push(None);
+            }
+            Curve::Arc { centre, axis, .. } => {
+                let (pa, pb) = (model.vertex(e.a), model.vertex(e.b));
+                let angle = e.curve.sweep(pa, pb);
+                if chords {
+                    let n = crate::approx::fine_count(angle);
+                    let fwd = e.a == vs[k];
+                    let at = |i: usize| {
+                        let t = i as f64 / n as f64;
+                        e.curve.point(pa, pb, if fwd { t } else { 1.0 - t })
+                    };
+                    for i in 0..n {
+                        let (x, y) = (
+                            if i == 0 { p } else { at(i) },
+                            if i + 1 == n { q } else { at(i + 1) },
+                        );
+                        pts.push(x);
+                        steps.push(Step::Line((y - x).normalize_or_zero()));
+                        from_arc.push(Some(k));
+                    }
+                } else {
+                    pts.push(p);
+                    steps.push(Step::Arc {
+                        centre,
+                        axis: if e.a == vs[k] { axis } else { -axis },
+                        angle,
+                        curve: e.curve_id,
+                    });
+                    from_arc.push(None);
+                }
+            }
+        }
+    }
+    if !closed {
+        pts.push(corners[nc - 1]);
     }
     // Lines in a row make one line.
     loop {
@@ -228,8 +276,14 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
             if !closed && (i == 0 || i == n - 1) || lines <= if closed { 3 } else { 1 } {
                 return false;
             }
-            match (steps[(i + lines - 1) % lines], steps[i % lines]) {
-                (Step::Line(a), Step::Line(b)) => tol.parallel(a, b) && a.dot(b) > 0.0,
+            let (a, b) = ((i + lines - 1) % lines, i % lines);
+            match (steps[a], steps[b]) {
+                (Step::Line(x), Step::Line(y)) => {
+                    from_arc[a].is_none()
+                        && from_arc[b].is_none()
+                        && tol.parallel(x, y)
+                        && x.dot(y) > 0.0
+                }
                 _ => false,
             }
         });
@@ -237,6 +291,7 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
             Some(i) => {
                 pts.remove(i);
                 steps.remove(i % lines);
+                from_arc.remove(i % lines);
             }
             None => break,
         }
@@ -284,7 +339,16 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
             }
             // On the first corner's plane (closed), or square to the first
             // line through the profile (open).
-            let plane = if closed { join(0)?.0 } else { (centre, d0) };
+            // A profile beyond the first piece (a short chord of an arc)
+            // starts at the path's start instead.
+            let first_len = (pts[1 % n] - pts[0]).dot(d0);
+            let plane = if closed {
+                join(0)?.0
+            } else if (centre - pts[0]).dot(d0) >= first_len - tol.dist && lines > 1 {
+                (pts[0], d0)
+            } else {
+                (centre, d0)
+            };
             let mut first = Vec::new();
             for l in &orig {
                 let sec: Option<Vec<DVec3>> = l
@@ -427,7 +491,17 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
             return Err(RING_TWISTS);
         }
     }
+    let nsec = sections.len();
+    let seams: Vec<bool> = (0..nsec)
+        .map(|j| {
+            (closed || (j > 0 && j < lines))
+                && from_arc[j % lines].is_some()
+                && from_arc[j % lines] == from_arc[(j + lines - 1) % lines]
+        })
+        .collect();
     let plan = Plan {
+        chords: from_arc.iter().map(Option::is_some).collect(),
+        seams,
         closed,
         steps,
         loops,
@@ -563,16 +637,75 @@ fn swept(
     }
 }
 
+/// Refusals the fallback (DECISIONS #32) answers: arcs that cannot be
+/// turned about or carried exactly.
+const FALLBACK: [&str; 4] = [NOT_TANGENT, OFF_AXIS, ARCS, NOT_SQUARE];
+
+/// Replace the profile's arcs by fine approximate segments.
+fn segment_profile(model: &mut Model, profile: FaceId) {
+    let arcs: Vec<EdgeId> = model
+        .face(profile)
+        .map(|f| {
+            f.edge_ids()
+                .filter(|e| model.edge(*e).is_some_and(|x| x.curve.is_arc()))
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::approx::segment_arcs(model, &arcs);
+}
+
+/// The first way the sweep can be made: exactly; with the path's arcs as
+/// fine segments; with the profile's arcs as fine segments; with both.
+/// Returns (path arcs as segments, profile arcs as segments).
+fn best(
+    model: &Model,
+    path: &BTreeSet<EdgeId>,
+    profile: FaceId,
+) -> Result<(bool, bool), &'static str> {
+    let mut err = match plan(model, path, profile, false) {
+        Ok(_) => return Ok((false, false)),
+        Err(e) => e,
+    };
+    if !FALLBACK.contains(&err) {
+        return Err(err);
+    }
+    match plan(model, path, profile, true) {
+        Ok(_) => return Ok((true, false)),
+        Err(e) => err = e,
+    }
+    let arcs = model.face(profile).is_some_and(|f| {
+        f.edge_ids()
+            .any(|e| model.edge(e).is_some_and(|x| x.curve.is_arc()))
+    });
+    if arcs {
+        let mut m = model.clone();
+        segment_profile(&mut m, profile);
+        for chords in [false, true] {
+            match plan(&m, path, profile, chords) {
+                Ok(_) => return Ok((chords, true)),
+                Err(e) => err = e,
+            }
+        }
+    }
+    Err(err)
+}
+
 /// Why following `path` with `profile` is refused, if it is.
 pub fn refusal(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Option<&'static str> {
-    plan(model, path, profile).err()
+    best(model, path, profile).err()
 }
 
 /// Sweep `profile` along `path`. Returns whether anything was made.
 // Sections, loops and points are parallel tables, walked by index.
 #[allow(clippy::needless_range_loop)]
 pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bool {
-    let Ok(plan) = plan(model, path, profile) else {
+    let Ok((chords, segmented)) = best(model, path, profile) else {
+        return false;
+    };
+    if segmented {
+        segment_profile(model, profile);
+    }
+    let Ok(plan) = plan(model, path, profile, chords) else {
         return false;
     };
     let tol = model.tol();
@@ -648,6 +781,19 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                 // Keep the original edge's direction.
                 let (a, b) = if orig.a == l.vs[i] { (a, b) } else { (b, a) };
                 let id = match orig.curve {
+                    // An approximate profile's segments stay approximate,
+                    // one curve per section.
+                    Curve::Line if orig.approx => {
+                        let id = model.add_new_edge(a, b);
+                        model.set_approx(id, true);
+                        let cid = orig.curve_id.map(|x| {
+                            *new_curve
+                                .entry((k, x))
+                                .or_insert_with(|| model.new_curve_id())
+                        });
+                        model.set_curve_id(id, cid);
+                        Some(id)
+                    }
                     Curve::Line => model.add_edge(a, b),
                     c => {
                         let Some(c) = plan.motions[k].and_then(|x| c.transformed(&x)) else {
@@ -775,18 +921,40 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
         let m = plan.loops[li].vs.len();
         for i in 0..m {
             let prev = (i + m - 1) % m;
-            if smooth_at(model, &sec_edges[0][li], prev, i, &vid[0][li]) {
+            // Between two segments of one approximate curve, the edge
+            // along the path is soft, smooth and approximate too.
+            let fine = {
+                let es = &sec_edges[0][li];
+                let (x, y) = (model.edge(es[prev]), model.edge(es[i]));
+                x.zip(y)
+                    .is_some_and(|(x, y)| x.approx && y.approx && x.curve_id == y.curve_id)
+            };
+            if fine || smooth_at(model, &sec_edges[0][li], prev, i, &vid[0][li]) {
                 for e in along.iter().filter_map(|row| row[li][i]) {
                     model.set_soft(e, true, true);
+                    if fine {
+                        model.set_approx(e, true);
+                    }
                 }
             }
         }
     }
     // ... and where the path does.
     for k in 0..secs {
-        if plan.smooth[k] {
+        if plan.smooth[k] || plan.seams[k] {
             for e in sec_edges[k].iter().flatten() {
                 model.set_soft(*e, true, true);
+                if plan.seams[k] {
+                    model.set_approx(*e, true);
+                }
+            }
+        }
+    }
+    // Along a path arc followed as segments, the edges are approximate.
+    for (k, row) in along.iter().enumerate() {
+        if plan.chords[k] {
+            for e in row.iter().flatten().flatten() {
+                model.set_approx(*e, true);
             }
         }
     }

@@ -61,6 +61,9 @@ pub struct Report {
     /// Arcs with an end off their circle, and curved faces with a point
     /// off their surface.
     pub off_circle: Found,
+    /// Fine straight segments standing in for curves Prism cannot store
+    /// exactly (DECISIONS #32): information, not a problem.
+    pub approximate: Found,
 }
 
 /// Run every check.
@@ -106,6 +109,11 @@ pub fn check(model: &Model) -> Report {
     r.tiny = tiny(model, &tol);
     r.off_circle.edges = off_circle(model, &tol).into_keys().collect();
     r.off_circle.faces = off_surface(model, &tol).into_keys().collect();
+    r.approximate.edges = model
+        .edges()
+        .filter(|(_, e)| e.approx)
+        .map(|(id, _)| id)
+        .collect();
     r
 }
 

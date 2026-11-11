@@ -9,7 +9,7 @@ use std::f64::consts::{FRAC_PI_2, PI};
 
 use prism_geom::Surface;
 use prism_math::DVec3;
-use prism_ops::follow::{self, CROSSES_AXIS, NOT_TANGENT, OFF_AXIS};
+use prism_ops::follow::{self, CROSSES_AXIS};
 use prism_ops::{add_arc, add_circle, add_segment, check, health::face_volume};
 use prism_topo::{EdgeId, FaceId, Model};
 
@@ -265,11 +265,6 @@ fn a_profile_away_from_an_arc_start_is_turned_to_it() {
 
 #[test]
 fn what_cannot_be_turned_is_refused_with_a_reason() {
-    // A profile in a plane beside the axis, not through it.
-    let mut m = Model::new();
-    let prof = standing_square(&mut m, 1.0);
-    let (p, _) = circle_path(&mut m, 3.0, 0.5);
-    assert_eq!(follow::refusal(&m, &p, prof), Some(OFF_AXIS));
     // A profile across the axis.
     let mut a = Model::new();
     let prof = poly(
@@ -284,28 +279,12 @@ fn what_cannot_be_turned_is_refused_with_a_reason() {
     );
     let (p, _) = circle_path(&mut a, 3.0, 0.5);
     assert_eq!(follow::refusal(&a, &p, prof), Some(CROSSES_AXIS));
-    // A line meeting an arc at a corner.
-    let mut c = Model::new();
-    let prof = standing_square(&mut c, -3.0);
-    let before = edges(&c);
-    add_segment(
-        &mut c,
-        DVec3::new(4.0, -3.0, 3.0),
-        DVec3::new(2.0, 0.0, 3.0),
-    );
-    add_arc(
-        &mut c,
-        DVec3::new(0.0, 0.0, 3.0),
-        DVec3::Z,
-        2.0,
-        DVec3::new(2.0, 0.0, 3.0),
-        FRAC_PI_2,
-    );
-    let p = new_edges(&c, &before);
-    assert_eq!(follow::refusal(&c, &p, prof), Some(NOT_TANGENT));
-    let before = c.clone();
-    assert!(!follow::follow(&mut c, &p, prof));
-    assert_eq!(c, before, "a refused sweep changes nothing");
+    let before = a.clone();
+    assert!(!follow::follow(&mut a, &p, prof));
+    assert_eq!(a, before, "a refused sweep changes nothing");
+    // A profile off the axis, or a corner where a line meets an arc, is
+    // followed with the arcs as fine segments since Exact Curves 6a
+    // (`follow_fallback.rs`).
 }
 
 #[test]

@@ -60,6 +60,11 @@ pub struct Edge {
     /// Shading runs smoothly across it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub smooth: bool,
+    /// A fine straight segment standing in for a curve Prism cannot store
+    /// exactly (an ellipse, a crossing of two cylinders): DECISIONS #32.
+    /// Its ends are exact; the chord between them is not.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub approx: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -424,6 +429,34 @@ impl Model {
         }
     }
 
+    /// Mark an edge approximate, or not (DECISIONS #32).
+    pub fn set_approx(&mut self, e: EdgeId, approx: bool) {
+        if let Some(x) = self.edges.get_mut(&e) {
+            x.approx = approx;
+        }
+    }
+
+    /// Fine straight segments through `points` (in order; `closed` joins
+    /// the last to the first) standing in for one curve Prism cannot store
+    /// exactly: new edges marked approximate, sharing a new curve id
+    /// (DECISIONS #32).
+    pub fn add_approx_curve(&mut self, points: &[VertexId], closed: bool) -> Vec<EdgeId> {
+        let cid = self.new_curve_id();
+        let n = points.len();
+        let segs = if closed { n } else { n.saturating_sub(1) };
+        let mut out = Vec::with_capacity(segs);
+        for i in 0..segs {
+            let (a, b) = (points[i], points[(i + 1) % n]);
+            if a == b {
+                continue;
+            }
+            let id = self.push_edge(a, b, Curve::Line, Some(cid));
+            self.set_approx(id, true);
+            out.push(id);
+        }
+        out
+    }
+
     /// Set the curve id of an edge (a polygon's straight edges share one).
     pub fn set_curve_id(&mut self, e: EdgeId, curve_id: Option<CurveId>) {
         if let Some(x) = self.edges.get_mut(&e) {
@@ -463,6 +496,7 @@ impl Model {
                 curve_id,
                 soft: false,
                 smooth: false,
+                approx: false,
             },
         );
         id
@@ -770,6 +804,17 @@ impl Model {
                     out.push((x, DVec2::new(t * c.radius, height(x))));
                 }
                 turned += sign * sweep;
+            } else {
+                // A straight edge along the cylinder turns nothing; an
+                // approximate segment (an ellipse's) turns by the angle
+                // between its ends round the axis.
+                let q = self.vertex(l[(i + 1) % l.len()]);
+                let flat = |x: DVec3| {
+                    let w = x - c.origin;
+                    w - c.axis * w.dot(c.axis)
+                };
+                let (u, w) = (flat(p), flat(q));
+                turned += u.cross(w).dot(c.axis).atan2(u.dot(w));
             }
         }
         out
@@ -1155,7 +1200,16 @@ impl Model {
                             }
                             curved => {
                                 let (p, q) = (self.vertex(x.a), self.vertex(x.b));
-                                if !curved.holds(&x.curve, p, q, self.tol().dist) {
+                                // An approximate segment's chord cuts inside
+                                // by design: its ends must be on the surface.
+                                let eps = self.tol().dist;
+                                let on = if x.approx {
+                                    curved.distance(p).abs() <= eps
+                                        && curved.distance(q).abs() <= eps
+                                } else {
+                                    curved.holds(&x.curve, p, q, eps)
+                                };
+                                if !on {
                                     out.push(format!(
                                         "face {id:?} uses edge {e:?}, which is not on its surface"
                                     ));

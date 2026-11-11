@@ -99,13 +99,14 @@ fn moves_turns_and_even_scales_keep_circles_exact() {
 }
 
 #[test]
-fn an_uneven_scale_or_a_bent_arc_is_refused() {
+fn a_bent_arc_is_refused() {
     let mut m = Model::new();
     circle(&mut m, DVec3::ZERO, 1.0);
     let before = m.clone();
     let vs = all(&m);
-    transform::scale(&mut m, &vs, DVec3::ZERO, DVec3::new(2.0, 1.0, 1.0));
-    assert_eq!(m, before);
+    // An uneven scale of the whole circle is not refused since Exact
+    // Curves 6a: it becomes approximate segments (`approx.rs` in
+    // prism-tools' tests).
     // Moving one end alone would bend the arcs.
     let one: BTreeSet<VertexId> = vs.iter().take(1).copied().collect();
     transform::translate(&mut m, &one, DVec3::X);

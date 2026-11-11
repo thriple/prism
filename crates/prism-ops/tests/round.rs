@@ -4,7 +4,7 @@ use std::f64::consts::PI;
 
 use prism_geom::Surface;
 use prism_math::DVec3;
-use prism_ops::round::{NOT_AN_EDGE, SLANTED_END, TOO_WIDE, default_size, refusal, round};
+use prism_ops::round::{NOT_AN_EDGE, TOO_WIDE, default_size, refusal, round};
 use prism_ops::{add_rect, check, push_pull};
 use prism_topo::{EdgeId, Model};
 
@@ -153,7 +153,8 @@ fn refusals_say_why() {
     add_rect(&mut flat, 0.0, 0.0, 2.0, 2.0, 0.0);
     let e = edge(&flat, v(0.0, 0.0, 0.0), v(2.0, 0.0, 0.0));
     assert_eq!(refusal(&flat, e, 0.1, true), Some(NOT_AN_EDGE));
-    // A wedge's slanted end: chamfer yes, fillet no.
+    // A wedge's slanted end: a chamfer, and since Exact Curves 6a a fillet
+    // too, its end an approximate ellipse.
     let mut w = Model::new();
     prism_ops::add_polygon(
         &mut w,
@@ -166,11 +167,29 @@ fn refusals_say_why() {
     let along = edge(&w, v(0.0, 0.0, 0.0), v(0.0, base_y, 0.0));
     assert_eq!(refusal(&w, along, 0.2, true), None, "square ends");
     let slanted = edge(&w, v(0.0, 0.0, 0.0), v(3.0, 0.0, 0.0));
-    assert_eq!(refusal(&w, slanted, 0.2, true), Some(SLANTED_END));
+    assert_eq!(refusal(&w, slanted, 0.2, true), None);
     assert_eq!(refusal(&w, slanted, 0.2, false), None);
     let mut w2 = w.clone();
     assert!(round(&mut w2, slanted, 0.2, false));
     solid(&w2);
+    let mut w3 = w.clone();
+    assert!(round(&mut w3, slanted, 0.2, true));
+    solid(&w3);
+    let approx: Vec<_> = w3.edges().filter(|(_, e)| e.approx).collect();
+    assert!(approx.len() > 2, "an ellipse of fine segments");
+    // Every point of the ellipse on the fillet's cylinder and the end face.
+    let cyl = w3
+        .faces()
+        .find_map(|(_, f)| match f.surface {
+            prism_geom::Surface::Cylinder(c) => Some(c),
+            _ => None,
+        })
+        .expect("the fillet");
+    for (_, e) in approx {
+        for p in [w3.vertex(e.a), w3.vertex(e.b)] {
+            assert!(cyl.distance(p).abs() < 1e-9, "{p}");
+        }
+    }
 }
 
 #[test]

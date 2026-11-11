@@ -328,6 +328,11 @@ impl AppHost<'_> {
                 if e.smooth {
                     j["smooth"] = json!(true);
                 }
+                // Exact Curves 6a: a fine segment standing in for a curve
+                // that is not a line or arc (DECISIONS #32).
+                if e.approx {
+                    j["approx"] = json!(true);
+                }
                 j
             })
             .collect();
@@ -695,6 +700,43 @@ mod tests {
 
     /// Exact Curves 5b: cones, spheres and tori are listed with their
     /// parameters.
+    #[test]
+    fn approximate_curves_show_in_geometry_and_health() {
+        let mut m = prism_topo::Model::new();
+        prism_ops::add_circle(&mut m, prism_math::DVec3::ZERO, prism_math::DVec3::Z, 1.0);
+        let all = m.vertices().map(|(id, _)| id).collect();
+        prism_ops::transform::scale(
+            &mut m,
+            &all,
+            prism_math::DVec3::ZERO,
+            prism_math::DVec3::new(2.0, 1.0, 1.0),
+        );
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::with_model(m));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let g = value(h.call("get_geometry", &json!({})));
+        let edges = g["edges"].as_array().unwrap();
+        assert!(
+            !edges.is_empty() && edges.iter().all(|e| e["approx"] == true),
+            "{g}"
+        );
+        let r = value(h.call("get_health", &json!({})));
+        let row = r
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["check"] == "approx")
+            .cloned()
+            .expect("the row");
+        assert_eq!(row["count"], 1, "one curve: {row}");
+    }
+
     #[test]
     fn get_geometry_lists_cones_spheres_and_tori() {
         let mut m = prism_tools::scenes::sphere(prism_math::DVec3::new(0.0, 0.0, 5.0), 2.0);

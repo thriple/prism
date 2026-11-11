@@ -7,7 +7,7 @@ use std::f64::consts::PI;
 
 use prism_geom::{Curve, Cylinder, Surface};
 use prism_math::{DAffine3, DVec3};
-use prism_ops::transform::{ARC_WOULD_BEND, CURVED_WOULD_BEND, arcs_refusal, turn};
+use prism_ops::transform::{CURVED_WOULD_BEND, arcs_refusal, turn};
 use prism_ops::{add_circle, add_segment, check};
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
@@ -181,11 +181,10 @@ fn bending_a_cylinder_is_refused() {
         .collect();
     let up = DAffine3::from_translation(DVec3::Z);
     assert_eq!(arcs_refusal(&model, &top, &up), Some(CURVED_WOULD_BEND));
+    // Squashing the whole cylinder is not refused since Exact Curves 6a:
+    // it becomes flat facets (DECISIONS #32).
     let squash = prism_ops::transform::scaling(DVec3::ZERO, DVec3::new(2.0, 1.0, 1.0));
-    assert_eq!(
-        arcs_refusal(&model, &all(&model), &squash),
-        Some(ARC_WOULD_BEND)
-    );
+    assert_eq!(arcs_refusal(&model, &all(&model), &squash), None);
 }
 
 #[test]

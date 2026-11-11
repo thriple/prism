@@ -26,6 +26,10 @@ struct End {
     p1: DVec3,
     p2: DVec3,
     across: Option<FaceId>,
+    /// The plane across the end, when it is not square to the edge: a
+    /// fillet meets it in an ellipse, made of approximate segments
+    /// (DECISIONS #32).
+    slanted: Option<Plane>,
 }
 
 /// What a fillet or chamfer of an edge makes.
@@ -109,9 +113,6 @@ fn plan(model: &Model, edge: EdgeId, size: f64, fillet: bool) -> Result<Plan, &'
             if k <= 1e-9 {
                 return Err(NOT_AN_EDGE);
             }
-            if fillet && !tol.perpendicular(s.normalize(), dir) {
-                return Err(SLANTED_END);
-            }
             let len = t / k;
             if len >= s.length() - tol.dist {
                 return Err(TOO_WIDE);
@@ -138,7 +139,22 @@ fn plan(model: &Model, edge: EdgeId, size: f64, fillet: bool) -> Result<Plan, &'
             }
             _ => return Err(NOT_AN_EDGE),
         };
-        Ok(End { v, p1, p2, across })
+        // Slanted: the plane of the corner's other two edges leans.
+        let (s1, s2) = (model.vertex(q1) - p, model.vertex(q2) - p);
+        let slanted = (fillet
+            && !(tol.perpendicular(s1.normalize(), dir) && tol.perpendicular(s2.normalize(), dir)))
+        .then(|| Plane::new(p, s1.cross(s2).normalize_or_zero()))
+        .filter(|pl| pl.normal != DVec3::ZERO);
+        if slanted.is_some_and(|pl| pl.normal.dot(dir).abs() < 1e-9) {
+            return Err(SLANTED_END);
+        }
+        Ok(End {
+            v,
+            p1,
+            p2,
+            across,
+            slanted,
+        })
     };
     let ends = [end(a)?, end(b)?];
     Ok(Plan {
@@ -207,24 +223,25 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
     let [ea, eb] = &plan.ends;
     add_segment(model, ea.p1, eb.p1);
     add_segment(model, ea.p2, eb.p2);
-    // Across each end: a line, or an arc about the fillet's axis.
-    let mut across = Vec::new();
+    // Across each end: a line, an arc about the fillet's axis, or (at a
+    // slanted end) an ellipse of approximate segments. Each is a chain of
+    // points from p1 to p2 and the edges between them.
+    let mut across: Vec<Option<(Vec<VertexId>, Vec<EdgeId>)>> = Vec::new();
     for (end, (p1, p2)) in plan.ends.iter().zip([(a1, a2), (b1, b2)]) {
-        let joined = match plan.radius {
-            None => {
-                if end.across.is_some() {
-                    add_segment(model, end.p1, end.p2);
-                    model.line_between(p1, p2)
-                } else {
-                    model.add_edge(p1, p2)
-                }
-            }
-            Some(r) => {
+        let one = |e: Option<EdgeId>| e.map(|e| (vec![p1, p2], vec![e]));
+        let joined = match (plan.radius, end.slanted) {
+            (None, _) => one(if end.across.is_some() {
+                add_segment(model, end.p1, end.p2);
+                model.line_between(p1, p2)
+            } else {
+                model.add_edge(p1, p2)
+            }),
+            (Some(r), None) => {
                 let c = centre(model.vertex(end.v), r);
                 // The short way round, from p1 to p2.
                 let n = (end.p1 - c).cross(end.p2 - c).normalize();
                 let sweep = std::f64::consts::PI - 2.0 * half;
-                if end.across.is_some() {
+                one(if end.across.is_some() {
                     add_arc(model, c, n, r, end.p1, sweep);
                     model
                         .edges()
@@ -238,7 +255,50 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
                         radius: r,
                     };
                     model.add_curve_edge(p1, p2, curve, Some(cid))
+                })
+            }
+            (Some(r), Some(pl)) => {
+                // The circle square to the edge at the corner, each point
+                // carried along the edge onto the slanted plane.
+                let corner = model.vertex(end.v);
+                let c = centre(corner, r);
+                let t = r / half.tan();
+                let (q1, q2) = (corner + plan.u1 * t, corner + plan.u2 * t);
+                let n = (q1 - c).cross(q2 - c).normalize();
+                let arc = Curve::Arc {
+                    centre: c,
+                    axis: n,
+                    radius: r,
+                };
+                let steps = crate::approx::fine_count(arc.sweep(q1, q2));
+                let onto = |x: DVec3| {
+                    x + plan.dir * ((pl.origin - x).dot(pl.normal) / plan.dir.dot(pl.normal))
+                };
+                let mut chain = vec![p1];
+                for i in 1..steps {
+                    let x = onto(arc.point(q1, q2, i as f64 / steps as f64));
+                    chain.push(if end.across.is_some() {
+                        insert_point(model, x, &tol)
+                    } else {
+                        model.add_vertex(x)
+                    });
                 }
+                chain.push(p2);
+                let cid = model.new_curve_id();
+                let mut es = Vec::new();
+                for w in chain.windows(2) {
+                    let e = if end.across.is_some() {
+                        add_segment(model, model.vertex(w[0]), model.vertex(w[1]));
+                        model.line_between(w[0], w[1])
+                    } else {
+                        model.add_edge(w[0], w[1])
+                    };
+                    let Some(e) = e else { break };
+                    model.set_approx(e, true);
+                    model.set_curve_id(e, Some(cid));
+                    es.push(e);
+                }
+                (es.len() + 1 == chain.len()).then_some((chain, es))
             }
         };
         across.push(joined);
@@ -261,10 +321,15 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
     ) else {
         return true;
     };
-    let (at_a, at_b) = (*at_a, *at_b);
     // The new face: along face 1, across b, back along face 2, across a.
-    let outer = vec![a1, b1, b2, a2];
-    let edges = vec![vec![top, at_b, bottom, at_a]];
+    let mut outer = vec![a1];
+    let mut edges = vec![top];
+    outer.extend(at_b.0.iter().copied());
+    edges.extend(at_b.1.iter().copied());
+    outer.extend(at_a.0.iter().rev().copied().take(at_a.0.len() - 1));
+    edges.push(bottom);
+    edges.extend(at_a.1.iter().rev().copied());
+    let edges = vec![edges];
     let out = (plan.n1 + plan.n2).normalize_or_zero();
     match plan.radius {
         None => {

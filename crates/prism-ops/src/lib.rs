@@ -9,6 +9,7 @@
 //!
 //! All of it is pure: no clock, no randomness, ordered iteration.
 
+pub mod approx;
 pub mod check;
 pub mod fillet;
 pub mod follow;

@@ -34,7 +34,21 @@ fn cases() -> Vec<(&'static str, Contents)> {
     let mut turned = prism_tools::scenes::sphere(prism_math::DVec3::new(0.0, 0.0, 5.0), 2.0);
     turned.append(&prism_tools::scenes::cone(1.0, 2.0));
     turned.append(&prism_tools::scenes::torus(3.0, 0.5));
+    // Exact Curves 6a: a cylinder scaled unevenly, its circles approximate
+    // segments and its side flat facets (DECISIONS #32).
+    let mut squashed = prism_tools::scenes::cylinder(1.0, 2.0);
+    let all = squashed.vertices().map(|(id, _)| id).collect();
+    prism_ops::transform::scale(
+        &mut squashed,
+        &all,
+        prism_math::DVec3::ZERO,
+        prism_math::DVec3::new(1.5, 1.0, 1.0),
+    );
     vec![
+        (
+            "approximate.prism",
+            Contents::with_model(squashed, Settings::default()),
+        ),
         (
             "turned.prism",
             Contents::with_model(turned, Settings::default()),
@@ -204,12 +218,13 @@ fn golden_files_open_and_save_the_same() {
 /// Files saved before loops named their edges (schema 2, geometry layout 1)
 /// open with the same faces and edges, found from the loops. Files saved
 /// before arcs (schema 3, layout 2) open the same too, and so do files
-/// saved before soft edges (schema 4, layout 3), and files saved before
-/// cones, spheres and tori (schema 5, layout 4).
+/// saved before soft edges (schema 4, layout 3), files saved before
+/// cones, spheres and tori (schema 5, layout 4), and files saved before
+/// approximate edges (schema 6, layout 5).
 #[test]
-fn schema_2_to_5_files_open_as_now() {
+fn schema_2_to_6_files_open_as_now() {
     let mut seen = 0;
-    let older = ["schema-2", "schema-3", "schema-4", "schema-5"]
+    let older = ["schema-2", "schema-3", "schema-4", "schema-5", "schema-6"]
         .map(|d| std::fs::read_dir(dir().join(d)).expect(d));
     for e in older.into_iter().flatten() {
         let path = e.expect("entry").path();

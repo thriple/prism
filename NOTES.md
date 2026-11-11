@@ -1943,3 +1943,64 @@ Built 2026-11-11 (brief 26). Greyed like the other curve tools until part
   - Two halves of a flat ring meet at a soft seam where SketchUp would make
     one face (a face may not go all the way round). Minor: NOTES only.
   - 5c's gaps stand: overlap further along (6c), not sticky (6b).
+
+## Exact Curves (part 6, step 6a): the segment fallback
+
+Built 2026-11-11 (brief 27, DECISIONS #32).
+
+- **Approximate edges** (`Edge.approx`, `Model::set_approx`,
+  `Model::add_approx_curve`): fine straight segments standing in for a
+  curve Prism cannot store exactly. The segments of one curve share a curve
+  id. Their ends are exact; the chords are not. The model check accepts one
+  on a curved face when both ends lie on the surface. `Model::unrolled`
+  now counts the turn a straight edge makes round a cylinder's axis (zero
+  along it), so an ellipse's segments unroll properly.
+- **Files:** geometry layout 6, schema 7 (migration 6 to 7 does nothing);
+  schema 6 golden files kept in `docs/acceptance/files/schema-6`; a new
+  golden case `approximate.prism` (a cylinder scaled unevenly).
+- **`prism_ops::approx`:** `fine_count` (a chord strays at most 1/1000 of
+  the radius; a curve never has fewer segments than an arc is drawn with),
+  `segment_arc(s)`, `facet` and `flatten_for`.
+  - **Uneven Scale** (`transform::scale` and `affine`, so Scale, Explode and
+    placing groups) no longer refuses a whole arc (`ARC_WOULD_BEND` is now
+    only for bending part of one): before the scale, each curved face it
+    moves whole becomes flat facets and each such arc fine segments, all
+    marked approximate. Facets come from a grid in (θ, s): on any turned
+    surface, two points on each of two circles about the axis at the same
+    two angles are flat (an isosceles trapezoid), so the facets stay flat
+    under the scale and the points land on the true ellipse, elliptic
+    cylinder or ellipsoid. A surface's facets follow the chord rule alone
+    (about 71 a turn): with the drawing count both ways a sphere was 8,192
+    facets.
+  - **Follow Me** (`follow::best`): when the exact sweep is refused for
+    want of an ellipse (`NOT_TANGENT`, `OFF_AXIS`, `ARCS`, `NOT_SQUARE`), it
+    tries again with the path's arcs as fine chords, then the profile's arcs
+    as fine segments, then both. The result is faceted, its seams soft,
+    smooth and approximate. A profile lying past the first piece of the path
+    (a short chord) starts at the path's start instead of where it stands.
+  - **Fillet with a slanted end** (`round`): the end gets an approximate
+    ellipse: the fillet's circle square to the edge at the corner, each
+    point carried along the edge onto the slanted plane (so every point is
+    on the cylinder and the end face).
+- **Model Health:** a row "Approximate curves" (information: not counted
+  as a problem, no fix, click to select). MCP `get_health` has it as
+  `approx`; `get_geometry` marks approximate edges `approx`.
+- **Tests:** `prism-tools/tests/approx.rs` (a disc, a cylinder, a sphere
+  and a torus scaled unevenly: points on the true shape, check clean,
+  volume within the chords' error; an even scale stays exact),
+  `prism-ops/tests/follow_fallback.rs`, the slanted fillet in
+  `prism-ops/tests/round.rs`, the golden file, the MCP test.
+- **Known gaps, sorted (DECISIONS #33):**
+  - Only curved faces that are rectangles in (θ, s) can be faceted (every
+    face Push/Pull, Fillet and Follow Me make today). Once 6b cuts curved
+    faces, a cut face scaled unevenly would keep a wrong surface (the
+    check reports it): **step 6b** makes `approx::facet` handle cut faces.
+  - Follow Me's fallback facets the whole sweep where the brief hoped for
+    exact cylinder walls ending on approximate ellipses. It looks smooth
+    (soft, smooth seams) and is within the chord rule. Minor: NOTES only.
+  - The model check is slow on thousands of facets (about 2.5 s in a debug
+    build for a sphere's 2,592): it compares faces in pairs. Minor for now
+    (Model Health and tests); NOTES only, look again if big imports suffer.
+  - A line meeting an arc at a corner, with a wide profile, is still
+    refused (`CROSSES_ITSELF`): the arc's first chord is short, and the
+    sweep really does fold there. Correct, not a gap.

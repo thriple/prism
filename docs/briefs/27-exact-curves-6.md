@@ -5,7 +5,7 @@
 **Read first:** briefs 23 to 26 and their NOTES sections (especially the known gaps of 4, 5b, 5c and 5d); `docs/research/exact-curves.md`; `docs/research/chunks-ahead.md` (part 6 section: the four steps every boolean takes, and the table of plane crossings); DECISIONS #29 (Intersect Faces), #30 (coplanar faces merge), #31 (Push/Pull on a solid), #32 (the fallback) and #33.
 
 ## Steps (each one is tested, documented and pushed on its own)
-- **6a. The segment fallback** (DECISIONS #32): approximate curves in the core, files and Model Health; the operations refused for want of an ellipse stop refusing.
+- **6a. The segment fallback** (DECISIONS #32): approximate curves in the core, files and Model Health; the operations refused for want of an ellipse stop refusing. *(Built.)*
 - **6b. Planes meet curved faces exactly:** the crossings, cutting a curved face in (θ, s), Intersect Faces, sticky crossings and snapping. Follow Me's result becomes sticky (5c's gap). May split into 6b-1 (crossings and cutting, Intersect Faces) and 6b-2 (sticky geometry) if it runs long.
 - **6c. Push/Pull booleans and stops with curved faces:** inside or outside by exact ray hits; a cylinder pulled into a box cuts it; a pull or a new radius stops at a curved face; the solid overlap test, also used to refuse a Follow Me sweep that overlaps itself (5c's and 5d's gaps).
 - **6d. A new size for cones, spheres and tori by Push/Pull; outline lines along curved faces.**
@@ -21,7 +21,7 @@
 - **Model Health:** a row lists approximate curves (information, not a problem: no Repair), and selects them. MCP `get_health` lists them.
 - **What stops refusing:**
   - **Uneven Scale** of an arc or circle: it becomes approximate segments along the true ellipse (today it keeps a wrong arc and the check reports its ends off it). A curved face scaled unevenly becomes flat strips between its approximate curves, their long edges soft and smooth and marked approximate.
-  - **Follow Me** (`ARCS`, `NOT_SQUARE` with arcs): a profile arc meeting a mitre, or a tilted profile with arcs, makes cylinder walls along each line ending on approximate ellipses at the mitres (each point carried along a line stays on that line's cylinder, so the points are exact). A path arc that cannot be turned exactly (`OFF_AXIS`, `NOT_TANGENT`) is followed as fine segments of the arc, then mitred like lines.
+  - **Follow Me** (`ARCS`, `NOT_SQUARE` with arcs): a profile arc meeting a mitre, or a tilted profile with arcs, is swept as fine segments. A path arc that cannot be turned exactly (`OFF_AXIS`, `NOT_TANGENT`) is followed as fine segments of the arc, then mitred like lines. (As built: the sweep is faceted, seams soft and smooth; exact cylinder walls ending on approximate ellipses would be nicer, NOTES.)
   - **Fillet with a slanted end** (5a): the end face gets an approximate ellipse where the fillet's cylinder meets it.
 - Refusals that are about impossible shapes stay (a sweep that crosses itself, a profile across an arc's axis, no path).
 
@@ -29,6 +29,7 @@
 - **The crossings** (`docs/research/chunks-ahead.md` table): a plane square to the axis cuts every turned surface in circles; a plane through the axis cuts a cylinder or cone in lines, a sphere or torus in circles; any plane cuts a sphere in a circle. Those are exact arcs and lines. Every other crossing (a slanted cut: ellipse, parabola, hyperbola, spiric section) uses the fallback (6a).
 - **Two curved faces:** exact only on the same axis (circles), parallel cylinder axes (lines) and a sphere centred on a cylinder's or cone's axis (circles); everything else uses the fallback.
 - **Cutting a curved face:** in (θ, s) (5b's `Revolution` and `Model::param_loop`) a cut along a circle is a line s = constant and a cut along a line through the axis is θ = constant, so a curved face is split by the same 2D region rebuild flat faces use, done in (θ, s). Fallback crossings are polylines there too.
+- **Faceting cut faces:** `approx::facet` (6a) handles curved faces that are rectangles in (θ, s); once faces are cut it must handle any loop there (6a's gap).
 - **Intersect Faces** (DECISIONS #29) includes curved faces. **Sticky geometry:** a line, rectangle or circle drawn across a curved face splits it, and Follow Me's result is split and welded where it meets other faces. **Snapping** finds the new crossings (they are edges).
 
 ### 6c. Push/Pull booleans and stops with curved faces

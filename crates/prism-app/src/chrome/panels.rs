@@ -328,7 +328,8 @@ fn health(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>)
     let problems: usize = data
         .health
         .iter()
-        .filter(|r| r.key != "nesting")
+        // Nesting and approximate curves are information, not problems.
+        .filter(|r| r.key != "nesting" && r.key != "approx")
         .map(|r| r.count)
         .sum();
     let r = SideCard::new("Model Health")

@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::f64::consts::PI;
 
 use prism_math::DVec3;
-use prism_ops::follow::{self, ALONG_PATH, ARCS, CROSSES_ITSELF, NO_PATH, NOT_A_PATH};
+use prism_ops::follow::{self, ALONG_PATH, CROSSES_ITSELF, NO_PATH, NOT_A_PATH};
 use prism_ops::{add_segment, check, health::face_volume};
 use prism_topo::{EdgeId, FaceId, Model};
 
@@ -154,7 +154,8 @@ fn what_cannot_be_swept_is_refused_with_a_reason() {
         ],
         false,
     );
-    assert_eq!(follow::refusal(&d, &p, disc), Some(ARCS));
+    // Not refused since Exact Curves 6a: the fallback (`follow_fallback.rs`).
+    assert_eq!(follow::refusal(&d, &p, disc), None);
     // A closed path that is not flat still closes: carried along each
     // line onto the corners' halving planes, the profile comes back to
     // where it started (RING_TWISTS is only a safety net).
