@@ -2646,8 +2646,8 @@ fn follow_me_with_alt_sweeps_round_the_selected_face() {
     assert_eq!(d.s.selection().faces.len(), 1);
     assert!(d.s.selection().edges.is_empty());
     d.tool(FOLLOW);
-    // Without Alt a face is not a path.
-    assert_eq!(d.s.hint(), prism_ops::follow::NO_PATH);
+    // Without Alt a selected face is not a path: it says to drag.
+    assert!(d.s.hint().contains("drag along"), "{}", d.s.hint());
     d.send(Input::AltTap);
     assert!(d.s.hint().contains("face's edge"), "{}", d.s.hint());
     d.click(DVec3::new(0.0, 0.0, 1.5));
@@ -2674,11 +2674,14 @@ fn follow_me_sweeps_the_clicked_profile_along_the_selected_path() {
         eye: DVec3::new(6.0, -8.0, 9.0),
         target: DVec3::new(2.0, 1.0, 1.0),
     });
-    // With nothing selected it says to select a path.
+    // With nothing selected it says to drag along edges (or select a
+    // path); a click on the face starts that, and makes nothing yet.
     d.tool(FOLLOW);
-    assert_eq!(d.s.hint(), prism_ops::follow::NO_PATH);
+    assert!(d.s.hint().contains("drag along"), "{}", d.s.hint());
     d.click(DVec3::new(0.0, 0.0, 2.0));
     assert_eq!(d.faces(), 1, "nothing made");
+    assert!(d.s.in_operation(), "the path is being dragged out");
+    key(&mut d, Key::Escape);
     // Select the two lines, then click the profile.
     d.tool(SELECT);
     let a = d.screen(DVec3::new(2.0, 0.0, 0.0));
@@ -3238,4 +3241,91 @@ fn select_all_with_the_same_material() {
     d.click(DVec3::new(1.0, 1.0, 2.0));
     act(&mut d, "edit.selmat");
     assert_eq!(d.s.selection().faces.len(), 1, "the top");
+}
+
+/// Follow Me as in SketchUp (owner, 2026-11-12): press on a face, drag
+/// along an edge joined to it, release: the face is swept along. Esc
+/// before releasing leaves the model alone; click, move, click works too.
+#[test]
+fn follow_me_drags_a_face_along_the_edges_joined_to_it() {
+    use prism_tools::session::FOLLOW;
+    let build = |d: &mut Driver| {
+        paint_box(d);
+        // A line from the box's front right corner out along red.
+        d.tool(LINE);
+        d.click(DVec3::new(2.0, 0.0, 0.0));
+        d.click(DVec3::new(5.0, 0.0, 0.0));
+        key(d, Key::Escape);
+    };
+    let volume = |d: &Driver| -> f64 {
+        let m = d.s.model();
+        m.faces()
+            .map(|(id, _)| prism_ops::health::face_volume(m, id))
+            .sum()
+    };
+    // Press and drag.
+    let mut d = Driver::empty();
+    build(&mut d);
+    let faces = d.faces();
+    d.tool(FOLLOW);
+    let side = d.screen(DVec3::new(2.0, 1.0, 1.0));
+    d.send(Input::Move {
+        x: side.x,
+        y: side.y,
+    });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: side.x,
+        y: side.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    d.hover(DVec3::new(4.0, 0.0, 0.0));
+    assert!(d.s.in_operation(), "dragging");
+    assert!(
+        d.s.display_scene().faces.len() > faces,
+        "the sweep is previewed"
+    );
+    // Esc: nothing changes.
+    key(&mut d, Key::Escape);
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(d.faces(), faces);
+    // Again, released this time.
+    let side = d.screen(DVec3::new(2.0, 1.0, 1.0));
+    d.t += 0.5;
+    d.send(Input::Move {
+        x: side.x,
+        y: side.y,
+    });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: side.x,
+        y: side.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    d.hover(DVec3::new(4.0, 0.0, 0.0));
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert!(!d.s.in_operation());
+    let v = volume(&d);
+    assert!(
+        (v - 8.0 - 12.0).abs() < 1e-6,
+        "the box grew along the line: {v}"
+    );
+    valid(&d);
+    // Click, move, click.
+    let mut d = Driver::empty();
+    build(&mut d);
+    d.tool(FOLLOW);
+    d.click(DVec3::new(2.0, 1.0, 1.0));
+    d.hover(DVec3::new(4.0, 0.0, 0.0));
+    d.click(DVec3::new(4.0, 0.0, 0.0));
+    let v = volume(&d);
+    assert!((v - 20.0).abs() < 1e-6, "{v}");
 }

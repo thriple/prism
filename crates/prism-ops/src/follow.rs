@@ -860,6 +860,13 @@ fn build(
     let plan = plan(model, path, profile, chords).ok()?;
     let tol = model.tol();
     let before: BTreeSet<VertexId> = model.vertices().map(|(v, _)| v).collect();
+    // A face of a body (every edge of it borders another face): swept out
+    // of its front, the body grows and the face goes, as with Push/Pull
+    // and in SketchUp (owner, 2026-11-12).
+    let in_body = model.face(profile).is_some_and(|f| {
+        f.edge_ids()
+            .all(|e| model.faces().any(|(id, g)| id != profile && g.uses_edge(e)))
+    });
     // The sweep takes the profile's paint, outside (DECISIONS #36).
     let paint = model.face(profile).map(|f| f.paint).unwrap_or_default();
     let secs = plan.sections.len();
@@ -1106,6 +1113,9 @@ fn build(
     if plan.closed {
         remove_profile(model, profile);
     } else {
+        if in_body && plan.along {
+            model.remove_face(profile);
+        }
         let t0 = plan.steps[0].tangent(plan.sections[0][0][0]);
         let start = plan.sections[0][0][0];
         model.edit_face(profile, |f| {

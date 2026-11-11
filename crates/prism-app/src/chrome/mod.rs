@@ -365,6 +365,12 @@ impl Chrome {
             Run::Tool => {
                 self.active_tool = id;
                 self.note = None;
+                // The Paint Bucket brings its Materials window (owner,
+                // 2026-11-12), unfolded.
+                if id == "tool.paint" {
+                    self.panels.materials = true;
+                    self.panels.folded.remove("Materials");
+                }
             }
             Run::Event => {
                 if a.check == Check::Toggle && !self.toggles.remove(id) {
@@ -679,5 +685,17 @@ mod tests {
         assert!(c.is_on("help.debug") && c.checked("help.debug"));
         c.run("help.debug", Source::Menu);
         assert!(!c.is_on("help.debug"));
+    }
+
+    /// Choosing the Paint Bucket opens the Materials window (owner,
+    /// 2026-11-12), unfolded if it was folded.
+    #[test]
+    fn the_paint_bucket_opens_the_materials_window() {
+        let mut c = chrome();
+        assert!(!c.panels.materials);
+        c.panels.folded.insert("Materials");
+        c.run("tool.paint", Source::Key);
+        assert_eq!(c.active_tool, "tool.paint");
+        assert!(c.panels.materials && !c.panels.folded.contains("Materials"));
     }
 }

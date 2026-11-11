@@ -228,3 +228,35 @@ fn checking_then_sweeping_makes_the_same_model_as_sweeping() {
     let v = 1.5 * 1.5 * 9.0;
     assert!((volume(&wide) - v).abs() < 1e-9 * v, "{}", volume(&wide));
 }
+
+/// A face of a box swept out along a line from its corner: the box grows
+/// and the face goes, as with Push/Pull and in SketchUp (owner,
+/// 2026-11-12). It used to stay inside, turned round.
+#[test]
+fn a_box_face_swept_out_of_the_box_grows_it() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+    let f = m.faces().next().map(|(id, _)| id).expect("square");
+    let up = m
+        .face(f)
+        .and_then(|x| x.plane())
+        .map_or(1.0, |p| p.normal.z);
+    prism_ops::push_pull(&mut m, f, 2.0 * up.signum(), false);
+    let p = path(
+        &mut m,
+        &[DVec3::new(2.0, 0.0, 0.0), DVec3::new(5.0, 0.0, 0.0)],
+        false,
+    );
+    let side = prism_ops::face_at(&m, DVec3::new(2.0, 1.0, 1.0)).expect("side");
+    assert_eq!(follow::refusal(&m, &p, side), None);
+    assert!(follow::follow(&mut m, &p, side));
+    clean(&m);
+    assert!(
+        prism_ops::face_at(&m, DVec3::new(2.0, 1.0, 1.0)).is_none(),
+        "the face went"
+    );
+    let v = volume(&m);
+    assert!((v - 20.0).abs() < 1e-9, "{v}");
+    let r = prism_ops::health::check(&m);
+    assert!(r.reversed.is_empty() && r.open_edges.is_empty(), "{r:?}");
+}

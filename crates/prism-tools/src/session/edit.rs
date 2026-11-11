@@ -38,10 +38,19 @@ const SHIFT_STEP: f64 = std::f64::consts::PI / 4.0;
 /// Protractor radius on screen, in points.
 const PROTRACTOR_RADIUS: f64 = 80.0;
 /// A press that moves less than this before release is a click.
-const DRAG_MIN: f64 = 6.0;
+pub(super) const DRAG_MIN: f64 = 6.0;
 
 #[derive(Clone, Debug)]
 pub(super) enum EditOp {
+    /// Follow Me dragged from a face, as in SketchUp: the path grows along
+    /// the edges joined to it, to the one under the cursor.
+    Follow {
+        profile: FaceId,
+        path: BTreeSet<EdgeId>,
+        /// Where the press was, while the button is down: releasing after
+        /// a drag commits (click-move-click works too).
+        pressed: Option<DVec2>,
+    },
     Push {
         face: FaceId,
         p0: DVec3,
@@ -502,6 +511,10 @@ impl Session {
 
     /// Show the step in progress on a copy of the model.
     pub(super) fn update_preview(&mut self) {
+        // Follow Me keeps the sweep it previewed for its path.
+        if matches!(self.edit, Some(EditOp::Follow { .. })) {
+            return;
+        }
         // Groups moving: the preview is the document with the step applied.
         if !self.groups.is_empty()
             && let Some(e @ (EditOp::Move { .. } | EditOp::Rotate { .. } | EditOp::Scale { .. })) =
@@ -717,7 +730,7 @@ impl Session {
         match self.tool.as_str() {
             PAINT => self.paint_press(shift, ctrl),
             FILLET => self.round_press(s, ctrl),
-            FOLLOW => self.follow_press(),
+            FOLLOW => self.follow_press(s),
             PUSH => self.push_press(s, n_clicks),
             ERASE => {
                 let mut edges = BTreeSet::new();
@@ -749,6 +762,10 @@ impl Session {
     }
 
     pub(super) fn edit_release(&mut self, s: DVec2) {
+        if self.tool == FOLLOW {
+            self.follow_release(s);
+            return;
+        }
         let view = self.view();
         match &mut self.edit {
             Some(EditOp::Erase {
@@ -1299,6 +1316,7 @@ impl Session {
     /// What the edit tools draw over the model.
     pub(super) fn edit_overlay(&self, o: &mut Overlay) {
         self.paint_overlay(o);
+        self.follow_overlay(o);
         if self.tool == SCALE {
             self.scale_overlay(o);
         }

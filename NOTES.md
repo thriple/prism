@@ -2478,6 +2478,39 @@ No `[release]` yet (1c has it).
   - Colours other than Brick Red, and editing them: the Materials window,
     1c.
 
+## Owner feedback on release 193 (2026-11-12): Follow Me, the Paint Bucket
+
+- **Follow Me works as in SketchUp.** It needed a path selected first;
+  with none, a press on a face only said so (the owner's session 6:
+  repeated presses on a box side next to two arcs, nothing made). Now,
+  with nothing selected, press on the profile face and drag along the
+  edges joined to it: the path is the shortest run of edges from the
+  face's corners to the edge under the cursor (an arc or circle whole),
+  drawn over the model, and the sweep is previewed. Release after a drag
+  makes it; click, move, click works too; Esc cancels. Selecting a path
+  first, and Alt (a face's edge), still work. (`EditOp::Follow`,
+  `session/follow.rs`.) Replayed on the owner's model, the first drag
+  sweeps the box's side along both arcs: 14 faces, exact curved walls,
+  no problems.
+- **A face of a body swept out of it** (every edge of the face borders
+  another face, and the sweep leaves through its front): the face goes
+  and the body grows, as Push/Pull does. It used to stay inside, turned
+  round. (`follow::build`.)
+- **The Paint Bucket opens Window > Materials** (unfolded) whenever it is
+  chosen, from the dock, a menu, its key, search or MCP.
+- **Each tool's way of use** (owner: "make sure tools have a logical
+  method of use"): every tool's flow and idle hint were checked against
+  SketchUp's. All follow press, move, click (or drag) with the hint
+  saying what to do, except **Fillet / Chamfer**, which takes a size
+  from the edge with no preview: its panel (size, fillet or chamfer, a
+  preview on the hovered edge before applying) is the next step on the
+  plan.
+- **Tests:** `follow_me_drags_a_face_along_the_edges_joined_to_it`
+  (drag, Esc, release; click, move, click), the two older Follow Me
+  session tests updated (a click with nothing selected starts the drag),
+  `a_box_face_swept_out_of_the_box_grows_it` (ops),
+  `the_paint_bucket_opens_the_materials_window` (chrome).
+
 ## Basic Materials (part 1, step 1c): the Materials window
 
 Built 2026-11-12 (brief 28). Part 1 (colours) is done, with a `[release]`.
