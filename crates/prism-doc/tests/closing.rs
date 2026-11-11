@@ -107,22 +107,43 @@ fn a_rectangle_beside_another_pulled_up_gets_a_base() {
         assert_eq!(d.model().face_count(), 2);
         let f = prism_ops::face_at(d.model(), DVec3::new(1.0, 1.0, 0.0)).expect("left");
         let other = prism_ops::face_at(d.model(), DVec3::new(3.0, 1.0, 0.0)).expect("right");
-        let n = d.model().face(f).and_then(|x| x.plane()).map_or(1.0, |p| p.normal.z);
+        let n = d
+            .model()
+            .face(f)
+            .and_then(|x| x.plane())
+            .map_or(1.0, |p| p.normal.z);
         let dz = if up { 1.0 } else { -1.0 };
         d.run(Command::PushPull {
             face: f,
             distance: 1.5 * dz * n.signum(),
             new_loop: false,
         });
-        assert_eq!(d.model().face_count(), 7, "a closed box and the other rectangle");
+        assert_eq!(
+            d.model().face_count(),
+            7,
+            "a closed box and the other rectangle"
+        );
         let base = prism_ops::face_at(d.model(), DVec3::new(1.0, 1.0, 0.0)).expect("a base");
-        let bn = d.model().face(base).and_then(|x| x.plane()).expect("flat").normal;
+        let bn = d
+            .model()
+            .face(base)
+            .and_then(|x| x.plane())
+            .expect("flat")
+            .normal;
         assert!(bn.z * dz < -0.9, "faces out of the box: {bn:?}, up {up}");
         assert!(d.model().face(other).is_some(), "the other stays");
         // The box is closed: every edge of it has two faces, except the
         // shared one, which has the other rectangle too.
         let r = prism_ops::health::check(d.model());
-        assert_eq!(r.open_edges.edges.len(), 3, "only the other rectangle's free sides");
-        assert!(r.reversed.is_empty(), "no face turned wrong: {:?}", r.reversed);
+        assert_eq!(
+            r.open_edges.edges.len(),
+            3,
+            "only the other rectangle's free sides"
+        );
+        assert!(
+            r.reversed.is_empty(),
+            "no face turned wrong: {:?}",
+            r.reversed
+        );
     }
 }
