@@ -1,6 +1,6 @@
 # Exact Curves, part 5: fillet, chamfer and Follow Me
 
-**Goal.** Edges of solids can be filleted and chamfered, and Follow Me sweeps a profile along lines and arcs, making planes, cylinders, cones, spheres and tori, all exact. At the end of this part the curve tools stop being greyed (owner, 2026-11-09: greyed until all five parts are done). The fallback to fine segments (DECISIONS #32) comes after this part; until then an operation that would need an ellipse or a freeform surface is refused, with a reason.
+**Goal.** Edges of solids can be filleted and chamfered, and Follow Me sweeps a profile along lines and arcs, making planes, cylinders, cones, spheres and tori, all exact. The curve tools stay greyed after this part: they become active at the end of part 6, once curved faces work with the standard tools (owner, 2026-11-11, DECISIONS #33). The fallback to fine segments (DECISIONS #32) comes after this part; until then an operation that would need an ellipse or a freeform surface is refused, with a reason.
 
 **Read first:** briefs 23 to 25 and their NOTES sections; `docs/research/exact-curves.md`; PLAN 1.6 (the tool table: Follow Me and Fillet / Chamfer rows), the Follow Me line in section 9 ("select a path, then click a profile; Alt follows a face's perimeter"); DECISIONS #20, #30, #31 and #32.
 
@@ -9,7 +9,7 @@
 - **5b. Cones, spheres and tori in the core:** the surfaces, files, shading, picking, MCP. No new tool. *(Built.)*
 - **5c. Follow Me along lines.**
 - **5d. Follow Me along arcs** (turned shapes), and Alt (a face's perimeter as the path).
-- **5e. The curve tools become active:** Circle, Polygon, the Arc tools, Follow Me and Fillet / Chamfer in menus, toolbars and releases.
+- **5e. Moved to the end of part 6** (owner, 2026-11-11, DECISIONS #33): the curve tools become active only once curved faces work with the standard tools.
 
 ## Requirements by step
 
@@ -39,7 +39,7 @@
 - **Alt** follows a face's perimeter: the path is the outer loop of the selected face.
 - A lathe: a profile and a circle about its axis make a closed solid of revolution.
 
-### 5e. The curve tools become active
+### 5e. (Moved to part 6, step 6e)
 - `GREYED_TOOLS` is emptied; the release notes say so. Everything from parts 2 to 5 is reachable from menus, the dock, search and hotkeys.
 
 ## MCP
@@ -47,7 +47,7 @@
 
 ## Out of scope
 - Fillets where filleted edges meet (a rounded corner of three fillets needs a sphere patch or a freeform blend), Shift for tangent-connected edges, editable fillets (Inspector & Features).
-- Follow Me along freeform paths, and anything needing ellipses: DECISIONS #32, after this part.
+- Follow Me along freeform paths, and anything needing ellipses: DECISIONS #32, step 6a in part 6.
 
 ## Tests
 - **Ops:** a box edge filleted and chamfered: a closed solid with the exact volume; a concave edge; each refusal; undo and redo. Follow Me: a square profile along an L path (exact volume), a closed path, a lathe of a rectangle (a tube) and of a half disc (a sphere, exact volume 4/3 πr³), a torus; each refusal.

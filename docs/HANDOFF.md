@@ -65,8 +65,15 @@ Updated 2026-11-09 (Guam), before a context compaction.
   the details and gaps). Next is 5c: Follow Me along lines. Then 5d
   (Follow Me along arcs, making cones, spheres and tori: lay faces out as
   rectangles in (θ, s), split by seams like `scenes::sphere`/`torus`, so
-  they take the fast grid), then 5e ungreys the curve tools. The
-  DECISIONS #32 fallback comes after part 5.
+  they take the fast grid). Then **part 6** (owner, 2026-11-11, DECISIONS
+  #33; write its brief, `docs/briefs/27-exact-curves-6.md`, first): the
+  segment fallback (#32), exact plane crossings with curved faces,
+  Intersect Faces, sticky crossings, Push/Pull booleans and stops with
+  curved faces, a new size for cones/spheres/tori, then the curve tools
+  become active (6e, moved from 5e). **Standing rule (#33):** at the end of
+  every chunk, sort its known gaps; each serious one gets a step in the
+  plan, not only a NOTES line. The
+  DECISIONS #32 fallback is step 6a.
   - Part 4 lessons: `Face::new` links edges by corners, which is wrong
     when two arcs join the same two points: make faces with
     `Face::with_edges`. Keep edge creation order in Push/Pull (recorded
@@ -104,7 +111,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   arcs comes from `face_pieces` (private, in `prism-ops/src/offset.rs`); refusals because of arcs give
   their reason through `Command::refusal`. Exact Curves is 5 parts (owner, 2026-11-09); the design
   is in `docs/research/exact-curves.md`. Curves that are not lines or arcs
-  fall back to fine segments, flagged (DECISIONS #32), built after part 5.
+  fall back to fine segments, flagged (DECISIONS #32), built as step 6a.
   The curve tools stay greyed in releases until all five parts are done
   (owner, 2026-11-09).
 - **Also done 2026-11-09:** Push/Pull stops at the first face in its way
