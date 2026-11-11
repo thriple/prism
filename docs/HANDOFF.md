@@ -68,7 +68,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   about each arc's axis; lathes make cones, spheres and tori; Alt follows
   the selected face's edge; NOTES has its sorted gaps): **part 5 is
   done**. Then **part 6** (owner, 2026-11-11, DECISIONS
-  #33; write its brief, `docs/briefs/27-exact-curves-6.md`, first): the
+  #33; brief `docs/briefs/27-exact-curves-6.md`, written 2026-11-11): the
   segment fallback (#32), exact plane crossings with curved faces,
   Intersect Faces, sticky crossings, Push/Pull booleans and stops with
   curved faces, a new size for cones/spheres/tori, then the curve tools
