@@ -2250,3 +2250,46 @@ Built 2026-11-11 (brief 27).
     it, so big sweeps are slower. Minor: NOTES only.
   - Push/Pull on a cone, sphere or torus face is still refused: **step
     6d**, as planned.
+
+## Exact Curves (part 6, step 6d-1): new sizes for cones, spheres and tori
+
+Built 2026-11-11 (brief 27). Step 6d was split: **6d-1** (new sizes) is
+this; **6d-2** (outline lines) is next.
+
+- **Push/Pull on any curved face gives it a new size** (`radius.rs`, now
+  for every turned surface). Every face on the same surface that is joined
+  to the pulled one moves square to the surface by the pull:
+  - a sphere takes a new radius;
+  - a torus takes a new tube radius;
+  - a cone keeps its angle, and its apex slides along the axis;
+  - a cylinder takes a new radius, as before.
+- **Flat faces beside it follow** when their points can stay in their
+  planes:
+  - a plane the points move along anyway: a face through the axis, or
+    through a sphere's centre (a half ball's base widens);
+  - a round cut: a cap square to the axis, or any plane across a sphere.
+    Its circle takes the new size where that plane cuts the new surface
+    (a cone's base stays where it is, and so does a sphere's cap cut off
+    at z = 0.5).
+
+  Arcs are rebuilt through their moved ends and middle. Anything else
+  beside it would bend and is refused (`CURVED_PULL`). A size that would
+  reach zero is refused (`RADIUS_GONE`); so is a torus whose tube would
+  reach its axis (`TUBE_AXIS`), and a cone whose points would pass the
+  axis or whose cut would vanish.
+- **The new size stops at what it meets** (`meet::Mover::Grow` now works
+  on any turned surface: points move along the surface's normal). A
+  growing sphere or torus meets a flat face head on, worked out exactly.
+  This fixed a miss: the nearest point of a wall in the middle of the wall
+  was not found.
+- **Tests:** `prism-ops/tests/sizes_curved.rs`. A whole sphere, a half ball
+  and a cap cut off at z = 0.5, a torus and a cone each take a new size,
+  with exact volumes and the check clean. Each refusal is tested, and a
+  growing sphere stops at a wall.
+- **Known gaps, sorted (DECISIONS #33):**
+  - A cone pulled so its apex would move while a flat face holds the apex
+    (a cone cut through its apex by a plane square to the axis) is
+    refused. Rare. Minor: NOTES only.
+  - Where several flat faces meet at one point of the surface and they are
+    not all along the move, the pull is refused, even where a single
+    position would satisfy them all. Minor: NOTES only.

@@ -46,10 +46,6 @@ pub const CURVED_PULL: &str = "This pull would bend a curved face, or a face bes
 pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static str> {
     let f = model.face(face)?;
     let Some(plane) = f.plane() else {
-        if !matches!(f.surface, Surface::Cylinder(_)) {
-            // Cones, spheres and tori take no new size yet.
-            return Some(CURVED_PULL);
-        }
         return crate::radius::refusal(model, face, distance);
     };
     let tol = model.tol();

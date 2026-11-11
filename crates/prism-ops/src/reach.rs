@@ -134,26 +134,16 @@ fn straight_edges(model: &Model, face: FaceId) -> Vec<(DVec3, DVec3)> {
         .unwrap_or_default()
 }
 
-/// How far a cylinder face's new radius can go (with `distance`'s sign,
-/// no longer than it) before the faces on its cylinder meet another face.
+/// How far a curved face's new size can go (with `distance`'s sign, no
+/// longer than it) before the faces on its surface meet another face.
 fn grow_limit(model: &Model, face: FaceId, distance: f64) -> f64 {
-    let Some((c, fs)) = crate::radius::faces(model, face) else {
-        // Cones, spheres and tori take no new size yet.
+    let Some((surface, fs)) = crate::radius::faces(model, face) else {
         return distance;
     };
     let tol = model.tol();
     let reach = distance.abs();
-    // The radius grows when an outward face is pulled out.
-    let grows = c.outward == (distance > 0.0);
     let ids: Vec<FaceId> = fs.iter().copied().collect();
-    let Some(mover) = crate::meet::Mover::grow(
-        model,
-        &ids,
-        c.origin,
-        c.axis,
-        c.radius,
-        if grows { 1.0 } else { -1.0 },
-    ) else {
+    let Some(mover) = crate::meet::Mover::grow(model, &ids, surface, distance.signum()) else {
         return distance;
     };
     let boxes: Vec<(DVec3, DVec3)> = ids

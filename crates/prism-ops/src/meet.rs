@@ -16,7 +16,7 @@
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 
-use prism_geom::{Curve, Profile, Revolution};
+use prism_geom::{Curve, Profile, Revolution, Surface};
 use prism_math::{DVec2, DVec3, Tol};
 use prism_topo::{FaceId, Model};
 
@@ -47,13 +47,11 @@ pub(crate) enum Mover {
         dir: DVec3,
         edges: Vec<Edge3>,
     },
-    /// Faces on one cylinder taking a new radius: their points move
-    /// straight away from the axis (`sign` 1) or towards it (-1).
+    /// Faces on one turned surface taking a new size: their points move
+    /// square to it, along the faces' normal (`sign` 1) or against it (-1).
     Grow {
         faces: Vec<Laid>,
-        origin: DVec3,
-        axis: DVec3,
-        radius: f64,
+        surface: Surface,
         sign: f64,
         edges: Vec<Edge3>,
     },
@@ -70,20 +68,11 @@ impl Mover {
         })
     }
 
-    pub(crate) fn grow(
-        m: &Model,
-        faces: &[FaceId],
-        origin: DVec3,
-        axis: DVec3,
-        radius: f64,
-        sign: f64,
-    ) -> Option<Mover> {
+    pub(crate) fn grow(m: &Model, faces: &[FaceId], surface: Surface, sign: f64) -> Option<Mover> {
         let laid: Option<Vec<Laid>> = faces.iter().map(|f| Laid::new(m, *f)).collect();
         Some(Mover::Grow {
             faces: laid?,
-            origin,
-            axis,
-            radius,
+            surface,
             sign,
             edges: edges_of(m, faces),
         })
@@ -101,18 +90,15 @@ impl Mover {
             }
             Mover::Grow {
                 faces,
-                origin,
-                axis,
-                radius,
+                surface,
                 sign,
                 ..
             } => {
-                let d = q - *origin;
-                let r = (d - *axis * d.dot(*axis)).length();
+                let foot = surface.project(q);
                 faces
                     .iter()
-                    .any(|l| l.classify(q, tol.dist) == Some(true))
-                    .then_some((r - radius) * sign)
+                    .any(|l| l.classify(foot, tol.dist) == Some(true))
+                    .then_some(surface.distance(q) * sign)
             }
         }
     }
@@ -121,11 +107,9 @@ impl Mover {
     fn way(&self, p: DVec3) -> DVec3 {
         match self {
             Mover::Slide { dir, .. } => *dir,
-            Mover::Grow {
-                origin, axis, sign, ..
-            } => {
-                let d = p - *origin;
-                (d - *axis * d.dot(*axis)).normalize_or_zero() * *sign
+            Mover::Grow { surface, sign, .. } => {
+                let n = surface.normal_at(p) * *sign;
+                if n.is_finite() { n } else { DVec3::ZERO }
             }
         }
     }
@@ -364,10 +348,23 @@ pub(crate) fn first_meeting(m: &Model, mover: &Mover, g: FaceId, reach: f64) -> 
             Mover::Grow { .. } => grid_search(laid, mover, &tol, &mut best),
         }
     }
+    // A flat face met head on by a growing sphere or torus: from where the
+    // surface faces it, straight out.
+    if let (Target::Flat(plane), Mover::Grow { faces, surface, .. }) = (&target, mover)
+        && let Some(rev) = surface.revolution()
+    {
+        for p in facing_points(&rev, plane.normal) {
+            if faces.iter().any(|l| l.classify(p, tol.dist) == Some(true))
+                && let Some(t) = target.first_hit(p, mover.way(p), best, &tol)
+            {
+                take(&mut best, t, eps);
+            }
+        }
+    }
     best
 }
 
-/// The least distance at which a growing cylinder meets a point inside a
+/// The least distance at which a growing surface meets a point inside a
 /// curved face: a grid over the face's layout, each local minimum refined
 /// by a compass search.
 fn grid_search(laid: &Laid, mover: &Mover, tol: &Tol, best: &mut f64) {
