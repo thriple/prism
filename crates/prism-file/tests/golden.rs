@@ -102,7 +102,74 @@ fn cases() -> Vec<(&'static str, Contents)> {
             "circle-in-a-plate.prism",
             Contents::with_model(circle_in_a_plate(), Settings::default()),
         ),
+        (
+            "painted.prism",
+            Contents {
+                assembly: painted().assembly().clone(),
+                settings: Settings::default(),
+            },
+        ),
     ]
+}
+
+/// Basic Materials (schema 8): two materials; a cube's top painted front,
+/// a side painted back, and a group of a second cube painted as a whole.
+fn painted() -> prism_doc::Document {
+    use prism_doc::{Command, FaceSide, Material};
+    let mut d = prism_tools::scenes::cube();
+    for (name, c) in [("Brick", [178, 34, 34]), ("Sky", [135, 206, 235])] {
+        d.run(Command::AddMaterial {
+            material: Material::colour(name, c),
+        });
+    }
+    let ids: Vec<prism_topo::MaterialId> = d.assembly().materials().0.keys().copied().collect();
+    let m = d.model();
+    let top = m
+        .faces()
+        .find(|(_, f)| f.plane().is_some_and(|p| p.normal.z > 0.9))
+        .map(|(id, _)| id)
+        .expect("a top");
+    let side = m
+        .faces()
+        .find(|(_, f)| f.plane().is_some_and(|p| p.normal.x.abs() > 0.9))
+        .map(|(id, _)| id)
+        .expect("a side");
+    d.run(Command::Paint {
+        sides: [(top, FaceSide::Front)].into(),
+        material: Some(ids[0]),
+    });
+    d.run(Command::Paint {
+        sides: [(side, FaceSide::Back)].into(),
+        material: Some(ids[1]),
+    });
+    let g = d.assembly().next_instance();
+    let mut other = prism_tools::scenes::cube().model().clone();
+    prism_ops::transform::affine(
+        &mut other,
+        &prism_math::DAffine3::from_translation(prism_math::DVec3::new(3.0, 0.0, 0.0)),
+    );
+    let before: std::collections::BTreeSet<_> = d.model().faces().map(|(id, _)| id).collect();
+    d.run(Command::Import { model: other });
+    let m = d.model();
+    let sel = prism_ops::Selection {
+        vertices: Default::default(),
+        edges: Default::default(),
+        faces: m
+            .faces()
+            .map(|(id, _)| id)
+            .filter(|f| !before.contains(f))
+            .collect(),
+        guides: Default::default(),
+    };
+    d.run(Command::MakeGroup {
+        selection: sel,
+        instances: Default::default(),
+    });
+    d.run(Command::PaintInstances {
+        instances: [g].into(),
+        material: Some(ids[1]),
+    });
+    d
 }
 
 /// A square plate with an exact circle in it: a hole and a disc (Exact
@@ -219,13 +286,16 @@ fn golden_files_open_and_save_the_same() {
 /// open with the same faces and edges, found from the loops. Files saved
 /// before arcs (schema 3, layout 2) open the same too, and so do files
 /// saved before soft edges (schema 4, layout 3), files saved before
-/// cones, spheres and tori (schema 5, layout 4), and files saved before
-/// approximate edges (schema 6, layout 5).
+/// cones, spheres and tori (schema 5, layout 4), files saved before
+/// approximate edges (schema 6, layout 5), and files saved before materials
+/// (schema 7, layout 6).
 #[test]
-fn schema_2_to_6_files_open_as_now() {
+fn schema_2_to_7_files_open_as_now() {
     let mut seen = 0;
-    let older = ["schema-2", "schema-3", "schema-4", "schema-5", "schema-6"]
-        .map(|d| std::fs::read_dir(dir().join(d)).expect(d));
+    let older = [
+        "schema-2", "schema-3", "schema-4", "schema-5", "schema-6", "schema-7",
+    ]
+    .map(|d| std::fs::read_dir(dir().join(d)).expect(d));
     for e in older.into_iter().flatten() {
         let path = e.expect("entry").path();
         let old = read(&std::fs::read(&path).expect("read"))

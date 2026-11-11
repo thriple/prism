@@ -39,8 +39,9 @@ pub use migrate::{Raw, migrate};
 /// layout 2). Schema 4: arcs and curve ids (geometry layout 3). Schema 5:
 /// soft and smooth edges (geometry layout 4; cylinder faces too). Schema 6:
 /// cone, sphere and torus faces (geometry layout 5). Schema 7: approximate
-/// edges (geometry layout 6, DECISIONS #32).
-pub const SCHEMA: u32 = 7;
+/// edges (geometry layout 6, DECISIONS #32). Schema 8: materials
+/// (`materials.json`) and painted faces (geometry layout 7).
+pub const SCHEMA: u32 = 8;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -50,6 +51,17 @@ const MANIFEST: &str = "manifest.json";
 const DOCUMENT: &str = "document.json";
 const MODEL: &str = "geometry/model.bin";
 const GROUPS: &str = "groups.json";
+const MATERIALS: &str = "materials.json";
+
+/// The document's materials (schema 8).
+#[derive(Serialize, Deserialize)]
+struct MaterialsV1 {
+    next: u32,
+    materials: Vec<(u32, prism_doc::Material)>,
+    /// Groups and components painted as a whole: (instance, material).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    painted: Vec<(u32, u32)>,
+}
 
 fn def_path(id: u32) -> String {
     format!("geometry/defs/{id}.bin")
@@ -223,6 +235,20 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         (MODEL.to_owned(), geometry::encode(c.model())),
     ];
     let asm = &c.assembly;
+    let (materials, next_material) = asm.materials();
+    if !materials.is_empty() {
+        manifest.entries.push(Entry {
+            path: MATERIALS.to_owned(),
+            kind: "materials".to_owned(),
+            version: 1,
+        });
+        let m = MaterialsV1 {
+            next: next_material,
+            materials: materials.iter().map(|(id, m)| (id.0, m.clone())).collect(),
+            painted: asm.painted().iter().map(|(i, m)| (i.0, m.0)).collect(),
+        };
+        files.push((MATERIALS.to_owned(), pretty(&m)));
+    }
     let (tags, next_tag) = asm.tags();
     if asm.defs().count() > 1 || asm.has_instances() || !tags.is_empty() {
         let (next_def, next_instance) = asm.counters();
@@ -303,10 +329,25 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
         .get(MODEL)
         .ok_or_else(|| FileError::Damaged(format!("no {MODEL}")))?;
     let model = geometry::decode(bin, version)?;
-    let assembly = match raw.files.get(GROUPS) {
+    let mut assembly = match raw.files.get(GROUPS) {
         None => Assembly::with_model(model),
         Some(json) => read_groups(&raw, json, model)?,
     };
+    if let Some(json) = raw.files.get(MATERIALS) {
+        let m: MaterialsV1 = serde_json::from_slice(json)
+            .map_err(|e| FileError::Damaged(format!("{MATERIALS}: {e}")))?;
+        assembly = assembly.with_materials(
+            m.materials
+                .into_iter()
+                .map(|(id, x)| (prism_topo::MaterialId(id), x))
+                .collect(),
+            m.next,
+            m.painted
+                .into_iter()
+                .map(|(i, x)| (InstanceId(i), prism_topo::MaterialId(x)))
+                .collect(),
+        );
+    }
     Ok(Contents { assembly, settings })
 }
 

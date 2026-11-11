@@ -17,7 +17,12 @@ Materials), 1.13 (files), 1.14 (Shaded with textures, transparency), 4
 ## Parts (M chunk; each part is tested, documented and pushed on its own)
 - **Part 1. Colours:** materials in the document and file, the Paint
   Bucket, group materials, materials kept through edits, colours in the
-  viewport, the Materials window.
+  viewport, the Materials window. Built in three steps:
+  - **1a:** the core: the material table, paint on faces and groups,
+    paint kept through edits, the file (schema 8). *(Built.)*
+  - **1b:** the Paint Bucket and the viewport's colours.
+  - **1c:** the Materials window, Entity Info, Select by material, Model
+    Health and MCP; a `[release]`.
 - **Part 2. Textures:** images in the file, placement on flat and curved
   faces, Shaded with textures, texture size, opacity, the bundled library.
 - **Part 3. Placing and exchanging:** moving, turning and sizing a texture

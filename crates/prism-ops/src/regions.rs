@@ -15,7 +15,7 @@ use prism_geom::{Curve, Surface};
 use prism_math::plane::Frame;
 use prism_math::predicates::{Inside, orient2d, point_in_polygon, signed_area2};
 use prism_math::{DVec2, DVec3, Plane, Tol};
-use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
+use prism_topo::{EdgeId, Face, FaceId, Model, Paint, VertexId};
 
 /// One side of a traced loop: leaving `from` along `edge`.
 type Side = (VertexId, EdgeId);
@@ -231,7 +231,9 @@ pub(crate) fn rebuild_plane(
                     .face(*c)
                     .and_then(|f| f.plane())
                     .is_some_and(|p| p.normal.dot(frame.normal) > 0.0);
-                made_faces.push(make_face(model, r, &frame, up));
+                let mut face = make_face(model, r, &frame, up);
+                face.paint = inherited(model, &old, *c, r, &frame);
+                made_faces.push(face);
             }
         }
     }
@@ -300,6 +302,48 @@ fn other_faces(model: &Model, except: &[FaceId]) -> BTreeMap<EdgeId, Vec<VertexI
         }
     }
     out
+}
+
+/// The paint a region made from `cover` takes (DECISIONS #36): a piece of
+/// a split face keeps the face's; where faces merged, the largest of the
+/// old faces facing the same way inside the region gives its own.
+fn inherited(model: &Model, old: &[FaceId], cover: FaceId, r: &Region, frame: &Frame) -> Paint {
+    let Some(c) = model.face(cover) else {
+        return Paint::default();
+    };
+    let up = |f: &Face| f.plane().is_some_and(|p| p.normal.dot(frame.normal) > 0.0);
+    let inside_region = |q: DVec2| {
+        point_in_polygon(q, &r.polys[0]) == Inside::Inside
+            && r.polys[1..]
+                .iter()
+                .all(|h| point_in_polygon(q, h) == Inside::Outside)
+    };
+    let area = |f: &Face| -> f64 {
+        let polys = face_polys(model, f, frame);
+        let a = |l: &[DVec2]| -> f64 {
+            (0..l.len())
+                .map(|i| l[i].perp_dot(l[(i + 1) % l.len()]))
+                .sum::<f64>()
+                .abs()
+                / 2.0
+        };
+        polys.first().map_or(0.0, |o| a(o)) - polys[1..].iter().map(|h| a(h)).sum::<f64>()
+    };
+    let mut best = (area(c), c.paint);
+    for id in old {
+        let Some(f) = model.face(*id) else { continue };
+        if *id == cover || up(f) != up(c) || f.paint == best.1 {
+            continue;
+        }
+        let polys = face_polys(model, f, frame);
+        if interior_point(&polys).is_some_and(inside_region) {
+            let a = area(f);
+            if a > best.0 {
+                best = (a, f.paint);
+            }
+        }
+    }
+    best.1
 }
 
 /// Build a face from a region, facing along the frame normal if `up`.

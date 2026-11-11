@@ -816,6 +816,8 @@ fn build(
     let plan = plan(model, path, profile, chords).ok()?;
     let tol = model.tol();
     let before: BTreeSet<VertexId> = model.vertices().map(|(v, _)| v).collect();
+    // The sweep takes the profile's paint, outside (DECISIONS #36).
+    let paint = model.face(profile).map(|f| f.paint).unwrap_or_default();
     let secs = plan.sections.len();
     let lines = plan.steps.len();
     let next = |k: usize| (k + 1) % secs;
@@ -1008,6 +1010,7 @@ fn build(
                     f.reverse();
                     f.surface = surface;
                 }
+                f.paint = paint;
                 model.add_face(f);
             }
         }
@@ -1066,6 +1069,8 @@ fn build(
                 f.reverse();
             }
             f.surface = Surface::Plane(Plane::new(start, -t0));
+            // Its paint stays on the outside.
+            f.paint = paint;
         });
         let last = secs - 1;
         let p = plan.sections[last][0][0];
@@ -1082,6 +1087,7 @@ fn build(
         if !plan.along {
             f.reverse();
         }
+        f.paint = paint;
         model.add_face(f);
     }
     // Take away what no face uses (a profile side on an arc's axis).

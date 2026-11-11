@@ -9,10 +9,12 @@
 use std::collections::BTreeSet;
 
 pub mod assembly;
+pub mod material;
 
 pub use assembly::{
     Assembly, Attributes, DefId, Definition, Instance, InstanceId, Placed, ROOT, Tag, TagId,
 };
+pub use material::{FaceSide, Material, Principled};
 use prism_math::{DAffine3, DQuat, DVec3, Plane};
 use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
@@ -227,6 +229,37 @@ pub enum Command {
         path: BTreeSet<prism_topo::EdgeId>,
         profile: FaceId,
     },
+    /// Add a material to the document (its name made unique).
+    AddMaterial {
+        material: Material,
+    },
+    /// Change a material.
+    EditMaterial {
+        id: prism_topo::MaterialId,
+        material: Material,
+    },
+    /// Remove a material: what used it goes back to Default.
+    RemoveMaterial {
+        id: prism_topo::MaterialId,
+    },
+    /// Remove every material nothing uses.
+    PurgeMaterials,
+    /// Paint face sides (None: back to Default).
+    Paint {
+        sides: BTreeSet<(FaceId, FaceSide)>,
+        material: Option<prism_topo::MaterialId>,
+    },
+    /// Paint groups and components as a whole.
+    PaintInstances {
+        instances: BTreeSet<InstanceId>,
+        material: Option<prism_topo::MaterialId>,
+    },
+    /// Replace one material by another, in the open group or everywhere.
+    ReplaceMaterial {
+        from: Option<prism_topo::MaterialId>,
+        to: Option<prism_topo::MaterialId>,
+        everywhere: bool,
+    },
 }
 
 /// How groups are moved, turned or scaled.
@@ -376,6 +409,12 @@ impl Command {
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
             Command::FollowMe { .. } => "Follow Me",
+            Command::AddMaterial { .. } => "New Material",
+            Command::EditMaterial { .. } => "Edit Material",
+            Command::RemoveMaterial { .. } => "Delete Material",
+            Command::PurgeMaterials => "Purge Materials",
+            Command::Paint { .. } | Command::PaintInstances { .. } => "Paint",
+            Command::ReplaceMaterial { .. } => "Replace Material",
         }
     }
 
@@ -603,6 +642,33 @@ impl Command {
                 asm.copy(ctx, instances, &steps);
             }
             Command::EraseInstances { instances } => asm.erase(ctx, instances),
+            Command::AddMaterial { material } => {
+                asm.add_material(material.clone());
+            }
+            Command::EditMaterial { id, material } => asm.edit_material(*id, material.clone()),
+            Command::RemoveMaterial { id } => asm.remove_material(*id),
+            Command::PurgeMaterials => asm.purge_materials(),
+            Command::Paint { sides, material } => {
+                // Only a material the document has.
+                if material.is_none_or(|m| asm.material(m).is_some())
+                    && let Some(d) = asm.def_mut(ctx)
+                {
+                    material::paint(&mut d.model, sides, *material);
+                }
+            }
+            Command::PaintInstances {
+                instances,
+                material,
+            } => asm.paint_instances(instances, *material),
+            Command::ReplaceMaterial {
+                from,
+                to,
+                everywhere,
+            } => {
+                if to.is_none_or(|m| asm.material(m).is_some()) {
+                    asm.replace_material((!*everywhere).then_some(ctx), *from, *to);
+                }
+            }
             geometry => {
                 if let Some(d) = asm.def_mut(ctx) {
                     geometry.apply(&mut d.model);
@@ -787,7 +853,14 @@ impl Command {
             | Command::SetTag { .. }
             | Command::Place { .. }
             | Command::CopyInstances { .. }
-            | Command::EraseInstances { .. } => {}
+            | Command::EraseInstances { .. }
+            | Command::AddMaterial { .. }
+            | Command::EditMaterial { .. }
+            | Command::RemoveMaterial { .. }
+            | Command::PurgeMaterials
+            | Command::PaintInstances { .. }
+            | Command::ReplaceMaterial { .. } => {}
+            Command::Paint { sides, material } => material::paint(m, sides, *material),
         }
     }
 }

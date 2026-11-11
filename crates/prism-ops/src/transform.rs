@@ -343,7 +343,9 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
             for w in 0..piece.len() {
                 model.add_edge(piece[w], piece[(w + 1) % piece.len()]);
             }
-            model.add_face(Face::new(piece, vec![], Surface::Plane(pl)));
+            let mut g = Face::new(piece, vec![], Surface::Plane(pl));
+            g.paint = face.paint;
+            model.add_face(g);
         }
     }
 }

@@ -3,7 +3,8 @@
 use prism_geom::{Curve, Surface};
 use prism_math::{DVec3, Plane};
 use prism_topo::{
-    Counters, CurveId, Edge, EdgeId, Face, FaceId, Guide, GuideId, Model, ModelParts, VertexId,
+    Counters, CurveId, Edge, EdgeId, Face, FaceId, Guide, GuideId, MaterialId, Model, ModelParts,
+    VertexId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,8 +15,9 @@ use crate::FileError;
 /// (part 2) adds arcs and curve ids. Layout 4 (part 4) adds soft and
 /// smooth edges. Layout 5 (part 5b) adds cone, sphere and torus faces; it
 /// is layout 4 with more kinds of surface, so a layout 4 entry reads as it
-/// is. Layout 6 (part 6a) adds approximate edges (DECISIONS #32).
-pub const VERSION: u32 = 6;
+/// is. Layout 6 (part 6a) adds approximate edges (DECISIONS #32). Layout 7
+/// (Basic Materials) adds each face's paint.
+pub const VERSION: u32 = 7;
 
 type P = [f64; 3];
 
@@ -187,6 +189,32 @@ impl From<GeometryV4> for GeometryV6 {
     }
 }
 
+/// Layout 7: as layout 6, and faces may be painted: (face, front, back)
+/// material ids, for painted faces only (Basic Materials).
+#[derive(Serialize, Deserialize)]
+struct GeometryV7 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV6>,
+    faces: Vec<FaceV2>,
+    guides: Vec<(u32, GuideV1)>,
+    /// Vertex, edge, face, guide and curve counters.
+    counters: [u32; 5],
+    paint: Vec<(u32, Option<u32>, Option<u32>)>,
+}
+
+impl From<GeometryV6> for GeometryV7 {
+    fn from(g: GeometryV6) -> GeometryV7 {
+        GeometryV7 {
+            vertices: g.vertices,
+            edges: g.edges,
+            faces: g.faces,
+            guides: g.guides,
+            counters: g.counters,
+            paint: Vec::new(),
+        }
+    }
+}
+
 /// Layout 3: as layout 2, and edges may be arcs and share curve ids.
 #[derive(Serialize, Deserialize)]
 struct GeometryV3 {
@@ -297,7 +325,13 @@ fn ids(l: &[VertexId]) -> Vec<u32> {
 
 pub fn encode(m: &Model) -> Vec<u8> {
     let parts = m.to_parts();
-    let g = GeometryV6 {
+    let g = GeometryV7 {
+        paint: parts
+            .faces
+            .iter()
+            .filter(|(_, f)| !f.paint.is_default())
+            .map(|(id, f)| (id.0, f.paint.front.map(|x| x.0), f.paint.back.map(|x| x.0)))
+            .collect(),
         vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
         edges: parts
             .edges
@@ -396,8 +430,8 @@ pub fn encode(m: &Model) -> Vec<u8> {
 
 pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
     let bad = |e: postcard::Error| FileError::Damaged(format!("geometry: {e}"));
-    let v4 = |g: GeometryV4| GeometryV6::from(g);
-    let g: GeometryV6 = match version {
+    let v4 = |g: GeometryV4| GeometryV7::from(GeometryV6::from(g));
+    let g: GeometryV7 = match version {
         1 => v4(GeometryV3::from(GeometryV2::from(
             postcard::from_bytes::<GeometryV1>(bytes).map_err(bad)?,
         ))
@@ -407,7 +441,10 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             .map_err(bad)?
             .into()),
         4 | 5 => v4(postcard::from_bytes(bytes).map_err(bad)?),
-        6 => postcard::from_bytes(bytes).map_err(bad)?,
+        6 => postcard::from_bytes::<GeometryV6>(bytes)
+            .map_err(bad)?
+            .into(),
+        7 => postcard::from_bytes(bytes).map_err(bad)?,
         _ => {
             return Err(FileError::Damaged(format!(
                 "unknown geometry layout {version}"
@@ -415,7 +452,20 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
         }
     };
     let v = |a: u32| VertexId(a);
-    let parts = ModelParts {
+    let paint: std::collections::BTreeMap<u32, prism_topo::Paint> = g
+        .paint
+        .iter()
+        .map(|(f, front, back)| {
+            (
+                *f,
+                prism_topo::Paint {
+                    front: front.map(MaterialId),
+                    back: back.map(MaterialId),
+                },
+            )
+        })
+        .collect();
+    let mut parts = ModelParts {
         vertices: g
             .vertices
             .into_iter()
@@ -548,5 +598,10 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             curve: g.counters[4],
         },
     };
+    for (id, f) in &mut parts.faces {
+        if let Some(p) = paint.get(&id.0) {
+            f.paint = *p;
+        }
+    }
     Model::from_parts(parts).map_err(|e| FileError::Damaged(format!("geometry: {e}")))
 }

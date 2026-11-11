@@ -15,7 +15,9 @@ use std::sync::Arc;
 use prism_math::{DAffine3, DVec3};
 use prism_ops::select::Selection;
 use prism_ops::transform;
-use prism_topo::{Model, VertexId};
+use prism_topo::{FaceId, MaterialId, Model, VertexId};
+
+use crate::material::Material;
 use serde::{Deserialize, Serialize};
 
 /// A definition's id.
@@ -96,6 +98,14 @@ pub struct Assembly {
     tags: BTreeMap<TagId, Tag>,
     #[serde(default)]
     next_tag: u32,
+    /// The document's materials (Basic Materials), shared by every model.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    materials: BTreeMap<MaterialId, Material>,
+    #[serde(default)]
+    next_material: u32,
+    /// Instances painted as a whole: drawn on their Default faces.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    painted: BTreeMap<InstanceId, MaterialId>,
 }
 
 /// An instance's name, tag and whether it is hidden (for files).
@@ -132,6 +142,9 @@ impl Assembly {
             on_tag: BTreeMap::new(),
             tags: BTreeMap::new(),
             next_tag: 0,
+            materials: BTreeMap::new(),
+            next_material: 0,
+            painted: BTreeMap::new(),
         }
     }
 
@@ -199,6 +212,9 @@ impl Assembly {
             on_tag: BTreeMap::new(),
             tags: BTreeMap::new(),
             next_tag: 0,
+            materials: BTreeMap::new(),
+            next_material: 0,
+            painted: BTreeMap::new(),
         })
     }
 
@@ -494,6 +510,7 @@ impl Assembly {
     /// Keep id counters from going back (after undo): no id is handed out
     /// twice. Definitions are only copied where a counter is behind.
     pub fn keep_counters_from(&mut self, newer: &Assembly) {
+        self.next_material = self.next_material.max(newer.next_material);
         self.next_def = self.next_def.max(newer.next_def);
         self.next_instance = self.next_instance.max(newer.next_instance);
         for (id, d) in &newer.defs {
@@ -646,6 +663,7 @@ impl Assembly {
         self.hidden.retain(|i| alive.contains(i));
         self.names.retain(|i, _| alive.contains(i));
         self.on_tag.retain(|i, _| alive.contains(i));
+        self.painted.retain(|i, _| alive.contains(i));
     }
 
     /// Make Group: the selection (and the selected groups) in `ctx` move
@@ -809,6 +827,9 @@ impl Assembly {
                 if let Some(t) = self.on_tag.get(from).copied() {
                     self.on_tag.insert(id, t);
                 }
+                if let Some(mat) = self.painted.get(from).copied() {
+                    self.painted.insert(id, mat);
+                }
             }
         }
     }
@@ -821,5 +842,188 @@ impl Assembly {
             }
         }
         self.prune();
+    }
+
+    // ---------- materials (Basic Materials) ----------
+
+    /// The materials, and the counter for new ones (for files).
+    pub fn materials(&self) -> (&BTreeMap<MaterialId, Material>, u32) {
+        (&self.materials, self.next_material)
+    }
+
+    pub fn material(&self, id: MaterialId) -> Option<&Material> {
+        self.materials.get(&id)
+    }
+
+    /// Instances painted as a whole (for files).
+    pub fn painted(&self) -> &BTreeMap<InstanceId, MaterialId> {
+        &self.painted
+    }
+
+    /// The material an instance is painted with, if any.
+    pub fn painted_with(&self, i: InstanceId) -> Option<MaterialId> {
+        self.painted.get(&i).copied()
+    }
+
+    /// Materials, counter and painted instances read from a file. Faces and
+    /// instances naming a material that is missing go back to Default.
+    pub fn with_materials(
+        mut self,
+        materials: BTreeMap<MaterialId, Material>,
+        next: u32,
+        painted: BTreeMap<InstanceId, MaterialId>,
+    ) -> Assembly {
+        self.next_material = next.max(materials.keys().next_back().map_or(0, |m| m.0 + 1));
+        self.materials = materials;
+        self.painted = painted;
+        self.drop_missing_materials();
+        self.prune();
+        self
+    }
+
+    /// Add a material (its name made unique). Returns its id.
+    pub fn add_material(&mut self, mut m: Material) -> MaterialId {
+        m.name = crate::material::free_name(&self.materials, &m.name);
+        let id = MaterialId(self.next_material);
+        self.next_material += 1;
+        self.materials.insert(id, m);
+        id
+    }
+
+    /// Change a material (its name kept unique among the others).
+    pub fn edit_material(&mut self, id: MaterialId, mut m: Material) {
+        if !self.materials.contains_key(&id) {
+            return;
+        }
+        let others: BTreeMap<MaterialId, Material> = self
+            .materials
+            .iter()
+            .filter(|(k, _)| **k != id)
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        m.name = crate::material::free_name(&others, &m.name);
+        self.materials.insert(id, m);
+    }
+
+    /// Remove a material: what used it goes back to Default.
+    pub fn remove_material(&mut self, id: MaterialId) {
+        if self.materials.remove(&id).is_some() {
+            self.drop_missing_materials();
+        }
+    }
+
+    /// Every material nothing uses.
+    pub fn unused_materials(&self) -> BTreeSet<MaterialId> {
+        let used: BTreeSet<MaterialId> = self
+            .defs
+            .values()
+            .flat_map(|d| crate::material::used_in(&d.model))
+            .chain(self.painted.values().copied())
+            .collect();
+        self.materials
+            .keys()
+            .filter(|m| !used.contains(m))
+            .copied()
+            .collect()
+    }
+
+    /// Remove every material nothing uses.
+    pub fn purge_materials(&mut self) {
+        for m in self.unused_materials() {
+            self.materials.remove(&m);
+        }
+    }
+
+    /// Paint instances as a whole (None: back to Default).
+    pub fn paint_instances(&mut self, instances: &BTreeSet<InstanceId>, m: Option<MaterialId>) {
+        for i in instances {
+            match m.filter(|m| self.materials.contains_key(m)) {
+                Some(m) => {
+                    self.painted.insert(*i, m);
+                }
+                None => {
+                    self.painted.remove(i);
+                }
+            }
+        }
+        self.prune();
+    }
+
+    /// Replace one material by another on faces (and painted instances),
+    /// in `ctx` only or everywhere.
+    pub fn replace_material(
+        &mut self,
+        ctx: Option<DefId>,
+        from: Option<MaterialId>,
+        to: Option<MaterialId>,
+    ) {
+        let ids: Vec<DefId> = match ctx {
+            Some(c) => vec![c],
+            None => self.defs.keys().copied().collect(),
+        };
+        for id in ids {
+            let sides = self
+                .def(id)
+                .map(|d| crate::material::sides_with(&d.model, from))
+                .unwrap_or_default();
+            if sides.is_empty() {
+                continue;
+            }
+            if let Some(d) = self.def_mut(id) {
+                crate::material::paint(&mut d.model, &sides, to);
+            }
+        }
+        if from.is_some() {
+            let insts: BTreeSet<InstanceId> = match ctx {
+                Some(c) => self
+                    .def(c)
+                    .map(|d| d.instances.keys().copied().collect())
+                    .unwrap_or_default(),
+                None => self.painted.keys().copied().collect(),
+            };
+            for i in insts {
+                if self.painted.get(&i).copied() == from {
+                    match to {
+                        Some(t) => {
+                            self.painted.insert(i, t);
+                        }
+                        None => {
+                            self.painted.remove(&i);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Faces and instances naming a material not in the table go back to
+    /// Default.
+    fn drop_missing_materials(&mut self) {
+        let have: BTreeSet<MaterialId> = self.materials.keys().copied().collect();
+        self.painted.retain(|_, m| have.contains(m));
+        let ids: Vec<DefId> = self.defs.keys().copied().collect();
+        for id in ids {
+            let stale = self.def(id).is_some_and(|d| {
+                crate::material::used_in(&d.model)
+                    .iter()
+                    .any(|m| !have.contains(m))
+            });
+            if !stale {
+                continue;
+            }
+            if let Some(d) = self.def_mut(id) {
+                let faces: Vec<FaceId> = d.model.faces().map(|(f, _)| f).collect();
+                for f in faces {
+                    d.model.edit_face(f, |x| {
+                        if x.paint.front.is_some_and(|m| !have.contains(&m)) {
+                            x.paint.front = None;
+                        }
+                        if x.paint.back.is_some_and(|m| !have.contains(&m)) {
+                            x.paint.back = None;
+                        }
+                    });
+                }
+            }
+        }
     }
 }

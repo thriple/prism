@@ -406,12 +406,14 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         .collect();
     let old_plane = plane;
     let moved_plane = Plane::new(old_plane.origin + shift, old_plane.normal);
-    let moved_face = Face::with_edges(
+    let mut moved_face = Face::with_edges(
         remap(&f.outer),
         f.holes.iter().map(|h| remap(h)).collect(),
         Surface::Plane(moved_plane),
         moved_edges,
     );
+    // The moved face keeps its paint; new walls are Default (#36).
+    moved_face.paint = f.paint;
     model.edit_face(face, |g| *g = moved_face);
 
     let original = |flip: bool| -> Face {
@@ -422,6 +424,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             Surface::Plane(old_plane),
             edges,
         );
+        o.paint = f.paint;
         if flip {
             o.reverse();
         }

@@ -26,6 +26,32 @@ id!(EdgeId);
 id!(FaceId);
 id!(GuideId);
 id!(CurveId);
+// A material in the document (Basic Materials): the document keeps the
+// table, shared by every group's model; a face only names it.
+id!(MaterialId);
+
+/// What a face is painted with, front and back (Basic Materials, DECISIONS
+/// #35). None is Default: drawn in the style's front or back colour, or a
+/// painted group's material.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Paint {
+    pub front: Option<MaterialId>,
+    pub back: Option<MaterialId>,
+}
+
+impl Paint {
+    pub fn is_default(&self) -> bool {
+        self.front.is_none() && self.back.is_none()
+    }
+
+    /// The same paint seen from the other side.
+    pub fn flipped(self) -> Paint {
+        Paint {
+            front: self.back,
+            back: self.front,
+        }
+    }
+}
 
 /// A guide: a construction line or point the tools make (Tape Measure,
 /// Protractor). Guides are not geometry: they bound no face and edges do
@@ -97,6 +123,9 @@ pub struct Face {
     /// a model.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edges: Vec<Vec<EdgeId>>,
+    /// Its materials (Basic Materials); Default unless painted.
+    #[serde(default, skip_serializing_if = "Paint::is_default")]
+    pub paint: Paint,
 }
 
 /// Stands for an edge a loop needs but the model does not have. Ids are
@@ -120,6 +149,7 @@ impl Face {
             holes,
             surface,
             edges: Vec::new(),
+            paint: Paint::default(),
         }
     }
 
@@ -136,6 +166,7 @@ impl Face {
             holes,
             surface,
             edges,
+            paint: Paint::default(),
         }
     }
 
@@ -195,7 +226,10 @@ impl Face {
             holes,
             edges,
             surface,
+            paint,
         } = self;
+        // Its front is now its back.
+        *paint = paint.flipped();
         for (k, l) in std::iter::once(outer).chain(holes.iter_mut()).enumerate() {
             l.reverse();
             // Side i joined l[i] to l[i+1]; walked back, side i joins the

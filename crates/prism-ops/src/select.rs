@@ -302,12 +302,14 @@ fn copy_face(
                 .collect()
         })
         .collect();
-    prism_topo::Face::with_edges(
+    let mut g = prism_topo::Face::with_edges(
         vs(&f.outer),
         f.holes.iter().map(|h| vs(h)).collect(),
         f.surface,
         edges,
-    )
+    );
+    g.paint = f.paint;
+    g
 }
 
 /// Move a selection out into a new model (Make Group). Edges and points

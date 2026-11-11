@@ -809,7 +809,10 @@ pub fn split_face(model: &mut Model, id: FaceId) -> Vec<FaceId> {
             let (hv, he): (Vec<_>, Vec<_>) = holes.iter().map(|h| to_loop(h)).unzip();
             let mut edges = vec![oe];
             edges.extend(he);
-            Face::with_edges(outer, hv, face.surface, edges)
+            let mut g = Face::with_edges(outer, hv, face.surface, edges);
+            // Every piece keeps the face's paint (DECISIONS #36).
+            g.paint = face.paint;
+            g
         })
         .collect();
     if made.len() == 1

@@ -400,6 +400,8 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
             if nn.dot(want) < 0.0 {
                 g.reverse();
             }
+            // Facing as the face does, so it keeps its paint (#36).
+            g.paint = face.paint;
             g
         };
         let mut faces = Vec::new();

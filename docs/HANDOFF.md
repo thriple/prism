@@ -7,9 +7,14 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   `[release]`: **Exact Curves is done** (check CI and the release run;
   6d-2's CI failed only because the runners could not resolve Ubuntu's
   package servers while installing Mesa: re-run it).
-- **Next: Basic Materials** (the next row of PLAN 6.0's build order): its
-  brief is not written yet. Write it first (as the earlier briefs are:
-  steps, tests, acceptance), and wait for the owner's go.
+- **Basic Materials** (brief 28, research in `docs/research/basic-materials.md`,
+  DECISIONS #34 to #36 open with defaults): part 1 is built in steps 1a
+  (the core: `prism_doc::material`, `Face.paint`, `Assembly::painted`,
+  paint kept through edits, schema 8: **built**), 1b (the Paint Bucket:
+  `tool.paint` with Ctrl, Shift, Ctrl+Shift and Alt; hover preview; the
+  viewport draws face colours, front and back, and a painted group's on
+  its Default faces) and 1c (Materials window, Entity Info, Select by
+  material, Model Health unused row, MCP `paint`, a `[release]`).
 - **Owner to try by hand:** a cylinder pushed through a box makes a hole;
   a slanted cut through a cylinder; the curve tools active.
 - **6d-2 added:** `prism_view::outline` (outline lines from the curved

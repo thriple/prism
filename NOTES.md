@@ -2354,3 +2354,63 @@ Built 2026-11-11 (brief 27). **Exact Curves is done.**
   kept for later chunks are the NURBS work (freeform surfaces, bending a
   curved face by moving a point) and booleans between groups (Inspector &
   Features).
+
+## Basic Materials (part 1, step 1a): materials in the core
+
+Built 2026-11-11 (brief 28). Part 1 (colours) is built in three steps:
+**1a** (this, the core), **1b** (the Paint Bucket and colours in the
+viewport), **1c** (the Materials window, Entity Info, Select by material,
+Model Health, MCP, and a release). Nothing is visible yet.
+
+- **Materials** (`prism_doc::material`). The document keeps one table of
+  materials, with stable ids (`MaterialId`), shared by every group's
+  model. A material is a name and a graph. For now the graph is one
+  principled-surface node: base colour in linear RGBA (alpha is opacity),
+  roughness and metalness, as in glTF (PLAN 4). `Material::colour` takes
+  sRGB, as colour pickers show it. Names are kept unique ("Brick #2").
+- **On faces:** `Face.paint` holds an optional front and back material
+  (`prism_topo::Paint`). None is Default. Reversing a face swaps its
+  front and back. **On groups and components:** an instance can be
+  painted as a whole (`Assembly::painted`). Nothing is copied onto its
+  faces (DECISIONS #35). Copies keep it, and erasing an instance drops it.
+- **Commands** (undoable like every edit): `AddMaterial`, `EditMaterial`,
+  `RemoveMaterial` (what used it goes back to Default), `PurgeMaterials`,
+  `Paint` (face sides), `PaintInstances`, and `ReplaceMaterial` (in the
+  open group or everywhere). A material the document does not have is not
+  painted with. Helpers for the tool: `material::connected_same` (fill
+  connected) and `sides_with`.
+- **Paint kept through edits** (DECISIONS #36):
+  - every piece of a split face keeps its paint, whether flat (the regions
+    rebuild) or curved (`cut::split_face`, `approx::facet`), and so does a
+    face folded by Move;
+  - merged faces take the paint of the largest old face inside the
+    region;
+  - Push/Pull: the moved face keeps its paint, the stretched sides keep
+    theirs, and new walls are Default;
+  - Follow Me's walls and end take the profile's paint, on the outside;
+  - Make Group copies faces with their paint.
+- **Files:** schema 8. A new `materials.json` entry holds the table and
+  the painted instances. Geometry layout 7 adds each face's paint. Schema
+  7 files open unchanged. Golden files: `painted.prism` (painted faces,
+  front and back, and a painted group). The schema 7 files are kept in
+  `schema-7/`, and the current golden files were re-saved from them, not
+  rebuilt, so only their format changed. (`approximate.prism` built from
+  today's code differs slightly from the one saved in 6a.)
+- **Tests:** `prism-doc/tests/materials.rs`:
+  - unique names, purge, and remove (faces back to Default, undo brings
+    them back);
+  - replace and fill connected;
+  - paint through a split, a merge, Push/Pull and Reverse;
+  - a pulled lone rectangle (only the pulled face keeps its paint);
+  - a group painted as a whole, its copy, and erasing it;
+  - Follow Me's walls taking the profile's paint;
+  - **a property test**: random lines across a painted cube's faces,
+    lines erased again, and the whole moved never leave a face unpainted.
+- **Known gaps, sorted (DECISIONS #33):**
+  - A pulled lone rectangle's new base is Default, so its paint stays on
+    the moved face only. SketchUp keeps the original face as the base,
+    with its paint. Minor: check with the owner in 1b.
+  - Fillet and chamfer faces are Default. SketchUp gives them a
+    neighbour's material. Minor: NOTES only.
+  - Imported meshes have no materials until part 3 (glTF, OBJ, 3MF), as
+    planned.
