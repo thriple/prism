@@ -602,7 +602,7 @@ others on that edge, such as the wall between the boxes, go with it).
   a region covered by faces facing opposite ways gets no face, as in
   SketchUp, so the blocks join. Two boxes pulled side by side join too.
 - Left over (older behaviour): a rectangle that shares an edge with another
-  rectangle gets no base when pulled up, so the box is open underneath.
+  rectangle gets no base when pulled up, so the box is open underneath. *(Fixed 2026-11-12, as SketchUp does.)*
 
 ### The solid rule (owner asked for one general rule, 2026-11-08)
 
@@ -2515,10 +2515,15 @@ are listed above).
   items of 5c, 6a, 6b-1 and 6c-1.
 - **Not a gap:** a face already crossing the moving face is passed over
   by Push/Pull (stopping there would block every pull).
-- **For the owner:** a rectangle drawn against another (sharing an edge)
-  and pulled up leaves the box open underneath, as SketchUp does (it
-  leaves a base only under a face that touches nothing else). Prism keeps
-  that until the owner decides.
+- **A rectangle beside another, pulled, gets a base.** The owner checked
+  SketchUp (screenshots): two rectangles sharing an edge, one pulled up,
+  make a closed box whose base faces down. Prism now does the same: a
+  face with free sides and no sliding side keeps its base when its other
+  sides border faces on its own plane, not only when they are drawn
+  against a solid. A ring round another face still keeps none (DECISIONS
+  #14). Test: `a_rectangle_beside_another_pulled_up_gets_a_base` (up and
+  down; the base faces out, the other rectangle stays, Model Health finds
+  nothing turned wrong).
 - **Still open (minor, NOTES only):** a lemon-shaped torus, a profile
   turned away from its arc's start, a flat ring's soft seam, sweeps
   wholly inside themselves, rays grazing a curved surface, outline lines

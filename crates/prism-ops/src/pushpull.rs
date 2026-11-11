@@ -175,6 +175,12 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     };
     let mut walls_at: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
     let mut slides: Vec<((VertexId, VertexId), Vec<FaceId>)> = Vec::new();
+    // A hole shared with another face: a ring round a face, which keeps no
+    // base (DECISIONS #14).
+    let hole_edges: BTreeSet<EdgeId> = (1..1 + f.holes.len())
+        .flat_map(|k| f.loop_edge_ids(k).to_vec())
+        .collect();
+    let mut ring = false;
     for side in f.sides() {
         let (a, b) = (side.from, side.to);
         let o = others(side.edge);
@@ -188,6 +194,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             continue;
         }
         standalone = false;
+        ring |= hole_edges.contains(&side.edge);
         against |= o.iter().any(|g| {
             model
                 .face(*g)
@@ -441,11 +448,13 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     if new_loop && !standalone {
         // Alt: the original boundary stays as a face.
         model.add_face(original(false));
-    } else if standalone || (any_open && against && !any_slide) {
+    } else if standalone || (any_open && !any_slide && (against || !ring)) {
         // A face that extrudes whole keeps its base, so the solid is
-        // closed: a lone face, or one with free sides drawn against a
-        // solid (a triangle on a box's edge). A flat drawing pulled (a ring
-        // round another face) keeps none (DECISIONS #14).
+        // closed: a lone face, one with free sides drawn against a solid (a
+        // triangle on a box's edge), or one with free sides beside faces on
+        // its own plane (two rectangles sharing an edge, as SketchUp does:
+        // owner, 2026-11-12). A ring round another face keeps none
+        // (DECISIONS #14).
         if distance > 0.0 {
             // A base facing the other way closes the solid.
             model.add_face(base(true));
