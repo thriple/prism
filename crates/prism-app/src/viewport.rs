@@ -22,6 +22,8 @@ pub struct Viewport {
     wheel: WheelSort,
     /// A modifier pressed alone, so far (a tap toggles copy or new loop).
     tap: Option<Tap>,
+    /// Ctrl (Cmd) and Alt held, as last sent to the session.
+    held_keys: (bool, bool),
 }
 
 /// A modifier that toggles a tool's mode when tapped on its own.
@@ -41,6 +43,63 @@ fn tap_inputs(tap: Tap, mac: bool) -> Vec<Input> {
         (Tap::Alt, true) => vec![Input::CtrlTap, Input::AltTap],
         (Tap::Ctrl, true) => Vec::new(),
     }
+}
+
+/// The Paint Bucket's cursor, drawn over the viewport in place of the
+/// arrow: a tipped bucket pouring the brush's colour onto the point that
+/// gets painted (the pointer's tip). While sampling, an eyedropper.
+fn draw_bucket(ctx: &Context, p: Pos2, colour: egui::Color32, sampling: bool) {
+    use egui::{Shape, vec2};
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::unique("tool cursor"),
+    ));
+    use prism_ui::theme::color::{CURSOR_BODY, cursor_halo, cursor_ink, cursor_rim};
+    let ink = cursor_ink();
+    let halo = cursor_halo();
+    let at = |x: f32, y: f32| p + vec2(x, y);
+    if sampling {
+        // An eyedropper: its tip on the point.
+        for s in [halo, ink] {
+            painter.line_segment([p, at(9.0, -9.0)], s);
+        }
+        painter.add(Shape::convex_polygon(
+            vec![
+                at(8.0, -12.0),
+                at(12.0, -8.0),
+                at(18.0, -14.0),
+                at(14.0, -18.0),
+            ],
+            colour,
+            ink,
+        ));
+        return;
+    }
+    // The pail, tipped so its mouth faces the point.
+    painter.add(Shape::convex_polygon(
+        vec![
+            at(13.0, -4.5),
+            at(4.5, -13.0),
+            at(14.1, -20.4),
+            at(20.4, -14.1),
+        ],
+        CURSOR_BODY,
+        ink,
+    ));
+    // The paint pouring from the mouth onto the point.
+    painter.add(Shape::convex_polygon(
+        vec![
+            at(10.0, -6.5),
+            at(6.5, -10.0),
+            at(0.8, -2.8),
+            at(0.0, 0.0),
+            at(2.8, -0.8),
+        ],
+        colour,
+        ink,
+    ));
+    // The rim.
+    painter.line_segment([at(13.0, -4.5), at(4.5, -13.0)], cursor_rim());
 }
 
 /// What the status bar shows from the viewport.
@@ -70,6 +129,7 @@ impl Viewport {
             now: 0.0,
             wheel: WheelSort::default(),
             tap: None,
+            held_keys: (false, false),
         }
     }
 
@@ -251,6 +311,23 @@ impl Viewport {
             });
         }
         let over = resp.hovered() || self.held;
+        // Ctrl and Alt held: the Paint Bucket's preview follows them.
+        let m = ctx.input(|i| i.modifiers);
+        if (m.command, m.alt) != self.held_keys {
+            self.held_keys = (m.command, m.alt);
+            self.send(Input::Held {
+                ctrl: m.command,
+                alt: m.alt,
+            });
+        }
+        if self.session.tool() == prism_tools::session::PAINT
+            && let Some(p) = resp.hover_pos()
+        {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+            let c = self.session.brush_colour().0;
+            let colour = prism_ui::theme::srgba([c[0], c[1], c[2], 255]);
+            draw_bucket(ctx, p, colour, self.session.paint_sampling() || m.alt);
+        }
         let events = ctx.input(|i| i.events.clone());
         for e in &events {
             match e {

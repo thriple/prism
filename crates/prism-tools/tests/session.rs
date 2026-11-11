@@ -51,6 +51,7 @@ impl Driver {
             alt_loop: false,
             brush: Brush::default(),
             brush_copy: None,
+            materials: Vec::new(),
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -3064,4 +3065,46 @@ fn a_recording_replays_with_the_brush_it_started_with() {
     assert_eq!(r.brush, Brush::Material(teal));
     let replayed = Session::replay(&r);
     assert!(r.ends_with(replayed.model()), "the replay paints the same");
+    // The model's materials came along: the top replays in teal.
+    let m = replayed.document().assembly().material(teal).expect("teal");
+    assert_eq!(m.name, "Teal");
+    assert_eq!(replayed.document().assembly().materials().0.len(), 1);
+}
+
+/// The preview follows the keys held: Ctrl shows the connected fill,
+/// Shift every face it would replace, Alt (sampling) nothing.
+#[test]
+fn the_paint_preview_follows_the_keys_held() {
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    rect_on_ground(&mut d, 4.0, 0.0, 5.0, 1.0);
+    d.tool(PAINT);
+    let top = DVec3::new(1.0, 1.0, 2.0);
+    d.hover(top);
+    assert_eq!(d.s.paint_preview().expect("plain").0.len(), 1);
+    d.send(Input::Held {
+        ctrl: true,
+        alt: false,
+    });
+    assert_eq!(d.s.paint_preview().expect("ctrl").0.len(), 6, "the box");
+    d.send(Input::Held {
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::ShiftDown);
+    assert_eq!(
+        d.s.paint_preview().expect("shift").0.len(),
+        7,
+        "every Default face"
+    );
+    d.send(Input::ShiftUp);
+    d.send(Input::Held {
+        ctrl: false,
+        alt: true,
+    });
+    assert!(d.s.paint_preview().is_none());
+    assert!(d.s.hint().contains("SAMPLE"));
+    // A plain click while Alt is held samples, and paints nothing.
+    d.click(top);
+    assert!(paint_of(&d, top).is_default());
 }

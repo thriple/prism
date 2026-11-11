@@ -430,6 +430,14 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         }
         o
     };
+    // A base left behind faces out of the new solid: it shows the colour
+    // the face had on its outside, whichever side was painted (owner,
+    // 2026-11-12: the base keeps the colour it started with).
+    let base = |flip: bool| -> Face {
+        let mut o = original(flip);
+        o.paint.front = o.paint.front.or(o.paint.back);
+        o
+    };
     if new_loop && !standalone {
         // Alt: the original boundary stays as a face.
         model.add_face(original(false));
@@ -440,7 +448,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         // round another face) keeps none (DECISIONS #14).
         if distance > 0.0 {
             // A base facing the other way closes the solid.
-            model.add_face(original(true));
+            model.add_face(base(true));
         } else {
             // Pushed back: the moved face now faces the other way, and the
             // original stays as the cap.
@@ -448,11 +456,13 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             // The walls were wound for a pull out: they turn round too, so
             // the solid faces out.
             model.edit_face(face, |g| g.reverse());
-            model.add_face(original(false));
+            model.add_face(base(false));
             for w in &walls {
                 model.edit_face(*w, |g| g.reverse());
             }
         }
+        // The moved face shows its colour outside too.
+        model.edit_face(face, |g| g.paint.front = g.paint.front.or(g.paint.back));
     }
 
     // Edges of the old boundary that no face uses any more.

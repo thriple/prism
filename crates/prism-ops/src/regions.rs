@@ -216,7 +216,12 @@ pub(crate) fn rebuild_plane(
             continue;
         }
         if covers.is_empty() {
-            let up = neighbour_facing(model, &old, r, &frame).unwrap_or(true);
+            // Facing as a neighbour in the same plane does, else as the
+            // faces round its edges agree (a hole in a solid closed), else
+            // along the frame.
+            let up = neighbour_facing(model, &old, r, &frame)
+                .or_else(|| wall_facing(model, r, &frame))
+                .unwrap_or(true);
             made_faces.push(make_face(model, r, &frame, up));
             continue;
         }
@@ -373,6 +378,34 @@ fn neighbour_facing(model: &Model, old: &[FaceId], r: &Region, frame: &Frame) ->
         let n = face.plane()?.normal;
         shares.then(|| n.dot(frame.normal) > 0.0)
     })
+}
+
+/// Which way a new face must face to agree with the faces that already
+/// use its edges: on a consistent solid, two faces sharing an edge run
+/// along it in opposite directions. Each edge used by exactly one other
+/// face votes; None without a vote or on a tie (owner, 2026-11-12: a face
+/// closing a hole in a body came out reversed at random).
+fn wall_facing(model: &Model, r: &Region, frame: &Frame) -> Option<bool> {
+    let face = make_face(model, r, frame, true);
+    let mut votes = 0i32;
+    for side in face.sides() {
+        let users: Vec<&Face> = model
+            .faces()
+            .map(|(_, g)| g)
+            .filter(|g| g.uses_edge(side.edge))
+            .collect();
+        let [g] = users.as_slice() else { continue };
+        // Its plane: a face in the same plane is not a wall.
+        if g.plane()
+            .is_some_and(|p| p.normal.cross(frame.normal).length() < 1e-9)
+        {
+            continue;
+        }
+        for s in g.sides().filter(|s| s.edge == side.edge) {
+            votes += if s.from == side.from { -1 } else { 1 };
+        }
+    }
+    (votes != 0).then_some(votes > 0)
 }
 
 /// Whether a face has exactly the region's loops (the same edges, any

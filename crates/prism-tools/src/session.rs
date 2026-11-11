@@ -162,6 +162,12 @@ pub enum Input {
     CtrlTap,
     /// Alt pressed: new loop in Push/Pull.
     AltTap,
+    /// Ctrl (Cmd on a Mac) and Alt (Option) held or not, sent when they
+    /// change (the Paint Bucket's preview follows them).
+    Held {
+        ctrl: bool,
+        alt: bool,
+    },
     /// Characters for the measurement box.
     Text {
         text: String,
@@ -204,6 +210,10 @@ pub struct Recording {
     pub brush: Brush,
     #[serde(default)]
     pub brush_copy: Option<prism_doc::Material>,
+    /// The document's materials when recording started, so painted faces
+    /// replay in their colours.
+    #[serde(default)]
+    pub materials: Vec<(prism_topo::MaterialId, prism_doc::Material)>,
 }
 
 impl Recording {
@@ -373,6 +383,9 @@ pub struct Session {
     alt_loop: bool,
     /// Alt was held at the last press (the Paint Bucket samples).
     press_alt: bool,
+    /// Ctrl and Alt held now (`Input::Held`).
+    ctrl_held: bool,
+    alt_held: bool,
     /// The Paint Bucket: what it paints with, whether the next click
     /// samples (Alt tapped), and what is under it.
     brush: Brush,
@@ -421,6 +434,8 @@ impl Session {
             ctrl_copy: false,
             alt_loop: false,
             press_alt: false,
+            ctrl_held: false,
+            alt_held: false,
             brush: Brush::default(),
             brush_copy: None,
             sampling: false,
@@ -751,6 +766,14 @@ impl Session {
                     .cloned(),
                 _ => None,
             },
+            materials: self
+                .doc
+                .assembly()
+                .materials()
+                .0
+                .iter()
+                .map(|(id, m)| (*id, m.clone()))
+                .collect(),
         });
     }
 
@@ -763,7 +786,13 @@ impl Session {
 
     /// Play a recording from its start. Returns the session at the end.
     pub fn replay(r: &Recording) -> Session {
-        let mut s = Session::new(Document::with_model(r.model.clone()));
+        let next = r.materials.last().map_or(0, |(id, _)| id.0 + 1);
+        let asm = prism_doc::Assembly::with_model(r.model.clone()).with_materials(
+            r.materials.iter().cloned().collect(),
+            next,
+            Default::default(),
+        );
+        let mut s = Session::new(Document::with_assembly(asm));
         s.camera = r.camera;
         s.tool = r.tool.clone();
         s.size = r.size;
@@ -841,6 +870,7 @@ impl Session {
             Input::Key { key } => self.key(*key, &mut resp),
             Input::ShiftDown => {
                 self.shift_held = true;
+                self.paint_keys_changed();
                 if let Some(i) = &self.inference
                     && let Some(a) = i.axis
                     && self.lock == Lock::None
@@ -854,9 +884,15 @@ impl Session {
             Input::AltTap if self.tool == SCALE => self.toggle_scale_centre(),
             Input::AltTap if self.tool == FOLLOW => self.toggle_follow_perimeter(),
             Input::AltTap if self.tool == PAINT => self.toggle_sampling(),
+            Input::Held { ctrl, alt } => {
+                self.ctrl_held = *ctrl;
+                self.alt_held = *alt;
+                self.paint_keys_changed();
+            }
             Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {
                 self.shift_held = false;
+                self.paint_keys_changed();
                 if self.shift_locked {
                     self.shift_locked = false;
                     self.set_lock(Lock::None);

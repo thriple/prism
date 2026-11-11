@@ -12,7 +12,7 @@ use prism_doc::material::{self, PALETTE};
 use prism_doc::{Command, FaceSide, InstanceId, Material};
 use prism_math::{DVec2, DVec3};
 use prism_topo::{FaceId, MaterialId};
-use prism_view::overlay::{Label, Mark, Overlay, Shape};
+use prism_view::overlay::{Label, Overlay};
 use prism_view::style::Rgba;
 use prism_view::{Hit, View};
 
@@ -145,28 +145,75 @@ impl Session {
         self.paint_at = at;
     }
 
-    /// The faces a plain click would paint, and the colour (the hover
-    /// preview).
+    /// Shift, Ctrl or Alt changed: the preview and the hint follow.
+    pub(super) fn paint_keys_changed(&mut self) {
+        if self.tool == PAINT {
+            self.highlight_dirty = true;
+            self.overlay_dirty = true;
+            self.dirty = true;
+        }
+    }
+
+    /// Whether a click now samples (Alt tapped, or held).
+    fn samples_now(&self) -> bool {
+        self.sampling || self.alt_held
+    }
+
+    /// The brush's colour (the cursor's bucket).
+    pub fn brush_colour(&self) -> Rgba {
+        self.brush_look().1
+    }
+
+    /// The faces a click would paint with the keys held now (Ctrl fills
+    /// connected, Shift replaces everywhere, Ctrl+Shift in the open
+    /// group), and the colour: the hover preview.
     pub fn paint_preview(&self) -> Option<(Vec<FaceId>, Rgba)> {
-        if self.tool != PAINT || self.sampling {
+        if self.tool != PAINT || self.samples_now() {
             return None;
         }
         let at = self.paint_at?;
+        let k = usize::from(!at.front);
         let faces: Vec<FaceId> = match at.instance {
             Some(_) => {
                 // The group's Default faces show its material.
-                let k = self.scene.face_owner.get(&at.face)?;
+                let owner = self.scene.face_owner.get(&at.face)?;
                 self.scene
                     .face_owner
                     .iter()
                     .filter(|(f, o)| {
-                        *o == k
-                            && self
-                                .scene
-                                .face(**f)
-                                .is_some_and(|x| x.paint[usize::from(!at.front)].is_none())
+                        *o == owner && self.scene.face(**f).is_some_and(|x| x.paint[k].is_none())
                     })
                     .map(|(f, _)| *f)
+                    .collect()
+            }
+            None if self.shift_held => {
+                // Replace: every face showing that material on that side,
+                // in the open group (Ctrl) or everywhere.
+                let from = self.scene.face(at.face)?.paint[k];
+                let here = self.ctrl_held;
+                self.scene
+                    .faces
+                    .iter()
+                    .filter(|x| {
+                        let owner = self.owner(Hit::Face(x.id));
+                        let ok = match owner {
+                            None => true,
+                            Some(Owner::Child(_)) => true,
+                            Some(Owner::Outside) => !here,
+                        };
+                        let own = x.paint[k] == from;
+                        // A painted group with that material changes too.
+                        let group = from.is_some() && x.paint[k].is_none() && x.inherited == from;
+                        let own_ok = own && (owner.is_none() || !here);
+                        ok && (own_ok || group)
+                    })
+                    .map(|x| x.id)
+                    .collect()
+            }
+            None if self.ctrl_held => {
+                material::connected_same(self.work_model(), at.face, side(at.front))
+                    .into_iter()
+                    .map(|(f, _)| f)
                     .collect()
             }
             None => prism_ops::select::surface(self.work_model(), at.face)
@@ -213,7 +260,7 @@ impl Session {
 
     pub(super) fn paint_press(&mut self, shift: bool, ctrl: bool) {
         let Some(at) = self.paint_at else { return };
-        if self.sampling || self.press_alt {
+        if self.sampling || self.press_alt || self.alt_held {
             // Sample what is drawn there (a group's material on its Default
             // faces too).
             let b = match self.scene.material_on(at.face, at.front) {
@@ -278,7 +325,7 @@ impl Session {
     }
 
     pub(super) fn paint_hint(&self) -> &'static str {
-        if self.sampling {
+        if self.samples_now() {
             "SAMPLE: click a face to pick up its material · Alt cancels"
         } else {
             "Click a face to paint it (a group as a whole) · Ctrl fills connected · Shift replaces everywhere · Ctrl+Shift in this group · Alt samples"
@@ -291,18 +338,12 @@ impl Session {
             return;
         }
         let Some(at) = self.paint_at else { return };
-        let (name, colour) = self.brush_look();
+        let (name, _) = self.brush_look();
         let fb = &self.style.feedback;
-        o.marks.push(Mark {
-            at: at.point,
-            shape: Shape::Square,
-            color: colour,
-            size: 7.0,
-        });
         o.labels.push(Label {
             at: at.point,
             offset: [14.0, -16.0],
-            text: if self.sampling {
+            text: if self.samples_now() {
                 "Sample".to_owned()
             } else {
                 name

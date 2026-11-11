@@ -180,34 +180,48 @@ fn edits_keep_paint() {
 
 #[test]
 fn a_pulled_rectangle_keeps_its_paint_and_its_new_walls_are_default() {
-    let mut m = Model::new();
-    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
-    let mut d = Document::with_model(m);
-    let red = add(&mut d, "Red", [255, 0, 0]);
-    paint_all(&mut d, red);
-    let f = face_at(&d, DVec3::new(1.0, 1.0, 0.0));
-    let n = d
-        .model()
-        .face(f)
-        .and_then(|x| x.plane())
-        .map_or(1.0, |p| p.normal.z);
-    d.run(Command::PushPull {
-        face: f,
-        distance: n.signum(),
-        new_loop: false,
-    });
-    let painted: Vec<_> = d
-        .model()
-        .faces()
-        .filter(|(_, x)| x.paint.front == Some(red))
-        .map(|(id, _)| id)
-        .collect();
-    assert_eq!(painted, [f], "only the pulled face");
-    assert_eq!(
-        d.model().face_count(),
-        6,
-        "four Default walls and a Default base"
-    );
+    // Painted on either side, pulled either way: the moved face and the
+    // base left behind both show the colour outside (owner, 2026-11-12).
+    for side in [FaceSide::Front, FaceSide::Back] {
+        for up in [true, false] {
+            let mut m = Model::new();
+            prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+            let mut d = Document::with_model(m);
+            let red = add(&mut d, "Red", [255, 0, 0]);
+            let f = face_at(&d, DVec3::new(1.0, 1.0, 0.0));
+            d.run(Command::Paint {
+                sides: [(f, side)].into(),
+                material: Some(red),
+            });
+            let n = d
+                .model()
+                .face(f)
+                .and_then(|x| x.plane())
+                .map_or(1.0, |p| p.normal.z);
+            let dz = if up { 1.0 } else { -1.0 };
+            d.run(Command::PushPull {
+                face: f,
+                distance: dz * n.signum(),
+                new_loop: false,
+            });
+            assert_eq!(d.model().face_count(), 6, "{side:?} {up}");
+            // Seen from outside: the front of every face of the box.
+            let outside: Vec<_> = d
+                .model()
+                .faces()
+                .filter(|(_, x)| x.paint.front == Some(red))
+                .map(|(_, x)| x.plane().map(|p| p.normal.z.round()))
+                .collect();
+            assert_eq!(outside.len(), 2, "top and base ({side:?}, up {up})");
+            assert!(outside.contains(&Some(1.0)) && outside.contains(&Some(-1.0)));
+            let walls = d
+                .model()
+                .faces()
+                .filter(|(_, x)| x.plane().is_some_and(|p| p.normal.z.abs() < 0.5))
+                .all(|(_, x)| x.paint.is_default());
+            assert!(walls, "new walls are Default");
+        }
+    }
 }
 
 #[test]

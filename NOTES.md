@@ -2463,18 +2463,37 @@ No `[release]` yet (1c has it).
   nearest wins), a cylinder's whole side and the preview; a screenshot
   (`painted_faces_show_their_colours`: colours, Monochrome without them,
   the preview); the registry test (`the_paint_bucket_is_active`).
+- **Gaps closed the same day (owner asked, 2026-11-12):**
+  - the preview follows the keys held: Ctrl shows the connected fill,
+    Shift every face it would replace (Ctrl+Shift: the open group's),
+    Alt held samples (no preview, the hint says SAMPLE). The app sends
+    `Input::Held { ctrl, alt }` when they change;
+  - a bucket cursor: over the viewport the arrow is hidden and a tipped
+    pail pours the brush's colour onto the pointer's tip (an eyedropper
+    while sampling), drawn by the app (`viewport::draw_bucket`);
+  - recordings keep the document's materials too, so painted faces
+    replay in their colours.
 - **Known gaps, sorted (DECISIONS #33):**
-  - The preview shows a plain click only, not what Ctrl or Shift would
-    paint. Minor: NOTES only.
-  - The cursor stays the arrow, with the swatch beside it; a bucket
-    cursor is for the Soft theme's cursor set. Minor: NOTES only.
   - MCP's `use_tool` cannot hold Alt yet: in 1c, with the `paint` tool.
   - Colours other than Brick Red, and editing them: the Materials window,
     1c.
-  - A recording saves the brush and its material, but not the rest of
-    the document's materials (a recording keeps the root model only), so
-    a replay draws other painted faces Default. Minor: NOTES only, unless
-    a recording needs it.
+
+## Owner fixes (2026-11-12): a pulled face's base, faces closing holes
+
+- **The base keeps its colour.** A lone face pulled into a solid leaves
+  its base behind: the base now shows the colour the face had, outside,
+  whichever side was painted (it used to end up inside, turned over).
+  Pushed back the other way, the moved face shows it outside too.
+  (`pushpull.rs`, test `a_pulled_rectangle_keeps_its_paint_and_its_new_walls_are_default`,
+  all four cases.) The new walls stay Default.
+- **A face closing a hole faces out.** A new face with no face in its
+  plane to copy used to face along its plane's frame, which is arbitrary,
+  so a face closing a hole in a body came out reversed at random. Now the
+  faces round its edges vote: on a consistent solid two faces sharing an
+  edge run along it in opposite directions (`regions::wall_facing`).
+  Test: `prism-doc/tests/closing.rs` erases each face of a box, turned
+  three ways, and redraws an edge; each new face faces out (it failed
+  without the fix).
 
 ## Owner feedback on the 6e build (2026-11-11, late)
 

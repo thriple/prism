@@ -35,6 +35,21 @@ pub mod color {
     pub const CLEAR: Color32 = Color32::TRANSPARENT;
     /// Full white, used only to show a texture unchanged.
     pub const UNTINTED: Color32 = Color32::WHITE;
+    /// Tool cursors drawn over the viewport (the Paint Bucket): their
+    /// outline, and the pail's body.
+    pub const CURSOR_INK: Color32 = Color32::from_rgb(0x16, 0x18, 0x1c);
+    pub const CURSOR_BODY: Color32 = Color32::WHITE;
+
+    /// A tool cursor's outline, its white halo, and the pail's rim.
+    pub fn cursor_ink() -> egui::Stroke {
+        egui::Stroke::new(1.5, CURSOR_INK)
+    }
+    pub fn cursor_halo() -> egui::Stroke {
+        egui::Stroke::new(3.5, CURSOR_BODY)
+    }
+    pub fn cursor_rim() -> egui::Stroke {
+        egui::Stroke::new(2.5, CURSOR_INK)
+    }
 
     /// Aurora base and its five blobs.
     pub const AURORA_BASE: Color32 = Color32::from_rgb(0x0d, 0x10, 0x30);
