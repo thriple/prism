@@ -367,18 +367,10 @@ fn a_plane_square_to_a_torus_axis_cuts_two_circles() {
 }
 
 #[test]
-fn a_cut_curved_face_is_not_scaled_unevenly_yet() {
-    use prism_ops::transform::{CUT_CURVED_SCALE, arcs_refusal, scaling};
-    let mut m = cylinder(1.0, 2.0);
-    let all: BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
-    let uneven = scaling(DVec3::ZERO, DVec3::new(2.0, 1.0, 1.0));
-    assert_eq!(arcs_refusal(&m, &all, &uneven), None, "uncut: facets");
-    add_rect(&mut m, -2.0, -2.0, 2.0, 2.0, 1.0);
-    intersect_faces(&mut m, None);
-    let all: BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
-    // Still a rectangle in (θ, s) each: cut square to the axis.
-    assert_eq!(arcs_refusal(&m, &all, &uneven), None);
-    // Cut slanted, the pieces are not: refused (step 6b-2).
+fn a_cut_curved_face_scaled_unevenly_becomes_facets() {
+    use prism_ops::transform::{arcs_refusal, scale, scaling};
+    // Cut slanted: its pieces are not rectangles in (θ, s), so faceting
+    // cuts the cells the outline crosses into triangles (step 6b-2).
     let mut m = cylinder(1.0, 2.0);
     quad(
         &mut m,
@@ -391,7 +383,17 @@ fn a_cut_curved_face_is_not_scaled_unevenly_yet() {
     );
     intersect_faces(&mut m, None);
     let all: BTreeSet<_> = m.vertices().map(|(id, _)| id).collect();
-    assert_eq!(arcs_refusal(&m, &all, &uneven), Some(CUT_CURVED_SCALE));
-    let even = scaling(DVec3::ZERO, DVec3::splat(2.0));
-    assert_eq!(arcs_refusal(&m, &all, &even), None);
+    let k = DVec3::new(2.0, 1.0, 1.0);
+    let uneven = scaling(DVec3::ZERO, k);
+    assert_eq!(arcs_refusal(&m, &all, &uneven), None);
+    scale(&mut m, &all, DVec3::ZERO, k);
+    clean(&m);
+    assert!(sides(&m).is_empty(), "every curved face is facets now");
+    // Every point of the old cylinder is on the stretched one.
+    for (_, p) in m.vertices() {
+        if p.z > -1e-9 && p.z < 2.0 + 1e-9 && (p.x.abs() < 2.0 - 1e-6 || p.y.abs() < 2.0 - 1e-6) {
+            let r = (p.x / 2.0).hypot(p.y);
+            assert!(r < 1.0 + 1e-9, "{p}");
+        }
+    }
 }

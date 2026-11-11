@@ -228,6 +228,9 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     for plane in candidate_planes(model, &chain, pa, pb, &tol) {
         faces.extend(rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0));
     }
+    // Lying on a curved face (along a cylinder, through a cone's apex), it
+    // splits it too.
+    faces.extend(crate::cut::split_along(model, &added));
     faces.retain(|f| model.face(*f).is_some());
     Added {
         edges: added,
@@ -495,6 +498,9 @@ fn add_arc_from(
         .collect();
     let new: BTreeSet<EdgeId> = added.iter().copied().collect();
     let mut faces = rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0);
+    // On a curved face (a circle round a cylinder, any circle on a
+    // sphere), it splits it too.
+    faces.extend(crate::cut::split_along(model, &added));
     faces.retain(|f| model.face(*f).is_some());
     Added {
         edges: added,

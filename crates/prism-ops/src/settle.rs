@@ -400,25 +400,27 @@ fn split_at(model: &mut Model, p: DVec3, tol: &Tol) {
 /// Faces with the same loops facing the same way (overlapping faces left
 /// by an edit) become one: the lowest id stays.
 pub fn dedupe_faces(model: &mut Model) {
-    let mut seen: BTreeMap<Vec<VertexId>, FaceId> = BTreeMap::new();
+    // Keyed by sides (start and edge), not corners: two arcs can join the
+    // same two points (the halves of a sphere both run pole to pole).
+    type Key = Vec<(VertexId, EdgeId)>;
+    let mut seen: BTreeMap<Key, FaceId> = BTreeMap::new();
     let mut extra = Vec::new();
     for (id, f) in model.faces() {
-        // The outer loop from its smallest vertex, in its own direction.
-        let n = f.outer.len();
-        let start = (0..n).min_by_key(|i| f.outer[*i]).unwrap_or(0);
-        let mut key: Vec<VertexId> = (0..n).map(|i| f.outer[(start + i) % n]).collect();
-        let mut holes: Vec<Vec<VertexId>> = f
-            .holes
-            .iter()
-            .map(|h| {
-                let mut h = h.clone();
+        // The outer loop from its smallest side, in its own direction.
+        let outer: Key = f.loop_edges(0).map(|s| (s.from, s.edge)).collect();
+        let n = outer.len();
+        let start = (0..n).min_by_key(|i| outer[*i]).unwrap_or(0);
+        let mut key: Key = (0..n).map(|i| outer[(start + i) % n]).collect();
+        let mut holes: Vec<Key> = (1..=f.holes.len())
+            .map(|k| {
+                let mut h: Key = f.loop_edges(k).map(|s| (s.from, s.edge)).collect();
                 h.sort();
                 h
             })
             .collect();
         holes.sort();
         for h in holes {
-            key.push(VertexId(u32::MAX));
+            key.push((VertexId(u32::MAX), EdgeId(u32::MAX)));
             key.extend(h);
         }
         if let std::collections::btree_map::Entry::Vacant(e) = seen.entry(key) {

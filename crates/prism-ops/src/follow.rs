@@ -709,6 +709,7 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
         return false;
     };
     let tol = model.tol();
+    let before: BTreeSet<VertexId> = model.vertices().map(|(v, _)| v).collect();
     let secs = plan.sections.len();
     let lines = plan.steps.len();
     let next = |k: usize| (k + 1) % secs;
@@ -1016,7 +1017,35 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
             model.remove_vertex(*v);
         }
     }
+    stick(model, &before, &tol);
     true
+}
+
+/// The sweep stuck to what it meets (Exact Curves 6b), as Push/Pull's
+/// result is: its new points weld onto old ones there, the planes it
+/// touches are rebuilt (an end flush with a wall splits the wall), and
+/// curved faces its edges lie on are split.
+fn stick(model: &mut Model, before: &BTreeSet<VertexId>, tol: &prism_math::Tol) {
+    let new: BTreeSet<VertexId> = model
+        .vertices()
+        .map(|(v, _)| v)
+        .filter(|v| !before.contains(v))
+        .collect();
+    crate::transform::weld_new(model, &new, tol);
+    let touched: BTreeSet<VertexId> = model
+        .vertices()
+        .map(|(v, _)| v)
+        .filter(|v| !before.contains(v))
+        .collect();
+    crate::settle::settle(model, &touched);
+    crate::settle::dedupe_faces(model);
+
+    let edges: Vec<EdgeId> = model
+        .edges()
+        .filter(|(_, e)| touched.contains(&e.a) || touched.contains(&e.b))
+        .map(|(id, _)| id)
+        .collect();
+    crate::cut::split_along(model, &edges);
 }
 
 /// Whether the profile's walk turns smoothly at point `i` (between sides

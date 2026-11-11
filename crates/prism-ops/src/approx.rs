@@ -98,13 +98,6 @@ fn mark(model: &mut Model, e: EdgeId, cid: CurveId) {
     model.set_curve_id(e, Some(cid));
 }
 
-/// The grid a curved face is faceted on: its (θ, s) rectangle and the
-/// steps each way.
-struct Grid {
-    t: Vec<f64>,
-    s: Vec<f64>,
-}
-
 /// Replace each arc of `edges` by fine approximate segments, the pieces of
 /// one curve sharing one new curve id.
 pub fn segment_arcs(model: &mut Model, edges: &[EdgeId]) {
@@ -114,271 +107,376 @@ pub fn segment_arcs(model: &mut Model, edges: &[EdgeId]) {
     }
 }
 
-/// What faceting a face needs, found without changing anything: None if
-/// the face is not a rectangle in (θ, s) with grid points on its border.
-struct Plan {
-    face: Face,
-    rev: prism_geom::Revolution,
-    grid: Grid,
-    sides: Vec<(EdgeId, DVec2, DVec2, bool)>,
-    nt: usize,
-    ns: usize,
-}
-
-fn plan(model: &Model, id: FaceId) -> Option<Plan> {
-    let f = model.face(id).cloned()?;
-    let rev = f.surface.revolution()?;
-    if !f.holes.is_empty() {
-        return None;
-    }
-    let pl = model.param_loop(&f, 0);
-    if pl.len() < 2 {
-        return None;
-    }
-    let ang = 1e-9;
-    let (mut t0, mut t1, mut s0, mut s1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
-    for (_, q) in &pl {
-        t0 = t0.min(q.x);
-        t1 = t1.max(q.x);
-        s0 = s0.min(q.y);
-        s1 = s1.max(q.y);
-    }
-    if t1 - t0 <= ang || s1 - s0 <= ang * (1.0 + s1.abs().max(s0.abs())) {
-        return None;
-    }
-    let near = |a: f64, b: f64| (a - b).abs() <= ang * (1.0 + a.abs().max(b.abs()));
-    // Every side runs along the rectangle's border, square to an axis.
-    let n = pl.len();
-    for i in 0..n {
-        let (a, b) = (pl[i].1, pl[(i + 1) % n].1);
-        let along_s = near(a.y, b.y) && (near(a.y, s0) || near(a.y, s1));
-        let along_t = near(a.x, b.x) && (near(a.x, t0) || near(a.x, t1));
-        if !along_s && !along_t {
-            return None;
-        }
-    }
-    let circle = matches!(rev.profile, prism_geom::Profile::Circle { .. });
-    let on_grid = |x: f64, g: &[f64]| g.iter().any(|y| near(x, *y));
-    let nt = facet_count(t1 - t0);
-    let ns = if circle { facet_count(s1 - s0) } else { 1 };
-    let grid = Grid {
-        t: (0..=nt)
-            .map(|i| t0 + (t1 - t0) * i as f64 / nt as f64)
-            .collect(),
-        s: (0..=ns)
-            .map(|j| s0 + (s1 - s0) * j as f64 / ns as f64)
-            .collect(),
-    };
-    // Each vertex's place in the rectangle (angles brought into it); a
-    // point on the axis takes the angle of the side it ends.
-    let tol = model.tol();
-    let turn = std::f64::consts::TAU;
-    let into = |x: f64, lo: f64, hi: f64| {
-        let mid = (lo + hi) / 2.0;
-        x + ((mid - x) / turn).round() * turn
-    };
-    // A point on the axis takes the angle of the side's middle (a side
-    // touching the axis runs along a meridian).
-    let place = |model: &Model, v: VertexId, mid: DVec3| -> DVec2 {
-        let p = model.vertex(v);
-        let (t, s) = rev.param(p);
-        let s = if circle { into(s, s0, s1) } else { s };
-        let t = if rev.axis_distance(p) <= tol.dist {
-            into(rev.param(mid).0, t0, t1)
-        } else {
-            into(t, t0, t1)
-        };
-        DVec2::new(t, s)
-    };
-    let m = f.outer.len();
-    let mut sides: Vec<(EdgeId, DVec2, DVec2, bool)> = Vec::with_capacity(m);
-    for i in 0..m {
-        let (va, vb) = (f.outer[i], f.outer[(i + 1) % m]);
-        let e = f.loop_edge_ids(0).get(i).copied()?;
-        let x = model.edge(e).copied()?;
-        let mid = x.curve.point(model.vertex(x.a), model.vertex(x.b), 0.5);
-        let (qa, qb) = (place(model, va, mid), place(model, vb, mid));
-        // Points already on the border must be grid points.
-        for q in [qa, qb] {
-            let ok = ((near(q.y, s0) || near(q.y, s1)) && on_grid(q.x, &grid.t))
-                || ((near(q.x, t0) || near(q.x, t1)) && on_grid(q.y, &grid.s));
-            if !ok {
-                return None;
-            }
-        }
-        sides.push((e, qa, qb, x.a == va));
-    }
-    Some(Plan {
-        face: f,
-        rev,
-        grid,
-        sides,
-        nt,
-        ns,
-    })
-}
-
-/// Whether [`facet`] can facet curved face `id` (a face cut by Intersect
-/// Faces cannot yet: step 6b-2).
+/// Whether [`facet`] can facet curved face `id`: any face that can be
+/// laid out in (θ, s) (not a band round the axis, which Prism never makes).
 pub fn can_facet(model: &Model, id: FaceId) -> bool {
-    plan(model, id).is_some()
+    crate::cut::laid_segs(model, id).is_some()
 }
 
-/// Replace curved face `id` by flat facets on a grid in (θ, s), if its
-/// loop is a rectangle there (as every face Push/Pull, Fillet and Follow
-/// Me make is). Facets between grid points are exactly flat on every
-/// turned surface (two points on each of two circles about the axis, at
-/// the same two angles, make an isosceles trapezoid), so they stay flat
-/// under any affine map. The lines between facets are soft, smooth and
-/// approximate; the face's own edges are split into approximate segments.
-/// False if the face is not such a rectangle (it is left as it is).
+/// `n` + 1 evenly spaced values from `lo` to `hi`.
+fn steps(lo: f64, hi: f64, n: usize) -> Vec<f64> {
+    (0..=n)
+        .map(|i| lo + (hi - lo) * i as f64 / n as f64)
+        .collect()
+}
+
+/// Where along edge `e` (0 at its `a`, 1 at its `b`) its place in (θ, s)
+/// reaches `target` in coordinate `y` (0 for θ, 1 for s), between `u0`
+/// and `u1`, where it changes side. `guess` keeps angles unwrapped.
+#[allow(clippy::too_many_arguments)]
+fn cross_at(
+    rev: &prism_geom::Revolution,
+    curve: Curve,
+    pa: DVec3,
+    pb: DVec3,
+    (mut u0, mut u1): (f64, f64),
+    y: usize,
+    target: f64,
+    guess: f64,
+) -> f64 {
+    let turn = std::f64::consts::TAU;
+    let at = |u: f64| {
+        let (t, s) = rev.param(curve.point(pa, pb, u));
+        let v = if y == 0 { t } else { s };
+        v + ((guess - v) / turn).round() * turn - target
+    };
+    let mut g0 = at(u0);
+    for _ in 0..60 {
+        let m = (u0 + u1) / 2.0;
+        let gm = at(m);
+        if (gm < 0.0) == (g0 < 0.0) {
+            u0 = m;
+            g0 = gm;
+        } else {
+            u1 = m;
+        }
+    }
+    (u0 + u1) / 2.0
+}
+
+/// Ear clipping of a simple polygon: triangles as indices.
+fn ears(p: &[DVec2]) -> Vec<[usize; 3]> {
+    use prism_math::predicates::orient2d;
+    let mut idx: Vec<usize> = (0..p.len()).collect();
+    let area: f64 = (0..p.len())
+        .map(|i| p[i].perp_dot(p[(i + 1) % p.len()]))
+        .sum();
+    if area < 0.0 {
+        idx.reverse();
+    }
+    let mut out = Vec::new();
+    while idx.len() > 3 {
+        let n = idx.len();
+        let ear = (0..n).find(|&i| {
+            let (a, b, c) = (p[idx[(i + n - 1) % n]], p[idx[i]], p[idx[(i + 1) % n]]);
+            orient2d(a, b, c) > 0.0
+                && idx.iter().all(|&k| {
+                    let q = p[k];
+                    q == a
+                        || q == b
+                        || q == c
+                        || !(orient2d(a, b, q) > 0.0
+                            && orient2d(b, c, q) > 0.0
+                            && orient2d(c, a, q) > 0.0)
+                })
+        });
+        // Nothing convex left (rounding): cut anywhere.
+        let i = ear.unwrap_or(0);
+        out.push([idx[(i + n - 1) % n], idx[i], idx[(i + 1) % n]]);
+        idx.remove(i);
+    }
+    if idx.len() == 3 {
+        out.push([idx[0], idx[1], idx[2]]);
+    }
+    out
+}
+
+/// Replace curved face `id` by flat facets. Lines of a grid in (θ, s)
+/// (the chord rule's step each way, s one step on a straight profile) are
+/// laid across it as soft, smooth, approximate edges, the face's own edges
+/// split exactly where they cross them, and the face cut along them
+/// ([`crate::cut::split_face`]). A whole cell is flat on every turned
+/// surface (two points on each of two circles about the axis, at the same
+/// two angles, make an isosceles trapezoid), so it stays flat under any
+/// affine map; a cell the face's outline crosses is cut into triangles.
+/// Every point is on the surface. The face's own edges become approximate
+/// segments. False if the face cannot be laid out (it is left as it is).
 pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
-    let Some(Plan {
-        face: f,
-        rev,
-        grid,
-        sides,
-        nt,
-        ns,
-    }) = plan(model, id)
-    else {
+    use crate::cut::{laid_segs, seg_polygon};
+    use prism_math::predicates::{Inside, point_in_polygon};
+    let Some((rev, loops)) = laid_segs(model, id) else {
         return false;
     };
+    let circle = matches!(rev.profile, prism_geom::Profile::Circle { .. });
+    let polys: Vec<Vec<DVec2>> = loops.iter().map(|l| seg_polygon(l)).collect();
+    let (lo, hi) = polys[0]
+        .iter()
+        .fold((DVec2::INFINITY, DVec2::NEG_INFINITY), |(lo, hi), p| {
+            (lo.min(*p), hi.max(*p))
+        });
+    if hi.x - lo.x <= 1e-9 || hi.y - lo.y <= 1e-12 {
+        return false;
+    }
     let ang = 1e-9;
-    let near = |a: f64, b: f64| (a - b).abs() <= ang * (1.0 + a.abs().max(b.abs()));
-    let tol = model.tol();
-    // Split each side at the grid points inside it.
-    for (e, qa, qb, forward) in sides {
+    let mut ts = steps(lo.x, hi.x, facet_count(hi.x - lo.x));
+    let ss = steps(
+        lo.y,
+        hi.y,
+        if circle { facet_count(hi.y - lo.y) } else { 1 },
+    );
+    // A line through each hole, so no piece is left holding one.
+    for h in &polys[1..] {
+        if let Some(p) = h.iter().min_by(|a, b| a.x.total_cmp(&b.x)) {
+            ts.push(p.x);
+        }
+    }
+    ts.sort_by(f64::total_cmp);
+    ts.dedup_by(|a, b| (*a - *b).abs() < ang);
+
+    // The face's own edges, split exactly where grid lines cross them;
+    // arcs become straight segments.
+    for seg in loops.iter().flatten() {
+        let Some(e) = seg.edge else { continue };
         let Some(x) = model.edge(e).copied() else {
             continue;
         };
-        let flat_s = near(qa.y, qb.y);
-        let (along, from, to) = if flat_s {
-            (&grid.t, qa.x, qb.x)
-        } else {
-            (&grid.s, qa.y, qb.y)
-        };
-        let (lo, hi) = (from.min(to), from.max(to));
-        let mut inside: Vec<f64> = along
-            .iter()
-            .copied()
-            .filter(|g| *g > lo + ang && *g < hi - ang)
-            .collect();
-        // In the edge's stored direction.
-        if (from > to) == forward {
-            inside.reverse();
+        let (pa, pb) = (model.vertex(x.a), model.vertex(x.b));
+        let mut p2 = seg.pts.clone();
+        if seg.from != x.a {
+            p2.reverse();
         }
-        let pts: Vec<DVec3> = inside
+        let n = p2.len() - 1;
+        let mut us: Vec<f64> = Vec::new();
+        for k in 0..n {
+            let (a, b) = (p2[k], p2[k + 1]);
+            let span = (k as f64 / n as f64, (k + 1) as f64 / n as f64);
+            for (y, lines) in [(0usize, &ts), (1, &ss)] {
+                let (va, vb) = if y == 0 { (a.x, b.x) } else { (a.y, b.y) };
+                for g in lines.iter() {
+                    if (va - g) * (vb - g) < 0.0 && (va - g).abs() > ang && (vb - g).abs() > ang {
+                        let r = (g - va) / (vb - va);
+                        let guess = if y == 0 {
+                            a.x + (b.x - a.x) * r
+                        } else {
+                            a.y + (b.y - a.y) * r
+                        };
+                        us.push(cross_at(&rev, x.curve, pa, pb, span, y, *g, guess));
+                    } else if (vb - g).abs() <= ang && k + 1 < n && {
+                        // Crossing there, not running along the line.
+                        let c = p2[k + 2];
+                        let vc = if y == 0 { c.x } else { c.y };
+                        (va - g) * (vc - g) < 0.0
+                    } {
+                        // Through a drawn point of an arc: the crossing is
+                        // there, found again on the curve about it.
+                        let around = ((k as f64 + 0.5) / n as f64, (k as f64 + 1.5) / n as f64);
+                        us.push(cross_at(&rev, x.curve, pa, pb, around, y, *g, vb));
+                    }
+                }
+            }
+        }
+        us.sort_by(f64::total_cmp);
+        let pts: Vec<DVec3> = us
             .iter()
-            .map(|g| {
-                if flat_s {
-                    rev.point(*g, qa.y)
+            .map(|u| x.curve.point(pa, pb, *u))
+            .filter(|q| q.distance(pa) > model.tol().dist && q.distance(pb) > model.tol().dist)
+            .collect();
+        if !pts.is_empty() || x.curve.is_arc() {
+            split_into(model, e, &pts, ids);
+        }
+    }
+
+    // Laid out again: every side is straight now.
+    let Some((_, loops)) = laid_segs(model, id) else {
+        return false;
+    };
+    let polys: Vec<Vec<DVec2>> = loops.iter().map(|l| seg_polygon(l)).collect();
+    let inside = |q: DVec2| {
+        point_in_polygon(q, &polys[0]) == Inside::Inside
+            && polys[1..]
+                .iter()
+                .all(|h| point_in_polygon(q, h) == Inside::Outside)
+    };
+    let border: Vec<(VertexId, DVec2)> = loops
+        .iter()
+        .flatten()
+        .filter(|s| s.edge.is_some())
+        .map(|s| (s.from, s.pts[0]))
+        .collect();
+    // Stretches across a pole: (pole, s, from θ, to θ).
+    let poles: Vec<(VertexId, f64, f64, f64)> = loops
+        .iter()
+        .flatten()
+        .filter(|s| s.edge.is_none())
+        .map(|s| (s.from, s.pts[0].y, s.pts[0].x, s.pts[1].x))
+        .collect();
+    let mut corner: BTreeMap<(usize, usize), VertexId> = BTreeMap::new();
+    let mut lines: Vec<(VertexId, VertexId)> = Vec::new();
+    for pass in 0..2 {
+        let (along, across) = if pass == 0 { (&ts, &ss) } else { (&ss, &ts) };
+        for (i, g) in along.iter().enumerate() {
+            let coord = |q: DVec2| if pass == 0 { (q.x, q.y) } else { (q.y, q.x) };
+            let mut on: Vec<(f64, VertexId)> = border
+                .iter()
+                .filter(|(_, q)| (coord(*q).0 - g).abs() < ang)
+                .map(|(v, q)| (coord(*q).1, *v))
+                .collect();
+            if pass == 0 {
+                for (v, s, ta, tb) in &poles {
+                    if (g - ta) * (g - tb) < 0.0 {
+                        on.push((*s, *v));
+                    }
+                }
+            }
+            for (j, h) in across.iter().enumerate() {
+                if on.iter().any(|(y, _)| (y - h).abs() < ang) {
+                    continue;
+                }
+                let q = if pass == 0 {
+                    DVec2::new(*g, *h)
                 } else {
-                    rev.point(qa.x, *g)
+                    DVec2::new(*h, *g)
+                };
+                if inside(q) {
+                    let key = if pass == 0 { (i, j) } else { (j, i) };
+                    let v = *corner
+                        .entry(key)
+                        .or_insert_with(|| model.add_vertex(rev.point(q.x, q.y)));
+                    on.push((*h, v));
                 }
-            })
-            .collect();
-        if pts.is_empty() && !x.curve.is_arc() {
-            continue;
-        }
-        split_into(model, e, &pts, ids);
-    }
-    // Grid vertices: the border's by place (a pole is one vertex), the
-    // inside new.
-    let border: Vec<VertexId> = {
-        let Some(g) = model.face(id) else {
-            return false;
-        };
-        g.outer.clone()
-    };
-    let find = |model: &Model, p: DVec3| -> Option<VertexId> {
-        border
-            .iter()
-            .copied()
-            .find(|v| tol.same_point(model.vertex(*v), p))
-    };
-    let mut gv: Vec<Vec<VertexId>> = Vec::with_capacity(nt + 1);
-    for i in 0..=nt {
-        let mut col = Vec::with_capacity(ns + 1);
-        for j in 0..=ns {
-            let p = rev.point(grid.t[i], grid.s[j]);
-            let edge = i == 0 || i == nt || j == 0 || j == ns;
-            let v = if edge || rev.axis_distance(p) <= tol.dist {
-                match find(model, p) {
-                    Some(v) => v,
-                    None if edge => return false,
-                    None => model.add_vertex(p),
+            }
+            on.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            for w in on.windows(2) {
+                let m = (w[0].0 + w[1].0) / 2.0;
+                let q = if pass == 0 {
+                    DVec2::new(*g, m)
+                } else {
+                    DVec2::new(m, *g)
+                };
+                if w[0].1 != w[1].1 && inside(q) {
+                    lines.push((w[0].1, w[1].1));
                 }
-            } else {
-                model.add_vertex(p)
-            };
-            col.push(v);
-        }
-        gv.push(col);
-    }
-    // Lines between facets: soft, smooth, approximate. The border's are
-    // there already; the rest are new (kept in a table: looking each up
-    // in the model is slow).
-    let mut made: BTreeMap<(VertexId, VertexId), EdgeId> = BTreeMap::new();
-    if let Some(g) = model.face(id) {
-        let n = g.outer.len();
-        for (k, e) in g.loop_edge_ids(0).iter().enumerate() {
-            let (a, b) = (g.outer[k], g.outer[(k + 1) % n]);
-            made.insert((a.min(b), a.max(b)), *e);
+            }
         }
     }
-    let mut line = |model: &mut Model, a: VertexId, b: VertexId| -> Option<EdgeId> {
-        if a == b {
-            return None;
-        }
+    let mut made: BTreeMap<(VertexId, VertexId), EdgeId> =
+        model.edges().map(|(e, x)| ((x.a, x.b), e)).collect();
+    let mut line = |model: &mut Model, a: VertexId, b: VertexId| -> EdgeId {
         let key = (a.min(b), a.max(b));
         if let Some(e) = made.get(&key) {
-            return Some(*e);
+            return *e;
         }
         let e = model.add_new_edge(a, b);
         model.set_soft(e, true, true);
         model.set_approx(e, true);
         made.insert(key, e);
-        Some(e)
+        e
     };
-    let surface = f.surface;
-    let out = if surface.outward() { 1.0 } else { -1.0 };
-    let mut facets = Vec::new();
-    for i in 0..nt {
-        for j in 0..ns {
-            // Counter-clockwise in (θ, s): outward on the surface.
-            let mut l = vec![gv[i][j], gv[i + 1][j], gv[i + 1][j + 1], gv[i][j + 1]];
-            l.dedup();
-            if l.first() == l.last() && l.len() > 1 {
-                l.pop();
-            }
-            if l.len() < 3 {
-                continue;
-            }
-            let mut es = Vec::with_capacity(l.len());
-            for k in 0..l.len() {
-                let Some(e) = line(model, l[k], l[(k + 1) % l.len()]) else {
-                    return false;
-                };
-                es.push(e);
-            }
-            let pts: Vec<DVec3> = l.iter().map(|v| model.vertex(*v)).collect();
-            let want = rev.normal(
-                (grid.t[i] + grid.t[i + 1]) / 2.0,
-                (grid.s[j] + grid.s[j + 1]) / 2.0,
-            ) * out;
-            let nn = newell(&pts).normalize_or_zero();
-            let c = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
-            let mut face = Face::with_edges(l, vec![], Surface::Plane(Plane::new(c, nn)), vec![es]);
-            if nn.dot(want) < 0.0 {
-                face.reverse();
-            }
-            facets.push(face);
-        }
+    for (a, b) in lines {
+        line(model, a, b);
     }
-    model.remove_face(id);
-    for face in facets {
-        model.add_face(face);
+    let pieces = crate::cut::split_face(model, id);
+
+    // Each piece flat: as it is when its points lie in a plane (a whole
+    // cell, a triangle), else in triangles.
+    let tol = model.tol();
+    for p in pieces {
+        let Some(face) = model.face(p).cloned() else {
+            continue;
+        };
+        if !face.holes.is_empty() {
+            continue;
+        }
+        let pts: Vec<DVec3> = face.outer.iter().map(|v| model.vertex(*v)).collect();
+        let c = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
+        let want = face.surface.normal_at(face.surface.project(c));
+        let flat = |pts: &[DVec3]| {
+            Plane::fit(pts, &tol).filter(|pl| pts.iter().all(|q| pl.distance(*q).abs() <= tol.dist))
+        };
+        let make = |l: Vec<VertexId>, es: Vec<EdgeId>, pts: &[DVec3]| -> Face {
+            let nn = newell(pts).normalize_or_zero();
+            let c = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
+            let mut g = Face::with_edges(l, vec![], Surface::Plane(Plane::new(c, nn)), vec![es]);
+            if nn.dot(want) < 0.0 {
+                g.reverse();
+            }
+            g
+        };
+        let mut faces = Vec::new();
+        // Flat already, and facing about the way the surface does (a piece
+        // of the cut's points alone can be flat in the cutting plane).
+        let facing = newell(&pts).normalize_or_zero().dot(want).abs() >= 0.5;
+        if (pts.len() == 3 || flat(&pts).is_some()) && facing {
+            faces.push(make(
+                face.outer.clone(),
+                face.loop_edge_ids(0).to_vec(),
+                &pts,
+            ));
+        } else {
+            let Some((_, l)) = laid_segs(model, p) else {
+                continue;
+            };
+            let mut ring: Vec<(VertexId, DVec2)> =
+                l[0].iter().map(|s| (s.from, s.pts[0])).collect();
+            let area: f64 = (0..ring.len())
+                .map(|i| ring[i].1.perp_dot(ring[(i + 1) % ring.len()].1))
+                .sum();
+            if area < 0.0 {
+                ring.reverse();
+            }
+            let q2: Vec<DVec2> = ring.iter().map(|r| r.1).collect();
+            // Fanned from one of its points, or else from a new point
+            // inside: three points of the cut's curve alone would make a
+            // triangle in the cutting plane, over the face there.
+            let p3: Vec<DVec3> = ring.iter().map(|r| model.vertex(r.0)).collect();
+            // A fan from `apex` (2D and 3D; `skip` is its index in the ring)
+            // whose triangles all turn the right way and face about as the
+            // surface does.
+            let fan_ok = |apex: DVec2, at: DVec3, skip: Option<usize>| {
+                (0..q2.len()).all(|i| {
+                    let j = (i + 1) % q2.len();
+                    if skip.is_some_and(|k| k == i || k == j) {
+                        return true;
+                    }
+                    let n = (p3[i] - at).cross(p3[j] - at).normalize_or_zero();
+                    prism_math::predicates::orient2d(apex, q2[i], q2[j]) > 0.0
+                        && (n == DVec3::ZERO || n.dot(want).abs() >= 0.5)
+                })
+            };
+            let corner_apex = (0..q2.len()).find(|&k| fan_ok(q2[k], p3[k], Some(k)));
+            let tris: Vec<[usize; 3]> = if let Some(k) = corner_apex {
+                (0..q2.len())
+                    .filter(|&i| i != k && (i + 1) % q2.len() != k)
+                    .map(|i| [k, i, (i + 1) % q2.len()])
+                    .collect()
+            } else if let Some(c) = crate::regions::interior_point(std::slice::from_ref(&q2))
+                .filter(|c| fan_ok(*c, rev.point(c.x, c.y), None))
+            {
+                let v = model.add_vertex(rev.point(c.x, c.y));
+                ring.push((v, c));
+                let k = ring.len() - 1;
+                (0..q2.len()).map(|i| [k, i, (i + 1) % q2.len()]).collect()
+            } else {
+                ears(&q2)
+            };
+            for [a, b, c] in tris {
+                let (va, vb, vc) = (ring[a].0, ring[b].0, ring[c].0);
+                if va == vb || vb == vc || vc == va {
+                    continue;
+                }
+                let es = vec![
+                    line(model, va, vb),
+                    line(model, vb, vc),
+                    line(model, vc, va),
+                ];
+                let tp = [model.vertex(va), model.vertex(vb), model.vertex(vc)];
+                faces.push(make(vec![va, vb, vc], es, &tp));
+            }
+        }
+        model.remove_face(p);
+        for g in faces {
+            model.add_face(g);
+        }
     }
     true
 }

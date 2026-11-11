@@ -698,17 +698,9 @@ fn simplify(pts: &[DVec3], i: usize, j: usize, dev: f64, keep: &mut [bool]) {
     }
 }
 
-/// A face's box, padded by a twentieth of its size (a curved face bulges
-/// past its drawn outline).
+/// A face's box (a curved face's surface sampled, so its bulge is in).
 fn face_box(m: &Model, id: FaceId) -> Option<(DVec3, DVec3)> {
-    let f = m.face(id)?;
-    let pts: Vec<DVec3> = m.face_loop_points(f).into_iter().flatten().collect();
-    let first = *pts.first()?;
-    let (lo, hi) = pts
-        .iter()
-        .fold((first, first), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
-    let pad = DVec3::splat((hi - lo).length() * 0.05 + m.tol().dist);
-    Some((lo - pad, hi + pad))
+    crate::cut::face_box(m, m.face(id)?)
 }
 
 /// Where curved face `a` crosses face `b` (flat or curved).

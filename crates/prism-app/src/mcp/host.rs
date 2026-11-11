@@ -897,6 +897,44 @@ mod tests {
     }
 
     #[test]
+    fn a_line_drawn_down_a_cylinder_splits_it() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.circle", "steps": [{"click": [0, 0, 0]}, {"click": [0.5, 0, 0]}]}),
+        ));
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.push", "steps": [{"click": [0.1, 0.1, 0]}, {"move": [0.1, 0.1, 0.3]}, {"type": "1.5"}]}),
+        ));
+        // From the bottom circle to the top one, straight up the side
+        // (Exact Curves 6b-2: it sticks to the cylinder and splits it).
+        let (x, y) = (0.5 * 0.5f64, -0.5 * 0.75f64.sqrt());
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.line", "steps": [
+                {"click": [x, y, 0]}, {"move": [x, y, 0.7]}, {"type": "1.5"}
+            ]}),
+        ));
+        let g = value(h.call("get_geometry", &json!({})));
+        let sides = g["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["cylinder"].is_object())
+            .count();
+        assert_eq!(sides, 3, "{r}");
+    }
+
+    #[test]
     fn use_tool_fillets_a_box_edge() {
         let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
         let (mut tabs, mut tool) = (Vec::new(), "tool.select");

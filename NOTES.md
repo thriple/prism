@@ -2058,6 +2058,7 @@ welded, and faceting cut faces) is next.
     face that is not one is refused (`CUT_CURVED_SCALE`, checked with
     `approx::can_facet`; the undo property test found the wrong surface it
     left before): **step 6b-2** facets any loop and drops the refusal.
+    *(Done in 6b-2.)*
   - Two crossings that cross each other in the middle of a curved face are
     not split where they meet, so the face is not cut along them there.
     Intersect Faces' crossings meet at their ends in every case tested;
@@ -2074,3 +2075,64 @@ welded, and faceting cut faces) is next.
   - A crossing ending on an approximate edge ends on its chord, not on the
     curve the chord stands for (it cannot do better), and the face it lies
     on is then not cut there. Minor: NOTES only.
+
+## Exact Curves (part 6, step 6b-2): sticky geometry on curved faces
+
+Built 2026-11-11 (brief 27). Step 6b is done.
+
+- **Drawing on a curved face splits it** (`cut::split_along`, called by
+  `sticky::add_segment` and the arc and circle drawing): a line along a
+  cylinder or through a cone's apex, a circle round the axis, any circle on
+  a sphere. A straight line across a curved face's middle is not on it and
+  splits nothing (as before).
+- **Crossings that meet in a curved face's middle** are split where they
+  meet before the face is cut (`cut::split_meetings`): exactly where both
+  are lines or arcs (`sticky::meet`), else at the crossing found in
+  (θ, s), on the surface (and on the exact one of the two). Edges are
+  compared by box, swept along θ.
+- **Follow Me sticks** (`follow::stick`): its new points weld onto old
+  ones, the planes it touches are rebuilt as after Push/Pull (an end flush
+  with a wall cuts the wall: the wall gets the end as a hole), duplicates
+  go, and curved faces its edges lie on are split.
+- **Faceting any curved face** (`approx::facet`, rewritten): grid lines in
+  (θ, s) are laid across the face as soft, smooth, approximate edges, the
+  face's own edges split exactly where they cross them (also where a line
+  passes through one of an arc's drawn points), and the face cut along them
+  by `cut::split_face`. A whole cell is flat (an isosceles trapezoid on any
+  turned surface); a cell the outline crosses is cut into triangles, fanned
+  from one of its points or from a new point inside on the surface, so no
+  triangle is made of the cut's points alone (it would lie in the cutting
+  plane, over the flat face there). Uncut faces give the same facets as
+  before (2,592 for a sphere, 5,184 for a torus). An uneven Scale of a cut
+  curved face now works; `CUT_CURVED_SCALE` is left only for a face that
+  cannot be laid out (a band round the axis, which Prism never makes).
+- **Fixed on the way:**
+  - duplicate faces (`settle::dedupe_faces`) are found by their sides
+    (start and edge), not their corners, and the weld's "same face" check
+    leaves curved faces to it: a sphere's two halves both run pole to pole
+    and one was dropped as a copy of the other;
+  - a curved face's box (`cut::face_box`) samples its surface: a sphere's
+    half has its outline in one plane, so a box round the outline missed
+    the half itself (Intersect Faces and the splitter skipped it);
+  - the splitter takes a face's own points as on it even where they lie on
+    an approximate side's chord.
+- **Snapping** finds the crossings (they are edges): tested in
+  `prism-infer/tests/curved.rs`.
+- **Tests:** `prism-ops/tests/sticky_curved.rs` (a line along a cylinder;
+  a circle round one, then a line crossing it; two crossings meeting
+  mid-face, exact meeting points; Follow Me ending on a wall), the cut
+  cylinder scaled unevenly in `cut.rs`, the snap test, and an MCP test (a
+  line drawn up a cylinder with `use_tool` splits it).
+- **Known gaps, sorted (DECISIONS #33):**
+  - A straight segment drawn across a curved face (not lying on it) does
+    not split it where it passes through, and a flat face drawn through a
+    curved one is not cut until Intersect Faces: as in SketchUp, faces
+    passing through each other are cut by Intersect Faces only. Not a gap.
+  - Faceting cuts the cells its outline crosses into triangles; on a
+    cylinder (one cell from bottom to top) a slanted cut leaves long thin
+    triangles. They are flat and within the chord rule. Minor: NOTES only.
+  - The faceted outline's pieces follow the grid, not the chord rule, where
+    a slanted curve crosses a cell corner to corner (up to about 1.4 times
+    the rule's stray). Minor: NOTES only.
+  - The model check is slow on many facets (10 s in a debug build for a
+    torus's 5,184); unchanged from 6a. Minor: NOTES only.

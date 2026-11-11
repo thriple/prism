@@ -61,10 +61,11 @@ pub const HOLE_FACE_WOULD_FOLD: &str =
 /// Said when a move would bend a curved face.
 pub const CURVED_WOULD_BEND: &str = "Refused: a curved face would bend. Move all of it.";
 
-/// Said when an uneven scale meets a curved face that has been cut (it
-/// cannot be made into facets yet: Exact Curves step 6b-2).
+/// Said when an uneven scale meets a curved face that cannot be made into
+/// facets (one that winds round its axis with no seam; Prism never makes
+/// one, but a file could hold it).
 pub const CUT_CURVED_SCALE: &str =
-    "Refused: a cut curved face cannot be scaled unevenly yet. Scale it evenly.";
+    "Refused: this curved face cannot be made into facets. Scale it evenly.";
 
 /// Whether moving `vs` by `m` keeps every arc an arc and its faces flat:
 /// each arc with an end in `vs` has both there, `m` scales evenly if any
@@ -97,7 +98,7 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
         return Some(CURVED_WOULD_BEND);
     }
     // Scaled unevenly, a curved face moved whole becomes facets, which
-    // needs it uncut for now.
+    // needs it laid out in (θ, s).
     let cut = model.faces().any(|(id, f)| {
         f.is_curved()
             && f.surface.transformed(m).is_none()
@@ -484,8 +485,12 @@ fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
                 key.push(VertexId(u32::MAX));
                 key.extend(h);
             }
-            if f.outer.len() < 3 {
+            // Curved faces can share their corners and differ (a sphere's
+            // halves both run pole to pole): `settle::dedupe_faces` goes by
+            // edges for those.
+            if f.outer.len() < 3 && f.plane().is_some() {
                 gone.push(id);
+            } else if f.is_curved() {
             } else if let Some((other, loop_)) = seen.get(&key) {
                 if !same_direction(loop_, &f.outer) {
                     gone.push(*other);
