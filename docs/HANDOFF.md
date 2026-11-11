@@ -13,7 +13,15 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
 - **CI:** the Linux job skips the Mesa install until the owner says
   otherwise (screenshot tests skip there unless `PRISM_REQUIRE_GPU` is
   set); they run locally before each push. Ubuntu's servers looked
-  reachable again on 2026-11-12.
+  reachable again on 2026-11-12. CI and the release build for 55461aa
+  (1c) were green.
+- **Owner:** testing the 1c release. Waiting on nothing else. Decided
+  today: no bundled textures (#34), Fillet panel after part 1, new loop
+  lasts one pull, a rectangle beside another gets a base when pulled
+  (as SketchUp), the Linux Mesa step stays skipped until further notice.
+- **Checking the app by eye:** `Xvfb :77`, run `target/debug/prism-app`
+  with a file, drive it with `xdotool`, grab with `import -window root`
+  (MCP's screenshot shows the viewport only).
 - **Next: the Fillet panel** (owner request, NOTES "Owner feedback on the
   6e build"): a panel to set the size, fillet or chamfer, with a live
   preview before applying; write its brief first. Then Basic Materials
