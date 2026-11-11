@@ -15,6 +15,8 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   viewport draws face colours, front and back, and a painted group's on
   its Default faces) and 1c (Materials window, Entity Info, Select by
   material, Model Health unused row, MCP `paint`, a `[release]`).
+- **Build order changed (owner, 2026-11-11):** after Basic Materials
+  come the NURBS Spike, then Freeform NURBS (PLAN 6.0 table moved).
 - **Owner to try by hand:** a cylinder pushed through a box makes a hole;
   a slanted cut through a cylinder; the curve tools active.
 - **6d-2 added:** `prism_view::outline` (outline lines from the curved
