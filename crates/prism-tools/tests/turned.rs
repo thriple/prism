@@ -206,3 +206,49 @@ fn the_general_grid_matches_the_fast_one() {
         }
     }
 }
+
+/// The path circle about the z axis at height 3, and its edges.
+fn lathe(m: &mut Model, r: f64) -> std::collections::BTreeSet<prism_topo::EdgeId> {
+    let before: std::collections::BTreeSet<_> = m.edges().map(|(id, _)| id).collect();
+    prism_ops::add_circle(m, DVec3::new(0.0, 0.0, 3.0), DVec3::Z, r);
+    m.edges()
+        .map(|(id, _)| id)
+        .filter(|id| !before.contains(id))
+        .collect()
+}
+
+#[test]
+fn follow_me_spheres_and_tori_shade_like_built_ones() {
+    // A half disc turned about its diameter (Exact Curves 5d).
+    let mut m = Model::new();
+    prism_ops::add_segment(
+        &mut m,
+        DVec3::new(0.0, 0.0, -1.0),
+        DVec3::new(0.0, 0.0, 1.0),
+    );
+    prism_ops::add_arc(
+        &mut m,
+        DVec3::ZERO,
+        -DVec3::Y,
+        1.0,
+        DVec3::new(0.0, 0.0, -1.0),
+        PI,
+    );
+    let prof = m.faces().next().map(|(id, _)| id).unwrap();
+    let p = lathe(&mut m, 0.5);
+    assert!(prism_ops::follow::follow(&mut m, &p, prof));
+    shaded(&m, |p| p.length() - 1.0, |p| p.normalize(), 4.0 * PI);
+    // A disc turned round a circle.
+    let mut t = Model::new();
+    prism_ops::add_circle(&mut t, DVec3::new(2.0, 0.0, 0.0), DVec3::Y, 0.5);
+    let prof = t.faces().next().map(|(id, _)| id).unwrap();
+    let p = lathe(&mut t, 1.0);
+    assert!(prism_ops::follow::follow(&mut t, &p, prof));
+    let core = |p: DVec3| p.truncate().normalize().extend(0.0) * 2.0;
+    shaded(
+        &t,
+        |p| p.distance(core(p)) - 0.5,
+        |p| (p - core(p)).normalize(),
+        4.0 * PI * PI * 2.0 * 0.5,
+    );
+}

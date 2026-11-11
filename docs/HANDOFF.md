@@ -64,10 +64,10 @@ Updated 2026-11-09 (Guam), before a context compaction.
   `prism_view::tess::turned`, picking onto the surface, MCP; NOTES has
   the details and gaps). 5c is built (2026-11-11: `prism_ops::follow`,
   `Command::FollowMe`, the tool `tool.followme`, greyed; NOTES has its
-  sorted gaps). Next is 5d
-  (Follow Me along arcs, making cones, spheres and tori: lay faces out as
-  rectangles in (θ, s), split by seams like `scenes::sphere`/`torus`, so
-  they take the fast grid). Then **part 6** (owner, 2026-11-11, DECISIONS
+  sorted gaps). 5d is built (2026-11-11: paths of lines and arcs, turned
+  about each arc's axis; lathes make cones, spheres and tori; Alt follows
+  the selected face's edge; NOTES has its sorted gaps): **part 5 is
+  done**. Then **part 6** (owner, 2026-11-11, DECISIONS
   #33; write its brief, `docs/briefs/27-exact-curves-6.md`, first): the
   segment fallback (#32), exact plane crossings with curved faces,
   Intersect Faces, sticky crossings, Push/Pull booleans and stops with

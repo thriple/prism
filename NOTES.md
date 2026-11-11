@@ -1887,3 +1887,59 @@ Built 2026-11-11 (brief 26).
     SketchUp) is not tested: step 5d's tests add it.
   - Arcs in the path and Alt (a face's perimeter): step 5d.
 
+
+## Exact Curves (part 5, step 5d): Follow Me along arcs, and Alt
+
+Built 2026-11-11 (brief 26). Greyed like the other curve tools until part
+6 ends; MCP `use_tool` reaches it.
+
+- **Paths of lines and arcs** (`prism_ops::follow`). `chain` now walks
+  edges, not points, so a circle's two halves (two arcs joining the same
+  two points) make a path; it returns the points, the pieces and whether
+  the path closes. Lines in a row still merge; arcs never do.
+- **Along an arc the profile turns about its axis.** The profile must lie
+  in a plane through the arc's centre and axis (`OFF_AXIS`) and stay on
+  one side of the axis (`CROSSES_AXIS`). If the path starts with an arc
+  and the profile is elsewhere round the axis, it is turned to the start
+  (a free profile with no arcs only, as squaring up in 5c: `NOT_SQUARE`).
+  Where a line or an arc meets an arc they must be tangent (`NOT_TANGENT`);
+  between two lines the mitre stays.
+- **What the sides make:** along an arc, a profile line square to the axis
+  makes a flat ring (a pie slice when it starts on the axis), one parallel
+  to it a cylinder, any other a cone (its apex where the line meets the
+  axis); a profile arc makes a torus, or a sphere when centred on the
+  axis. A point on the axis stays one vertex (a pole: walls there are
+  triangles, or two-sided lunes for a half circle from pole to pole); a
+  profile line along the axis makes nothing and goes. Each wall faces
+  outward by comparing the surface's normal at the side's middle with
+  t × f (along the side, along the path), so one rule covers lines and
+  arcs, open and closed paths.
+- **Arcs in the profile** need a rigid motion from the profile to every
+  section (`Plan::motions`): a move along a line square to the profile, a
+  turn about an arc. A mitre or a projection has none, so arcs there are
+  refused (`ARCS`, as in 5c; the check is no longer "more than one line").
+- **Soft and smooth:** the edges along the path where the profile turns
+  smoothly (as 5c), and now also the section edges where the path turns
+  smoothly (an arc meeting a line or arc tangentially, a circle's halves).
+- **Alt** (tapped, like Push/Pull's Alt) in `tool.followme`: the path is
+  the outer loop of the one selected face (`NO_FACE` otherwise). The hint
+  says which mode is on.
+- **Tests:** `prism-ops/tests/follow_arcs.rs` (a tube at three sizes, a
+  sphere from a half disc, a cone from a triangle, a torus, a quarter-arc
+  elbow, lines and a tangent arc, a profile turned to an arc's start, each
+  refusal, a path drawn from the middle of the profile as in SketchUp);
+  `prism-tools/tests/turned.rs` (Follow Me spheres and tori shade like the
+  hand-built ones); the session test for Alt.
+- **Known gaps, sorted (DECISIONS #33):**
+  - A sphere's profile arc of more than half a circle (centred on the
+    axis) reaches round past the poles and overlaps itself: not caught.
+    It goes with 6c's solid overlap test, with 5c's overlap gap.
+  - A profile arc whose circle reaches the axis but whose arc does not (a
+    lemon or apple shape) is refused (`CROSSES_AXIS`): a torus with a
+    minor radius at least its major one is not handled. Minor: NOTES only.
+  - A profile with arcs, or joined to other faces, away from an arc's
+    start is refused rather than turned there (turning would need its arcs
+    moved too). Minor: NOTES only; draw the profile at the start.
+  - Two halves of a flat ring meet at a soft seam where SketchUp would make
+    one face (a face may not go all the way round). Minor: NOTES only.
+  - 5c's gaps stand: overlap further along (6c), not sticky (6b).

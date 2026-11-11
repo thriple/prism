@@ -2602,6 +2602,42 @@ fn a_cube_has_a_box_with_grips_all_round() {
     valid(&d);
 }
 
+/// Follow Me with Alt (brief 26, step 5d): the selected face's edge is the
+/// path.
+#[test]
+fn follow_me_with_alt_sweeps_round_the_selected_face() {
+    use prism_tools::session::FOLLOW;
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 4.0, 0.0);
+    // A square standing at the ground's corner, facing across it.
+    let u = DVec3::new(1.0, -1.0, 0.0).normalize() * 0.5;
+    let c = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+        .map(|(a, b)| DVec3::new(0.0, 0.0, 1.5) + u * a + DVec3::Z * 0.5 * b);
+    for i in 0..4 {
+        prism_ops::add_segment(&mut m, c[i], c[(i + 1) % 4]);
+    }
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(6.0, -8.0, 9.0),
+        target: DVec3::new(2.0, 1.0, 1.0),
+    });
+    d.tool(SELECT);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    assert_eq!(d.s.selection().faces.len(), 1);
+    assert!(d.s.selection().edges.is_empty());
+    d.tool(FOLLOW);
+    // Without Alt a face is not a path.
+    assert_eq!(d.s.hint(), prism_ops::follow::NO_PATH);
+    d.send(Input::AltTap);
+    assert!(d.s.hint().contains("face's edge"), "{}", d.s.hint());
+    d.click(DVec3::new(0.0, 0.0, 1.5));
+    valid(&d);
+    // Four walls a side round the ground; the profile went.
+    assert_eq!(d.faces(), 1 + 4 * 4);
+    undo(&mut d);
+    assert_eq!(d.faces(), 2, "one undo");
+}
+
 /// Follow Me (brief 26, step 5c): select a path, then click the profile.
 #[test]
 fn follow_me_sweeps_the_clicked_profile_along_the_selected_path() {

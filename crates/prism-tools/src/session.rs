@@ -298,6 +298,8 @@ pub struct Session {
     round_last: Option<(prism_topo::EdgeId, bool)>,
     round_notice: Option<&'static str>,
     follow_notice: Option<&'static str>,
+    /// Follow Me follows the selected face's edge (Alt).
+    follow_perimeter: bool,
     /// The Scale tool: the grip under the cursor, and whether it scales
     /// about the centre (Alt).
     scale_grip: Option<[u8; 3]>,
@@ -418,6 +420,7 @@ impl Session {
             round_last: None,
             round_notice: None,
             follow_notice: None,
+            follow_perimeter: false,
             scale_grip: None,
             scale_centre: false,
             shape_radius: None,
@@ -762,6 +765,7 @@ impl Session {
             }
             Input::CtrlTap => self.toggle_copy(),
             Input::AltTap if self.tool == SCALE => self.toggle_scale_centre(),
+            Input::AltTap if self.tool == FOLLOW => self.toggle_follow_perimeter(),
             Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {
                 self.shift_held = false;
@@ -827,6 +831,7 @@ impl Session {
         self.round_last = None;
         self.round_notice = None;
         self.follow_notice = None;
+        self.follow_perimeter = false;
         self.boxing = None;
         self.typed.clear();
         self.lock = Lock::None;

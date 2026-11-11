@@ -1,52 +1,65 @@
-//! Follow Me along lines (Exact Curves 5c): a profile face swept along a
-//! path of straight lines, as in SketchUp. The profile need not touch the
-//! path. It is projected square to the path's first line, carried along
-//! each line to the corner's mitre plane (the plane halving the corner),
-//! and ends square to the last line. A closed path makes a ring with no
-//! ends.
+//! Follow Me (Exact Curves 5c and 5d): a profile face swept along a path
+//! of lines and arcs, as in SketchUp. The profile need not touch the path.
+//! It is brought square to the path's start (projected along a first
+//! line, or turned about a first arc's axis), carried along each line to
+//! the corner's mitre plane (the plane halving the corner), turned about
+//! each arc's axis, and ends square to the path's end. A closed path makes
+//! a ring with no ends.
 //!
-//! Profile lines make flat walls. A profile arc makes a cylinder wall, so
-//! only along a straight path square to it (at a corner, or tilted, it
-//! would be an ellipse: DECISIONS #32).
+//! Along lines, profile lines make flat walls and profile arcs cylinders
+//! (only on a path with no corners: at a mitre an arc would be an ellipse,
+//! DECISIONS #32). Along arcs, the profile lies in a plane through the
+//! arc's axis: its lines make flat rings, cylinders or cones, and its arcs
+//! make tori, or spheres when centred on the axis. Where the path meets an
+//! arc the two must be tangent.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_geom::{Curve, Cylinder, Surface};
-use prism_math::{DVec3, Plane, newell};
+use prism_geom::{Cone, Curve, Cylinder, Sphere, Surface, Torus};
+use prism_math::{DAffine3, DVec3, Plane, Tol};
 use prism_topo::{CurveId, EdgeId, Face, FaceId, Model, VertexId};
 
 /// Said with no path selected.
 pub const NO_PATH: &str =
-    "Select a path first (lines joined end to end), then click the profile face.";
-/// Said when the selection is not one chain of lines.
-pub const NOT_A_PATH: &str =
-    "The path must be straight lines joined end to end in one chain (arcs in a path come later).";
+    "Select a path first (lines and arcs joined end to end), then click the profile face.";
+/// Said when the selection is not one chain of lines and arcs.
+pub const NOT_A_PATH: &str = "The path must be lines and arcs joined end to end in one chain.";
 /// Said when the profile is not a flat face.
 pub const NOT_A_PROFILE: &str = "The profile must be a flat face.";
 /// Said when the profile lies along the path's first line.
 pub const ALONG_PATH: &str = "The profile lies along the path's first line: it must cross it.";
-/// Said when a tilted profile cannot be squared up.
-pub const NOT_SQUARE: &str = "The profile is not square to the path's first line, and it is joined to other faces, so it cannot be squared up.";
+/// Said when a profile away from the path's start cannot be moved there.
+pub const NOT_SQUARE: &str = "The profile is not square to the path where it starts, and it is joined to other faces (or has arcs), so it cannot be moved there.";
 /// Said when a profile with arcs meets a corner or is tilted.
-pub const ARCS: &str = "A profile with arcs can follow only a straight path square to it: otherwise its arcs would become ellipses.";
+pub const ARCS: &str = "A profile with arcs cannot turn a sharp corner of the path or be tilted to it: its arcs would become ellipses.";
 /// Said when a corner is too sharp for the profile's width.
 pub const CROSSES_ITSELF: &str =
     "The profile is too wide for a corner of this path: the sweep would cross itself.";
 /// Said when a closed path does not bring the profile back to its start.
 pub const RING_TWISTS: &str =
     "Round this closed path the profile would not come back to where it started.";
+/// Said when the path turns a corner where it meets an arc.
+pub const NOT_TANGENT: &str = "Where the path meets an arc it must turn smoothly (tangent): a corner there would need an ellipse.";
+/// Said when a profile on an arc of the path is not in a plane through
+/// the arc's axis.
+pub const OFF_AXIS: &str =
+    "On an arc of the path, the profile must lie in a plane through the arc's centre and axis.";
+/// Said when a profile on an arc of the path reaches across its axis.
+pub const CROSSES_AXIS: &str =
+    "On an arc of the path, the profile must stay on one side of the arc's axis.";
 
-/// The path's points in order, and whether it closes: `path` must be lines
-/// joined end to end in one chain.
-pub fn chain(model: &Model, path: &BTreeSet<EdgeId>) -> Option<(Vec<VertexId>, bool)> {
-    let mut adj: BTreeMap<VertexId, Vec<VertexId>> = BTreeMap::new();
+/// The path's points in order, its pieces (piece `k` joins point `k` to
+/// point `k + 1`, the last back to the first when it closes), and whether
+/// it closes: `path` must be lines and arcs joined end to end in one chain.
+pub fn chain(model: &Model, path: &BTreeSet<EdgeId>) -> Option<(Vec<VertexId>, Vec<EdgeId>, bool)> {
+    let mut adj: BTreeMap<VertexId, Vec<(EdgeId, VertexId)>> = BTreeMap::new();
     for id in path {
         let e = model.edge(*id)?;
-        if e.curve.is_arc() {
+        if e.a == e.b {
             return None;
         }
-        adj.entry(e.a).or_default().push(e.b);
-        adj.entry(e.b).or_default().push(e.a);
+        adj.entry(e.a).or_default().push((*id, e.b));
+        adj.entry(e.b).or_default().push((*id, e.a));
     }
     if adj.is_empty() || adj.values().any(|n| n.len() > 2) {
         return None;
@@ -62,28 +75,69 @@ pub fn chain(model: &Model, path: &BTreeSet<EdgeId>) -> Option<(Vec<VertexId>, b
         _ => return None,
     };
     let start = if closed { *adj.keys().next()? } else { ends[0] };
-    let mut out = vec![start];
-    let mut prev: Option<VertexId> = None;
+    let mut vs = vec![start];
+    let mut es: Vec<EdgeId> = Vec::new();
     let mut cur = start;
     loop {
-        let next = adj[&cur].iter().copied().find(|n| Some(*n) != prev);
-        let Some(next) = next else { break };
+        let step = adj[&cur].iter().copied().find(|(e, _)| !es.contains(e));
+        let Some((e, next)) = step else { break };
+        es.push(e);
         if next == start {
             break;
         }
-        if out.contains(&next) {
+        if vs.contains(&next) {
             return None;
         }
-        out.push(next);
-        prev = Some(cur);
+        vs.push(next);
         cur = next;
     }
-    // One chain: every vertex reached, and the right number of lines.
-    let lines = if closed { out.len() } else { out.len() - 1 };
-    (out.len() == adj.len() && lines == path.len()).then_some((out, closed))
+    // One chain: every vertex and every piece reached.
+    let pieces = if closed { vs.len() } else { vs.len() - 1 };
+    (vs.len() == adj.len() && es.len() == path.len() && es.len() == pieces)
+        .then_some((vs, es, closed))
 }
 
-/// A profile loop: its vertices, edges and points.
+/// One piece of the path.
+#[derive(Clone, Copy, Debug)]
+enum Step {
+    /// Along a unit direction.
+    Line(DVec3),
+    /// Turning by `angle` (positive) counter-clockwise about the unit
+    /// `axis` through `centre`.
+    Arc {
+        centre: DVec3,
+        axis: DVec3,
+        angle: f64,
+        curve: Option<CurveId>,
+    },
+}
+
+impl Step {
+    /// The direction a point at `p` moves in.
+    fn tangent(&self, p: DVec3) -> DVec3 {
+        match *self {
+            Step::Line(d) => d,
+            Step::Arc { centre, axis, .. } => axis.cross(p - centre).normalize_or_zero(),
+        }
+    }
+}
+
+/// Turning by `angle` about the unit `axis` through `centre`.
+fn turn(centre: DVec3, axis: DVec3, angle: f64) -> DAffine3 {
+    DAffine3::from_translation(centre)
+        * DAffine3::from_axis_angle(axis, angle)
+        * DAffine3::from_translation(-centre)
+}
+
+/// `p` measured from the axis through `centre`: the part square to the
+/// axis, and the height along it.
+fn radial(centre: DVec3, axis: DVec3, p: DVec3) -> (DVec3, f64) {
+    let q = p - centre;
+    let h = q.dot(axis);
+    (q - axis * h, h)
+}
+
+/// A profile loop: its vertices and edges.
 struct ProfileLoop {
     vs: Vec<VertexId>,
     es: Vec<EdgeId>,
@@ -92,17 +146,21 @@ struct ProfileLoop {
 /// What a sweep makes: the profile's points at each section.
 struct Plan {
     closed: bool,
-    /// Path directions, one per line (after merging lines in a row).
-    dirs: Vec<DVec3>,
+    /// The path's pieces (lines in a row merged).
+    steps: Vec<Step>,
     /// The profile's loops.
     loops: Vec<ProfileLoop>,
     /// Points of each loop at each section: `[section][loop][i]`. A closed
-    /// path has one section per corner; an open one, one more than lines.
+    /// path has one section per piece; an open one, one more.
     sections: Vec<Vec<Vec<DVec3>>>,
-    /// The profile's normal, and whether it points along the first line.
-    normal: DVec3,
+    /// The rigid motion taking the profile to each section, where there
+    /// is one (none after a mitre or a projection).
+    motions: Vec<Option<DAffine3>>,
+    /// Whether the path turns smoothly at each section (its seam is soft).
+    smooth: Vec<bool>,
+    /// Whether the profile faces along the path.
     along: bool,
-    /// The profile's vertices must move to be square to the first line.
+    /// The profile's vertices must move to the path's start.
     squares_up: bool,
 }
 
@@ -111,7 +169,7 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
         return Err(NO_PATH);
     }
     let tol = model.tol();
-    let (vs, closed) = chain(model, path).ok_or(NOT_A_PATH)?;
+    let (mut vs, mut es, closed) = chain(model, path).ok_or(NOT_A_PATH)?;
     let face = model.face(profile).ok_or(NOT_A_PROFILE)?;
     let pl = *face.plane().ok_or(NOT_A_PROFILE)?;
     // The profile's own edges are not a path.
@@ -126,65 +184,88 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
             es: face.loop_edge_ids(k).to_vec(),
         })
         .collect();
-    let outer: Vec<DVec3> = loops[0].vs.iter().map(|v| model.vertex(*v)).collect();
-    let centre = outer.iter().copied().sum::<DVec3>() / outer.len() as f64;
-
-    // The path's points, starting at the end (or corner) nearest the
-    // profile, with lines in a row merged.
-    let mut pts: Vec<DVec3> = vs.iter().map(|v| model.vertex(*v)).collect();
-    if closed {
-        let near = (0..pts.len())
-            .min_by(|a, b| {
-                pts[*a]
-                    .distance(centre)
-                    .total_cmp(&pts[*b].distance(centre))
-            })
-            .unwrap_or(0);
-        pts.rotate_left(near);
-    } else if pts[pts.len() - 1].distance(centre) < pts[0].distance(centre) {
-        pts.reverse();
-    }
-    let straight = |a: DVec3, b: DVec3, c: DVec3| {
-        let (u, w) = ((b - a).normalize_or_zero(), (c - b).normalize_or_zero());
-        tol.parallel(u, w) && u.dot(w) > 0.0
-    };
-    loop {
-        let n = pts.len();
-        let drop = (0..n).find(|&i| {
-            if !closed && (i == 0 || i == n - 1) {
-                return false;
-            }
-            n > if closed { 3 } else { 2 }
-                && straight(pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n])
-        });
-        match drop {
-            Some(i) => {
-                pts.remove(i);
-            }
-            None => break,
-        }
-    }
-    let n = pts.len();
-    let lines = if closed { n } else { n - 1 };
-    let dirs: Vec<DVec3> = (0..lines)
-        .map(|k| (pts[(k + 1) % n] - pts[k]).normalize_or_zero())
+    let orig: Vec<Vec<DVec3>> = loops
+        .iter()
+        .map(|l| l.vs.iter().map(|v| model.vertex(*v)).collect())
         .collect();
-    let d0 = dirs[0];
-    if tol.perpendicular(pl.normal, d0) {
-        return Err(ALONG_PATH);
-    }
+    let centre = orig[0].iter().copied().sum::<DVec3>() / orig[0].len() as f64;
     let arcs = loops
         .iter()
         .flat_map(|l| &l.es)
         .any(|e| model.edge(*e).is_some_and(|x| x.curve.is_arc()));
-    if arcs && (lines > 1 || !tol.parallel(pl.normal, d0)) {
-        return Err(ARCS);
+
+    // The path, starting at the end (or point) nearest the profile.
+    let near = |v: &VertexId| model.vertex(*v).distance(centre);
+    if closed {
+        let k = (0..vs.len())
+            .min_by(|a, b| near(&vs[*a]).total_cmp(&near(&vs[*b])))
+            .unwrap_or(0);
+        vs.rotate_left(k);
+        es.rotate_left(k);
+    } else if near(&vs[vs.len() - 1]) < near(&vs[0]) {
+        vs.reverse();
+        es.reverse();
     }
-    // The mitre plane at corner `j` (through it, halving the angle).
-    let mitre = |j: usize| -> Option<(DVec3, DVec3)> {
-        let (a, b) = (dirs[(j + lines - 1) % lines], dirs[j % lines]);
-        (a + b).try_normalize().map(|m| (pts[j % n], m))
+    let mut pts: Vec<DVec3> = vs.iter().map(|v| model.vertex(*v)).collect();
+    let n = pts.len();
+    let mut steps: Vec<Step> = Vec::with_capacity(es.len());
+    for (k, id) in es.iter().enumerate() {
+        let e = model.edge(*id).ok_or(NOT_A_PATH)?;
+        steps.push(match e.curve {
+            Curve::Line => Step::Line((pts[(k + 1) % n] - pts[k]).normalize_or_zero()),
+            Curve::Arc { centre, axis, .. } => Step::Arc {
+                centre,
+                axis: if e.a == vs[k] { axis } else { -axis },
+                angle: e.curve.sweep(model.vertex(e.a), model.vertex(e.b)),
+                curve: e.curve_id,
+            },
+        });
+    }
+    // Lines in a row make one line.
+    loop {
+        let (n, lines) = (pts.len(), steps.len());
+        let drop = (0..n).find(|&i| {
+            if !closed && (i == 0 || i == n - 1) || lines <= if closed { 3 } else { 1 } {
+                return false;
+            }
+            match (steps[(i + lines - 1) % lines], steps[i % lines]) {
+                (Step::Line(a), Step::Line(b)) => tol.parallel(a, b) && a.dot(b) > 0.0,
+                _ => false,
+            }
+        });
+        match drop {
+            Some(i) => {
+                pts.remove(i);
+                steps.remove(i % lines);
+            }
+            None => break,
+        }
+    }
+    let (n, lines) = (pts.len(), steps.len());
+    let start_t = |k: usize| steps[k].tangent(pts[k]);
+    let end_t = |k: usize| steps[k].tangent(pts[(k + 1) % n]);
+    // The section plane at path point `j` (a mitre at a corner of lines,
+    // square to the path where it turns smoothly), and whether it is
+    // smooth there.
+    let join = |j: usize| -> Result<((DVec3, DVec3), bool), &'static str> {
+        let (pk, k) = ((j + lines - 1) % lines, j % lines);
+        let (a, b) = (end_t(pk), start_t(k));
+        let p = pts[j % n];
+        if tol.parallel(a, b) && a.dot(b) > 0.0 {
+            return Ok(((p, b), true));
+        }
+        if !matches!(steps[pk], Step::Line(_)) || !matches!(steps[k], Step::Line(_)) {
+            return Err(NOT_TANGENT);
+        }
+        (a + b)
+            .try_normalize()
+            .map(|m| ((p, m), false))
+            .ok_or(CROSSES_ITSELF)
     };
+    let mut smooth = vec![false; if closed { lines } else { lines + 1 }];
+    for j in if closed { 0..lines } else { 1..lines } {
+        smooth[j] = join(j)?.1;
+    }
     // Carry a point along `d` to the plane through `p` with normal `m`.
     let carry = |x: DVec3, d: DVec3, (p, m): (DVec3, DVec3)| -> Option<(DVec3, f64)> {
         let den = d.dot(m);
@@ -194,24 +275,77 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
         let t = (p - x).dot(m) / den;
         Some((x + d * t, t))
     };
-    // The first section: square to the first line, through the profile
-    // (open), or on the first corner's mitre plane (closed).
-    let first_plane = if closed {
-        mitre(0).ok_or(CROSSES_ITSELF)?
-    } else {
-        (centre, d0)
-    };
-    let mut first: Vec<Vec<DVec3>> = Vec::new();
-    let mut squares_up = false;
-    for l in &loops {
-        let mut sec = Vec::new();
-        for v in &l.vs {
-            let x = model.vertex(*v);
-            let (y, _) = carry(x, d0, first_plane).ok_or(ALONG_PATH)?;
-            squares_up |= !closed && !tol.same_point(x, y);
-            sec.push(y);
+
+    // The first section.
+    let (first, motion0, normal0) = match steps[0] {
+        Step::Line(d0) => {
+            if tol.perpendicular(pl.normal, d0) {
+                return Err(ALONG_PATH);
+            }
+            // On the first corner's plane (closed), or square to the first
+            // line through the profile (open).
+            let plane = if closed { join(0)?.0 } else { (centre, d0) };
+            let mut first = Vec::new();
+            for l in &orig {
+                let sec: Option<Vec<DVec3>> = l
+                    .iter()
+                    .map(|x| carry(*x, d0, plane).map(|c| c.0))
+                    .collect();
+                first.push(sec.ok_or(ALONG_PATH)?);
+            }
+            // A plain move when the profile is square to the line and
+            // lands square to it.
+            let m = (tol.parallel(pl.normal, d0) && tol.parallel(plane.1, d0))
+                .then(|| DAffine3::from_translation(first[0][0] - orig[0][0]));
+            (first, m, pl.normal)
         }
-        first.push(sec);
+        Step::Arc {
+            centre: c, axis, ..
+        } => {
+            // Turned about the axis to the path's start: the profile's
+            // plane must hold the axis.
+            if !tol.perpendicular(pl.normal, axis) || pl.distance(c).abs() > tol.dist {
+                return Err(OFF_AXIS);
+            }
+            // Its side of the axis, from its points and arc middles (a
+            // half disc has both points on the axis).
+            let mids = loops.iter().flat_map(|l| &l.es).filter_map(|e| {
+                let e = model.edge(*e)?;
+                Some(e.curve.point(model.vertex(e.a), model.vertex(e.b), 0.5))
+            });
+            let far = orig
+                .iter()
+                .flatten()
+                .copied()
+                .chain(mids)
+                .map(|p| radial(c, axis, p).0)
+                .max_by(|a, b| a.length().total_cmp(&b.length()))
+                .unwrap_or(DVec3::ZERO);
+            let (from, to) = (
+                far.try_normalize().ok_or(CROSSES_AXIS)?,
+                radial(c, axis, pts[0]).0.normalize_or_zero(),
+            );
+            let angle = from.cross(to).dot(axis).atan2(from.dot(to));
+            let m = turn(c, axis, angle);
+            let first: Vec<Vec<DVec3>> = orig
+                .iter()
+                .map(|l| l.iter().map(|p| m.transform_point3(*p)).collect())
+                .collect();
+            (first, Some(m), m.transform_vector3(pl.normal))
+        }
+    };
+    let t0 = start_t(0);
+    if tol.perpendicular(normal0, t0) {
+        return Err(ALONG_PATH);
+    }
+    let squares_up = !closed
+        && orig
+            .iter()
+            .flatten()
+            .zip(first.iter().flatten())
+            .any(|(a, b)| !tol.same_point(*a, *b));
+    if arcs && motion0.is_none() {
+        return Err(ARCS);
     }
     if squares_up {
         let own: BTreeSet<VertexId> = loops.iter().flat_map(|l| l.vs.iter().copied()).collect();
@@ -223,28 +357,67 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
         }
     }
     let mut sections = vec![first];
-    for (k, d) in dirs.iter().enumerate() {
-        let target = if !closed && k == lines - 1 {
-            (pts[n - 1], *d)
-        } else {
-            mitre(k + 1).ok_or(CROSSES_ITSELF)?
-        };
-        let mut next = Vec::new();
-        for l in &sections[k] {
-            let mut sec = Vec::new();
-            for x in l {
-                let (y, t) = carry(*x, *d, target).ok_or(CROSSES_ITSELF)?;
-                if t <= tol.dist {
-                    return Err(CROSSES_ITSELF);
+    let mut motions = vec![motion0];
+    for (k, step) in steps.iter().enumerate() {
+        let cur = &sections[k];
+        let (next, motion) = match *step {
+            Step::Line(d) => {
+                let target = if !closed && k == lines - 1 {
+                    (pts[n - 1], d)
+                } else {
+                    join(k + 1)?.0
+                };
+                let mut next = Vec::new();
+                for l in cur {
+                    let mut sec = Vec::new();
+                    for x in l {
+                        let (y, t) = carry(*x, d, target).ok_or(CROSSES_ITSELF)?;
+                        if t <= tol.dist {
+                            return Err(CROSSES_ITSELF);
+                        }
+                        sec.push(y);
+                    }
+                    next.push(sec);
                 }
-                sec.push(y);
+                let m = motions[k]
+                    .filter(|x| {
+                        tol.parallel(x.transform_vector3(pl.normal), d) && tol.parallel(target.1, d)
+                    })
+                    .map(|x| DAffine3::from_translation(next[0][0] - cur[0][0]) * x);
+                (next, m)
             }
-            next.push(sec);
-        }
+            Step::Arc {
+                centre: c,
+                axis,
+                angle,
+                ..
+            } => {
+                // Every point on the path's side of the axis (or on it).
+                let side = radial(c, axis, pts[k]).0.normalize_or_zero();
+                if cur
+                    .iter()
+                    .flatten()
+                    .any(|p| radial(c, axis, *p).0.dot(side) < -tol.dist)
+                {
+                    return Err(CROSSES_AXIS);
+                }
+                let m = turn(c, axis, angle);
+                let next: Vec<Vec<DVec3>> = cur
+                    .iter()
+                    .map(|l| l.iter().map(|p| m.transform_point3(*p)).collect())
+                    .collect();
+                (next, motions[k].map(|x| m * x))
+            }
+        };
         sections.push(next);
+        motions.push(motion);
+    }
+    if arcs && motions.iter().any(|m| m.is_none()) {
+        return Err(ARCS);
     }
     if closed {
         let back = sections.pop().unwrap_or_default();
+        motions.pop();
         let twist = back
             .iter()
             .flatten()
@@ -254,15 +427,140 @@ fn plan(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Result<Plan,
             return Err(RING_TWISTS);
         }
     }
-    Ok(Plan {
+    let plan = Plan {
         closed,
-        dirs,
+        steps,
         loops,
         sections,
-        normal: pl.normal,
-        along: pl.normal.dot(d0) > 0.0,
+        motions,
+        smooth,
+        along: normal0.dot(t0) > 0.0,
         squares_up,
-    })
+    };
+    // Every side makes a surface Prism has.
+    for k in 0..plan.steps.len() {
+        for li in 0..plan.loops.len() {
+            for i in 0..plan.loops[li].vs.len() {
+                let (p, q, c) = side(model, &plan, k, li, i).ok_or(NOT_A_PROFILE)?;
+                swept(&plan.steps[k], p, q, c, &tol)?;
+            }
+        }
+    }
+    Ok(plan)
+}
+
+/// Side `i` of loop `li` at section `k`: its ends, walked round the loop,
+/// and its curve walked so.
+fn side(
+    model: &Model,
+    plan: &Plan,
+    k: usize,
+    li: usize,
+    i: usize,
+) -> Option<(DVec3, DVec3, Curve)> {
+    let l = &plan.loops[li];
+    let m = l.vs.len();
+    let (p, q) = (plan.sections[k][li][i], plan.sections[k][li][(i + 1) % m]);
+    let e = model.edge(l.es[i])?;
+    let curve = match e.curve {
+        Curve::Line => Curve::Line,
+        c => {
+            let c = c.transformed(plan.motions[k].as_ref()?)?;
+            if e.a == l.vs[i] { c } else { c.reversed() }
+        }
+    };
+    Some((p, q, curve))
+}
+
+/// The surface a profile side from `p` to `q` (along `curve`) sweeps on
+/// `step`, facing either way. None for a side on an arc's axis, which
+/// sweeps nothing.
+fn swept(
+    step: &Step,
+    p: DVec3,
+    q: DVec3,
+    curve: Curve,
+    tol: &Tol,
+) -> Result<Option<Surface>, &'static str> {
+    let surface = match (*step, curve) {
+        (Step::Line(d), Curve::Line) => Surface::Plane(Plane::new(
+            p,
+            (q - p).cross(d).try_normalize().ok_or(ALONG_PATH)?,
+        )),
+        (
+            Step::Line(_),
+            Curve::Arc {
+                centre,
+                axis,
+                radius,
+            },
+        ) => Surface::Cylinder(Cylinder {
+            origin: centre,
+            axis,
+            radius,
+            outward: true,
+        }),
+        (Step::Arc { centre, axis, .. }, Curve::Line) => {
+            let ((rp, hp), (rq, hq)) = (radial(centre, axis, p), radial(centre, axis, q));
+            let (rp, rq) = (rp.length(), rq.length());
+            if rp <= tol.dist && rq <= tol.dist {
+                return Ok(None);
+            }
+            if (hp - hq).abs() <= tol.dist {
+                Surface::Plane(Plane::new(p, axis))
+            } else if (rp - rq).abs() <= tol.dist {
+                Surface::Cylinder(Cylinder {
+                    origin: centre,
+                    axis,
+                    radius: (rp + rq) / 2.0,
+                    outward: true,
+                })
+            } else {
+                // A cone, its apex where the line meets the axis.
+                let h0 = hp + (hq - hp) * rp / (rp - rq);
+                let (rm, hm) = ((rp + rq) / 2.0, (hp + hq) / 2.0 - h0);
+                Surface::Cone(Cone {
+                    apex: centre + axis * h0,
+                    axis: axis * hm.signum(),
+                    half_angle: rm.atan2(hm.abs()),
+                    outward: true,
+                })
+            }
+        }
+        (
+            Step::Arc { centre, axis, .. },
+            Curve::Arc {
+                centre: c, radius, ..
+            },
+        ) => {
+            let (r, h) = radial(centre, axis, c);
+            let foot = centre + axis * h;
+            let major = r.length();
+            if major <= tol.dist {
+                Surface::Sphere(Sphere {
+                    centre: foot,
+                    axis,
+                    radius,
+                    outward: true,
+                })
+            } else if major <= radius + tol.dist {
+                return Err(CROSSES_AXIS);
+            } else {
+                Surface::Torus(Torus {
+                    centre: foot,
+                    axis,
+                    major,
+                    minor: radius,
+                    outward: true,
+                })
+            }
+        }
+    };
+    if surface.is_valid() {
+        Ok(Some(surface))
+    } else {
+        Err(CROSSES_AXIS)
+    }
 }
 
 /// Why following `path` with `profile` is refused, if it is.
@@ -277,12 +575,23 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
     let Ok(plan) = plan(model, path, profile) else {
         return false;
     };
+    let tol = model.tol();
     let secs = plan.sections.len();
+    let lines = plan.steps.len();
+    let next = |k: usize| (k + 1) % secs;
+    // Whether point `i` of loop `li` is on the axis of step `k` (an arc):
+    // it stays put there, one vertex.
+    let pole = |k: usize, li: usize, i: usize| match plan.steps[k] {
+        Step::Arc { centre, axis, .. } => {
+            radial(centre, axis, plan.sections[k][li][i]).0.length() <= tol.dist
+        }
+        Step::Line(_) => false,
+    };
     // Vertices: an open path keeps the profile's own as its start.
     let mut vid: Vec<Vec<Vec<VertexId>>> = Vec::with_capacity(secs);
-    for (k, sec) in plan.sections.iter().enumerate() {
+    for k in 0..secs {
         let mut lv = Vec::new();
-        for (li, l) in sec.iter().enumerate() {
+        for (li, l) in plan.sections[k].iter().enumerate() {
             let mut ids = Vec::new();
             for (i, p) in l.iter().enumerate() {
                 if k == 0 && !plan.closed {
@@ -291,6 +600,8 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                         model.set_vertex(v, *p);
                     }
                     ids.push(v);
+                } else if k > 0 && pole(k - 1, li, i) {
+                    ids.push(vid[k - 1][li][i]);
                 } else {
                     ids.push(model.add_vertex(*p));
                 }
@@ -298,6 +609,24 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
             lv.push(ids);
         }
         vid.push(lv);
+    }
+    // Round a closed path, a point on the last arc's axis is the first
+    // section's vertex.
+    if plan.closed {
+        for li in 0..plan.loops.len() {
+            for i in 0..plan.loops[li].vs.len() {
+                let mut k = lines - 1;
+                while pole(k, li, i) && vid[k][li][i] != vid[next(k)][li][i] {
+                    let old = vid[k][li][i];
+                    vid[k][li][i] = vid[next(k)][li][i];
+                    model.remove_vertex(old);
+                    if k == 0 {
+                        break;
+                    }
+                    k -= 1;
+                }
+            }
+        }
     }
     // Section edges: copies of the profile's edges (arcs moved with it).
     let mut new_curve: BTreeMap<(usize, CurveId), CurveId> = BTreeMap::new();
@@ -309,7 +638,6 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                 le.push(l.es.clone());
                 continue;
             }
-            let shift = plan.sections[k][li][0] - plan.sections[0][li][0];
             let m = l.vs.len();
             let mut ids = Vec::new();
             for i in 0..m {
@@ -321,26 +649,16 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                 let (a, b) = if orig.a == l.vs[i] { (a, b) } else { (b, a) };
                 let id = match orig.curve {
                     Curve::Line => model.add_edge(a, b),
-                    Curve::Arc {
-                        centre,
-                        axis,
-                        radius,
-                    } => {
-                        let cid = orig.curve_id.map(|c| {
+                    c => {
+                        let Some(c) = plan.motions[k].and_then(|x| c.transformed(&x)) else {
+                            return false;
+                        };
+                        let cid = orig.curve_id.map(|x| {
                             *new_curve
-                                .entry((k, c))
+                                .entry((k, x))
                                 .or_insert_with(|| model.new_curve_id())
                         });
-                        model.add_curve_edge(
-                            a,
-                            b,
-                            Curve::Arc {
-                                centre: centre + shift,
-                                axis,
-                                radius,
-                            },
-                            cid,
-                        )
+                        model.add_curve_edge(a, b, c, cid)
                     }
                 };
                 let Some(id) = id else { return false };
@@ -350,17 +668,48 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
         }
         sec_edges.push(le);
     }
-    let lines = plan.dirs.len();
-    let next = |k: usize| (k + 1) % secs;
-    // Edges along the path, from each profile point.
-    let mut along: Vec<Vec<Vec<EdgeId>>> = Vec::with_capacity(lines);
+    // Edges along the path from each profile point: lines, or arcs about
+    // an arc's axis (one curve per point and path curve). None for a point
+    // on the axis.
+    let mut circles: BTreeMap<(CurveId, usize, usize), CurveId> = BTreeMap::new();
+    let mut along: Vec<Vec<Vec<Option<EdgeId>>>> = Vec::with_capacity(lines);
     for k in 0..lines {
         let mut le = Vec::new();
         for li in 0..plan.loops.len() {
             let mut ids = Vec::new();
             for i in 0..plan.loops[li].vs.len() {
-                let Some(id) = model.add_edge(vid[k][li][i], vid[next(k)][li][i]) else {
-                    return false;
+                let (a, b) = (vid[k][li][i], vid[next(k)][li][i]);
+                let id = match plan.steps[k] {
+                    _ if pole(k, li, i) => None,
+                    Step::Line(_) => {
+                        let Some(id) = model.add_edge(a, b) else {
+                            return false;
+                        };
+                        Some(id)
+                    }
+                    Step::Arc {
+                        centre,
+                        axis,
+                        curve,
+                        ..
+                    } => {
+                        let (r, h) = radial(centre, axis, plan.sections[k][li][i]);
+                        let cid = match curve {
+                            Some(c) => *circles
+                                .entry((c, li, i))
+                                .or_insert_with(|| model.new_curve_id()),
+                            None => model.new_curve_id(),
+                        };
+                        let arc = Curve::Arc {
+                            centre: centre + axis * h,
+                            axis,
+                            radius: r.length(),
+                        };
+                        let Some(id) = model.add_curve_edge(a, b, arc, Some(cid)) else {
+                            return false;
+                        };
+                        Some(id)
+                    }
                 };
                 ids.push(id);
             }
@@ -368,55 +717,47 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
         }
         along.push(le);
     }
-    // Walls: one per profile side and line. The loop walks counter-
+    // Walls: one per profile side and path piece. The loop walks counter-
     // clockwise about the profile's normal with the profile on its left,
-    // so a wall's outside is (b - a) × normal; with the profile facing
-    // along the path that is the order a, b, b', a'.
+    // so a wall's outside is t × n (t along the side, n the normal); with
+    // the profile facing along the path (f) that is t × f, which the
+    // order a, b, b', a' walks counter-clockwise about.
+    let s = if plan.along { 1.0 } else { -1.0 };
     for k in 0..lines {
         let k1 = next(k);
         for (li, l) in plan.loops.iter().enumerate() {
             let m = l.vs.len();
             for i in 0..m {
                 let j = (i + 1) % m;
-                let outer = vec![vid[k][li][i], vid[k][li][j], vid[k1][li][j], vid[k1][li][i]];
-                let edges = vec![
-                    sec_edges[k][li][i],
-                    along[k][li][j],
-                    sec_edges[k1][li][i],
-                    along[k][li][i],
-                ];
-                let pts: Vec<DVec3> = outer.iter().map(|v| model.vertex(*v)).collect();
-                let Some(e) = model.edge(sec_edges[k][li][i]).cloned() else {
+                let Some((p, q, curve)) = side(model, &plan, k, li, i) else {
                     return false;
                 };
-                let surface = match e.curve {
-                    Curve::Line => {
-                        let mut n = newell(&pts);
-                        if !plan.along {
-                            n = -n;
-                        }
-                        let c = pts.iter().copied().sum::<DVec3>() / 4.0;
-                        Surface::Plane(Plane::new(c, n.normalize_or_zero()))
+                let surface = match swept(&plan.steps[k], p, q, curve, &tol) {
+                    Ok(Some(x)) => x,
+                    Ok(None) => continue,
+                    Err(_) => return false,
+                };
+                // Face it outward.
+                let (mid, t) = match curve {
+                    Curve::Line => ((p + q) / 2.0, q - p),
+                    Curve::Arc { centre, axis, .. } => {
+                        let mid = curve.point(p, q, 0.5);
+                        (mid, axis.cross(mid - centre))
                     }
-                    Curve::Arc {
-                        centre,
-                        axis,
-                        radius,
-                    } => {
-                        // The profile is on the walk's left: the wall faces
-                        // away from the axis when the left points at it.
-                        let (pa, pb) = (model.vertex(e.a), model.vertex(e.b));
-                        let mid = e.curve.point(pa, pb, 0.5);
-                        let fwd = e.a == vid[k][li][i];
-                        let t = axis.cross(mid - centre) * if fwd { 1.0 } else { -1.0 };
-                        let left = plan.normal.cross(t);
-                        Surface::Cylinder(Cylinder {
-                            origin: centre,
-                            axis,
-                            radius,
-                            outward: left.dot(centre - mid) > 0.0,
-                        })
-                    }
+                };
+                let out = t.cross(plan.steps[k].tangent(mid)) * s;
+                let surface = if surface.normal_at(mid).dot(out) < 0.0 {
+                    surface.flipped()
+                } else {
+                    surface
+                };
+                let (a, b, a1, b1) = (vid[k][li][i], vid[k][li][j], vid[k1][li][i], vid[k1][li][j]);
+                let (sk, sk1) = (sec_edges[k][li][i], sec_edges[k1][li][i]);
+                let (outer, edges) = match (along[k][li][i], along[k][li][j]) {
+                    (Some(ei), Some(ej)) => (vec![a, b, b1, a1], vec![sk, ej, sk1, ei]),
+                    (None, Some(ej)) => (vec![a, b, b1], vec![sk, ej, sk1]),
+                    (Some(ei), None) => (vec![a, b, a1], vec![sk, sk1, ei]),
+                    (None, None) => (vec![a, b], vec![sk, sk1]),
                 };
                 let mut f = Face::with_edges(outer, vec![], surface, vec![edges]);
                 if !plan.along {
@@ -429,15 +770,23 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
         }
     }
     // Smooth where the profile turns smoothly (a line into an arc
-    // tangentially, or two arcs of a circle).
+    // tangentially, or two arcs of a circle) ...
     for li in 0..plan.loops.len() {
         let m = plan.loops[li].vs.len();
         for i in 0..m {
             let prev = (i + m - 1) % m;
             if smooth_at(model, &sec_edges[0][li], prev, i, &vid[0][li]) {
-                for row in &along {
-                    model.set_soft(row[li][i], true, true);
+                for e in along.iter().filter_map(|row| row[li][i]) {
+                    model.set_soft(e, true, true);
                 }
+            }
+        }
+    }
+    // ... and where the path does.
+    for k in 0..secs {
+        if plan.smooth[k] {
+            for e in sec_edges[k].iter().flatten() {
+                model.set_soft(*e, true, true);
             }
         }
     }
@@ -445,20 +794,20 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
     if plan.closed {
         remove_profile(model, profile);
     } else {
-        let d0 = plan.dirs[0];
+        let t0 = plan.steps[0].tangent(plan.sections[0][0][0]);
         let start = plan.sections[0][0][0];
         model.edit_face(profile, |f| {
             if plan.along {
                 f.reverse();
             }
-            f.surface = Surface::Plane(Plane::new(start, -d0));
+            f.surface = Surface::Plane(Plane::new(start, -t0));
         });
         let last = secs - 1;
-        let d = plan.dirs[lines - 1];
+        let p = plan.sections[last][0][0];
+        let d = plan.steps[lines - 1].tangent(p);
         let edges: Vec<Vec<EdgeId>> = sec_edges[last].clone();
         let outer = vid[last][0].clone();
         let holes = vid[last][1..].to_vec();
-        let p = plan.sections[last][0][0];
         let mut f = Face::with_edges(
             outer,
             holes,
@@ -469,6 +818,35 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
             f.reverse();
         }
         model.add_face(f);
+    }
+    // Take away what no face uses (a profile side on an arc's axis).
+    let used: BTreeSet<EdgeId> = model
+        .faces()
+        .flat_map(|(_, x)| x.edge_ids().collect::<Vec<_>>())
+        .collect();
+    let made: BTreeSet<EdgeId> = sec_edges
+        .iter()
+        .skip(usize::from(!plan.closed))
+        .flatten()
+        .flatten()
+        .copied()
+        .chain(along.iter().flatten().flatten().flatten().copied())
+        .collect();
+    for e in made {
+        if !used.contains(&e) {
+            model.remove_edge(e);
+        }
+    }
+    let live: BTreeSet<VertexId> = model.edges().flat_map(|(_, e)| [e.a, e.b]).collect();
+    for v in vid
+        .iter()
+        .skip(usize::from(!plan.closed))
+        .flatten()
+        .flatten()
+    {
+        if !live.contains(v) {
+            model.remove_vertex(*v);
+        }
     }
     true
 }
