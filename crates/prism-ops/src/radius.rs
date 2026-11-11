@@ -15,7 +15,7 @@ pub const RADIUS_GONE: &str = "The radius would reach zero.";
 
 /// The pulled face's cylinder, and every face on that same cylinder
 /// joined to it through shared points (both halves of a full turn).
-fn faces(model: &Model, face: FaceId) -> Option<(Cylinder, BTreeSet<FaceId>)> {
+pub(crate) fn faces(model: &Model, face: FaceId) -> Option<(Cylinder, BTreeSet<FaceId>)> {
     let Surface::Cylinder(c) = model.face(face)?.surface else {
         return None;
     };

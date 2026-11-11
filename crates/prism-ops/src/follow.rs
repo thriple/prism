@@ -35,6 +35,9 @@ pub const ARCS: &str = "A profile with arcs cannot turn a sharp corner of the pa
 /// Said when a corner is too sharp for the profile's width.
 pub const CROSSES_ITSELF: &str =
     "The profile is too wide for a corner of this path: the sweep would cross itself.";
+/// Said when the sweep would run into itself further along the path.
+pub const OVERLAPS: &str =
+    "The sweep would run into itself further along the path: the profile is too wide for it.";
 /// Said when a closed path does not bring the profile back to its start.
 pub const RING_TWISTS: &str =
     "Round this closed path the profile would not come back to where it started.";
@@ -465,6 +468,30 @@ fn plan(
                 {
                     return Err(CROSSES_AXIS);
                 }
+                // A profile arc can reach across between its ends (a
+                // sphere's arc of more than half a circle, past the poles).
+                let across = |li: usize, i: usize| -> bool {
+                    let l = &loops[li];
+                    let (Some(e), Some(mo)) = (model.edge(l.es[i]), motions[k]) else {
+                        return false;
+                    };
+                    let Some(curve) = e.curve.transformed(&mo).filter(|x| x.is_arc()) else {
+                        return false;
+                    };
+                    let curve = if e.a == l.vs[i] {
+                        curve
+                    } else {
+                        curve.reversed()
+                    };
+                    let (p, q) = (cur[li][i], cur[li][(i + 1) % l.vs.len()]);
+                    (1..64).any(|j| {
+                        let x = curve.point(p, q, j as f64 / 64.0);
+                        radial(c, axis, x).0.dot(side) < -tol.dist
+                    })
+                };
+                if (0..loops.len()).any(|li| (0..loops[li].vs.len()).any(|i| across(li, i))) {
+                    return Err(CROSSES_AXIS);
+                }
                 let m = turn(c, axis, angle);
                 let next: Vec<Vec<DVec3>> = cur
                     .iter()
@@ -692,22 +719,101 @@ fn best(
 
 /// Why following `path` with `profile` is refused, if it is.
 pub fn refusal(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Option<&'static str> {
-    best(model, path, profile).err()
+    if let Err(e) = best(model, path, profile) {
+        return Some(e);
+    }
+    let mut m = model.clone();
+    build(&mut m, path, profile)?;
+    crosses_itself(&m, model, profile).then_some(OVERLAPS)
 }
 
-/// Sweep `profile` along `path`. Returns whether anything was made.
-// Sections, loops and points are parallel tables, walked by index.
-#[allow(clippy::needless_range_loop)]
+/// Sweep `profile` along `path`. Returns whether anything was made:
+/// nothing when it is refused, or when the sweep would cross itself.
 pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bool {
-    let Ok((chords, segmented)) = best(model, path, profile) else {
+    let mut m = model.clone();
+    let Some(before) = build(&mut m, path, profile) else {
         return false;
     };
+    if crosses_itself(&m, model, profile) {
+        return false;
+    }
+    let tol = m.tol();
+    stick(&mut m, &before, &tol);
+    *model = m;
+    true
+}
+
+/// Whether the sweep just built in `after` (from `before`) crosses itself:
+/// two of its faces that share no point cross each other (a profile wider
+/// than the gap to a later part of the path, or a path that crosses
+/// itself).
+fn crosses_itself(after: &Model, before: &Model, profile: FaceId) -> bool {
+    let tol = after.tol();
+    let new: Vec<FaceId> = after
+        .faces()
+        .map(|(id, _)| id)
+        .filter(|id| *id == profile || before.face(*id).is_none())
+        .collect();
+    let points = |id: FaceId| -> BTreeSet<VertexId> {
+        after
+            .face(id)
+            .map(|f| f.loops().flatten().copied().collect())
+            .unwrap_or_default()
+    };
+    let boxes: Vec<Option<(DVec3, DVec3)>> = new
+        .iter()
+        .map(|id| crate::meet::face_bounds(after, *id))
+        .collect();
+    let vs: Vec<BTreeSet<VertexId>> = new.iter().map(|id| points(*id)).collect();
+    for i in 0..new.len() {
+        for j in i + 1..new.len() {
+            if !vs[i].is_disjoint(&vs[j]) {
+                continue;
+            }
+            let (Some(a), Some(b)) = (boxes[i], boxes[j]) else {
+                continue;
+            };
+            let pad = DVec3::splat(tol.dist);
+            if (a.0 - pad).cmpgt(b.1).any() || (b.0 - pad).cmpgt(a.1).any() {
+                continue;
+            }
+            let (fa, fb) = (new[i], new[j]);
+            let curved = |id: FaceId| after.face(id).is_some_and(|f| f.is_curved());
+            let met = if curved(fa) {
+                !crate::crossing::crossings_with(after, fa, fb).is_empty()
+            } else if curved(fb) {
+                !crate::crossing::crossings_with(after, fb, fa).is_empty()
+            } else {
+                match (
+                    crate::intersect::Flat::drawn(after, fa),
+                    crate::intersect::Flat::drawn(after, fb),
+                ) {
+                    (Some(x), Some(y)) => !crate::intersect::crossings(&x, &y, &tol).is_empty(),
+                    _ => false,
+                }
+            };
+            if met {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Build the sweep (not yet stuck to what it meets). Returns the points
+/// there were before it, or None when it is refused.
+// Sections, loops and points are parallel tables, walked by index.
+#[allow(clippy::needless_range_loop)]
+fn build(
+    model: &mut Model,
+    path: &BTreeSet<EdgeId>,
+    profile: FaceId,
+) -> Option<BTreeSet<VertexId>> {
+    let (chords, segmented) = best(model, path, profile).ok()?;
     if segmented {
         segment_profile(model, profile);
     }
-    let Ok(plan) = plan(model, path, profile, chords) else {
-        return false;
-    };
+    let plan = plan(model, path, profile, chords).ok()?;
     let tol = model.tol();
     let before: BTreeSet<VertexId> = model.vertices().map(|(v, _)| v).collect();
     let secs = plan.sections.len();
@@ -775,9 +881,7 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
             let m = l.vs.len();
             let mut ids = Vec::new();
             for i in 0..m {
-                let Some(orig) = model.edge(l.es[i]).cloned() else {
-                    return false;
-                };
+                let orig = model.edge(l.es[i]).cloned()?;
                 let (a, b) = (vid[k][li][i], vid[k][li][(i + 1) % m]);
                 // Keep the original edge's direction.
                 let (a, b) = if orig.a == l.vs[i] { (a, b) } else { (b, a) };
@@ -797,9 +901,7 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                     }
                     Curve::Line => model.add_edge(a, b),
                     c => {
-                        let Some(c) = plan.motions[k].and_then(|x| c.transformed(&x)) else {
-                            return false;
-                        };
+                        let c = plan.motions[k].and_then(|x| c.transformed(&x))?;
                         let cid = orig.curve_id.map(|x| {
                             *new_curve
                                 .entry((k, x))
@@ -808,7 +910,7 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                         model.add_curve_edge(a, b, c, cid)
                     }
                 };
-                let Some(id) = id else { return false };
+                let id = id?;
                 ids.push(id);
             }
             le.push(ids);
@@ -829,9 +931,7 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                 let id = match plan.steps[k] {
                     _ if pole(k, li, i) => None,
                     Step::Line(_) => {
-                        let Some(id) = model.add_edge(a, b) else {
-                            return false;
-                        };
+                        let id = model.add_edge(a, b)?;
                         Some(id)
                     }
                     Step::Arc {
@@ -852,9 +952,7 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
                             axis,
                             radius: r.length(),
                         };
-                        let Some(id) = model.add_curve_edge(a, b, arc, Some(cid)) else {
-                            return false;
-                        };
+                        let id = model.add_curve_edge(a, b, arc, Some(cid))?;
                         Some(id)
                     }
                 };
@@ -876,13 +974,11 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
             let m = l.vs.len();
             for i in 0..m {
                 let j = (i + 1) % m;
-                let Some((p, q, curve)) = side(model, &plan, k, li, i) else {
-                    return false;
-                };
+                let (p, q, curve) = side(model, &plan, k, li, i)?;
                 let surface = match swept(&plan.steps[k], p, q, curve, &tol) {
                     Ok(Some(x)) => x,
                     Ok(None) => continue,
-                    Err(_) => return false,
+                    Err(_) => return None,
                 };
                 // Face it outward.
                 let (mid, t) = match curve {
@@ -1017,8 +1113,7 @@ pub fn follow(model: &mut Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> bo
             model.remove_vertex(*v);
         }
     }
-    stick(model, &before, &tol);
-    true
+    Some(before)
 }
 
 /// The sweep stuck to what it meets (Exact Curves 6b), as Push/Pull's

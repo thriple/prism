@@ -17,6 +17,7 @@ pub mod fillet;
 pub mod follow;
 pub mod health;
 pub mod intersect;
+mod meet;
 pub mod offset;
 pub mod pushpull;
 pub mod radius;

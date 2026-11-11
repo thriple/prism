@@ -2189,3 +2189,64 @@ test for Follow Me) is next.
   - Model Health's "faces inward" check still counts flat faces only (it
     goes by the enclosed volume when a shell has curved faces, as before).
     Minor: NOTES only.
+
+## Exact Curves (part 6, step 6c-2): stops at curved faces, Follow Me overlap
+
+Built 2026-11-11 (brief 27).
+
+- **A pull stops at a curved face** (`reach::limit` with the new private
+  module `prism_ops::meet`). The face moves until it first meets the other
+  face. Three places can be first:
+  - one of the other face's edges, sampled, with each lowest point found
+    exactly and each place where an edge leaves the moving face's outline
+    found by halving;
+  - a ray from the moving face's outline, in the direction it moves, onto
+    the other face, refined the same way;
+  - a point where a sphere or torus faces the moving face head on, worked
+    out exactly. A cylinder or cone faces it along whole lines, and those
+    end on edges.
+
+  Arcs on either face's outline use the same search, and the old
+  edge-against-edge test now takes straight edges only (it used to treat
+  arcs as their chords).
+- **A new radius stops at what it would run into.** The same search runs
+  on the cylinder's faces, whose points move straight out from or in
+  towards the axis. Rays go out from their outline. Inside a curved face
+  in the way, a grid search finds the nearest point. `push_pull` and the
+  tool both apply the limit.
+- **Follow Me refuses a sweep that runs into itself** (`follow::OVERLAPS`).
+  The sweep is built in a copy, and any two of its faces that share no
+  point and cross each other mean a refusal. That covers a profile wider
+  than the gap to a later part of the path, or a path that comes back
+  across itself. A profile arc that reaches across the axis between its
+  ends (a sphere's arc of more than half a circle, past the poles) is
+  refused as `CROSSES_AXIS`.
+- **Fixed on the way:** a face pushed toward a parallel face stopped only
+  if their corners overlapped, so a disc never stopped at another disc (a
+  cylinder's cap pushed in passed the far cap). It now goes by the drawn
+  outlines.
+- **Tests:**
+  - `prism-ops/tests/stops_curved.rs`: a plate pushed down onto a sphere
+    (it stops at the top); a plate off to one side (it stops where its edge
+    meets the sphere); a wall pushed sideways onto a cylinder, and one that
+    passes over it; a cylinder's cap pushed in (it stops at the far cap); a
+    new radius stopped by a wall, by a post inside, and by a sphere beside
+    it; a pulled plate landing on a sphere.
+  - `prism-ops/tests/follow_overlap.rs`: a square too wide for a path that
+    comes back over itself is refused, and nothing is made; a narrow one
+    passes, and the check is clean; a sphere profile past the poles is
+    refused.
+- **Known gaps, sorted (DECISIONS #33):**
+  - A Follow Me sweep with one part wholly inside another, where their
+    faces never cross, is not caught. A sweep of a single profile can
+    hardly do this. Minor: NOTES only.
+  - A face that already crosses the moving face is passed over, and the
+    pull goes on to the next face, as with flat faces before. Minor: NOTES
+    only.
+  - A ray from the outline that only grazes a curved surface between
+    sample steps can be missed. The face then goes a hair past a surface it
+    only just touches. Minor: NOTES only.
+  - Follow Me builds the sweep twice, once to check it and once to make
+    it, so big sweeps are slower. Minor: NOTES only.
+  - Push/Pull on a cone, sphere or torus face is still refused: **step
+    6d**, as planned.

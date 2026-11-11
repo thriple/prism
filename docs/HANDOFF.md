@@ -3,22 +3,21 @@
 Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
 ## Start here (2026-11-11 evening, Guam)
-- **State:** `main` = session branch = 6fb5e3c (Exact Curves 6c-1), clean,
-  CI green. No release since 5d (part 6 is work in progress: no
-  `[release]` until 6e).
-- **Next: step 6c-2** (brief 27): (1) `reach::limit` stops a pull at a
-  curved face: today it meets one only by corners and edges (the `gplane`
-  None branch). Candidates: the surface's support point/line against the
-  pull, the curved face's edges (minimum height along each), and rays from
-  points along the moving face's outline onto the surface; keep those that
-  fall in both faces (`shell::Planar::classify`, `crossing::Laid::classify`).
-  (2) `radius.rs`: a new radius stops at what it would run into (the
-  `plane()` None branch of `limit` returns the distance unchanged). (3) The
-  solid overlap test: a Follow Me sweep whose faces cross each other away
-  from shared edges (`crossing::crossings_with` / `intersect::crossings`
-  between non-neighbouring faces of the result, or `shell::winding` > 1) is
-  refused (`follow::refusal`, 5c/5d gaps: overlap further along a path, a
-  sphere profile past half a circle). Then 6d, then 6e (`[release]`).
+- **State:** `main` = session branch = Exact Curves 6c-2 (step 6c is
+  done), CI to be checked. No release since 5d (part 6 is work in
+  progress: no `[release]` until 6e).
+- **Next: step 6d** (brief 27): Push/Pull on a cone, sphere or torus face
+  gives it a new size, as `radius.rs` does for cylinders (a sphere's
+  radius, a torus's tube radius, a cone moved square to its side); the
+  faces beside it follow or it is refused with a reason; `reach::limit`'s
+  `grow_limit` only handles cylinders today (`meet::Mover::Grow` assumes
+  points move straight out from an axis). Then outline lines (on screen
+  only, prism-render). Then 6e (`[release]`).
+- **6c-2 added:** `prism_ops::meet` (where a moving face first meets
+  another: edges sampled and refined, rays from the outline, facing
+  points), used by `reach::limit` for curved faces and arcs and for a new
+  radius; `follow::OVERLAPS` (the sweep is built in a copy and refused if
+  two of its faces that share no point cross).
 - **Part 6 tools to know:** `cut` (split curved faces in (θ, s),
   `split_along`, `layout`, `face_box`), `crossing` (trace crossings,
   `Laid`, `add_piece`), `shell` (exact inside test), `approx::facet`
@@ -92,7 +91,7 @@ Updated 2026-11-09 (Guam), before a context compaction.
   about each arc's axis; lathes make cones, spheres and tori; Alt follows
   the selected face's edge; NOTES has its sorted gaps): **part 5 is
   done**. Then **part 6** (owner, 2026-11-11, DECISIONS
-  #33; brief `docs/briefs/27-exact-curves-6.md`, written 2026-11-11; **6a is built**, `prism_ops::approx`, `Edge.approx`, schema 7; **6b-1 is built**, `prism_ops::cut` (curved faces split in (θ, s)) and `prism_ops::crossing` (crossings traced in (θ, s), exact lines and arcs else fine segments), Intersect Faces with curved faces; **6b-2 is built**, drawing and Follow Me stick to curved faces (`cut::split_along`, `follow::stick`), crossings meeting mid-face are split, `approx::facet` facets any cut face; **6c-1 is built**, `prism_ops::shell` (the inside test with exact arcs and curved faces) and Push/Pull booleans with curved faces; next is 6c-2, stops at curved faces and the solid overlap test): the
+  #33; brief `docs/briefs/27-exact-curves-6.md`, written 2026-11-11; **6a is built**, `prism_ops::approx`, `Edge.approx`, schema 7; **6b-1 is built**, `prism_ops::cut` (curved faces split in (θ, s)) and `prism_ops::crossing` (crossings traced in (θ, s), exact lines and arcs else fine segments), Intersect Faces with curved faces; **6b-2 is built**, drawing and Follow Me stick to curved faces (`cut::split_along`, `follow::stick`), crossings meeting mid-face are split, `approx::facet` facets any cut face; **6c-1 is built**, `prism_ops::shell` (the inside test with exact arcs and curved faces) and Push/Pull booleans with curved faces; **6c-2 is built**, `prism_ops::meet` (stops at curved faces for a pull and a new radius) and `follow::OVERLAPS`; next is 6d, new sizes for cones, spheres and tori, and outline lines): the
   segment fallback (#32), exact plane crossings with curved faces,
   Intersect Faces, sticky crossings, Push/Pull booleans and stops with
   curved faces, a new size for cones/spheres/tori, then the curve tools

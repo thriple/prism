@@ -11,7 +11,7 @@
   - **6b-2:** sticky geometry (drawing across curved faces, Follow Me's result welded, snapping), crossings that cross inside a curved face, and faceting cut faces. *(Built.)*
 - **6c. Push/Pull booleans and stops with curved faces:** inside or outside by exact ray hits; a cylinder pulled into a box cuts it; a pull or a new radius stops at a curved face; the solid overlap test, also used to refuse a Follow Me sweep that overlaps itself (5c's and 5d's gaps). Split in two:
   - **6c-1:** the inside test with curved faces, and Push/Pull booleans with them. *(Built.)*
-  - **6c-2:** a pull and a new radius stop at curved faces; the solid overlap test for Follow Me.
+  - **6c-2:** a pull and a new radius stop at curved faces; the solid overlap test for Follow Me. *(Built.)*
 - **6d. A new size for cones, spheres and tori by Push/Pull; outline lines along curved faces.**
 - **6e. The curve tools become active** (moved from 5e): `GREYED_TOOLS` is emptied, a `[release]` build.
 

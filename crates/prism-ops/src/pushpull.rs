@@ -76,6 +76,8 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         return Pulled::Nothing;
     };
     if f.is_curved() {
+        // A new radius stops where it meets another face (6c-2).
+        let distance = crate::reach::limit(model, face, distance);
         return if crate::radius::apply(model, face, distance) {
             Pulled::Stretched
         } else {

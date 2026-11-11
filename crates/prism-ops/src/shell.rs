@@ -275,7 +275,7 @@ impl ShellFace {
 }
 
 /// Where the ray `o + d t` (t ≥ 0) is inside the box, padded.
-fn ray_span(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> Option<(f64, f64)> {
+pub(crate) fn ray_span(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> Option<(f64, f64)> {
     let pad = DVec3::splat((hi - lo).length() * 1e-6 + 1e-12);
     let (lo, hi) = (lo - pad, hi + pad);
     let (mut t0, mut t1) = (0.0f64, f64::INFINITY);
