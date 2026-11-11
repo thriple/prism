@@ -2,45 +2,52 @@
 
 Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` first, as always. This file is the short version of where things stand and how the owner likes to work.
 
-## Start here (2026-11-11 evening, Guam)
-- **State:** `main` = session branch = Exact Curves 6e, pushed with
-  `[release]`: **Exact Curves is done** (check CI and the release run;
-  6d-2's CI failed only because the runners could not resolve Ubuntu's
-  package servers while installing Mesa: re-run it).
-- **Basic Materials** (brief 28, research in `docs/research/basic-materials.md`,
-  DECISIONS #34 to #36 open with defaults): part 1 is built in steps 1a
-  (the core: `prism_doc::material`, `Face.paint`, `Assembly::painted`,
-  paint kept through edits, schema 8: **built**), 1b (the Paint Bucket:
-  `tool.paint` with Ctrl, Shift, Ctrl+Shift and Alt; hover preview; the
-  viewport draws face colours, front and back, and a painted group's on
-  its Default faces) and 1c (Materials window, Entity Info, Select by
-  material, Model Health unused row, MCP `paint`, a `[release]`).
-- **Build order changed (owner, 2026-11-11):** after Basic Materials
-  come the NURBS Spike, then Freeform NURBS (PLAN 6.0 table moved).
-- **Owner feedback fixed (2026-11-11 late, NOTES):** edges through
-  curved faces, hover of whole smooth surfaces and curves; Push/Pull
-  checked against the owner's sessions (correct). Planned: a Fillet panel
-  (size, fillet or chamfer, live preview), placement to confirm.
-- **Owner to try by hand:** a cylinder pushed through a box makes a hole;
-  a slanted cut through a cylinder; the curve tools active.
-- **6d-2 added:** `prism_view::outline` (outline lines from the curved
-  faces' triangles and the eye); `prism-render` finds them again when the
-  eye or line style changes and draws them with the edges (not in
-  Wireframe).
-- **6d-1 added:** `radius.rs` gives any turned surface a new size (moves
-  square to the surface; flat neighbours follow along their plane or as
-  a round cut); `meet::Mover::Grow` takes a `Surface`.
-- **6c-2 added:** `prism_ops::meet` (where a moving face first meets
-  another: edges sampled and refined, rays from the outline, facing
-  points), used by `reach::limit` for curved faces and arcs and for a new
-  radius; `follow::OVERLAPS` (the sweep is built in a copy and refused if
-  two of its faces that share no point cross).
-- **Part 6 tools to know:** `cut` (split curved faces in (θ, s),
-  `split_along`, `layout`, `face_box`), `crossing` (trace crossings,
-  `Laid`, `add_piece`), `shell` (exact inside test), `approx::facet`
-  (any cut face). Test-model facts: a Push/Pull cylinder's seams are at
-  x = 0; a Follow Me cone's base halves meet along the y axis; drawing
-  across an open hole fills it (sticky geometry).
+## Start here (2026-11-12 early morning, Guam; before a compaction)
+- **State:** `main` = session branch, clean. Exact Curves is done
+  (released at 6e). Basic Materials step 1a is built (no visible change).
+  Owner fixes pushed with `[release]`: hidden edges on curved faces,
+  whole-surface hover, and Push/Pull's new loop no longer turning on
+  unasked (NOTES, "Owner feedback on the 6e build").
+- **CI:** the Linux "Format, lint and test" job has failed since 6d-2 at
+  the Mesa install step only, because the runners could not resolve
+  Ubuntu's servers (DNS outage, hours). Everything passes locally, and
+  the Windows, macOS and web jobs pass. The install step now retries 5
+  times (owner approved). Check the latest run; when the outage ends,
+  re-run any red run.
+- **Next: Basic Materials step 1b** (brief 28): the Paint Bucket
+  (`tool.paint`, B): click paints the clicked side
+  (`Command::Paint`); Ctrl fills connected (`material::connected_same`);
+  Shift replaces everywhere and Ctrl+Shift in the open group
+  (`Command::ReplaceMaterial`); Alt samples (tap or hold); hover preview;
+  a closed group is painted as a whole (`Command::PaintInstances`).
+  The viewport draws face colours front and back (Default keeps the
+  style's colours, so reversed faces still show), and a painted group's
+  colour on its Default faces (nearest painted group wins). Then 1c (the
+  Materials window, Entity Info, Select by material, Model Health unused
+  row, MCP `paint`, a `[release]`), then parts 2 and 3.
+- **After Basic Materials: NURBS Spike, then Freeform NURBS** (owner
+  moved them up, 2026-11-11).
+- **Waiting on the owner:**
+  - where the **Fillet panel** goes (size, fillet or chamfer, live
+    preview before applying): after part 1 of Basic Materials, or before;
+  - whether new loop should last one pull (as now) or stay on, shown,
+    until Alt again;
+  - DECISIONS #34 (CC0 textures), #35, #36: defaults in use;
+  - an optional illustrated page of Push/Pull's rules (stop at faces,
+    new loop, other groups, faces that are not part of a solid).
+- **Owner's recordings:** Help > Record Session JSON files. Each saves the
+  real final model (`result`): compare it with `Session::replay` (via
+  `Recording::ends_with`) before trusting a replay. A replay can differ
+  when state at the recording's start was not saved (as new loop was).
+- **Materials code:** `prism_doc::material` (Material, Principled,
+  FaceSide, paint, connected_same, sides_with), `Assembly` (materials,
+  painted instances, replace, purge), `Face.paint` (`prism_topo::Paint`),
+  `regions::inherited` (merged faces take the largest piece's paint),
+  schema 8 (`materials.json`, geometry layout 7).
+- **Part 6 tools to know:** `cut`, `crossing`, `shell`, `meet` (where a
+  moving face first meets another), `radius.rs` (new sizes for every
+  turned surface), `prism_view::outline`, `approx::facet`. Renderer:
+  `CURVED_OWN` lines are depth-tested against their own curved face.
 
 ## Where the project is
 Updated 2026-11-09 (Guam), before a context compaction.

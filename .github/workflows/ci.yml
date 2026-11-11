@@ -26,7 +26,15 @@ jobs:
       - name: Clippy for the web target
         run: cargo clippy --workspace --all-targets --target wasm32-unknown-unknown -- -D warnings
       - name: Install Mesa's software renderer, for the screenshot tests
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+        # Ubuntu's package servers sometimes cannot be reached from the
+        # runners (2026-11-11: DNS failures for hours): try a few times.
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers && exit 0
+            echo "apt failed (try $i of 5), waiting $((i * 30)) s"
+            sleep $((i * 30))
+          done
+          exit 1
       - run: cargo test --workspace
         env:
           PRISM_REQUIRE_GPU: "1"
