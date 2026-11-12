@@ -423,8 +423,8 @@ mod tests {
 mod view_toolbar {
     use crate::actions::registry::Registry;
 
-    /// The View toolbar has X-ray and Hidden Geometry, and every toolbar
-    /// button's icon parses.
+    /// The View toolbar has X-ray, the face styles and Hidden Geometry, and
+    /// every toolbar button's icon parses.
     #[test]
     fn the_view_toolbar_and_its_icons() {
         let reg = Registry::new();
@@ -433,7 +433,16 @@ mod view_toolbar {
             .iter()
             .find(|(n, _)| *n == "View")
             .expect("a View toolbar");
-        assert_eq!(view.1, ["view.xray", "view.hidden"]);
+        assert_eq!(
+            view.1,
+            [
+                "view.xray",
+                "view.wireframe",
+                "view.basecolour",
+                "view.colour",
+                "view.hidden"
+            ]
+        );
         for (_, ids) in reg.dock() {
             for id in *ids {
                 let svg = reg.icon(id).unwrap_or_else(|| panic!("{id} has no icon"));

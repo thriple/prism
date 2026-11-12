@@ -137,8 +137,11 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 15] = [
+const TOGGLES: [&str; 18] = [
     "view.hidden",
+    "view.wireframe",
+    "view.basecolour",
+    "view.colour",
     "light.sun",
     "light.default",
     "view.shadow",

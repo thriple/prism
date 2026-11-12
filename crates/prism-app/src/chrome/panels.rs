@@ -460,9 +460,16 @@ fn view(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                 }
             });
             ui.add_space(size::MENU_PAD);
-            const FACES: [&str; 4] = ["Shaded", "Monochrome", "Hidden Line", "Wireframe"];
-            const FACE_STYLES: [FaceStyle; 4] = [
+            const FACES: [&str; 5] = [
+                "Colour/Material",
+                "Base Colour",
+                "Monochrome",
+                "Hidden Line",
+                "Wireframe",
+            ];
+            const FACE_STYLES: [FaceStyle; 5] = [
                 FaceStyle::Shaded,
+                FaceStyle::BaseColour,
                 FaceStyle::Monochrome,
                 FaceStyle::HiddenLine,
                 FaceStyle::Wireframe,
@@ -475,7 +482,7 @@ fn view(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                 .add(prism_ui::widgets::SoftSelect::new(&mut f, &FACES, "Faces"))
                 .changed()
             {
-                v.face_style = FACE_STYLES[f.min(3)];
+                v.face_style = FACE_STYLES[f.min(FACE_STYLES.len() - 1)];
             }
             ui.add(prism_ui::widgets::SoftToggle::new(&mut v.xray, "X-ray"));
             if v.xray {

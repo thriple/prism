@@ -9,8 +9,12 @@ use crate::style::{FaceDraw, HiddenLines, Rgba, Style};
 /// How faces look.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FaceStyle {
-    /// Lit, with a front and a back colour.
+    /// Lit, in each face's colour or material (Default faces in the front
+    /// and back colours): SketchUp's Shaded.
     Shaded,
+    /// Lit, every face in the front and back colours, materials not shown:
+    /// which side faces out is plain to see (SketchUp's Monochrome).
+    BaseColour,
     /// Lit, front and back in one colour.
     Monochrome,
     /// Unlit, in the background colour: lines on top hide what is behind.
@@ -157,6 +161,7 @@ impl ViewStyle {
         };
         match self.face_style {
             FaceStyle::Shaded | FaceStyle::Wireframe => {}
+            FaceStyle::BaseColour => s.materials = false,
             FaceStyle::Monochrome => {
                 s.face_back = s.face_front;
                 s.materials = false;
@@ -222,6 +227,9 @@ impl ViewStyle {
             "view.guides" => self.guides,
             "view.hidden" => self.hidden,
             "view.xray" => self.xray,
+            "view.wireframe" => self.face_style == FaceStyle::Wireframe,
+            "view.basecolour" => self.face_style == FaceStyle::BaseColour,
+            "view.colour" => self.face_style == FaceStyle::Shaded,
             "view.shadow" => self.shadows,
             "light.sun" => self.sun,
             "light.default" => !self.sun,
@@ -247,6 +255,19 @@ impl ViewStyle {
                 self.sun = id == "light.sun";
                 return true;
             }
+            // Face styles: one of them (X-ray goes with any).
+            "view.wireframe" | "view.basecolour" | "view.colour" => {
+                self.face_style = match id {
+                    "view.wireframe" => FaceStyle::Wireframe,
+                    "view.basecolour" => FaceStyle::BaseColour,
+                    _ => FaceStyle::Shaded,
+                };
+                // Faces come back with a style that draws them.
+                if id != "view.wireframe" {
+                    self.faces = true;
+                }
+                return true;
+            }
             _ => return false,
         };
         *f = !*f;
@@ -255,7 +276,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 12] = [
+pub const TOGGLES: [&str; 15] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -265,6 +286,9 @@ pub const TOGGLES: [&str; 12] = [
     "view.guides",
     "view.hidden",
     "view.xray",
+    "view.wireframe",
+    "view.basecolour",
+    "view.colour",
     "view.shadow",
     "light.sun",
     "light.default",
@@ -295,6 +319,13 @@ mod tests {
         assert!(x.face_front.0[3] < 255);
         let m = ViewStyle::preset("Technical").unwrap().apply(&base);
         assert_eq!(m.face_back, m.face_front);
+        let mut b = ViewStyle::default();
+        assert!(b.toggle("view.basecolour"));
+        let bc = b.apply(&base);
+        assert!(
+            !bc.materials && bc.face_back != bc.face_front,
+            "front and back, no materials"
+        );
         let h = ViewStyle::preset("Hidden Line").unwrap().apply(&base);
         assert_eq!((h.face_front, h.diffuse), (PAPER, 0.0));
     }
@@ -317,5 +348,30 @@ mod tests {
         assert_eq!(serde_json::from_str::<ViewStyle>(&text).unwrap(), v);
         let partial: ViewStyle = serde_json::from_str(r#"{"xray": true}"#).unwrap();
         assert!(partial.xray && partial.faces);
+    }
+
+    /// The face style buttons (owner, 2026-11-12): one of Wireframe, Base
+    /// Colour and Colour/Material at a time; X-ray and Hidden Geometry
+    /// stay separate.
+    #[test]
+    fn the_face_style_buttons_are_one_of_three() {
+        let mut v = ViewStyle::default();
+        assert_eq!(v.is_on("view.colour"), Some(true));
+        v.toggle("view.xray");
+        v.toggle("view.wireframe");
+        assert_eq!(v.is_on("view.wireframe"), Some(true));
+        assert_eq!(v.is_on("view.colour"), Some(false));
+        assert!(v.xray && !v.hidden, "X-ray kept; hidden geometry still off");
+        v.toggle("view.wireframe");
+        assert_eq!(
+            v.is_on("view.wireframe"),
+            Some(true),
+            "pressing it again keeps it"
+        );
+        v.faces = false;
+        v.toggle("view.basecolour");
+        assert!(v.faces && v.is_on("view.basecolour") == Some(true));
+        v.toggle("view.colour");
+        assert_eq!(v.face_style, FaceStyle::Shaded);
     }
 }

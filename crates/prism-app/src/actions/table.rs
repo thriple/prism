@@ -457,6 +457,29 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "",
         when: "",
     },
+    // Face style buttons (owner, 2026-11-12, as in SketchUp): not in the
+    // prototype.
+    RawAction {
+        id: "view.wireframe",
+        name: "Wireframe",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "view.basecolour",
+        name: "Base Colour",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "view.colour",
+        name: "Colour/Material",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
     RawAction {
         id: "view.edges",
         name: "Edge Style",
@@ -1591,7 +1614,15 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             ),
             Item::Sub(
                 "Faces",
-                &[Item::Action("view.faces"), Item::Action("view.xray")],
+                &[
+                    Item::Action("view.faces"),
+                    Item::Separator,
+                    Item::Action("view.wireframe"),
+                    Item::Action("view.basecolour"),
+                    Item::Action("view.colour"),
+                    Item::Separator,
+                    Item::Action("view.xray"),
+                ],
             ),
             Item::Sub(
                 "Lighting",
@@ -1888,8 +1919,18 @@ pub const DOCK: &[(&str, &[&str])] = &[
             "cam.look",
         ],
     ),
-    // Owner request (brief 19): X-ray and Hidden Geometry get buttons.
-    ("View", &["view.xray", "view.hidden"]),
+    // Owner request (brief 19): X-ray and Hidden Geometry get buttons;
+    // the face styles too (owner, 2026-11-12).
+    (
+        "View",
+        &[
+            "view.xray",
+            "view.wireframe",
+            "view.basecolour",
+            "view.colour",
+            "view.hidden",
+        ],
+    ),
     (
         "Shapes",
         &[
@@ -1942,6 +1983,18 @@ pub const ICONS: &[(&str, &str)] = &[
     (
         "view.xray",
         "<path d=\"M12 3l8 4.5v9L12 21l-8-4.5v-9z\"/><path d=\"M4 7.5l8 4.5 8-4.5M12 12v9\"/><path d=\"M12 3v9M4 16.5l8-4.5 8 4.5\" opacity=\".45\"/>",
+    ),
+    (
+        "view.wireframe",
+        "<path d=\"M12 3l8 4.5v9L12 21l-8-4.5v-9z\"/><path d=\"M4 7.5l8 4.5 8-4.5M12 12v9\"/>",
+    ),
+    (
+        "view.basecolour",
+        "<path d=\"M12 3l8 4.5v9L12 21l-8-4.5v-9z\"/><path d=\"M4 7.5l8 4.5 8-4.5M12 12v9\"/><path d=\"M6 10.5l4 2.3M6 13.5l4 2.3M6 16.5l3 1.7\" opacity=\".55\"/>",
+    ),
+    (
+        "view.colour",
+        "<path d=\"M12 3l8 4.5v9L12 21l-8-4.5v-9z\"/><path d=\"M4 7.5l8 4.5 8-4.5M12 12v9\"/><circle cx=\"16\" cy=\"14.5\" r=\"2.2\"/><circle cx=\"8\" cy=\"14.5\" r=\"1.2\"/>",
     ),
     (
         "view.hidden",

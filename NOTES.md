@@ -2811,3 +2811,22 @@ Nothing shows yet (2b draws them); this is the data and the maths.
   from its axis alone, so turning a cylinder about its own axis does not
   turn its texture; small, for part 3 if it shows. Model Health's
   "unused materials" row does not count unused images yet (2c).
+
+## Face style buttons (owner, 2026-11-12)
+The View toolbar now has, as in SketchUp: X-ray, **Wireframe**, **Base
+Colour** and **Colour/Material**, then Hidden Geometry. The three face
+styles are one-of (View > Faces lists them with a mark on the current
+one); X-ray and Hidden Geometry stay separate toggles, so Wireframe does
+not show hidden objects unless Hidden Geometry is on.
+- **Base Colour** is a new face style (`FaceStyle::BaseColour`): every
+  face in the front and back colours, materials not shown, so which way
+  faces point is plain (SketchUp's Monochrome). Prism's own Monochrome
+  (one colour for both sides, used by the Technical preset) stays.
+- **Colour/Material** is Shaded (materials shown; textures from 2b).
+- Picking Base Colour or Colour/Material turns faces back on if they were
+  off. View Settings' Faces list has all five styles.
+- The action table is edited by hand now (the import script's output no
+  longer matches it: several later actions were added by hand); these
+  three are marked there.
+- Tests: `the_face_style_buttons_are_one_of_three`, `styles_map_to_drawing`
+  (Base Colour), `the_view_toolbar_and_its_icons`. Checked by eye.
