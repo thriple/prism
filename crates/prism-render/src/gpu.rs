@@ -1762,7 +1762,7 @@ impl Renderer {
                 if sun_vp.is_some() { 1.0 } else { 0.0 },
                 SHADOW_BIAS,
                 1.0 / SHADOW_SIZE as f32,
-                0.0,
+                if s.zebra { 1.0 } else { 0.0 },
             ],
         };
         queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));

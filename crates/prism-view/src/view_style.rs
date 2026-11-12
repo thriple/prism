@@ -58,6 +58,11 @@ pub struct ViewStyle {
     /// Textured materials drawn with their images (SketchUp's Shaded with
     /// Textures); off, in each image's average colour.
     pub textures: bool,
+    /// Zebra stripes on faces: light and dark bands that a smooth surface
+    /// carries smoothly and a crease breaks (Freeform NURBS part 6).
+    pub zebra: bool,
+    /// Curvature combs on selected freeform curves.
+    pub combs: bool,
     pub xray: bool,
     /// 0 to 1.
     pub xray_opacity: f32,
@@ -106,6 +111,8 @@ impl ViewStyle {
             hidden_lines: HiddenLines::Off,
             face_style: FaceStyle::Shaded,
             textures: true,
+            zebra: false,
+            combs: false,
             xray: false,
             xray_opacity: 0.5,
             sun: false,
@@ -157,6 +164,7 @@ impl ViewStyle {
         s.show_ground = self.ground;
         s.lines_by_axis = self.line_color == LineColor::ByAxis;
         s.textures = self.textures;
+        s.zebra = self.zebra;
         s.faces = if !self.faces || self.face_style == FaceStyle::Wireframe {
             FaceDraw::None
         } else if self.xray {
@@ -236,6 +244,8 @@ impl ViewStyle {
             "view.basecolour" => self.face_style == FaceStyle::BaseColour,
             "view.colour" => self.face_style == FaceStyle::Shaded,
             "view.textures" => self.textures,
+            "view.zebra" => self.zebra,
+            "view.combs" => self.combs,
             "view.shadow" => self.shadows,
             "light.sun" => self.sun,
             "light.default" => !self.sun,
@@ -257,6 +267,8 @@ impl ViewStyle {
             "view.xray" => &mut self.xray,
             "view.shadow" => &mut self.shadows,
             "view.textures" => &mut self.textures,
+            "view.zebra" => &mut self.zebra,
+            "view.combs" => &mut self.combs,
             // One or the other.
             "light.sun" | "light.default" => {
                 self.sun = id == "light.sun";
@@ -283,7 +295,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 16] = [
+pub const TOGGLES: [&str; 18] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -297,6 +309,8 @@ pub const TOGGLES: [&str; 16] = [
     "view.basecolour",
     "view.colour",
     "view.textures",
+    "view.zebra",
+    "view.combs",
     "view.shadow",
     "light.sun",
     "light.default",

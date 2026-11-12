@@ -4305,3 +4305,40 @@ fn sweep_and_patch_run_from_the_selection() {
     assert_eq!(d.s.model().edge_count(), 4, "the four curves are its sides");
     valid(&d);
 }
+
+// ---------- Freeform NURBS part 6: curvature display ----------
+
+#[test]
+fn zebra_and_combs_are_view_toggles_and_combs_follow_the_bend() {
+    let mut d = drawn_curve();
+    let lines = |d: &Driver| d.s.overlay().lines.len();
+    d.tool(SELECT);
+    let on = {
+        let m = d.s.model();
+        let (_, e) = m.edges().next().unwrap();
+        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.3)
+    };
+    d.click(on);
+    assert!(d.s.curvature_combs().is_empty(), "off by default");
+    let before = lines(&d);
+    action(&mut d, "view.combs");
+    assert!(d.s.view_style().combs);
+    let combs = d.s.curvature_combs();
+    assert_eq!(combs.len(), 1);
+    assert!(lines(&d) > before + 30);
+    // Teeth point away from the centre of the bend, and the longest is
+    // 15 % of the curve's length.
+    let comb = &combs[0];
+    let longest = comb.iter().map(|(p, t)| p.distance(*t)).fold(0.0, f64::max);
+    let length: f64 = comb.windows(2).map(|w| w[0].0.distance(w[1].0)).sum();
+    assert!((longest / length - 0.15).abs() < 0.01, "{longest} {length}");
+    let (p, tip) = comb[comb.len() / 2];
+    assert!(tip.y > p.y, "the curve arches up, so its teeth point up");
+    // Nothing selected: none.
+    d.click(DVec3::new(8.0, 8.0, 0.0));
+    assert!(d.s.curvature_combs().is_empty());
+    action(&mut d, "view.zebra");
+    assert!(d.s.view_style().zebra);
+    action(&mut d, "view.zebra");
+    assert!(!d.s.view_style().zebra);
+}

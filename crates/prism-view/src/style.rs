@@ -59,6 +59,8 @@ pub struct Style {
     /// Textured materials drawn with their images; else in their average
     /// colours (Basic Materials part 2).
     pub textures: bool,
+    /// Zebra stripes on faces (Freeform NURBS part 6).
+    pub zebra: bool,
     /// Light direction for shading (towards the light).
     pub light: [f64; 3],
     /// Shading: ambient + diffuse * max(0, n · light).
@@ -256,6 +258,7 @@ impl Default for Style {
             face_back: Rgba::rgb(150, 168, 198),
             materials: true,
             textures: true,
+            zebra: false,
             light: [0.3, -0.5, 0.8],
             ambient: 0.66,
             diffuse: 0.34,

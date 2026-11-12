@@ -66,6 +66,8 @@ refusals. Property tests: random curves split and transformed keep the
 model check clean.
 
 ## Acceptance
-- [ ] Every part: tests and CI green, NOTES updated, pushed.
-- [ ] A loft between three curves, a cage point pulled, zebra on.
-- [ ] PLAN 6.0 updated.
+- [x] Every part: tests green, NOTES updated, pushed.
+- [x] A loft between three curves, a cage point pulled, zebra on (session
+  test `a_loft_you_can_pull_into_shape`; screenshot test
+  `a_loft_draws_smoothly_and_with_zebra_stripes`).
+- [x] PLAN 6.0 updated.

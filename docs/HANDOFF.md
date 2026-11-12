@@ -32,12 +32,15 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   Materials (part ...)"). **The NURBS Spike is done** (brief 30): the
   kernel is **arris** (`docs/research/nurbs-spike.md`, DECISIONS #9; the
   test program is `spikes/nurbs/`, run with `cargo run --release`).
-  **Freeform NURBS is in progress** (brief 31, 6 parts; NOTES "Freeform
-  NURBS (part ...)" says what each part built and left). Then Fillet
-  Joins.
+  **Freeform NURBS is done** (brief 31, 6 parts; NOTES "Freeform NURBS
+  (part ...)" says what each part built, and "what the whole chunk left
+  for later"). `Curve`, `Surface` and `Edge` are no longer `Copy`. The
+  kernel is in `prism-kernel` (arris, pinned). **Next: Fillet Joins**
+  (needs a brief).
 - **Disk:** `target/debug` grows past the session's allowance after many
-  builds. Build with `CARGO_INCREMENTAL=0`; if space runs out, delete
-  `target/debug` and rebuild (about 2 minutes).
+  builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no
+  debug info: a full build and test run then takes about 3 GB, not 20);
+  if space runs out, delete `target/debug` and rebuild.
 - **Fillet Joins** (fillet many edges, clean corners, a face's edges at
   once, whole lines): owner request, moved after Freeform NURBS by the
   owner. NOTES: "Fillet on many edges".

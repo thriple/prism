@@ -83,17 +83,39 @@ pub fn curves_meet(
             if x.distance(y) > near {
                 continue;
             }
-            // Onto both curves in turn until they agree.
+            // Where the two curves' tangent lines come closest, put back
+            // on the curves, until the two points agree (Newton's method
+            // in effect: it closes fast even on a shallow crossing).
             let mut x = c1.closest_point(a1, b1, x.midpoint(y));
             let mut y = c2.closest_point(a2, b2, x);
-            for _ in 0..40 {
-                if x.distance(y) <= eps * 1e-3 {
+            for _ in 0..60 {
+                if x.distance(y) <= eps * 1e-6 {
                     break;
                 }
-                x = c1.closest_point(a1, b1, y);
-                y = c2.closest_point(a2, b2, x);
+                let (t1, t2) = (c1.tangent_at(a1, b1, x), c2.tangent_at(a2, b2, y));
+                let (r, b) = (x - y, t1.dot(t2));
+                let den = 1.0 - b * b;
+                let (px, py) = if den > 1e-12 {
+                    let (d, e) = (t1.dot(r), t2.dot(r));
+                    (x + t1 * ((b * e - d) / den), y + t2 * ((e - b * d) / den))
+                } else {
+                    (y, x)
+                };
+                let (nx, ny) = (c1.closest_point(a1, b1, px), c2.closest_point(a2, b2, py));
+                // No better: fall back to plain steps onto each in turn.
+                if nx.distance(ny) < x.distance(y) {
+                    (x, y) = (nx, ny);
+                } else {
+                    let ox = c1.closest_point(a1, b1, y);
+                    let oy = c2.closest_point(a2, b2, ox);
+                    if ox.distance(oy) >= x.distance(y) {
+                        break;
+                    }
+                    (x, y) = (ox, oy);
+                }
             }
-            if x.distance(y) <= eps && !out.iter().any(|o| o.distance(x) <= eps) {
+            // One meeting found from two neighbouring steps is one meeting.
+            if x.distance(y) <= eps && !out.iter().any(|o| o.distance(x) <= eps * 100.0) {
                 out.push(x);
             }
         }

@@ -3192,3 +3192,42 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
 - **Left over:** an open profile does not turn with its path (it keeps
   its direction); two- and three-sided patches (they come to a point);
   arcs as patch sides; the pipe has no caps.
+
+## Freeform NURBS (part 6): curvature display; the chunk is done
+- **Zebra Stripes** (`view.zebra`, View menu and View Settings; off by
+  default): every face is drawn as a mirror of a striped room (bands from
+  the mirrored view direction's height, in the face shader; the flag
+  rides in `Globals::shadow_map.w`). Bands run unbroken over a smooth
+  surface and jump at a crease. Screenshot test
+  `a_loft_draws_smoothly_and_with_zebra_stripes` (run with
+  `PRISM_REQUIRE_GPU=1`).
+- **Curvature Combs** (`view.combs`; off by default): on the selected
+  freeform curves, and on the curve whose cage is open, teeth point away
+  from the centre of the bend, as long as the curve bends there; the
+  longest is 15 % of the curve's length. `Session::curvature_combs` gives
+  them; they follow a cage edit as it is made.
+- Both are in `ViewStyle` (saved with styles and scenes; old files read
+  them as off).
+- Curves that cross at a shallow angle are now found reliably
+  (`curves_meet` closes on the crossing by the tangent lines, and two
+  finds of one crossing are merged); a random case showed the gap.
+- **Left over:** combs on a freeform face's sides or inner lines; a comb
+  scale the user can set; stripes' width and direction are fixed.
+
+### Freeform NURBS: what the whole chunk left for later
+Brief 31, six parts, all built on 2026-11-12. For whoever builds next:
+- A freeform face is a whole four-sided rectangle of its surface. Nothing
+  cuts one: lines drawn on it, overlap splits and booleans need the
+  kernel's surface intersection (Solids & CAD). Surfaces that come to a
+  point (a turned curve touching its axis, two- and three-sided patches)
+  wait for three-sided faces.
+- Push/Pull does not move a freeform face, or a flat face beside one;
+  Offset refuses faces with spline edges; Follow Me refuses splines and
+  points to Draw > Surface.
+- A curve that crosses itself is not cut at the crossing.
+- The kernel is used for skinning and revolution only. Solids, booleans
+  and fillets through it (and running long calls off the interface
+  thread) come with Fillet Joins and Solids & CAD.
+- Not built from PLAN's M5 list: "Smooth" (a flat region into a patch),
+  insert edge loop as a tool (Add Control Points adds a row in the widest
+  gap), the Freehand tool, SubD.

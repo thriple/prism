@@ -2091,6 +2091,7 @@ impl Session {
         let mut o = Overlay::default();
         self.group_boxes(&mut o);
         self.health_marks(&mut o);
+        self.combs_overlay(&mut o);
         let fb = &self.style.feedback;
         let view = self.view();
         if let Some(b) = &self.boxing

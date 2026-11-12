@@ -32,7 +32,7 @@ struct Globals {
     stipple: vec4<f32>,
     // From the eye-relative model to the sun's shadow map.
     light_vp: mat4x4<f32>,
-    // on (1 or 0), depth bias, one texel, unused
+    // on (1 or 0), depth bias, one texel, zebra stripes on (1 or 0)
     shadow_map: vec4<f32>,
 };
 
@@ -201,6 +201,16 @@ fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4
     }
     let sh = g.light.w + g.params.x * max(0.0, dot(n, g.light.xyz)) * sun_lit(in.r);
     var c = base.rgb * sh;
+    // Zebra stripes: bands of a striped room mirrored in the face. They
+    // run smoothly over a smooth surface and break at a crease.
+    if (g.shadow_map.w > 0.5) {
+        let mirrored = reflect(normalize(in.r), n);
+        let band = mirrored.z * 7.0;
+        let edge = fwidth(band);
+        let k = abs(fract(band) - 0.5) * 2.0;
+        let stripe = smoothstep(0.5 - edge, 0.5 + edge, k);
+        c = mix(vec3<f32>(0.1, 0.1, 0.12), vec3<f32>(0.96, 0.96, 0.94), stripe) * (0.7 + 0.3 * sh);
+    }
     // Outside the open group: washed out toward white, so the group stands
     // out (PLAN 1.2).
     if (in.faded != 0u) {

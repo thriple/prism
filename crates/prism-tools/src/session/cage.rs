@@ -418,6 +418,74 @@ impl Session {
         })
     }
 
+    /// The curvature combs of the selected freeform curves (and of the
+    /// curve whose cage is open), in the world: for each, the teeth (from
+    /// the curve, away from the centre of its bend, as long as it bends
+    /// there) and the line joining their tips. Scaled so the longest tooth
+    /// is 15 % of the curve's length. Empty unless View > Curvature Combs
+    /// is on.
+    pub fn curvature_combs(&self) -> Vec<Vec<(DVec3, DVec3)>> {
+        if !self.view.combs {
+            return Vec::new();
+        }
+        let m = self.work_model();
+        let mut edges: Vec<prism_topo::EdgeId> = self.selection.edges.iter().copied().collect();
+        if let Some(Cage::Curve(e)) = self.cage.as_ref().map(|c| c.cage) {
+            edges.push(e);
+        }
+        let mut curves: Vec<std::sync::Arc<prism_geom::Nurbs>> = Vec::new();
+        for e in edges {
+            if let Some(s) = m.edge(e).and_then(|x| x.curve.spline())
+                && !curves.iter().any(|c| std::sync::Arc::ptr_eq(c, &s.curve))
+            {
+                curves.push(s.curve.clone());
+            }
+        }
+        let mut out = Vec::new();
+        for c in curves {
+            let c = c.transformed(&self.to_world);
+            let (lo, hi) = c.domain();
+            let n = (c.steps(lo, hi) * 2).clamp(16, 400);
+            let at = |i: usize| lo + (hi - lo) * i as f64 / n as f64;
+            let pts: Vec<DVec3> = (0..=n).map(|i| c.eval(at(i))).collect();
+            let bends: Vec<DVec3> = (0..=n).map(|i| c.curvature(at(i))).collect();
+            let length: f64 = pts.windows(2).map(|w| w[0].distance(w[1])).sum();
+            let most = bends.iter().map(|k| k.length()).fold(0.0, f64::max);
+            if most * length <= 1e-9 {
+                continue;
+            }
+            let scale = 0.15 * length / most;
+            out.push(
+                pts.iter()
+                    .zip(&bends)
+                    .map(|(p, k)| (*p, *p - *k * scale))
+                    .collect(),
+            );
+        }
+        out
+    }
+
+    pub(super) fn combs_overlay(&self, o: &mut Overlay) {
+        let fb = &self.style.feedback;
+        for comb in self.curvature_combs() {
+            let mut line = |a: DVec3, b: DVec3| {
+                o.lines.push(Line {
+                    a,
+                    b,
+                    color: fb.tangent,
+                    width: fb.guide_width,
+                    dash: [0.0, 0.0],
+                });
+            };
+            for (p, tip) in &comb {
+                line(*p, *tip);
+            }
+            for w in comb.windows(2) {
+                line(w[0].1, w[1].1);
+            }
+        }
+    }
+
     /// The cage: its lines, and its points (picked ones filled).
     pub(super) fn cage_overlay(&self, o: &mut Overlay) {
         let Some(c) = &self.cage else { return };

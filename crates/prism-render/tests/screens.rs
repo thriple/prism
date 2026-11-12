@@ -1196,3 +1196,78 @@ fn textured_and_see_through_faces() {
         "the far edge shows"
     );
 }
+
+/// Freeform NURBS: a lofted surface shades smoothly, and Zebra Stripes
+/// lays light and dark bands over it.
+#[test]
+fn a_loft_draws_smoothly_and_with_zebra_stripes() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let mut m = Model::new();
+    for (z, bump) in [(0.0, 2.0), (2.0, 0.5), (5.0, 1.0)] {
+        let c = prism_geom::Nurbs::open(
+            &[
+                DVec3::new(0.0, 0.0, z),
+                DVec3::new(1.0, bump, z),
+                DVec3::new(3.0, -bump, z),
+                DVec3::new(4.0, 0.0, z),
+            ],
+            3,
+        )
+        .expect("a curve");
+        prism_ops::add_spline(&mut m, &c);
+    }
+    let edges = m.edges().map(|(id, _)| id).collect();
+    prism_ops::loft::loft(&mut m, &edges).expect("a loft");
+    let scene = prism_render::Scene::build(&m);
+    let cam = Camera {
+        eye: DVec3::new(9.0, -9.0, 6.0),
+        target: DVec3::new(2.0, 0.0, 2.5),
+    };
+    let mut shot = |style: &Style, name: &str| {
+        g.renderer.resize(&g.device, 640, 400);
+        g.renderer.set_scene(&g.device, &g.queue, &scene, style);
+        g.renderer
+            .set_highlight(&g.device, &scene, &Highlight::default(), style);
+        let img = g.draw(cam, 640, 400, 1.0, style, scene.bounds);
+        img.save(name);
+        img
+    };
+    let dark = |img: &common::Image| img.px.iter().filter(|p| p[0] < 70 && p[1] < 70).count();
+    let plain = shot(&Style::default(), "loft");
+    let striped = shot(
+        &Style {
+            zebra: true,
+            ..Style::default()
+        },
+        "loft-zebra",
+    );
+    assert!(
+        dark(&striped) > dark(&plain) + 3000,
+        "dark bands ({} against {})",
+        dark(&striped),
+        dark(&plain)
+    );
+    // The bands alternate along a row of pixels across the face.
+    let (_, y) = cam_px(&cam, DVec3::new(2.0, 0.0, 1.0));
+    let mut flips = 0;
+    let mut last: Option<bool> = None;
+    for x in 0..640 {
+        let p = striped.at(x, y);
+        let now = if p[0] < 70 && p[1] < 70 {
+            Some(false)
+        } else if p[0] > 215 && p[1] > 215 && p[2] > 205 {
+            Some(true)
+        } else {
+            None
+        };
+        if let (Some(a), Some(b)) = (last, now)
+            && a != b
+        {
+            flips += 1;
+        }
+        if now.is_some() {
+            last = now;
+        }
+    }
+    assert!(flips >= 3, "{flips} changes of band");
+}
