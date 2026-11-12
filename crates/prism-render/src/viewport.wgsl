@@ -52,6 +52,11 @@ struct Draw {
 // to the eye.
 @group(2) @binding(1) var planes: texture_2d<u32>;
 // Faces only: the sun's shadow map.
+// The faces' textures, front and back (in the faces passes, where group
+// 2 holds these instead of the lines' face ids).
+@group(2) @binding(2) var tex_front: texture_2d<f32>;
+@group(2) @binding(3) var tex_back: texture_2d<f32>;
+@group(2) @binding(4) var tex_samp: sampler;
 @group(3) @binding(0) var shadow_tex: texture_depth_2d;
 @group(3) @binding(1) var shadow_samp: sampler_comparison;
 
@@ -107,6 +112,9 @@ struct FaceIn {
     @location(4) faded: u32,
     @location(5) front: vec4<f32>,
     @location(6) back: vec4<f32>,
+    @location(7) uv_front: vec2<f32>,
+    @location(8) uv_back: vec2<f32>,
+    @location(9) paint: u32,
 };
 
 struct FaceOut {
@@ -120,6 +128,10 @@ struct FaceOut {
     // Material colours, front and back (alpha 0: the style's colour).
     @location(4) @interpolate(flat) front: vec4<f32>,
     @location(5) @interpolate(flat) back: vec4<f32>,
+    @location(6) uv_front: vec2<f32>,
+    @location(7) uv_back: vec2<f32>,
+    // Bits: 1 front painted, 2 back painted, 4 front textured, 8 back.
+    @location(8) @interpolate(flat) paint: u32,
 };
 
 @vertex
@@ -132,6 +144,9 @@ fn face_vs(v: FaceIn) -> FaceOut {
     o.faded = v.faded;
     o.front = v.front;
     o.back = v.back;
+    o.uv_front = v.uv_front;
+    o.uv_back = v.uv_back;
+    o.paint = v.paint;
     return o;
 }
 
@@ -165,16 +180,23 @@ fn sun_lit(r: vec3<f32>) -> f32 {
 
 @fragment
 fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    // Sampled before any branch (sampling needs uniform control flow).
+    let tf = textureSample(tex_front, tex_samp, in.uv_front);
+    let tb = textureSample(tex_back, tex_samp, in.uv_back);
     var n = normalize(in.normal);
     var base = g.front;
-    if (in.front.a > 0.5) {
-        base = vec4<f32>(in.front.rgb, g.front.a);
+    if ((in.paint & 4u) != 0u) {
+        base = vec4<f32>(tf.rgb, g.front.a * tf.a * in.front.a);
+    } else if ((in.paint & 1u) != 0u) {
+        base = vec4<f32>(in.front.rgb, g.front.a * in.front.a);
     }
     if (!front) {
         n = -n;
         base = g.back;
-        if (in.back.a > 0.5) {
-            base = vec4<f32>(in.back.rgb, g.back.a);
+        if ((in.paint & 8u) != 0u) {
+            base = vec4<f32>(tb.rgb, g.back.a * tb.a * in.back.a);
+        } else if ((in.paint & 2u) != 0u) {
+            base = vec4<f32>(in.back.rgb, g.back.a * in.back.a);
         }
     }
     let sh = g.light.w + g.params.x * max(0.0, dot(n, g.light.xyz)) * sun_lit(in.r);

@@ -440,6 +440,7 @@ mod view_toolbar {
                 "view.wireframe",
                 "view.basecolour",
                 "view.colour",
+                "view.textures",
                 "view.hidden"
             ]
         );

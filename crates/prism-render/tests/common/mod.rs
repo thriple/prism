@@ -62,7 +62,8 @@ impl Gpu {
     ) -> Image {
         let scene = Scene::build(model);
         self.renderer.resize(&self.device, w, h);
-        self.renderer.set_scene(&self.device, &scene, style);
+        self.renderer
+            .set_scene(&self.device, &self.queue, &scene, style);
         self.renderer
             .set_highlight(&self.device, &scene, highlight, style);
         self.draw(camera, w, h, ppp, style, scene.bounds)

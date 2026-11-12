@@ -3562,3 +3562,35 @@ fn scale_matches_a_point_it_snaps_to() {
     // The square's right side (not the box drawn 5% off it) reaches x = 3.
     assert!((right - 3.0).abs() < 1e-6, "{right} ({lo:?} {hi:?})");
 }
+
+/// A textured material's image reaches the drawn scene, decoded once, with
+/// its size and pixels; View > Textures reaches the scene (see-through
+/// pixels hide nothing only while textures are drawn) (Basic Materials 2b).
+#[test]
+fn a_textured_material_reaches_the_scene() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/acceptance/files/textured.prism"
+    );
+    let bytes = std::fs::read(path).expect("the golden file");
+    let contents = prism_file::read(&bytes).expect("opens");
+    let mut s = Session::new(Document::with_assembly(contents.assembly));
+    let (id, m) = {
+        let mats = s.document().assembly().materials().0.clone();
+        mats.into_iter().next().expect("a material")
+    };
+    let t = s.scene().textures.get(&id).expect("its texture");
+    assert_eq!(t.key, m.texture.as_ref().unwrap().image.0);
+    assert_eq!(t.size, m.texture.as_ref().unwrap().size);
+    assert_eq!(t.rgba.len(), (t.width * t.height * 4) as usize);
+    let again = s.scene().textures[&id].rgba.clone();
+    assert!(
+        std::sync::Arc::ptr_eq(&t.rgba.clone(), &again),
+        "decoded once"
+    );
+    assert!(s.scene().materials_shown && s.scene().textures_shown);
+    let mut v = s.view_style().clone();
+    assert!(v.toggle("view.textures"));
+    s.set_view_style(v);
+    assert!(!s.scene().textures_shown);
+}

@@ -481,6 +481,13 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "view.textures",
+        name: "Textures",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "view.edges",
         name: "Edge Style",
         key: "",
@@ -1620,6 +1627,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                     Item::Action("view.wireframe"),
                     Item::Action("view.basecolour"),
                     Item::Action("view.colour"),
+                    Item::Action("view.textures"),
                     Item::Separator,
                     Item::Action("view.xray"),
                 ],
@@ -1928,6 +1936,7 @@ pub const DOCK: &[(&str, &[&str])] = &[
             "view.wireframe",
             "view.basecolour",
             "view.colour",
+            "view.textures",
             "view.hidden",
         ],
     ),
@@ -1995,6 +2004,10 @@ pub const ICONS: &[(&str, &str)] = &[
     (
         "view.colour",
         "<path d=\"M12 3l8 4.5v9L12 21l-8-4.5v-9z\"/><path d=\"M4 7.5l8 4.5 8-4.5M12 12v9\"/><circle cx=\"16\" cy=\"14.5\" r=\"2.2\"/><circle cx=\"8\" cy=\"14.5\" r=\"1.2\"/>",
+    ),
+    (
+        "view.textures",
+        "<path d=\"M12 3l8 4.5v9L12 21l-8-4.5v-9z\"/><path d=\"M4 7.5l8 4.5 8-4.5M12 12v9\"/><path d=\"M5.5 10l5 2.8M5.5 13l5 2.8M7.5 9.2v8M10 10.6v8\" opacity=\".6\"/><path d=\"M14 13.5l4-2.2M14 16.5l4-2.2M16 12.4v6\" opacity=\".6\"/>",
     ),
     (
         "view.hidden",

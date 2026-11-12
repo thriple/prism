@@ -15,7 +15,7 @@ pub mod material;
 pub use assembly::{
     Assembly, Attributes, DefId, Definition, Instance, InstanceId, Placed, ROOT, Tag, TagId,
 };
-pub use image::{Image, ImageId, Texture};
+pub use image::{Image, ImageId, Pixels, Texture};
 pub use material::{FaceSide, Material, Principled};
 use prism_math::{DAffine3, DQuat, DVec3, Plane};
 use prism_ops::select::Selection;

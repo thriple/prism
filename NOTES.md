@@ -2840,3 +2840,49 @@ in whole percent, line thickness, and the debug panel's aperture and
 snap release). Sliders are now smooth by default (arrow keys move a
 hundredth of the range); Decimals keeps its whole steps. Light and Dark
 keep two decimals. Test: `a_small_range_slides_smoothly`.
+
+## Basic Materials (part 2, step 2b): textures in the viewport
+Textured materials now show their images, and see-through materials
+show what is behind them.
+- **Texture coordinates** (`Mesh::uvs`, metres): flat faces from their
+  placement (`Face::texture_map`); cylinders from their unrolled loops
+  turned into the surface's own θ (no jump at the seam); cones, spheres
+  and tori from the (θ, s) of their drawing grid (`tess::Turned::params`)
+  through `texture_at`. Merged groups keep their own (a group's texture
+  scales with the group).
+- **The scene** carries each textured material's image
+  (`Scene::textures`, `SceneTexture`): its id, size, viewport pixels
+  (at most 2048 a side), average colour and whether any pixel is
+  see-through. Pixels are decoded once per image and shared
+  (`Image::viewport`, a cache that never makes images differ).
+- **Drawing** (`prism-render`): each image is uploaded once, with
+  mipmaps made on the CPU, and repeats. Faces are drawn in batches by
+  their (front, back) texture pair, one bind group each (group 2,
+  bindings 2 to 4, beside the lines' face ids at 0 and 1). The image
+  replaces the material's colour; the material's opacity still applies.
+  Images are not mirrored on a face's front; on its back (one placement
+  for both sides, the 2a default) they read mirrored.
+- **View > Faces > Textures** (`view.textures`, also on the View toolbar
+  and in View Settings): on by default (SketchUp's Shaded with Textures).
+  Off, textured materials show their image's average colour. A toggle
+  rather than another face style, so files saved before 2b (whose style
+  says Shaded) still show textures (default, not decided elsewhere).
+- **See-through faces** (material opacity below 1, or a texture with
+  see-through pixels): drawn after the solid faces, sorted back to front
+  by their centres each frame, both sides, without writing depth. They
+  hide no lines, cast no sun or ground shadow, and do not hide what is
+  behind them from snapping and inference (`Scene::occluded`). Clicking
+  still picks them where they are nearest (as in SketchUp). In Base
+  Colour, Monochrome and Hidden Line they are solid.
+- **Fixed on the way:** a document opened with materials but no groups
+  showed its faces Default until the first edit (the full scene build was
+  skipped).
+- Tests: `prism-view` `textures.rs` (placement, cylinder and ball without
+  seams, see-through picking); `prism-render` screenshot
+  `textured_and_see_through_faces`; `prism-tools`
+  `a_textured_material_reaches_the_scene`; the image cache unit test.
+- **Left over:** sorting is by face centre (crossing see-through faces
+  can sort wrong where they overlap, as in most modellers); textured
+  faces are batched but the batches are rebuilt with the scene, not kept.
+  2c: the Materials window loads images and sets their size; Model
+  Health counts unused images; MCP shows textures; then a `[release]`.

@@ -3,7 +3,7 @@
 //! as the PNG or JPEG bytes it was loaded from; the file stores those bytes
 //! as they are. Decoding is pure: the same bytes give the same pixels.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -43,6 +43,35 @@ pub struct Image {
     pub width: u32,
     pub height: u32,
     pub bytes: Arc<Vec<u8>>,
+    /// Its pixels for the viewport, decoded once when first asked for.
+    #[serde(skip)]
+    pub cache: Decoded,
+}
+
+/// An image's pixels for the viewport, decoded on first use and shared by
+/// every copy of the image (so building the scene again costs nothing).
+#[derive(Clone, Debug, Default)]
+pub struct Decoded(Arc<OnceLock<Option<Pixels>>>);
+
+/// Pixels ready for the viewport: at most [`VIEWPORT_MAX`] on a side.
+#[derive(Clone, Debug)]
+pub struct Pixels {
+    pub width: u32,
+    pub height: u32,
+    /// sRGB with straight alpha, row by row from the top.
+    pub rgba: Arc<Vec<u8>>,
+    /// The average colour, sRGB with alpha.
+    pub average: [u8; 4],
+    /// Whether any pixel is see-through (then faces wearing it are drawn
+    /// with the see-through ones).
+    pub clear: bool,
+}
+
+impl PartialEq for Decoded {
+    /// A cache: it never makes two images differ.
+    fn eq(&self, _: &Decoded) -> bool {
+        true
+    }
 }
 
 impl Image {
@@ -62,6 +91,7 @@ impl Image {
             width: img.width(),
             height: img.height(),
             bytes: Arc::new(bytes),
+            cache: Decoded::default(),
         })
     }
 
@@ -81,19 +111,43 @@ impl Image {
         Some((rgba.width(), rgba.height(), rgba.into_raw()))
     }
 
+    /// Its pixels for the viewport (decoded the first time only). None if
+    /// the bytes no longer decode.
+    pub fn viewport(&self) -> Option<&Pixels> {
+        self.cache
+            .0
+            .get_or_init(|| {
+                let (width, height, rgba) = self.rgba(VIEWPORT_MAX)?;
+                let average = average_of(&rgba);
+                let clear = rgba.as_chunks::<4>().0.iter().any(|p| p[3] < 255);
+                Some(Pixels {
+                    width,
+                    height,
+                    rgba: Arc::new(rgba),
+                    average,
+                    clear,
+                })
+            })
+            .as_ref()
+    }
+
     /// Its average colour, sRGB with alpha (what the Shaded style without
     /// textures draws).
     pub fn average(&self) -> Option<[u8; 4]> {
         let (_, _, px) = self.rgba(64)?;
-        let n = (px.len() / 4).max(1) as u64;
-        let mut sum = [0u64; 4];
-        for p in px.as_chunks::<4>().0 {
-            for (s, c) in sum.iter_mut().zip(p) {
-                *s += u64::from(*c);
-            }
-        }
-        Some(sum.map(|s| u8::try_from(s / n).unwrap_or(255)))
+        Some(average_of(&px))
     }
+}
+
+fn average_of(px: &[u8]) -> [u8; 4] {
+    let n = (px.len() / 4).max(1) as u64;
+    let mut sum = [0u64; 4];
+    for p in px.as_chunks::<4>().0 {
+        for (s, c) in sum.iter_mut().zip(p) {
+            *s += u64::from(*c);
+        }
+    }
+    sum.map(|s| u8::try_from(s / n).unwrap_or(255))
 }
 
 /// The id bytes would have.
@@ -162,5 +216,11 @@ mod tests {
         assert_eq!((w, h), (2048, 1024));
         assert_eq!(px.len(), (w * h * 4) as usize);
         assert_eq!((a.width, a.height), (3000, 1500), "the original is kept");
+        let p = a.viewport().expect("decodes");
+        assert_eq!((p.width, p.height, p.clear), (2048, 1024, false));
+        assert!(
+            std::ptr::eq(p, a.clone().viewport().unwrap()),
+            "decoded once"
+        );
     }
 }

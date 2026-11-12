@@ -273,6 +273,10 @@ impl SceneEdge {
 pub struct Mesh {
     pub positions: Vec<DVec3>,
     pub normals: Vec<DVec3>,
+    /// Each corner's place on a texture, in metres (Basic Materials part
+    /// 2): a flat face's placement, a curved face's surface unrolled. Its
+    /// material's texture size turns it into repeats.
+    pub uvs: Vec<DVec2>,
     /// Which face (index into `Scene::faces`) each vertex belongs to.
     pub faces: Vec<u32>,
     pub indices: Vec<u32>,
@@ -296,6 +300,10 @@ pub struct Scene {
     /// (not in Wireframe). Set from the view style (PLAN 1.14).
     pub faces_hide: bool,
     pub faces_pick: bool,
+    /// Whether materials and their textures are drawn (from the view
+    /// style): only then are see-through faces see-through.
+    pub materials_shown: bool,
+    pub textures_shown: bool,
     /// The model vertex of each mesh corner (for cheap rigid previews).
     pub mesh_vertex_ids: Vec<VertexId>,
     /// Who owns the faces, edges and points merged in from other models
@@ -308,6 +316,26 @@ pub struct Scene {
     /// document's materials; a face whose material is missing is drawn
     /// Default).
     pub palette: BTreeMap<MaterialId, Rgba>,
+    /// The textures of the textured materials faces use (Basic Materials
+    /// part 2), filled the same way.
+    pub textures: BTreeMap<MaterialId, SceneTexture>,
+}
+
+/// A textured material's image, ready to draw.
+#[derive(Clone, Debug)]
+pub struct SceneTexture {
+    /// The image's id: materials sharing an image share one upload.
+    pub key: String,
+    /// One copy's width and height in the model (metres).
+    pub size: [f64; 2],
+    pub width: u32,
+    pub height: u32,
+    /// sRGB with straight alpha, row by row from the top.
+    pub rgba: std::sync::Arc<Vec<u8>>,
+    /// Drawn instead of the image by the Shaded style without textures.
+    pub average: Rgba,
+    /// Whether any pixel is see-through.
+    pub clear: bool,
 }
 
 fn paint_of(f: &prism_topo::Face) -> [Option<MaterialId>; 2] {
@@ -338,8 +366,11 @@ impl Scene {
             edge_owner: BTreeMap::new(),
             vertex_owner: BTreeMap::new(),
             palette: BTreeMap::new(),
+            textures: BTreeMap::new(),
             faces_hide: true,
             faces_pick: true,
+            materials_shown: true,
+            textures_shown: true,
             guides: if show_guides {
                 model.guides().map(|(id, g)| (id, *g)).collect()
             } else {
@@ -414,6 +445,10 @@ impl Scene {
             s.mesh
                 .normals
                 .extend(std::iter::repeat_n(plane.normal, pts.len()));
+            let map = f
+                .texture_map()
+                .unwrap_or_else(|| prism_topo::UvMap::default_for(&plane));
+            s.mesh.uvs.extend(pts.iter().map(|p| map.at(*p)));
             s.mesh
                 .faces
                 .extend(std::iter::repeat_n(s.faces.len() as u32, pts.len()));
@@ -605,6 +640,22 @@ impl Scene {
         self.mesh
             .normals
             .extend(pts.iter().map(|p| c.normal_at(*p)));
+        // Unrolled is θ·r from the first corner, with no jump at the seam;
+        // texture coordinates count θ from the surface's own frame.
+        if let Some(rev) = f.surface.revolution() {
+            let k = loops[0][0].1;
+            let theta0 = rev.param(first).0 - k.x / c.radius;
+            self.mesh.uvs.extend(
+                loops
+                    .iter()
+                    .flatten()
+                    .map(|(p, q)| rev.texture_at(theta0 + q.x / c.radius, rev.param(*p).1)),
+            );
+        } else {
+            self.mesh
+                .uvs
+                .extend(std::iter::repeat_n(DVec2::ZERO, pts.len()));
+        }
         self.mesh
             .faces
             .extend(std::iter::repeat_n(self.faces.len() as u32, pts.len()));
@@ -669,6 +720,9 @@ impl Scene {
         self.mesh_vertex_ids
             .extend(std::iter::repeat_n(owner, t.points.len()));
         self.mesh.normals.extend_from_slice(&t.normals);
+        self.mesh
+            .uvs
+            .extend(t.params.iter().map(|q| rev.texture_at(q.x, q.y)));
         self.mesh
             .faces
             .extend(std::iter::repeat_n(self.faces.len() as u32, t.points.len()));
@@ -831,8 +885,10 @@ impl Scene {
             self.vertices.push((id, p));
         }
         self.palette.extend(other.palette);
+        self.textures.extend(other.textures);
         self.mesh.positions.extend(other.mesh.positions);
         self.mesh.normals.extend(other.mesh.normals);
+        self.mesh.uvs.extend(other.mesh.uvs);
         self.mesh
             .faces
             .extend(other.mesh.faces.into_iter().map(|k| k + face_base));
@@ -1051,8 +1107,23 @@ impl Scene {
         }
         let d = dv / len;
         let slack = self.tol.dist + len * 1e-9;
-        self.faces
-            .iter()
-            .any(|f| f.hit(eye, d).is_some_and(|t| t < len - slack))
+        self.faces.iter().any(|f| {
+            !(self.materials_shown && self.see_through(f, self.textures_shown))
+                && f.hit(eye, d).is_some_and(|t| t < len - slack)
+        })
+    }
+
+    /// Whether a face is drawn see-through (Basic Materials part 2): a
+    /// material on either side with opacity below 1, or (if textures are
+    /// drawn) a texture with see-through pixels. Such faces do not hide
+    /// what is behind them from picking and snapping.
+    pub fn see_through(&self, f: &SceneFace, textures: bool) -> bool {
+        f.paint.iter().any(|side| {
+            let Some(m) = side.or(f.inherited) else {
+                return false;
+            };
+            self.palette.get(&m).is_some_and(|c| c.0[3] < 255)
+                || (textures && self.textures.get(&m).is_some_and(|t| t.clear))
+        })
     }
 }

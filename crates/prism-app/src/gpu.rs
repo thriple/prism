@@ -193,7 +193,8 @@ impl Gpu {
             redraw = true;
         }
         if let Some(scene) = v.upload {
-            self.viewport.set_scene(&self.device, scene, v.frame.style);
+            self.viewport
+                .set_scene(&self.device, &self.queue, scene, v.frame.style);
             redraw = true;
         }
         if let Some((scene, h)) = &v.highlight {

@@ -56,6 +56,9 @@ pub struct Style {
     /// Faces are drawn in their materials' colours (the Shaded style);
     /// else in the front and back colours.
     pub materials: bool,
+    /// Textured materials drawn with their images; else in their average
+    /// colours (Basic Materials part 2).
+    pub textures: bool,
     /// Light direction for shading (towards the light).
     pub light: [f64; 3],
     /// Shading: ambient + diffuse * max(0, n · light).
@@ -252,6 +255,7 @@ impl Default for Style {
             face_front: Rgba::rgb(248, 247, 244),
             face_back: Rgba::rgb(150, 168, 198),
             materials: true,
+            textures: true,
             light: [0.3, -0.5, 0.8],
             ambient: 0.66,
             diffuse: 0.34,

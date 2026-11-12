@@ -538,7 +538,9 @@ impl Session {
             },
             measure: None,
         };
-        if s.doc.assembly().has_instances() {
+        // Groups, and materials' colours and textures, need the full build.
+        let asm = s.doc.assembly();
+        if asm.has_instances() || !asm.materials().0.is_empty() {
             s.build_scene();
         }
         s
@@ -1199,6 +1201,8 @@ impl Session {
         use prism_view::style::FaceDraw;
         self.scene.faces_hide = self.style.faces == FaceDraw::Solid;
         self.scene.faces_pick = self.style.faces != FaceDraw::None;
+        self.scene.materials_shown = self.style.materials;
+        self.scene.textures_shown = self.style.textures;
     }
 
     /// How lengths are shown (File > Document Settings).

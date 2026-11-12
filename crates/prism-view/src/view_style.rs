@@ -55,6 +55,9 @@ pub struct ViewStyle {
     pub line_color: LineColor,
     pub hidden_lines: HiddenLines,
     pub face_style: FaceStyle,
+    /// Textured materials drawn with their images (SketchUp's Shaded with
+    /// Textures); off, in each image's average colour.
+    pub textures: bool,
     pub xray: bool,
     /// 0 to 1.
     pub xray_opacity: f32,
@@ -102,6 +105,7 @@ impl ViewStyle {
             line_color: LineColor::One,
             hidden_lines: HiddenLines::Off,
             face_style: FaceStyle::Shaded,
+            textures: true,
             xray: false,
             xray_opacity: 0.5,
             sun: false,
@@ -152,6 +156,7 @@ impl ViewStyle {
         s.show_grid = self.grid;
         s.show_ground = self.ground;
         s.lines_by_axis = self.line_color == LineColor::ByAxis;
+        s.textures = self.textures;
         s.faces = if !self.faces || self.face_style == FaceStyle::Wireframe {
             FaceDraw::None
         } else if self.xray {
@@ -230,6 +235,7 @@ impl ViewStyle {
             "view.wireframe" => self.face_style == FaceStyle::Wireframe,
             "view.basecolour" => self.face_style == FaceStyle::BaseColour,
             "view.colour" => self.face_style == FaceStyle::Shaded,
+            "view.textures" => self.textures,
             "view.shadow" => self.shadows,
             "light.sun" => self.sun,
             "light.default" => !self.sun,
@@ -250,6 +256,7 @@ impl ViewStyle {
             "view.hidden" => &mut self.hidden,
             "view.xray" => &mut self.xray,
             "view.shadow" => &mut self.shadows,
+            "view.textures" => &mut self.textures,
             // One or the other.
             "light.sun" | "light.default" => {
                 self.sun = id == "light.sun";
@@ -276,7 +283,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 15] = [
+pub const TOGGLES: [&str; 16] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -289,6 +296,7 @@ pub const TOGGLES: [&str; 15] = [
     "view.wireframe",
     "view.basecolour",
     "view.colour",
+    "view.textures",
     "view.shadow",
     "light.sun",
     "light.default",

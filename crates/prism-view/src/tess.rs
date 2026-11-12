@@ -57,6 +57,9 @@ pub fn triangulate(outer: &[DVec2], holes: &[Vec<DVec2>]) -> Vec<[usize; 3]> {
 pub struct Turned {
     pub points: Vec<prism_math::DVec3>,
     pub normals: Vec<prism_math::DVec3>,
+    /// Each point's (θ, s) on the surface, without jumps across the seam
+    /// (for texture coordinates).
+    pub params: Vec<DVec2>,
     pub tris: Vec<[usize; 3]>,
 }
 
@@ -173,6 +176,7 @@ pub fn turned_with(
                 out.points
                     .push(if rim { place(q) } else { rev.point(q.x, q.y) });
                 out.normals.push(normal(q));
+                out.params.push(q);
             }
         }
         let id = |i: usize, j: usize| j * (cols + 1) + i;
@@ -218,6 +222,7 @@ pub fn turned_with(
         for q in poly {
             out.points.push(place(*q));
             out.normals.push(normal(*q));
+            out.params.push(*q);
         }
         for k in 1..poly.len() - 1 {
             let mut t = [base, base + k, base + k + 1];

@@ -92,6 +92,108 @@ struct FaceVertex {
     /// in the style's colour).
     front: [u8; 4],
     back: [u8; 4],
+    /// Where the front's and back's textures are at this corner, in
+    /// repeats of the image.
+    uv_front: [f32; 2],
+    uv_back: [f32; 2],
+    /// Bits: [`PAINT_FRONT`], [`PAINT_BACK`], [`TEX_FRONT`], [`TEX_BACK`].
+    paint: u32,
+}
+
+/// The front (or back) has a material: drawn in its colour, not the style's.
+const PAINT_FRONT: u32 = 1;
+const PAINT_BACK: u32 = 2;
+/// The front (or back) is drawn with its texture.
+const TEX_FRONT: u32 = 4;
+const TEX_BACK: u32 = 8;
+
+/// Faces drawn with one pair of textures (front, back), as a range of the
+/// face indices.
+struct Batch {
+    range: std::ops::Range<u32>,
+    group: usize,
+}
+
+/// A see-through face: drawn after the solid ones, sorted back to front.
+struct ClearFace {
+    centre: DVec3,
+    indices: Vec<u32>,
+    group: usize,
+}
+
+/// Put an image on the GPU, with its mipmaps.
+fn upload(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    t: &prism_view::SceneTexture,
+) -> wgpu::TextureView {
+    let levels = mipmaps(t.width.max(1), t.height.max(1), &t.rgba);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("face texture"),
+        size: wgpu::Extent3d {
+            width: t.width.max(1),
+            height: t.height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: levels.len() as u32,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    for (level, (w, h, px)) in levels.iter().enumerate() {
+        if px.len() < (w * h * 4) as usize {
+            break;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: level as u32,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            px,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: *w,
+                height: *h,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    texture.create_view(&Default::default())
+}
+
+/// A texture's pixels and its smaller copies (mipmaps), each half the
+/// size of the one before, down to one pixel.
+fn mipmaps(width: u32, height: u32, rgba: &[u8]) -> Vec<(u32, u32, Vec<u8>)> {
+    let mut out = vec![(width, height, rgba.to_vec())];
+    while let Some((w, h, px)) = out.last()
+        && (*w > 1 || *h > 1)
+    {
+        let (nw, nh) = ((*w / 2).max(1), (*h / 2).max(1));
+        let mut next = vec![0u8; (nw * nh * 4) as usize];
+        for y in 0..nh {
+            for x in 0..nw {
+                for c in 0..4 {
+                    let mut sum = 0u32;
+                    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let sx = (2 * x + dx).min(w - 1);
+                        let sy = (2 * y + dy).min(h - 1);
+                        sum += u32::from(px[((sy * w + sx) * 4 + c) as usize]);
+                    }
+                    next[((y * nw + x) * 4 + c) as usize] = ((sum + 2) / 4) as u8;
+                }
+            }
+        }
+        out.push((nw, nh, next));
+    }
+    out
 }
 
 /// One line segment: two ends, the normals of its faces, colour and shape.
@@ -339,7 +441,22 @@ pub struct Renderer {
     line: wgpu::RenderPipeline,
     target: Option<Target>,
     face_vertices: Option<wgpu::Buffer>,
+    /// The faces, solid ones first, grouped by their textures.
     face_indices: Indices,
+    batches: Vec<Batch>,
+    /// How many indices the solid faces take (the rest are see-through).
+    opaque_count: u32,
+    clear_faces: Vec<ClearFace>,
+    clear_indices: Option<wgpu::Buffer>,
+    /// See-through faces, blended over what is behind.
+    clear: [wgpu::RenderPipeline; 2],
+    /// Uploaded images by id, and the texture bind groups of this scene
+    /// (0 is plain white, for faces without textures).
+    images: std::collections::HashMap<String, wgpu::TextureView>,
+    tex_layout: wgpu::BindGroupLayout,
+    tex_sampler: wgpu::Sampler,
+    white: wgpu::TextureView,
+    tex_groups: Vec<wgpu::BindGroup>,
     hover_faces: Indices,
     /// The Paint Bucket's preview, and its colour.
     preview_faces: Indices,
@@ -513,13 +630,72 @@ impl Renderer {
                 },
             ],
         });
-        // Group 2 is the lines' face ids; faces read the shadow map at 3.
+        // Faces' textures, front and back (bindings 2 to 4, clear of the
+        // lines' face ids at 0 and 1 in the same group number).
+        let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("face textures"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let tex_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("face textures"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+        let white = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("plain white"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+        // Group 2 is the lines' face ids, or the faces' textures; faces
+        // read the shadow map at 3.
         let faces_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("viewport faces"),
             bind_group_layouts: &[
                 Some(&globals_layout),
                 Some(&draw_layout),
-                None,
+                Some(&tex_layout),
                 Some(&shadow_layout),
             ],
             immediate_size: 0,
@@ -538,7 +714,7 @@ impl Renderer {
         let face_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<FaceVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Uint32, 5 => Unorm8x4, 6 => Unorm8x4],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Uint32, 5 => Unorm8x4, 6 => Unorm8x4, 7 => Float32x2, 8 => Float32x2, 9 => Uint32],
         };
         let line_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineInstance>() as u64,
@@ -733,6 +909,28 @@ impl Renderer {
                     back_bias,
                 ),
             ],
+            clear: [
+                pipeline(
+                    "see-through faces (front)",
+                    "face_vs",
+                    "face_fs",
+                    face_l,
+                    alpha,
+                    Some(C::Greater),
+                    false,
+                    face_bias,
+                ),
+                pipeline(
+                    "see-through faces (back)",
+                    "face_vs",
+                    "face_fs",
+                    face_l,
+                    alpha,
+                    Some(C::Greater),
+                    false,
+                    back_bias,
+                ),
+            ],
             ids: [
                 pipeline(
                     "face ids (front)",
@@ -800,6 +998,32 @@ impl Renderer {
                 buffer: None,
                 count: 0,
             },
+            batches: Vec::new(),
+            opaque_count: 0,
+            clear_faces: Vec::new(),
+            clear_indices: None,
+            images: Default::default(),
+            tex_groups: vec![device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("no textures"),
+                layout: &tex_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&white),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&white),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Sampler(&tex_sampler),
+                    },
+                ],
+            })],
+            tex_layout,
+            tex_sampler,
+            white,
             hover_faces: Indices {
                 buffer: None,
                 count: 0,
@@ -989,32 +1213,150 @@ impl Renderer {
         self.target.as_ref().map(|t| &t.color)
     }
 
-    /// Upload the scene's faces and edges (when the model changed).
-    pub fn set_scene(&mut self, device: &wgpu::Device, scene: &Scene, style: &Style) {
-        let verts: Vec<FaceVertex> = scene
-            .mesh
-            .positions
+    /// Upload the scene's faces and edges (when the model changed), and
+    /// the images of its textured materials (once each).
+    pub fn set_scene(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene: &Scene,
+        style: &Style,
+    ) {
+        queue.write_texture(
+            self.white.texture().as_image_copy(),
+            &[255; 4],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        // What each side of each face wears: its material, and that
+        // material's texture if textures are drawn.
+        let side = |face: &prism_view::scene::SceneFace, k: usize| {
+            let m = face.paint[k].or(face.inherited)?;
+            let colour = scene.palette.get(&m)?;
+            let tex = scene.textures.get(&m);
+            Some((*colour, tex))
+        };
+        let shown = |face: &prism_view::scene::SceneFace, k: usize| {
+            style.materials.then(|| side(face, k)).flatten()
+        };
+        // Each face's texture pair, as a bind group number.
+        let mut keys: Vec<(Option<String>, Option<String>)> = vec![(None, None)];
+        let mut face_group = Vec::with_capacity(scene.faces.len());
+        for face in &scene.faces {
+            let key = |k: usize| {
+                shown(face, k)
+                    .and_then(|(_, t)| t)
+                    .filter(|_| style.textures)
+                    .map(|t| t.key.clone())
+            };
+            let pair = (key(0), key(1));
+            let g = keys.iter().position(|x| *x == pair).unwrap_or_else(|| {
+                keys.push(pair);
+                keys.len() - 1
+            });
+            face_group.push(g);
+        }
+        // Upload images not yet on the GPU; forget those no longer used.
+        let used: BTreeSet<&str> = keys
             .iter()
-            .zip(&scene.mesh.normals)
-            .zip(&scene.mesh.faces)
-            .map(|((p, n), f)| {
-                let (hi, lo) = split(*p);
-                let face = &scene.faces[*f as usize];
-                let colour = |side: usize| -> [u8; 4] {
-                    let m = face.paint[side].or(face.inherited);
-                    match m.and_then(|m| scene.palette.get(&m)) {
-                        Some(c) if style.materials => [c.0[0], c.0[1], c.0[2], 255],
-                        _ => [0; 4],
+            .flat_map(|(a, b)| [a.as_deref(), b.as_deref()])
+            .flatten()
+            .collect();
+        self.images.retain(|k, _| used.contains(k.as_str()));
+        for t in scene.textures.values() {
+            if used.contains(t.key.as_str()) && !self.images.contains_key(&t.key) {
+                let view = upload(device, queue, t);
+                self.images.insert(t.key.clone(), view);
+            }
+        }
+        self.tex_groups.truncate(1);
+        for (a, b) in &keys[1..] {
+            let view = |k: &Option<String>| {
+                k.as_ref()
+                    .and_then(|k| self.images.get(k))
+                    .unwrap_or(&self.white)
+            };
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("face textures"),
+                layout: &self.tex_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(view(a)),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(view(b)),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Sampler(&self.tex_sampler),
+                    },
+                ],
+            });
+            self.tex_groups.push(group);
+        }
+        // Texture places in repeats, shifted by whole repeats per face so
+        // the numbers stay small (f32) far from the origin.
+        let mut shift: Vec<[Option<glam::DVec2>; 2]> = vec![[None; 2]; scene.faces.len()];
+        let verts: Vec<FaceVertex> = (0..scene.mesh.positions.len())
+            .map(|i| {
+                let (p, n, f) = (
+                    scene.mesh.positions[i],
+                    scene.mesh.normals[i],
+                    scene.mesh.faces[i],
+                );
+                let uv = scene.mesh.uvs.get(i).copied().unwrap_or_default();
+                let (hi, lo) = split(p);
+                let face = &scene.faces[f as usize];
+                let mut paint = 0;
+                let mut colour = [[0u8; 4]; 2];
+                let mut uvs = [[0.0f32; 2]; 2];
+                for k in 0..2 {
+                    let Some((c, tex)) = shown(face, k) else {
+                        continue;
+                    };
+                    paint |= [PAINT_FRONT, PAINT_BACK][k];
+                    colour[k] = c.0;
+                    let Some(t) = tex else { continue };
+                    if style.textures {
+                        paint |= [TEX_FRONT, TEX_BACK][k];
+                        let size = glam::DVec2::from_array(t.size).max(glam::DVec2::splat(1e-9));
+                        let q = uv / size;
+                        let q = q - *shift[f as usize][k].get_or_insert(q.floor());
+                        // Images run from the top; v runs up the face.
+                        uvs[k] = [q.x as f32, -(q.y as f32)];
+                    } else {
+                        // The image's average colour, with the material's
+                        // opacity.
+                        let a = t.average.0;
+                        colour[k] = [
+                            a[0],
+                            a[1],
+                            a[2],
+                            ((u32::from(a[3]) * u32::from(c.0[3])) / 255) as u8,
+                        ];
                     }
-                };
+                }
                 FaceVertex {
                     hi,
                     lo,
                     normal: n.as_vec3().to_array(),
                     face: f + 1,
                     faded: u32::from(face.faded),
-                    front: colour(0),
-                    back: colour(1),
+                    front: colour[0],
+                    back: colour[1],
+                    uv_front: uvs[0],
+                    uv_back: uvs[1],
+                    paint,
                 }
             })
             .collect();
@@ -1025,8 +1367,53 @@ impl Renderer {
                 usage: wgpu::BufferUsages::VERTEX,
             })
         });
-        self.face_indices
-            .set(device, "face indices", &scene.mesh.indices);
+        // Solid faces first, by texture pair; then the see-through ones.
+        let clear: Vec<bool> = scene
+            .faces
+            .iter()
+            .map(|f| style.materials && scene.see_through(f, style.textures))
+            .collect();
+        let mut order: Vec<usize> = (0..scene.faces.len()).collect();
+        order.sort_by_key(|&k| (clear[k], face_group[k]));
+        let mut indices: Vec<u32> = Vec::with_capacity(scene.mesh.indices.len());
+        self.batches.clear();
+        self.clear_faces.clear();
+        self.opaque_count = 0;
+        let mut last: Option<(bool, usize)> = None;
+        for k in order {
+            let face = &scene.faces[k];
+            let tris = &scene.mesh.indices[face.tris.start as usize..face.tris.end as usize];
+            let start = indices.len() as u32;
+            indices.extend_from_slice(tris);
+            let end = indices.len() as u32;
+            if !clear[k] {
+                self.opaque_count = end;
+            } else {
+                self.clear_faces.push(ClearFace {
+                    centre: (face.lo + face.hi) * 0.5,
+                    indices: tris.to_vec(),
+                    group: face_group[k],
+                });
+            }
+            match self.batches.last_mut() {
+                Some(b) if last == Some((clear[k], face_group[k])) => b.range.end = end,
+                _ => self.batches.push(Batch {
+                    range: start..end,
+                    group: face_group[k],
+                }),
+            }
+            last = Some((clear[k], face_group[k]));
+        }
+        self.face_indices.set(device, "face indices", &indices);
+        let n_clear: usize = self.clear_faces.iter().map(|c| c.indices.len()).sum();
+        self.clear_indices = (n_clear > 0).then(|| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("see-through face indices"),
+                size: (n_clear * 4) as u64,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        });
         let edges: Vec<LineInstance> = scene
             .edges
             .iter()
@@ -1432,7 +1819,7 @@ impl Renderer {
             pass.set_bind_group(0, &self.globals_group, &[]);
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..self.face_indices.count, 0, 0..1);
+            pass.draw_indexed(0..self.opaque_count, 0, 0..1);
         }
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1458,6 +1845,7 @@ impl Renderer {
         });
         pass.set_bind_group(0, &self.globals_group, &[]);
         pass.set_bind_group(1, &self.draws[PLAIN].group, &[]);
+        pass.set_bind_group(2, &self.tex_groups[0], &[]);
         pass.set_bind_group(3, &self.shadow_group, &[]);
         pass.set_pipeline(&self.bg);
         pass.draw(0..3, 0..1);
@@ -1472,18 +1860,50 @@ impl Renderer {
             if f.shadow {
                 pass.set_pipeline(&self.shadow);
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..self.face_indices.count, 0, 0..1);
+                pass.draw_indexed(0..self.opaque_count, 0, 0..1);
             }
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-            let pipes = if s.faces == FaceDraw::XRay {
-                &self.xray
-            } else {
-                &self.faces
-            };
+            // X-ray blends every face; otherwise the solid ones first, then
+            // the see-through ones from the back to the front.
+            let xray = s.faces == FaceDraw::XRay;
+            let pipes = if xray { &self.xray } else { &self.faces };
             for p in pipes {
                 pass.set_pipeline(p);
-                pass.draw_indexed(0..self.face_indices.count, 0, 0..1);
+                for b in &self.batches {
+                    if xray || b.range.end <= self.opaque_count {
+                        pass.set_bind_group(2, &self.tex_groups[b.group], &[]);
+                        pass.draw_indexed(b.range.clone(), 0, 0..1);
+                    }
+                }
             }
+            if let (false, Some(cb)) = (xray, &self.clear_indices) {
+                let mut order: Vec<&ClearFace> = self.clear_faces.iter().collect();
+                order.sort_by(|a, b| {
+                    let (da, db) = (
+                        a.centre.distance_squared(view.eye),
+                        b.centre.distance_squared(view.eye),
+                    );
+                    db.total_cmp(&da)
+                });
+                let idx: Vec<u32> = order
+                    .iter()
+                    .flat_map(|c| c.indices.iter().copied())
+                    .collect();
+                queue.write_buffer(cb, 0, bytemuck::cast_slice(&idx));
+                pass.set_index_buffer(cb.slice(..), wgpu::IndexFormat::Uint32);
+                let mut at = 0u32;
+                for c in order {
+                    let range = at..at + c.indices.len() as u32;
+                    at = range.end;
+                    pass.set_bind_group(2, &self.tex_groups[c.group], &[]);
+                    // Its far side, then its near side.
+                    for p in self.clear.iter().rev() {
+                        pass.set_pipeline(p);
+                        pass.draw_indexed(range.clone(), 0, 0..1);
+                    }
+                }
+            }
+            pass.set_bind_group(2, &self.tex_groups[0], &[]);
             for p in &self.tints {
                 pass.set_pipeline(p);
                 for (idx, slots) in [
@@ -1533,12 +1953,14 @@ impl Renderer {
         {
             pass.set_bind_group(0, &self.globals_group, &[]);
             pass.set_bind_group(1, &self.draws[PLAIN].group, &[]);
+            pass.set_bind_group(2, &self.tex_groups[0], &[]);
             pass.set_bind_group(3, &self.shadow_group, &[]);
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+            // See-through faces hide no lines.
             for p in &self.ids {
                 pass.set_pipeline(p);
-                pass.draw_indexed(0..self.face_indices.count, 0, 0..1);
+                pass.draw_indexed(0..self.opaque_count, 0, 0..1);
             }
         }
         drop(pass);

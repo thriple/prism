@@ -2345,6 +2345,7 @@ name = "prism-tools"
 version = "0.0.1"
 dependencies = [
  "prism-doc",
+ "prism-file",
  "prism-geom",
  "prism-infer",
  "prism-math",

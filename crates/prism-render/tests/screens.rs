@@ -465,7 +465,7 @@ fn tool_feedback_draws() {
         color: fb.preview_fill,
     });
     g.renderer.resize(&g.device, 640, 400);
-    g.renderer.set_scene(&g.device, &scene, &style);
+    g.renderer.set_scene(&g.device, &g.queue, &scene, &style);
     g.renderer
         .set_highlight(&g.device, &scene, &Highlight::default(), &style);
     g.renderer.set_overlay(&g.device, &o);
@@ -498,7 +498,7 @@ fn faces_hide_guides() {
     };
     let mut count = |o: &Overlay| {
         g.renderer.resize(&g.device, 640, 400);
-        g.renderer.set_scene(&g.device, &scene, &style);
+        g.renderer.set_scene(&g.device, &g.queue, &scene, &style);
         g.renderer
             .set_highlight(&g.device, &scene, &Highlight::default(), &style);
         g.renderer.set_overlay(&g.device, o);
@@ -578,7 +578,7 @@ fn an_open_group_fades_the_rest() {
         target: DVec3::new(2.5, 1.0, 1.0),
     };
     g.renderer.resize(&g.device, 640, 400);
-    g.renderer.set_scene(&g.device, &scene, &style);
+    g.renderer.set_scene(&g.device, &g.queue, &scene, &style);
     g.renderer
         .set_highlight(&g.device, &scene, &Highlight::default(), &style);
     g.renderer.set_overlay(&g.device, &s.overlay());
@@ -681,7 +681,7 @@ fn lines_on_a_face_seen_edge_on_are_drawn_whole() {
     };
     let scene = prism_view::Scene::build(&m);
     g.renderer.resize(&g.device, 640, 400);
-    g.renderer.set_scene(&g.device, &scene, &style);
+    g.renderer.set_scene(&g.device, &g.queue, &scene, &style);
     g.renderer
         .set_highlight(&g.device, &scene, &Highlight::default(), &style);
     let line = |x: f64| prism_view::overlay::Line {
@@ -1039,7 +1039,7 @@ fn painted_faces_show_their_colours() {
     scene.palette.insert(MaterialId(1), Rgba::rgb(40, 190, 60));
     let mut shot = |style: &Style, h: &Highlight, name: &str| {
         g.renderer.resize(&g.device, 640, 400);
-        g.renderer.set_scene(&g.device, &scene, style);
+        g.renderer.set_scene(&g.device, &g.queue, &scene, style);
         g.renderer.set_highlight(&g.device, &scene, h, style);
         let img = g.draw(Camera::home(), 640, 400, 1.0, style, scene.bounds);
         img.save(name);
@@ -1088,4 +1088,111 @@ fn painted_faces_show_their_colours() {
     };
     let img = shot(&style, &h, "painted-preview");
     assert!(blue(&img) > 1000, "the preview ({})", blue(&img));
+}
+
+/// Textured and see-through faces (Basic Materials 2b): a texture is drawn
+/// repeating across its face; with textures off its average colour shows;
+/// a see-through face shows what is behind it, lines included.
+#[test]
+fn textured_and_see_through_faces() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    use prism_topo::MaterialId;
+    let mut m = golden::cube(1.0);
+    let top = prism_ops::face_at(&m, DVec3::new(0.0, 0.0, 3.0)).expect("top");
+    let front = prism_ops::face_at(&m, DVec3::new(0.0, -1.0, 2.0)).expect("front");
+    m.edit_face(top, |f| f.paint.front = Some(MaterialId(0)));
+    m.edit_face(front, |f| f.paint.front = Some(MaterialId(1)));
+    // A red and blue checker, half a metre a copy: the 2 m top shows 4 x 4.
+    let (r, b) = ([220u8, 30, 30, 255], [30u8, 30, 220, 255]);
+    let rgba: Vec<u8> = (0..16 * 16)
+        .flat_map(|i| if (i % 16 < 8) == (i / 16 < 8) { r } else { b })
+        .collect();
+    let mut scene = prism_render::Scene::build(&m);
+    scene
+        .palette
+        .insert(MaterialId(0), Rgba::rgb(200, 200, 200));
+    scene.textures.insert(
+        MaterialId(0),
+        prism_view::SceneTexture {
+            key: "checker".into(),
+            size: [0.5, 0.5],
+            width: 16,
+            height: 16,
+            rgba: std::sync::Arc::new(rgba),
+            average: Rgba([125, 30, 125, 255]),
+            clear: false,
+        },
+    );
+    let cam = Camera {
+        eye: DVec3::new(0.5, -6.0, 4.5),
+        target: DVec3::new(0.0, 0.0, 2.0),
+    };
+    let mut shot = |scene: &prism_render::Scene, style: &Style, name: &str| {
+        g.renderer.resize(&g.device, 640, 400);
+        g.renderer.set_scene(&g.device, &g.queue, scene, style);
+        g.renderer
+            .set_highlight(&g.device, scene, &Highlight::default(), style);
+        let img = g.draw(cam, 640, 400, 1.0, style, scene.bounds);
+        img.save(name);
+        img
+    };
+    let count =
+        |img: &common::Image, f: &dyn Fn(&[u8; 4]) -> bool| img.px.iter().filter(|p| f(p)).count();
+    let reddish = |p: &[u8; 4]| p[0] > 120 && p[1] < 60 && p[2] < 60;
+    let bluish = |p: &[u8; 4]| p[2] > 120 && p[0] < 60 && p[1] < 60;
+    let purple = |p: &[u8; 4]| p[0] > 70 && p[2] > 70 && p[1] < 40 && p[0].abs_diff(p[2]) < 30;
+    // Opaque green front: the checker on top, and the front hides the
+    // cube's far bottom edge.
+    scene.palette.insert(MaterialId(1), Rgba::rgb(40, 190, 60));
+    let style = Style::default();
+    let img = shot(&scene, &style, "textured");
+    assert!(
+        count(&img, &reddish) > 800,
+        "red squares ({})",
+        count(&img, &reddish)
+    );
+    assert!(
+        count(&img, &bluish) > 800,
+        "blue squares ({})",
+        count(&img, &bluish)
+    );
+    let (cx, cy) = cam_px(&cam, DVec3::new(0.3, -1.0, 2.5));
+    let solid = img.at(cx, cy);
+    let edge = [style.edge.0[0], style.edge.0[1], style.edge.0[2]];
+    let dark_near = |img: &common::Image, p: DVec3| {
+        let (x, y) = cam_px(&cam, p);
+        (x.saturating_sub(2)..=x + 2)
+            .flat_map(|i| (y.saturating_sub(2)..=y + 2).map(move |j| (i, j)))
+            .filter(|(i, j)| common::near(img.at(*i, *j), edge, 40))
+            .count()
+    };
+    assert_eq!(dark_near(&img, DVec3::new(0.0, 1.0, 1.0)), 0, "hidden");
+    // Textures off: the top in the image's average colour.
+    let flat = Style {
+        textures: false,
+        ..style
+    };
+    let img = shot(&scene, &flat, "textured-off");
+    assert!(count(&img, &reddish) < 300 && count(&img, &bluish) < 300);
+    assert!(
+        count(&img, &purple) > 2000,
+        "average ({})",
+        count(&img, &purple)
+    );
+    // See-through front: what is behind shows, and so does the far edge.
+    scene
+        .palette
+        .insert(MaterialId(1), Rgba([40, 190, 60, 100]));
+    let img = shot(&scene, &style, "see-through");
+    let clear = img.at(cx, cy);
+    let diff: u32 = (0..3).map(|k| u32::from(clear[k].abs_diff(solid[k]))).sum();
+    assert!(
+        diff > 40,
+        "blended with what is behind: {clear:?} vs {solid:?}"
+    );
+    assert!(clear[1] > clear[0], "still green: {clear:?}");
+    assert!(
+        dark_near(&img, DVec3::new(0.0, 1.0, 1.0)) > 0,
+        "the far edge shows"
+    );
 }

@@ -17,6 +17,6 @@ pub mod view_style;
 
 pub use camera::{Camera, Motion, View};
 pub use pick::{Hit, Picked};
-pub use scene::Scene;
+pub use scene::{Scene, SceneTexture};
 pub use style::Style;
 pub use view_style::ViewStyle;

@@ -19,8 +19,7 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   style buttons (Wireframe, Base Colour, Colour/Material beside X-ray;
   NOTES "Face style buttons"), sliders smooth instead of only their ends
   (NOTES "Sliders only gave their ends"), Planned Features' behaviours
-  list brought up to date. CI for 66eee51, 7386163 and 295f0d0 was still
-  running at the compaction: check it first.
+  list brought up to date. CI was green for all of them.
 - **Planned Features window:** actions tick themselves when built; the
   "Behaviours and feel" list is ticked by hand in `BUILT_BEHAVIOURS`
   (`registry.rs`). Owner: keep it up to date with each step.
@@ -29,10 +28,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
 - **The Fillet window is built** (brief 29, released): a right-column
   window with Fillet / Chamfer and the size, and a live preview on the
   hovered edge. NOTES: "The Fillet window".
-- **Basic Materials part 2, step 2a is built** (the core of textures;
-  NOTES: "Basic Materials (part 2, step 2a)"). **Next: 2b**, the
-  viewport (texture coordinates, Shaded with textures, opacity), then
-  2c (the window, MCP, a release), then part 3.
+- **Basic Materials part 2, steps 2a and 2b are built** (the core of
+  textures, then the viewport: NOTES "Basic Materials (part 2, step
+  2a)" and "(part 2, step 2b)"). **Next: 2c** (the Materials window
+  loads an image and sets its size, drag and drop, Model Health counts
+  unused images, MCP, a `[release]`), then part 3.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0`; if space runs out, delete
   `target/debug` and rebuild (about 2 minutes).

@@ -80,6 +80,27 @@ fn dress(asm: &prism_doc::Assembly, ctx: &[InstanceId], scene: &mut Scene) {
         .iter()
         .map(|(id, m)| (*id, prism_view::style::Rgba(m.srgba())))
         .collect();
+    scene.textures = asm
+        .materials()
+        .0
+        .iter()
+        .filter_map(|(id, m)| {
+            let t = m.texture.as_ref()?;
+            let px = asm.images().get(&t.image)?.viewport()?;
+            Some((
+                *id,
+                prism_view::SceneTexture {
+                    key: t.image.0.clone(),
+                    size: t.size,
+                    width: px.width,
+                    height: px.height,
+                    rgba: px.rgba.clone(),
+                    average: prism_view::style::Rgba(px.average),
+                    clear: px.clear,
+                },
+            ))
+        })
+        .collect();
 }
 
 impl Session {

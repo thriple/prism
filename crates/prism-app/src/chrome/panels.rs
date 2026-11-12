@@ -484,7 +484,13 @@ fn view(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
             {
                 v.face_style = FACE_STYLES[f.min(FACE_STYLES.len() - 1)];
             }
-            ui.add(prism_ui::widgets::SoftToggle::new(&mut v.xray, "X-ray"));
+            ui.horizontal_wrapped(|ui| {
+                ui.add(prism_ui::widgets::SoftToggle::new(
+                    &mut v.textures,
+                    "Textures",
+                ));
+                ui.add(prism_ui::widgets::SoftToggle::new(&mut v.xray, "X-ray"));
+            });
             if v.xray {
                 caption(ui, format!("Opacity {:.0} %", v.xray_opacity * 100.0));
                 let mut o = v.xray_opacity * 100.0;
