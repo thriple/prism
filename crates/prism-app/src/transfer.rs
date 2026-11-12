@@ -92,7 +92,26 @@ impl Transfer {
             ));
             return;
         };
-        match mesh::read(&o.bytes, format) {
+        let read = mesh::read(&o.bytes, format).map(|mut m| {
+            // An OBJ's materials are in the .mtl beside it (natively; the
+            // web has only the file itself).
+            if format == Format::Obj {
+                let dir = o
+                    .path
+                    .as_deref()
+                    .and_then(|p| std::path::Path::new(p).parent())
+                    .map(std::path::Path::to_path_buf);
+                let sibling = |name: &str| -> Option<Vec<u8>> {
+                    if cfg!(target_arch = "wasm32") {
+                        return None;
+                    }
+                    std::fs::read(dir.as_ref()?.join(name)).ok()
+                };
+                mesh::obj_materials(&mut m, &o.bytes, &sibling);
+            }
+            m
+        });
+        match read {
             Ok(m) if m.polygons.is_empty() => {
                 chrome.status_note(format!("{} has no faces to import", o.name));
             }
@@ -265,17 +284,20 @@ impl Transfer {
             let whole = (faces.is_none() && s.document().assembly().has_instances())
                 .then(|| s.document().assembly().flattened_visible());
             let asm = Some(s.document().assembly());
-            let bytes = match &whole {
-                Some(m) => mesh::export_with(m, None, &o, asm),
-                None => mesh::export_with(s.model(), faces.as_ref(), &o, asm),
+            let model = whole.as_ref().unwrap_or(s.model());
+            let only = if whole.is_some() {
+                None
+            } else {
+                faces.as_ref()
             };
+            // OBJ with materials is several files (its .mtl and images).
+            let make = |stem: &str| mesh::export_files(model, only, &o, asm, stem);
             // Check what was written (PLAN 1.3): printing formats must be
             // watertight. The export still happens.
             let printing = matches!(f.extension(), "stl" | "3mf");
             let note =
                 prism_ops::health::export_note(whole.as_ref().unwrap_or(s.model()), printing);
-            let name = format!("Prism model.{}", f.extension());
-            match crate::mesh_files::save(&name, f.extension(), &bytes) {
+            match crate::mesh_files::save_all("Prism model", f.extension(), &make) {
                 Ok(Some(to)) => chrome.status_note(match note {
                     Some(n) => format!("Exported to {to}. {n}"),
                     None => format!("Exported to {to}"),

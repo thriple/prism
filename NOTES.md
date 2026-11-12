@@ -2972,3 +2972,28 @@ Part 3 is split: 3a placing textures on faces, 3b materials in glTF,
 - **Left over:** back materials are not exported (glTF has one material a
   triangle); imported materials with the same name as existing ones are
   added as copies ("Name #2"), not merged.
+
+## Basic Materials (part 3, step 3c): OBJ's .mtl and 3MF colours
+**Basic Materials is done** with this step.
+- **OBJ out:** with materials, the export is several files named after
+  the one chosen: the `.obj` (`mtllib`, `usemtl`, `vt`, faces as drawn),
+  an `.mtl` (`Kd` in sRGB, `d`, `Ns` from roughness, `map_Kd`; Prism's
+  texture size as a `# prism_texture_size_m` comment) and the images, as
+  stored. The `.mtl` and image names have no spaces. Natively they go
+  beside the chosen file (`mesh_files::save_all`); on the web each
+  downloads. Unpainted faces use a `Default` material.
+- **OBJ in:** `usemtl` names materials, `vt` gives places (corners are
+  the pairs faces use). Natively the `.mtl` and images beside the file are
+  read (`mesh::obj_materials`; `Kd`, `d` or `Tr`, `map_Kd` after its
+  options); on the web only the file is there, so materials keep their
+  names, in white.
+- **3MF:** colours as one `basematerials` group (sRGB with alpha), each
+  triangle naming its own; unpainted triangles use a base named
+  `Default`, the object's own, which a read leaves out. Corners stay
+  shared (`to_coloured_mesh`), so watertight checks still hold. No
+  textures (brief).
+- STL and PLY unchanged.
+- Tests: `prism-file` `obj_writes_and_reads_its_mtl_and_images`,
+  `three_mf_carries_colours`.
+- **Left over:** OBJ's other maps (bump, specular) are ignored; a texture
+  without Prism's size comment gets the size its coordinates imply.

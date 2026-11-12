@@ -391,3 +391,87 @@ fn gltf_keeps_materials_and_texture_placement() {
     let back = mesh::read(&plain, Format::Glb).unwrap();
     assert!(back.materials.is_empty() && back.uvs.is_empty());
 }
+
+fn textured_doc() -> prism_doc::Assembly {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/acceptance/files/textured.prism"
+    );
+    prism_file::read(&std::fs::read(path).expect("golden"))
+        .expect("opens")
+        .assembly
+}
+
+/// OBJ writes an .mtl and the images beside it, and reads them back
+/// (Basic Materials part 3).
+#[test]
+fn obj_writes_and_reads_its_mtl_and_images() {
+    let asm = textured_doc();
+    let model = &asm.root().model;
+    let o = ExportOptions::for_format(Format::Obj);
+    let files = mesh::export_files(model, None, &o, Some(&asm), "My box");
+    let names: Vec<&str> = files.iter().map(|f| f.0.as_str()).collect();
+    assert_eq!(names, ["My box.obj", "My_box.mtl", "My_box_Brick.png"]);
+    let obj = String::from_utf8_lossy(&files[0].1);
+    assert!(obj.contains("mtllib My_box.mtl") && obj.contains("usemtl Brick"));
+    assert!(obj.contains("\nvt "));
+    let mtl = String::from_utf8_lossy(&files[1].1);
+    assert!(mtl.contains("map_Kd My_box_Brick.png"), "{mtl}");
+    let image = asm.images().values().next().unwrap();
+    assert_eq!(files[2].1, *image.bytes);
+    // Back in, the files found beside it.
+    let mut m = mesh::read(&files[0].1, Format::Obj).expect("reads");
+    let sibling = |n: &str| files.iter().find(|f| f.0 == n).map(|f| f.1.clone());
+    mesh::obj_materials(&mut m, &files[0].1, &sibling);
+    assert_eq!(m.materials.len(), 1);
+    let mm = &m.materials[0];
+    assert_eq!(mm.name, "Brick");
+    assert_eq!(mm.texture.as_ref().and_then(|t| t.size), Some([0.4, 0.2]));
+    let (_, brick) = asm.materials().0.iter().next().unwrap();
+    for k in 0..3 {
+        assert!(
+            (mm.base[k] - brick.surface().base[k]).abs() < 1e-3,
+            "{:?}",
+            mm.base
+        );
+    }
+    let (built, _) = mesh::build_painted(&m, o.unit.metres(), true, true);
+    assert_eq!(built.face_count(), model.face_count());
+    assert!(
+        built
+            .faces()
+            .all(|(_, f)| f.paint.front.is_some() && f.paint.uv.is_some())
+    );
+    // Without the .mtl (the web), the material keeps its name only.
+    let mut m = mesh::read(&files[0].1, Format::Obj).unwrap();
+    mesh::obj_materials(&mut m, &files[0].1, &|_| None);
+    assert_eq!(m.materials[0].name, "Brick");
+    assert!(m.materials[0].texture.is_none());
+}
+
+/// 3MF carries colours as base materials; unpainted faces stay Default.
+#[test]
+fn three_mf_carries_colours() {
+    let asm = textured_doc();
+    let mut model = asm.root().model.clone();
+    let first = model.faces().next().unwrap().0;
+    model.edit_face(first, |f| f.paint = Default::default());
+    let o = ExportOptions::for_format(Format::ThreeMf);
+    let bytes = mesh::export_with(&model, None, &o, Some(&asm));
+    let m = mesh::read(&bytes, Format::ThreeMf).expect("reads");
+    assert_eq!(m.materials.len(), 1, "Default is not a material");
+    assert_eq!(m.materials[0].name, "Brick");
+    assert!(m.materials[0].texture.is_none(), "no textures in 3MF");
+    let (built, _) = mesh::build_painted(&m, 1e-3, false, true);
+    let painted = built
+        .faces()
+        .filter(|(_, f)| f.paint.front.is_some())
+        .count();
+    assert_eq!((built.face_count(), painted), (6, 5));
+    // The colour, as near as 8 bits allow.
+    let (_, brick) = asm.materials().0.iter().next().unwrap();
+    let want = brick.surface().base;
+    for (got, want) in m.materials[0].base.iter().zip(want).take(3) {
+        assert!((got - want).abs() < 0.01);
+    }
+}

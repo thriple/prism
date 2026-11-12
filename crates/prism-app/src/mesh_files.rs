@@ -10,6 +10,10 @@ pub const IMPORTS: [&str; 6] = ["stl", "obj", "3mf", "glb", "gltf", "ply"];
 /// The images the Materials window loads (Basic Materials part 2).
 pub const IMAGES: [&str; 3] = ["png", "jpg", "jpeg"];
 
+/// Makes an export's files for a name: (file name, bytes), the first the
+/// one the user named.
+pub type MakeFiles<'a> = dyn Fn(&str) -> Vec<(String, Vec<u8>)> + 'a;
+
 /// Whether a file name is an image the Materials window loads.
 pub fn is_image(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
@@ -20,7 +24,7 @@ pub use imp::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::{IMAGES, IMPORTS, Opened};
+    use super::{IMAGES, IMPORTS, MakeFiles, Opened};
 
     /// Ask for an image (a texture). `Ok(None)` if the user cancelled.
     pub fn pick_image() -> Result<Option<Opened>, String> {
@@ -49,11 +53,13 @@ mod imp {
         crate::doc_files::open_path(&path.display().to_string()).map(Some)
     }
 
-    /// Save an export. Returns where it went, or `Ok(None)` if cancelled.
-    pub fn save(suggested: &str, ext: &str, bytes: &[u8]) -> Result<Option<String>, String> {
+    /// Save an export of several files (an OBJ, its `.mtl` and images):
+    /// ask where the first goes, then `make` the files for the name chosen
+    /// (without extension); the others go beside it.
+    pub fn save_all(stem: &str, ext: &str, make: &MakeFiles) -> Result<Option<String>, String> {
         let Some(mut path) = rfd::FileDialog::new()
             .add_filter(ext.to_uppercase(), &[ext])
-            .set_file_name(suggested)
+            .set_file_name(format!("{stem}.{ext}"))
             .save_file()
         else {
             return Ok(None);
@@ -61,7 +67,18 @@ mod imp {
         if path.extension().is_none() {
             path.set_extension(ext);
         }
-        crate::doc_files::save_atomic(&path, bytes)?;
+        let chosen = path
+            .file_stem()
+            .map_or_else(|| stem.to_owned(), |s| s.to_string_lossy().into_owned());
+        let files = make(&chosen);
+        let dir = path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        for (k, (name, bytes)) in files.iter().enumerate() {
+            let to = if k == 0 { path.clone() } else { dir.join(name) };
+            crate::doc_files::save_atomic(&to, bytes)?;
+        }
         Ok(Some(path.display().to_string()))
     }
 
@@ -85,7 +102,7 @@ mod imp {
     use wasm_bindgen::closure::Closure;
     use wasm_bindgen_futures::JsFuture;
 
-    use super::{IMAGES, IMPORTS, Opened};
+    use super::{IMAGES, IMPORTS, MakeFiles, Opened};
 
     thread_local! {
         static PICKED: RefCell<Option<Result<Opened, String>>> = const { RefCell::new(None) };
@@ -150,6 +167,16 @@ mod imp {
         on_change.forget();
         input.click();
         Ok(None)
+    }
+
+    /// Several files download one after another.
+    pub fn save_all(stem: &str, ext: &str, make: &MakeFiles) -> Result<Option<String>, String> {
+        let mut last = Ok(None);
+        for (name, bytes) in make(stem) {
+            last = save(&name, ext, &bytes);
+            last.as_ref().map_err(Clone::clone)?;
+        }
+        last
     }
 
     /// Exports download on the web.

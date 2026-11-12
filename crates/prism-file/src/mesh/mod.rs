@@ -230,12 +230,28 @@ pub fn to_mesh(
     o: &ExportOptions,
     polygons: bool,
 ) -> Mesh {
+    to_mesh_faces(m, faces, o, polygons).0
+}
+
+/// [`to_mesh`], with the face each polygon came from.
+fn to_mesh_faces(
+    m: &Model,
+    faces: Option<&BTreeSet<FaceId>>,
+    o: &ExportOptions,
+    polygons: bool,
+) -> (Mesh, Vec<FaceId>) {
     let mut mesh = Mesh::default();
     let mut index = std::collections::BTreeMap::new();
+    let mut face_of: Vec<FaceId> = Vec::new();
+    let mut last: Option<FaceId> = None;
     for (id, f) in m.faces() {
         if faces.is_some_and(|s| !s.contains(&id)) {
             continue;
         }
+        if let Some(l) = last {
+            face_of.resize(mesh.polygons.len(), l);
+        }
+        last = Some(id);
         let mut idx = |v: prism_topo::VertexId, mesh: &mut Mesh| -> u32 {
             *index.entry(v).or_insert_with(|| {
                 mesh.positions.push(out(m.vertex(v), o));
@@ -293,6 +309,38 @@ pub fn to_mesh(
             let tri: Vec<u32> = tri.iter().map(|v| idx(*v, &mut mesh)).collect();
             mesh.polygons.push(tri);
         }
+    }
+    if let Some(l) = last {
+        face_of.resize(mesh.polygons.len(), l);
+    }
+    (mesh, face_of)
+}
+
+/// [`to_mesh`] with shared corners (for printing) and each polygon's front
+/// material (3MF's colours).
+pub fn to_coloured_mesh(
+    m: &Model,
+    faces: Option<&BTreeSet<FaceId>>,
+    o: &ExportOptions,
+    asm: &prism_doc::Assembly,
+) -> Mesh {
+    let (mut mesh, face_of) = to_mesh_faces(m, faces, o, false);
+    let mut index: std::collections::BTreeMap<prism_topo::MaterialId, u32> = Default::default();
+    for f in face_of {
+        let mat = m
+            .face(f)
+            .and_then(|x| x.paint.front)
+            .and_then(|id| Some((id, asm.material(id)?)));
+        let k = mat.map(|(id, x)| {
+            *index.entry(id).or_insert_with(|| {
+                mesh.materials.push(MeshMaterial::of(x, asm));
+                (mesh.materials.len() - 1) as u32
+            })
+        });
+        mesh.polygon_materials.push(k);
+    }
+    if mesh.materials.is_empty() {
+        mesh.polygon_materials.clear();
     }
     mesh
 }
@@ -379,7 +427,44 @@ pub fn export_with(
             Some(a) => to_painted_mesh(m, faces, o, a),
             None => to_mesh(m, faces, o, false),
         }),
-        Format::ThreeMf => threemf::write(&to_mesh(m, faces, o, false), o.unit),
+        Format::ThreeMf => threemf::write(
+            &match painted {
+                Some(a) => to_coloured_mesh(m, faces, o, a),
+                None => to_mesh(m, faces, o, false),
+            },
+            o.unit,
+        ),
+    }
+}
+
+/// Export as files: the model's file, plus for OBJ with materials its
+/// `.mtl` and images, each (file name, bytes), named after `stem`.
+pub fn export_files(
+    m: &Model,
+    faces: Option<&BTreeSet<FaceId>>,
+    o: &ExportOptions,
+    asm: Option<&prism_doc::Assembly>,
+    stem: &str,
+) -> Vec<(String, Vec<u8>)> {
+    match asm.filter(|a| !a.materials().0.is_empty()) {
+        Some(a) if o.format == Format::Obj => {
+            obj::write_painted(&to_painted_mesh(m, faces, o, a), stem)
+        }
+        _ => vec![(
+            format!("{stem}.{}", o.format.extension()),
+            export_with(m, faces, o, asm),
+        )],
+    }
+}
+
+/// An OBJ's materials from the `.mtl` files it names: `read` gets a file
+/// beside the OBJ by name (None where it cannot, as on the web; then the
+/// materials keep their names, in white).
+pub fn obj_materials(mesh: &mut Mesh, obj: &[u8], read: &dyn Fn(&str) -> Option<Vec<u8>>) {
+    for lib in obj::mtl_libs(obj) {
+        if let Some(mtl) = read(&lib) {
+            obj::apply_mtl(mesh, &mtl, read);
+        }
     }
 }
 
