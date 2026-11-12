@@ -305,7 +305,7 @@ fn copy_face(
     let mut g = prism_topo::Face::with_edges(
         vs(&f.outer),
         f.holes.iter().map(|h| vs(h)).collect(),
-        f.surface,
+        f.surface.clone(),
         edges,
     );
     g.paint = f.paint;

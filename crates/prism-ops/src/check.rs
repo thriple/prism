@@ -21,6 +21,19 @@ pub fn problems(model: &Model) -> Vec<String> {
 /// Loop `k` of a curved face, flat, as (θ, s) on its turned surface.
 /// Counter-clockwise when the face points outward.
 fn curved_2d(model: &Model, face: &prism_topo::Face, k: usize) -> Vec<DVec2> {
+    if let Some(patch) = face.surface.patch() {
+        // A freeform face: its corners' (u, v).
+        return face
+            .loops()
+            .nth(k)
+            .into_iter()
+            .flatten()
+            .map(|v| {
+                let (a, b) = patch.param(model.vertex(*v));
+                DVec2::new(a, b)
+            })
+            .collect();
+    }
     model.param_loop(face, k).into_iter().map(|x| x.1).collect()
 }
 

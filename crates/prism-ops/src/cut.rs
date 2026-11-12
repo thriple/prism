@@ -355,7 +355,7 @@ fn inner_edges(model: &Model, face: &Face, eps: f64) -> Vec<EdgeId> {
     let Some((lo, hi)) = face_box(model, face) else {
         return Vec::new();
     };
-    let s = face.surface;
+    let s = face.surface.clone();
     // The face's own points count as on it: one on an approximate side
     // lies on its chord, a hair inside the surface.
     let own: BTreeSet<VertexId> = face.loops().flatten().copied().collect();
@@ -809,7 +809,7 @@ pub fn split_face(model: &mut Model, id: FaceId) -> Vec<FaceId> {
             let (hv, he): (Vec<_>, Vec<_>) = holes.iter().map(|h| to_loop(h)).unzip();
             let mut edges = vec![oe];
             edges.extend(he);
-            let mut g = Face::with_edges(outer, hv, face.surface, edges);
+            let mut g = Face::with_edges(outer, hv, face.surface.clone(), edges);
             // Every piece keeps the face's paint (DECISIONS #36).
             g.paint = face.paint;
             g

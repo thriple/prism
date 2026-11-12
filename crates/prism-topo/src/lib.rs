@@ -1121,7 +1121,7 @@ impl Model {
             let mut nf = Face::with_edges(
                 map(&f.outer),
                 f.holes.iter().map(|h| map(h)).collect(),
-                f.surface,
+                f.surface.clone(),
                 edges,
             );
             // Its paint and texture placement come too.
@@ -1304,7 +1304,7 @@ impl Model {
                     }
                     let Some(e) = named.get(i) else { continue };
                     match self.edges.get(e) {
-                        Some(x) if x.has(a) && x.has(b) => match f.surface {
+                        Some(x) if x.has(a) && x.has(b) => match f.surface.clone() {
                             Surface::Plane(pl) => {
                                 if let Curve::Arc { axis, .. } = x.curve
                                     && (axis.dot(pl.normal).abs() - 1.0).abs() > 1e-9
@@ -1485,7 +1485,10 @@ mod tests {
         square(&mut m);
         let mut parts = m.to_parts();
         let (id, f) = &parts.faces[0];
-        parts.faces[0] = (*id, Face::new(f.outer.clone(), f.holes.clone(), f.surface));
+        parts.faces[0] = (
+            *id,
+            Face::new(f.outer.clone(), f.holes.clone(), f.surface.clone()),
+        );
         assert_eq!(Model::from_parts(parts).expect("reads"), m);
         let old = m.to_json().replace(r#","edges":[[0,1,2,3]]"#, "");
         assert!(!old.contains(r#""edges":[["#), "{old}");

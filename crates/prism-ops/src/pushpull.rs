@@ -51,7 +51,7 @@ pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static st
     let tol = model.tol();
     let bends = model.faces().any(|(g, x)| {
         g != face
-            && match x.surface {
+            && match x.surface.clone() {
                 Surface::Cylinder(c) => {
                     !tol.parallel(c.axis, plane.normal)
                         && x.loops().flatten().any(|v| f.uses_vertex(*v))
@@ -131,7 +131,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         model.face(g).is_some_and(|g| {
             let pts = model.points(&g.outer);
             let centre = pts.iter().copied().sum::<DVec3>() / pts.len() as f64;
-            let runs_along = match g.surface {
+            let runs_along = match g.surface.clone() {
                 Surface::Plane(p) => tol.perpendicular(p.normal, n),
                 Surface::Cylinder(c) => tol.parallel(c.axis, n),
                 _ => false,
@@ -332,7 +332,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         let (na, nb) = (to[&e.a], to[&e.b]);
         let copy = if na == e.a && nb == e.b {
             Some(edge)
-        } else if let Some(curve) = e.curve.transformed(&step).filter(|c| c.is_arc()) {
+        } else if let Some(curve) = e.curve.transformed(&step).filter(|c| c.is_curved()) {
             let id = e
                 .curve_id
                 .map(|c| *new_curve.entry(c).or_insert_with(|| model.new_curve_id()));
@@ -344,9 +344,15 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         Some(copy)
     };
 
-    // Walls: flat for a line, part of a cylinder for an arc.
+    // Walls: flat for a line, part of a cylinder for an arc, part of a
+    // NURBS surface for a spline (one surface for each curve, shared by
+    // the walls along it).
     let mut walls = Vec::new();
     let mut seams: Vec<EdgeId> = Vec::new();
+    let mut extruded: Vec<(
+        std::sync::Arc<prism_geom::Nurbs>,
+        std::sync::Arc<prism_geom::NurbsSurface>,
+    )> = Vec::new();
     for side in f.sides() {
         let (u, w) = (side.from, side.to);
         if !walls_at.contains(&key(u, w)) {
@@ -358,9 +364,45 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             prism_geom::Curve::Arc { centre, radius, .. } => Some((centre, radius)),
             _ => None,
         });
+        let spline = model
+            .edge(side.edge)
+            .and_then(|e| e.curve_from(u).spline().cloned());
         let up = model.add_edge(w, nw);
         let top = move_side(model, side.edge);
         let down = model.add_edge(nu, u);
+        if let Some(sp) = spline {
+            let (Some(up), Some(top), Some(down)) = (up, top, down) else {
+                continue;
+            };
+            let surface = match extruded
+                .iter()
+                .find(|x| std::sync::Arc::ptr_eq(&x.0, &sp.curve))
+            {
+                Some(x) => Some(x.1.clone()),
+                None => prism_geom::NurbsSurface::extrusion(&sp.curve, shift).map(|s| {
+                    let s = std::sync::Arc::new(s);
+                    extruded.push((sp.curve.clone(), s.clone()));
+                    s
+                }),
+            };
+            let Some(surface) = surface else { continue };
+            seams.extend([up, down]);
+            // It faces the way its loop winds, as a flat wall does: along
+            // the side, then up.
+            let patch = prism_geom::Patch {
+                surface,
+                u: (sp.t0, sp.t1),
+                v: (0.0, 1.0),
+                flipped: sp.t1 < sp.t0,
+            };
+            walls.push(model.add_face(Face::with_edges(
+                quad,
+                vec![],
+                Surface::Nurbs(patch),
+                vec![vec![side.edge, up, top, down]],
+            )));
+            continue;
+        }
         let Some((centre, radius)) = arc else {
             if let Some(plane) = Plane::fit(&model.points(&quad), &tol) {
                 walls.push(model.add_face(Face::new(quad, vec![], Surface::Plane(plane))));

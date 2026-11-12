@@ -183,3 +183,73 @@ proptest! {
         prop_assert!(p.is_empty(), "{p:?}");
     }
 }
+
+// ---------- Freeform NURBS part 2: freeform faces ----------
+
+#[test]
+fn pulling_a_face_with_a_curved_edge_makes_freeform_walls() {
+    let mut m = Model::new();
+    add_spline(&mut m, &blob());
+    let face = m.faces().next().unwrap().0;
+    let area = m.face_area(face);
+    assert!(prism_ops::pushpull::refusal(&m, face, 2.0).is_none());
+    prism_ops::push_pull(&mut m, face, 2.0, false);
+    clean(&m);
+    let patches: Vec<_> = m
+        .faces()
+        .filter(|(_, f)| f.surface.patch().is_some())
+        .collect();
+    assert_eq!(patches.len(), 2, "one wall along each half of the curve");
+    assert_eq!(m.face_count(), 4);
+    // Both walls lie on one surface, and face out of the solid.
+    let (a, b) = (
+        patches[0].1.surface.patch().unwrap(),
+        patches[1].1.surface.patch().unwrap(),
+    );
+    assert!(std::sync::Arc::ptr_eq(&a.surface, &b.surface));
+    let centre = DVec3::new(2.0, 2.0, 1.0);
+    for (_, f) in &patches {
+        let p = m.vertex(f.outer[0]);
+        let n = f.surface.normal_at(p);
+        assert!(n.dot(p - centre) > 0.0, "{n} at {p}");
+        assert!(n.z.abs() < 1e-9);
+    }
+    // The lines between the two halves are soft: the wall is smooth there.
+    assert_eq!(m.edges().filter(|(_, e)| e.soft).count(), 2);
+    // A closed solid of the face's area times the height.
+    let v: f64 = m
+        .faces()
+        .map(|(id, _)| prism_ops::health::face_volume(&m, id))
+        .sum();
+    assert!((v - area * 2.0).abs() < 2e-3 * v, "{v} {area}");
+    // Moved, turned and scaled unevenly, it stays exact and clean.
+    let vs = all(&m);
+    transform::rotate(&mut m, &vs, DVec3::ZERO, DVec3::new(1.0, 1.0, 0.0), 0.6);
+    transform::scale(&mut m, &vs, DVec3::ZERO, DVec3::new(1.0, 2.0, 0.5));
+    clean(&m);
+    assert_eq!(
+        m.faces()
+            .filter(|(_, f)| f.surface.patch().is_some())
+            .count(),
+        2
+    );
+    let back = Model::from_json(&m.to_json()).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
+fn a_freeform_face_is_not_pushed_or_pulled() {
+    let mut m = Model::new();
+    add_spline(&mut m, &blob());
+    let face = m.faces().next().unwrap().0;
+    prism_ops::push_pull(&mut m, face, 2.0, false);
+    let wall = m
+        .faces()
+        .find(|(_, f)| f.surface.patch().is_some())
+        .unwrap()
+        .0;
+    assert_eq!(
+        prism_ops::pushpull::refusal(&m, wall, 0.5),
+        Some(prism_ops::radius::FREEFORM)
+    );
+}

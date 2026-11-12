@@ -86,6 +86,13 @@ impl Curved {
         }
         let mut t = best?;
         let t0 = t;
+        if let Some(patch) = self.surface.patch() {
+            // A freeform face: the drawn point put on the surface once.
+            let q = patch.project(o + d * t0);
+            let t = (q - o).dot(d) / d.length_squared();
+            let near = (t - t0).abs() * d.length() <= 0.1 * self.size();
+            return Some(if t > 0.0 && near { t } else { t0 });
+        }
         for _ in 0..4 {
             let p = o + d * t;
             let slope = self.surface.normal_at(p).dot(d);
@@ -674,9 +681,45 @@ impl Scene {
     /// A cone, sphere or torus face (Exact Curves 5b): drawn from a grid on
     /// the surface (`tess::turned`), with the surface's normals.
     fn add_turned(&mut self, model: &Model, id: FaceId, f: &prism_topo::Face) {
+        if let Some(p) = f.surface.patch() {
+            // A freeform face: its own grid, and (u, v) for its flat frame.
+            let t = crate::tess::patch(p);
+            let uvs = t.params.clone();
+            let frame = (p.surface.eval(p.u.0, p.v.0), DVec3::X, DVec3::Y);
+            let ring = vec![
+                DVec2::new(p.u.0, p.v.0),
+                DVec2::new(p.u.1, p.v.0),
+                DVec2::new(p.u.1, p.v.1),
+                DVec2::new(p.u.0, p.v.1),
+            ];
+            self.add_grid(model, id, f, t, frame, (ring, Vec::new()), uvs);
+            return;
+        }
         let Some(t) = crate::tess::turned(model, f) else {
             return;
         };
+        let rev = f.surface.revolution().expect("a turned surface");
+        let flat =
+            |k: usize| -> Vec<DVec2> { model.param_loop(f, k).into_iter().map(|x| x.1).collect() };
+        let uvs = t.params.iter().map(|q| rev.texture_at(q.x, q.y)).collect();
+        let flats = (flat(0), (1..=f.holes.len()).map(flat).collect());
+        self.add_grid(model, id, f, t, (rev.origin, rev.u, rev.v), flats, uvs);
+    }
+
+    /// A curved face drawn from a grid of points on its surface. `frame`
+    /// and `flats` are its loops laid out flat (for tools that ask), `uvs`
+    /// each point's texture place in metres.
+    #[allow(clippy::too_many_arguments)]
+    fn add_grid(
+        &mut self,
+        model: &Model,
+        id: FaceId,
+        f: &prism_topo::Face,
+        t: crate::tess::Turned,
+        frame: (DVec3, DVec3, DVec3),
+        flats: (Vec<DVec2>, Vec<Vec<DVec2>>),
+        uvs: Vec<DVec2>,
+    ) {
         let Some(&first) = t.points.first() else {
             return;
         };
@@ -685,27 +728,24 @@ impl Scene {
             lo = lo.min(*p);
             hi = hi.max(*p);
         }
-        let rev = f.surface.revolution().expect("a turned surface");
         let outer: Vec<DVec3> = model.loop_points(f, 0);
         let start = outer.first().copied().unwrap_or(first);
-        let flat =
-            |k: usize| -> Vec<DVec2> { model.param_loop(f, k).into_iter().map(|x| x.1).collect() };
         let mut face = SceneFace {
             id,
             paint: paint_of(f),
             inherited: None,
             normal: f.surface.normal_at(start),
-            origin: rev.origin,
-            u: rev.u,
-            v: rev.v,
-            outer: flat(0),
-            holes: (1..=f.holes.len()).map(flat).collect(),
+            origin: frame.0,
+            u: frame.1,
+            v: frame.2,
+            outer: flats.0,
+            holes: flats.1,
             lo,
             hi,
             tris: 0..0,
             faded: false,
             curved: Some(Curved {
-                surface: f.surface,
+                surface: f.surface.clone(),
                 start,
                 outer,
                 tris: t.tris.iter().map(|x| x.map(|i| t.points[i])).collect(),
@@ -720,9 +760,7 @@ impl Scene {
         self.mesh_vertex_ids
             .extend(std::iter::repeat_n(owner, t.points.len()));
         self.mesh.normals.extend_from_slice(&t.normals);
-        self.mesh
-            .uvs
-            .extend(t.params.iter().map(|q| rev.texture_at(q.x, q.y)));
+        self.mesh.uvs.extend(uvs);
         self.mesh
             .faces
             .extend(std::iter::repeat_n(self.faces.len() as u32, t.points.len()));
@@ -964,7 +1002,10 @@ impl Scene {
                     .iter()
                     .map(|h| h.iter().map(unroll).collect())
                     .collect();
-                c.surface = c.surface.transformed(m).unwrap_or(c.surface);
+                c.surface = c
+                    .surface
+                    .transformed(m)
+                    .unwrap_or_else(|| c.surface.clone());
                 for t in &mut c.tris {
                     *t = t.map(p);
                 }

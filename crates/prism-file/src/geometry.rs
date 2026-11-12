@@ -63,6 +63,14 @@ enum SurfaceV1 {
         minor: f64,
         outward: bool,
     },
+    /// Freeform NURBS (layout 9): a part of one of the layout's
+    /// `patches`. Added at the end.
+    Nurbs {
+        surface: u32,
+        u: (f64, f64),
+        v: (f64, f64),
+        flipped: bool,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -462,6 +470,67 @@ pub fn encode(m: &Model) -> Vec<u8> {
             approx: e.approx,
         })
         .collect();
+    // Each NURBS surface once, as the curves.
+    let mut shared_patches: Vec<std::sync::Arc<prism_geom::NurbsSurface>> = Vec::new();
+    let mut place_patch = |c: &std::sync::Arc<prism_geom::NurbsSurface>| -> u32 {
+        let at = shared_patches
+            .iter()
+            .position(|x| std::sync::Arc::ptr_eq(x, c) || x == c)
+            .unwrap_or_else(|| {
+                shared_patches.push(c.clone());
+                shared_patches.len() - 1
+            });
+        at as u32
+    };
+    let faces = parts
+        .faces
+        .iter()
+        .map(|(id, f)| FaceV2 {
+            id: id.0,
+            outer: ids(&f.outer),
+            holes: f.holes.iter().map(|h| ids(h)).collect(),
+            edges: (0..=f.holes.len())
+                .map(|k| f.loop_edge_ids(k).iter().map(|e| e.0).collect())
+                .collect(),
+            surface: match f.surface.clone() {
+                Surface::Plane(pl) => SurfaceV1::Plane {
+                    origin: p(pl.origin),
+                    normal: p(pl.normal),
+                },
+                Surface::Cylinder(c) => SurfaceV1::Cylinder {
+                    origin: p(c.origin),
+                    axis: p(c.axis),
+                    radius: c.radius,
+                    outward: c.outward,
+                },
+                Surface::Cone(c) => SurfaceV1::Cone {
+                    apex: p(c.apex),
+                    axis: p(c.axis),
+                    half_angle: c.half_angle,
+                    outward: c.outward,
+                },
+                Surface::Sphere(x) => SurfaceV1::Sphere {
+                    centre: p(x.centre),
+                    axis: p(x.axis),
+                    radius: x.radius,
+                    outward: x.outward,
+                },
+                Surface::Torus(t) => SurfaceV1::Torus {
+                    centre: p(t.centre),
+                    axis: p(t.axis),
+                    major: t.major,
+                    minor: t.minor,
+                    outward: t.outward,
+                },
+                Surface::Nurbs(x) => SurfaceV1::Nurbs {
+                    surface: place_patch(&x.surface),
+                    u: x.u,
+                    v: x.v,
+                    flipped: x.flipped,
+                },
+            },
+        })
+        .collect();
     let g = GeometryV9 {
         splines: shared
             .iter()
@@ -473,7 +542,17 @@ pub fn encode(m: &Model) -> Vec<u8> {
                 periodic: c.is_periodic(),
             })
             .collect(),
-        patches: Vec::new(),
+        patches: shared_patches
+            .iter()
+            .map(|c| PatchV9 {
+                degree: c.degree().map(|d| d as u32),
+                knots: c.knots().map(|k| k.to_vec()),
+                count: c.count().map(|n| n as u32),
+                points: c.points().iter().map(|x| p(*x)).collect(),
+                weights: c.weights().to_vec(),
+                periodic: c.periodic(),
+            })
+            .collect(),
         edges,
         uv: parts
             .faces
@@ -491,49 +570,7 @@ pub fn encode(m: &Model) -> Vec<u8> {
             .map(|(id, f)| (id.0, f.paint.front.map(|x| x.0), f.paint.back.map(|x| x.0)))
             .collect(),
         vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
-        faces: parts
-            .faces
-            .iter()
-            .map(|(id, f)| FaceV2 {
-                id: id.0,
-                outer: ids(&f.outer),
-                holes: f.holes.iter().map(|h| ids(h)).collect(),
-                edges: (0..=f.holes.len())
-                    .map(|k| f.loop_edge_ids(k).iter().map(|e| e.0).collect())
-                    .collect(),
-                surface: match f.surface {
-                    Surface::Plane(pl) => SurfaceV1::Plane {
-                        origin: p(pl.origin),
-                        normal: p(pl.normal),
-                    },
-                    Surface::Cylinder(c) => SurfaceV1::Cylinder {
-                        origin: p(c.origin),
-                        axis: p(c.axis),
-                        radius: c.radius,
-                        outward: c.outward,
-                    },
-                    Surface::Cone(c) => SurfaceV1::Cone {
-                        apex: p(c.apex),
-                        axis: p(c.axis),
-                        half_angle: c.half_angle,
-                        outward: c.outward,
-                    },
-                    Surface::Sphere(x) => SurfaceV1::Sphere {
-                        centre: p(x.centre),
-                        axis: p(x.axis),
-                        radius: x.radius,
-                        outward: x.outward,
-                    },
-                    Surface::Torus(t) => SurfaceV1::Torus {
-                        centre: p(t.centre),
-                        axis: p(t.axis),
-                        major: t.major,
-                        minor: t.minor,
-                        outward: t.outward,
-                    },
-                },
-            })
-            .collect(),
+        faces,
         guides: parts
             .guides
             .iter()
@@ -608,7 +645,26 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             })
         })
         .collect::<Result<_, _>>()?;
+    let patches: Vec<std::sync::Arc<prism_geom::NurbsSurface>> = g
+        .patches
+        .iter()
+        .map(|c| {
+            prism_geom::NurbsSurface::new(
+                c.degree.map(|d| d as usize),
+                c.knots.clone(),
+                c.count.map(|n| n as usize),
+                c.points.iter().map(|x| DVec3::from_array(*x)).collect(),
+                c.weights.clone(),
+                c.periodic,
+            )
+            .map(std::sync::Arc::new)
+            .ok_or_else(|| {
+                FileError::Damaged("geometry: a NURBS surface does not fit together".into())
+            })
+        })
+        .collect::<Result<_, _>>()?;
     let mut bad_curve = false;
+    let mut bad_patch = false;
     let paint: std::collections::BTreeMap<u32, prism_topo::Paint> = g
         .paint
         .iter()
@@ -736,6 +792,23 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                                 minor,
                                 outward,
                             }),
+                            SurfaceV1::Nurbs {
+                                surface,
+                                u,
+                                v,
+                                flipped,
+                            } => match patches.get(surface as usize) {
+                                Some(x) => Surface::Nurbs(prism_geom::Patch {
+                                    surface: x.clone(),
+                                    u,
+                                    v,
+                                    flipped,
+                                }),
+                                None => {
+                                    bad_patch = true;
+                                    Surface::Plane(Plane::new(DVec3::ZERO, DVec3::Z))
+                                }
+                            },
                         },
                         f.edges
                             .into_iter()
@@ -793,9 +866,9 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             }
         }
     }
-    if bad_curve {
+    if bad_curve || bad_patch {
         return Err(FileError::Damaged(
-            "geometry: an edge names a NURBS curve that is not there".into(),
+            "geometry: an edge or face names a NURBS curve or surface that is not there".into(),
         ));
     }
     Model::from_parts(parts).map_err(|e| FileError::Damaged(format!("geometry: {e}")))

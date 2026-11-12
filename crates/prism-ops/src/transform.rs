@@ -311,7 +311,7 @@ fn follow_maps(model: &mut Model, maps: &[(FaceId, prism_topo::UvMap)], m: &DAff
 /// A curved face moved whole: its surface follows `m` exactly. False for a
 /// flat face.
 fn move_curved(model: &mut Model, id: FaceId, m: &DAffine3) -> bool {
-    let Some(surface) = model.face(id).map(|f| f.surface) else {
+    let Some(surface) = model.face(id).map(|f| f.surface.clone()) else {
         return false;
     };
     if !surface.is_curved() {

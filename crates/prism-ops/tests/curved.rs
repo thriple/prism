@@ -75,7 +75,7 @@ fn cylinder(r: f64, h: f64) -> Model {
         m.add_face(Face::with_edges(
             vec![a, b, tb, ta],
             vec![],
-            side,
+            side.clone(),
             vec![edges],
         ));
     }
@@ -277,7 +277,7 @@ fn volume(m: &Model) -> f64 {
     m.faces()
         .map(|(id, f)| {
             let a = m.face_area(id);
-            match f.surface {
+            match f.surface.clone() {
                 Surface::Plane(p) => a * p.normal.dot(p.origin) / 3.0,
                 Surface::Cylinder(c) => {
                     assert!(c.origin.cross(c.axis).length() < 1e-12, "axis through 0");

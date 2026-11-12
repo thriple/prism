@@ -388,7 +388,7 @@ pub fn face_volume(model: &Model, id: FaceId) -> f64 {
     let Some(f) = model.face(id) else {
         return 0.0;
     };
-    match f.surface {
+    match f.surface.clone() {
         Surface::Plane(p) => model.face_area(id) * p.normal.dot(p.origin) / 3.0,
         Surface::Cylinder(c) => {
             // Unrolled, the loops wind counter-clockwise where the face
@@ -412,6 +412,32 @@ pub fn face_volume(model: &Model, id: FaceId) -> f64 {
                 }
             }
             sum / 3.0
+        }
+        // A freeform face: position · normal integrated over its grid
+        // (three Gauss points each way in every cell).
+        Surface::Nurbs(p) => {
+            const G: [(f64, f64); 3] = [
+                (-0.774_596_669_241_483_4, 5.0 / 9.0),
+                (0.0, 8.0 / 9.0),
+                (0.774_596_669_241_483_4, 5.0 / 9.0),
+            ];
+            let s = &p.surface;
+            let us = s.grid(0, p.u.0, p.u.1, p.v);
+            let vs = s.grid(1, p.v.0, p.v.1, p.u);
+            let mut sum = 0.0;
+            for a in us.windows(2) {
+                for b in vs.windows(2) {
+                    let (hu, hv) = ((a[1] - a[0]) / 2.0, (b[1] - b[0]) / 2.0);
+                    for (x, wx) in G {
+                        for (y, wy) in G {
+                            let (q, du, dv) =
+                                s.eval_d(a[0] + hu * (1.0 + x), b[0] + hv * (1.0 + y));
+                            sum += wx * wy * q.dot(du.cross(dv)) * (hu * hv).abs();
+                        }
+                    }
+                }
+            }
+            if p.flipped { -sum / 3.0 } else { sum / 3.0 }
         }
         // Cones, spheres and tori: by Green's theorem in (θ, s), the share
         // is a third of the loop integral of ∫ g dθ along s. Circles round

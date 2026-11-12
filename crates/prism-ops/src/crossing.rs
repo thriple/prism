@@ -77,7 +77,7 @@ pub(crate) struct Laid {
 impl Laid {
     pub(crate) fn new(m: &Model, face: FaceId) -> Option<Laid> {
         let (rev, polys) = layout(m, face)?;
-        let surface = m.face(face)?.surface;
+        let surface = m.face(face)?.surface.clone();
         let circle = matches!(rev.profile, Profile::Circle { .. });
         let (lo, hi) = bounds(&polys[0]);
         let r = |s: f64| rev.at(s).0.abs();

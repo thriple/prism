@@ -1126,7 +1126,7 @@ fn build(
                     (Some(ei), None) => (vec![a, b, a1], vec![sk, sk1, ei]),
                     (None, None) => (vec![a, b], vec![sk, sk1]),
                 };
-                let mut f = Face::with_edges(outer, vec![], surface, vec![edges]);
+                let mut f = Face::with_edges(outer, vec![], surface.clone(), vec![edges]);
                 if !plan.along {
                     // Walk it the other way, keeping the surface's side.
                     f.reverse();

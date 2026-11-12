@@ -69,7 +69,7 @@ pub fn cylinder(r: f64, h: f64) -> Model {
         m.add_face(Face::with_edges(
             vec![a, b, tb, ta],
             vec![],
-            side,
+            side.clone(),
             vec![edges],
         ));
     }
@@ -117,7 +117,12 @@ pub fn sphere(centre: DVec3, r: f64) -> Model {
         outward: true,
     });
     for edges in [vec![m0, m1], vec![m1, m0]] {
-        m.add_face(Face::with_edges(vec![n, s], vec![], surface, vec![edges]));
+        m.add_face(Face::with_edges(
+            vec![n, s],
+            vec![],
+            surface.clone(),
+            vec![edges],
+        ));
     }
     m
 }
@@ -151,7 +156,7 @@ pub fn cone(r: f64, h: f64) -> Model {
     m.add_face(Face::with_edges(
         vec![b0, b1, apex],
         vec![],
-        side,
+        side.clone(),
         vec![vec![a01, e1, e0]],
     ));
     m.add_face(Face::with_edges(
@@ -203,7 +208,7 @@ pub fn torus(major: f64, minor: f64) -> Model {
         (vec![o1, i1, i0, o0], vec![bottom1, in_b, bottom0, out_b]),
     ];
     for (l, e) in faces {
-        m.add_face(Face::with_edges(l, vec![], surface, vec![e]));
+        m.add_face(Face::with_edges(l, vec![], surface.clone(), vec![e]));
     }
     m
 }

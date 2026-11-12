@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 
 mod meeting;
 mod nurbs;
+mod patch;
 mod revolved;
 pub use meeting::curves_meet;
 pub use nurbs::{MAX_DEGREE, Nurbs, Spline};
+pub use patch::{NurbsSurface, Patch};
 pub use revolved::{Cone, Profile, Revolution, Sphere, Torus, axis_frame};
 
 /// Segments per full turn when an arc is drawn or used as a polygon. Fine
@@ -567,13 +569,15 @@ impl Cylinder {
 }
 
 /// The surface a face lies on.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Surface {
     Plane(Plane),
     Cylinder(Cylinder),
     Cone(Cone),
     Sphere(Sphere),
     Torus(Torus),
+    /// A part of a NURBS surface (Freeform NURBS part 2).
+    Nurbs(Patch),
 }
 
 impl Surface {
@@ -589,6 +593,14 @@ impl Surface {
         !matches!(self, Surface::Plane(_))
     }
 
+    /// The patch, for a freeform face.
+    pub fn patch(&self) -> Option<&Patch> {
+        match self {
+            Surface::Nurbs(p) => Some(p),
+            _ => None,
+        }
+    }
+
     /// Which way the face points at `p` (a point on it).
     pub fn normal_at(&self, p: DVec3) -> DVec3 {
         match self {
@@ -597,6 +609,7 @@ impl Surface {
             Surface::Cone(c) => c.normal_at(p),
             Surface::Sphere(x) => x.normal_at(p),
             Surface::Torus(t) => t.normal_at(p),
+            Surface::Nurbs(x) => x.normal_at(p),
         }
     }
 
@@ -609,6 +622,7 @@ impl Surface {
             Surface::Cone(c) => c.outward,
             Surface::Sphere(x) => x.outward,
             Surface::Torus(t) => t.outward,
+            Surface::Nurbs(x) => !x.flipped,
         }
     }
 
@@ -620,6 +634,7 @@ impl Surface {
             Surface::Cone(c) => (c.distance(p), c.outward),
             Surface::Sphere(x) => (x.distance(p), x.outward),
             Surface::Torus(t) => (t.distance(p), t.outward),
+            Surface::Nurbs(x) => return x.distance(p),
         };
         if out { d } else { -d }
     }
@@ -632,6 +647,7 @@ impl Surface {
             Surface::Cone(c) => c.project(p),
             Surface::Sphere(x) => x.project(p),
             Surface::Torus(t) => t.project(p),
+            Surface::Nurbs(x) => x.project(p),
         }
     }
 
@@ -643,6 +659,7 @@ impl Surface {
             Surface::Cone(c) => Surface::Cone(c.flipped()),
             Surface::Sphere(x) => Surface::Sphere(x.flipped()),
             Surface::Torus(t) => Surface::Torus(t.flipped()),
+            Surface::Nurbs(x) => Surface::Nurbs(x.flipped()),
         }
     }
 
@@ -650,6 +667,10 @@ impl Surface {
     /// mirrors and even scales). A mirror turns a face's loops round, so a
     /// curved face then points the other way.
     pub fn transformed(&self, m: &DAffine3) -> Option<Surface> {
+        if let Surface::Nurbs(p) = self {
+            // A NURBS surface stays exact under any map.
+            return Some(Surface::Nurbs(p.transformed(m)));
+        }
         let (s, even) = revolved::scale_of(m);
         even.then(|| revolved::moved(self, m, s))
     }
@@ -665,7 +686,11 @@ impl Surface {
     /// The surface after a rigid motion given as `f` for points and `nf`
     /// for directions (sizes are kept).
     pub fn mapped(&self, f: impl Fn(DVec3) -> DVec3, nf: impl Fn(DVec3) -> DVec3) -> Surface {
-        match *self {
+        match self.clone() {
+            Surface::Nurbs(x) => Surface::Nurbs(Patch {
+                surface: std::sync::Arc::new(x.surface.mapped(&f)),
+                ..x
+            }),
             Surface::Plane(p) => Surface::Plane(Plane::new(f(p.origin), nf(p.normal))),
             Surface::Cylinder(c) => Surface::Cylinder(Cylinder {
                 origin: f(c.origin),
@@ -706,6 +731,10 @@ impl Surface {
             Surface::Cone(c) => c.holds(curve, a, b, eps),
             Surface::Sphere(x) => x.holds(curve, a, b, eps),
             Surface::Torus(t) => t.holds(curve, a, b, eps),
+            // At its ends and three points between.
+            Surface::Nurbs(x) => (0..=4)
+                .map(|i| curve.point(a, b, i as f64 / 4.0))
+                .all(|p| x.distance(p).abs() <= eps),
         }
     }
 
@@ -717,6 +746,7 @@ impl Surface {
             Surface::Cone(c) => Some(c.revolution()),
             Surface::Sphere(x) => Some(x.revolution()),
             Surface::Torus(t) => Some(t.revolution()),
+            Surface::Nurbs(_) => None,
         }
     }
 
@@ -724,7 +754,10 @@ impl Surface {
     pub fn is_valid(&self) -> bool {
         let unit = |a: DVec3| a.is_finite() && a != DVec3::ZERO;
         let len = |x: f64| x.is_finite() && x > 0.0;
-        match *self {
+        match self.clone() {
+            Surface::Nurbs(x) => [x.u, x.v]
+                .iter()
+                .all(|r| r.0.is_finite() && r.1.is_finite()),
             Surface::Plane(pl) => pl.origin.is_finite() && pl.normal.is_finite(),
             Surface::Cylinder(c) => c.origin.is_finite() && unit(c.axis) && len(c.radius),
             Surface::Cone(c) => {

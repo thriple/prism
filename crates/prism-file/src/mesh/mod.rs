@@ -276,7 +276,12 @@ fn to_mesh_faces(
             }
             continue;
         }
-        if let Some(t) = prism_view_tess::turned(m, f) {
+        let grid = match f.surface.patch() {
+            // A freeform face: its own grid.
+            Some(p) => Some(prism_view_tess::patch(p)),
+            None => prism_view_tess::turned(m, f),
+        };
+        if let Some(t) = grid {
             // A cone, sphere or torus face: its grid of points on the
             // surface.
             let base = mesh.positions.len() as u32;

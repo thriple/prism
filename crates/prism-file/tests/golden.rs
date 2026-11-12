@@ -108,6 +108,10 @@ fn cases() -> Vec<(&'static str, Contents)> {
             Contents::with_model(curves(), Settings::default()),
         ),
         (
+            "freeform.prism",
+            Contents::with_model(freeform(), Settings::default()),
+        ),
+        (
             "painted.prism",
             Contents {
                 assembly: painted().assembly().clone(),
@@ -266,6 +270,24 @@ fn curves() -> prism_topo::Model {
         DVec3::new(9.0, 2.0, 1.0),
     ];
     prism_ops::add_spline(&mut m, &Nurbs::through(&wire, false).expect("a curve"));
+    m
+}
+
+/// A closed NURBS curve pulled into a solid: two freeform walls on one
+/// surface (Freeform NURBS part 2).
+fn freeform() -> prism_topo::Model {
+    use prism_geom::Nurbs;
+    use prism_math::DVec3;
+    let mut m = prism_topo::Model::new();
+    let ring = [
+        DVec3::new(0.0, 0.0, 0.0),
+        DVec3::new(4.0, 0.0, 0.0),
+        DVec3::new(4.0, 3.0, 0.0),
+        DVec3::new(0.0, 3.0, 0.0),
+    ];
+    prism_ops::add_spline(&mut m, &Nurbs::closed(&ring, 3).expect("a closed curve"));
+    let face = m.faces().next().expect("a face").0;
+    prism_ops::push_pull(&mut m, face, 2.0, false);
     m
 }
 

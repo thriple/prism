@@ -527,7 +527,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 20] = [
+const BUILT_BEHAVIOURS: [&str; 21] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -545,8 +545,8 @@ const BUILT_BEHAVIOURS: [&str; 20] = [
     "Push/Pull: stretch, extrude, Alt new loop",
     "Live ghost previews",
     "Tool memory: double-click or Enter repeats the last value",
-    // Brought up to date (owner, 2026-11-12). "Exact circles, arcs and
-    // NURBS" waits for NURBS.
+    // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.
+    "Exact circles, arcs and NURBS",
     "Model Health: reversed faces, holes, interior faces, nesting counts",
     "Save, open and export",
     "Trackpad gestures",

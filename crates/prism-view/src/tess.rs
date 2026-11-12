@@ -611,6 +611,70 @@ fn is_ear(
     true
 }
 
+/// A freeform face drawn (Freeform NURBS part 2): a grid over the patch,
+/// finer where the surface bends (`NurbsSurface::grid`), each point on the
+/// surface with its normal. `params` are distances over the surface in
+/// metres (along its middle lines), for texture coordinates.
+pub fn patch(p: &prism_geom::Patch) -> Turned {
+    let s = &p.surface;
+    let us = s.grid(0, p.u.0, p.u.1, p.v);
+    let vs = s.grid(1, p.v.0, p.v.1, p.u);
+    let (nu, nv) = (us.len(), vs.len());
+    let mut out = Turned::default();
+    for u in &us {
+        for v in &vs {
+            out.points.push(s.eval(*u, *v));
+            out.normals.push(p.normal(*u, *v));
+        }
+    }
+    // Distance along the middle row and the middle column.
+    let along = |n: usize, at: &dyn Fn(usize) -> usize| -> Vec<f64> {
+        let mut d = vec![0.0];
+        for k in 1..n {
+            let step = out.points[at(k - 1)].distance(out.points[at(k)]);
+            d.push(d[k - 1] + step);
+        }
+        d
+    };
+    let du = along(nu, &|i| i * nv + nv / 2);
+    let dv = along(nv, &|j| (nu / 2) * nv + j);
+    for x in &du {
+        for y in &dv {
+            out.params.push(DVec2::new(*x, *y));
+        }
+    }
+    // Counter-clockwise seen from the front.
+    let forward = ((p.u.1 >= p.u.0) == (p.v.1 >= p.v.0)) != p.flipped;
+    for i in 0..nu - 1 {
+        for j in 0..nv - 1 {
+            let (a, b, c, d) = (
+                i * nv + j,
+                (i + 1) * nv + j,
+                (i + 1) * nv + j + 1,
+                i * nv + j + 1,
+            );
+            // Split along the shorter diagonal.
+            let ac = out.points[a].distance_squared(out.points[c]);
+            let bd = out.points[b].distance_squared(out.points[d]);
+            let tris = if ac <= bd {
+                [[a, b, c], [a, c, d]]
+            } else {
+                [[a, b, d], [b, c, d]]
+            };
+            for t in tris {
+                // Skip pieces with no area (a pole).
+                let n = (out.points[t[1]] - out.points[t[0]])
+                    .cross(out.points[t[2]] - out.points[t[0]]);
+                if n.length_squared() <= 0.0 {
+                    continue;
+                }
+                out.tris.push(if forward { t } else { [t[0], t[2], t[1]] });
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

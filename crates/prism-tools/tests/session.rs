@@ -2433,7 +2433,7 @@ fn push_pull_on_a_cylinders_side_gives_it_a_new_radius() {
     let r = |d: &Driver| -> Vec<f64> {
         d.s.model()
             .faces()
-            .filter_map(|(_, f)| match f.surface {
+            .filter_map(|(_, f)| match f.surface.clone() {
                 prism_geom::Surface::Cylinder(c) => Some(c.radius),
                 _ => None,
             })
@@ -2559,7 +2559,7 @@ fn edit_soften_toggles_the_selected_edges() {
 fn radii(d: &Driver) -> Vec<f64> {
     d.s.model()
         .faces()
-        .filter_map(|(_, f)| match f.surface {
+        .filter_map(|(_, f)| match f.surface.clone() {
             prism_geom::Surface::Cylinder(c) => Some(c.radius),
             _ => None,
         })
@@ -3938,4 +3938,52 @@ fn a_line_snaps_onto_a_curve_and_splits_it() {
         "the curve is split where the line lands"
     );
     valid(&d);
+}
+
+// ---------- Freeform NURBS part 2: freeform faces ----------
+
+#[test]
+fn push_pull_makes_freeform_walls_that_are_drawn_and_picked() {
+    use prism_tools::session::CURVE;
+    let mut d = Driver::empty();
+    d.tool(CURVE);
+    for p in [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0), (0.0, 0.0)] {
+        d.click(DVec3::new(p.0, p.1, 0.0));
+    }
+    d.tool(PUSH);
+    d.click(DVec3::new(2.0, 1.5, 0.0));
+    d.hover(DVec3::new(2.0, 1.5, 0.5));
+    d.typed("2");
+    assert_eq!(d.faces(), 4);
+    valid(&d);
+    let walls: Vec<_> =
+        d.s.model()
+            .faces()
+            .filter(|(_, f)| f.surface.patch().is_some())
+            .map(|(id, _)| id)
+            .collect();
+    assert_eq!(walls.len(), 2);
+    // Each wall is in the scene with triangles, on the surface, finer
+    // than its four corners.
+    let scene = d.s.scene();
+    for id in &walls {
+        let f = scene.face(*id).expect("in the scene");
+        assert!(f.tris.len() > 3 * 16, "{:?}", f.tris);
+    }
+    // A click on the wall that faces the camera selects it; undo takes
+    // the pull back.
+    d.tool(SELECT);
+    let mut picked = 0;
+    for id in &walls {
+        let on = {
+            let m = d.s.model();
+            let p = m.face(*id).unwrap().surface.patch().unwrap().clone();
+            p.surface.eval((p.u.0 + p.u.1) / 2.0, (p.v.0 + p.v.1) / 2.0)
+        };
+        d.click(on);
+        picked += usize::from(d.s.selection().faces.contains(id));
+    }
+    assert_eq!(picked, 1, "the near wall, not the far one behind it");
+    undo(&mut d);
+    assert_eq!(d.faces(), 1);
 }

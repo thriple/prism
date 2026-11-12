@@ -130,7 +130,7 @@ fn a_concave_edge_is_filled() {
         if !fillet {
             assert!((flat_volume(&m) - (12.0 + 0.25 * 0.25 / 2.0 * 2.0)).abs() < 1e-9);
         } else {
-            let c = m.faces().find_map(|(_, f)| match f.surface {
+            let c = m.faces().find_map(|(_, f)| match f.surface.clone() {
                 Surface::Cylinder(c) => Some(c),
                 _ => None,
             });
@@ -180,7 +180,7 @@ fn refusals_say_why() {
     // Every point of the ellipse on the fillet's cylinder and the end face.
     let cyl = w3
         .faces()
-        .find_map(|(_, f)| match f.surface {
+        .find_map(|(_, f)| match f.surface.clone() {
             prism_geom::Surface::Cylinder(c) => Some(c),
             _ => None,
         })

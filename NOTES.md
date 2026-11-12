@@ -3055,3 +3055,35 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
 - **Left over:** a curve that crosses itself is not cut at the crossing;
   no midpoint snap on a spline; the Freehand tool is not built (brief:
   out of scope).
+
+## Freeform NURBS (part 2): freeform faces
+- **The type:** `prism_geom::NurbsSurface` (a net of control points,
+  periodic in either direction), with Prism's own evaluation, normals,
+  closest point, lines of constant u or v (`iso`), knot insertion, and
+  `extrusion` of a curve. `Surface::Nurbs(Patch)`: the shared surface, the
+  rectangle of (u, v) the face covers, and `flipped` (facing against u
+  cross v). `Surface` is no longer `Copy`.
+- **A freeform face is a whole rectangle of its surface** with four sides
+  (`Patch::side`, `Patch::corners`). Nothing cuts one yet (brief).
+- **Adaptive tessellation:** `NurbsSurface::grid` gives the lines to draw
+  with: every knot, and between knots as many steps as the surface turns
+  there (128 a turn, as arcs), so flat parts get few triangles and tight
+  bends many. `prism_view::tess::patch` makes the grid with exact normals;
+  the scene, picking (the drawn triangle, then the point put on the
+  surface) and mesh export use it.
+- **Push/Pull** of a flat face with spline edges makes freeform walls:
+  one extrusion surface for each curve, shared by the walls along it;
+  walls face the way their loops wind. The lines between walls are soft
+  where they meet smoothly.
+- **Refused:** Push/Pull of a freeform face (`radius::FREEFORM`), and of a
+  flat face beside one (as beside cones and spheres).
+- **The model check** knows patches: sides on the surface, corners'
+  (u, v) winding with the normal. `health::face_volume` integrates a
+  patch (Gauss points over its grid).
+- **Files:** layout 9's `patches` table and a `Nurbs` surface kind (still
+  schema 10). Golden file `freeform.prism`.
+- **MCP:** `get_geometry` lists a freeform face's degrees, net and part.
+- Planned Features: "Exact circles, arcs and NURBS" is built.
+- **Left over:** texture places on a patch are distances along its middle
+  lines (stretched where the patch widens); Position Texture is for flat
+  faces only, as before.

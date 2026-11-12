@@ -262,7 +262,7 @@ impl AppHost<'_> {
                     "front_material": f.paint.front.map(|m| m.0),
                     "back_material": f.paint.back.map(|m| m.0),
                 });
-                match f.surface {
+                match f.surface.clone() {
                     prism_geom::Surface::Plane(pl) => {
                         j["normal"] = point(t.transform_vector3(pl.normal).normalize_or_zero());
                     }
@@ -302,6 +302,18 @@ impl AppHost<'_> {
                                 "major_radius": round(x.major),
                                 "minor_radius": round(x.minor),
                                 "outward": x.outward,
+                            });
+                        }
+                        prism_geom::Surface::Nurbs(x) => {
+                            let s = &x.surface;
+                            j["nurbs"] = json!({
+                                "degree": s.degree(),
+                                "control_points": s.count(),
+                                "closed": s.periodic(),
+                                "u": [x.u.0, x.u.1],
+                                "v": [x.v.0, x.v.1],
+                                "faces_along_its_normal": !x.flipped,
+                                "net": s.points().iter().map(|p| point(*p)).collect::<Vec<_>>(),
                             });
                         }
                         _ => {}

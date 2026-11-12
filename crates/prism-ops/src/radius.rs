@@ -18,6 +18,9 @@ use prism_math::{DVec3, Plane, Tol};
 use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 /// Said when a new size would be zero or less.
+/// Said when Push/Pull is tried on a freeform face.
+pub const FREEFORM: &str =
+    "Refused: a freeform face is not pushed or pulled. Move its control points instead.";
 pub const RADIUS_GONE: &str = "The radius would reach zero.";
 /// Said when a torus's tube would reach its axis.
 pub const TUBE_AXIS: &str = "The torus's tube would reach its axis.";
@@ -56,7 +59,7 @@ fn same(a: &Surface, b: &Surface, tol: &Tol) -> bool {
 /// The pulled face's surface, and every face on that same surface joined
 /// to it through shared points (both halves of a full turn).
 pub(crate) fn faces(model: &Model, face: FaceId) -> Option<(Surface, BTreeSet<FaceId>)> {
-    let s = model.face(face)?.surface;
+    let s = model.face(face)?.surface.clone();
     if !s.is_curved() {
         return None;
     }
@@ -82,7 +85,7 @@ pub(crate) fn faces(model: &Model, face: FaceId) -> Option<(Surface, BTreeSet<Fa
 /// The surface moved by `delta` away from its axis, centre or tube's
 /// middle (whichever way it faces). Err when its size would be gone.
 fn offset(s: &Surface, delta: f64, tol: &Tol) -> Result<Surface, &'static str> {
-    let mut s = *s;
+    let mut s = s.clone();
     match &mut s {
         Surface::Cylinder(c) => {
             c.radius += delta;
@@ -110,6 +113,7 @@ fn offset(s: &Surface, delta: f64, tol: &Tol) -> Result<Surface, &'static str> {
             c.apex -= c.axis * (delta / c.half_angle.sin());
         }
         Surface::Plane(_) => {}
+        Surface::Nurbs(_) => return Err(FREEFORM),
     }
     Ok(s)
 }
@@ -320,7 +324,7 @@ pub fn apply(model: &mut Model, face: FaceId, distance: f64) -> bool {
         model.set_curve(e, c);
     }
     for f in &plan.faces {
-        model.edit_face(*f, |x| x.surface = plan.surface);
+        model.edit_face(*f, |x| x.surface = plan.surface.clone());
     }
     true
 }

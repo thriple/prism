@@ -483,6 +483,7 @@ pub(crate) fn moved(surface: &crate::Surface, m: &DAffine3, s: f64) -> crate::Su
         S::Cone(c) => S::Cone(c.moved(m)),
         S::Sphere(x) => S::Sphere(x.moved(m, s)),
         S::Torus(t) => S::Torus(t.moved(m, s)),
+        S::Nurbs(p) => S::Nurbs(p.transformed(m)),
     }
 }
 
