@@ -638,7 +638,7 @@ fn lighting(ui: &mut Ui, v: &mut prism_view::ViewStyle) {
         f64::from(v.light),
         0.0..=1.0,
     ) {
-        v.light = x as f32;
+        v.light = ((x * 100.0).round() / 100.0) as f32;
     }
     if let Some(x) = slider(
         ui,
@@ -646,6 +646,6 @@ fn lighting(ui: &mut Ui, v: &mut prism_view::ViewStyle) {
         f64::from(v.dark),
         0.0..=1.0,
     ) {
-        v.dark = x as f32;
+        v.dark = ((x * 100.0).round() / 100.0) as f32;
     }
 }

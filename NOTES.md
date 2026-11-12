@@ -2830,3 +2830,13 @@ not show hidden objects unless Hidden Geometry is on.
   three are marked there.
 - Tests: `the_face_style_buttons_are_one_of_three`, `styles_map_to_drawing`
   (Base Colour), `the_view_toolbar_and_its_icons`. Checked by eye.
+
+## Sliders only gave their ends (owner, 2026-11-12)
+View Settings' Light and Dark sliders jumped between 0 and 100 %. The
+Soft slider moved in steps of 1 by default, so any slider over a small
+range only had its ends (also Roughness and Metalness, the sun's time in
+whole hours, latitude and longitude in whole degrees, the X-ray opacity
+in whole percent, line thickness, and the debug panel's aperture and
+snap release). Sliders are now smooth by default (arrow keys move a
+hundredth of the range); Decimals keeps its whole steps. Light and Dark
+keep two decimals. Test: `a_small_range_slides_smoothly`.

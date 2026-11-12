@@ -24,13 +24,17 @@ impl<'a> SoftSlider<'a> {
         Self {
             value,
             range,
-            step: 1.0,
+            // Smooth by default: a step of 1 left a 0-to-1 slider only its
+            // two ends (owner, 2026-11-12). Callers that want whole steps
+            // say so with `step`.
+            step: 0.0,
             label: label.into(),
             suffix: String::new(),
         }
     }
 
-    /// The value moves in steps of this size.
+    /// The value moves in steps of this size (0, the default: smoothly;
+    /// the arrow keys then move a hundredth of the range).
     pub fn step(mut self, step: f32) -> Self {
         self.step = step;
         self
@@ -70,7 +74,12 @@ impl Widget for SoftSlider<'_> {
             *self.value = snap(v, min, max, self.step);
         }
         if response.has_focus() {
-            let (step, big) = (self.step, self.step * 10.0);
+            let step = if self.step > 0.0 {
+                self.step
+            } else {
+                span / 100.0
+            };
+            let big = step * 10.0;
             ui.input(|i| {
                 let mut v = *self.value;
                 if i.key_pressed(Key::ArrowRight) || i.key_pressed(Key::ArrowUp) {
@@ -91,7 +100,7 @@ impl Widget for SoftSlider<'_> {
                 if i.key_pressed(Key::End) {
                     v = max;
                 }
-                *self.value = snap(v, min, max, step);
+                *self.value = snap(v, min, max, self.step);
             });
         }
         if *self.value != before {
@@ -223,6 +232,71 @@ mod tests {
         assert_eq!(snap(250.0, 0.0, 100.0, 1.0), 100.0);
         assert_eq!(snap(0.37, 0.0, 1.0, 0.25), 0.25);
         assert_eq!(snap(0.37, 0.0, 1.0, 0.0), 0.37);
+    }
+
+    /// A slider over 0 to 1 takes values in between (owner, 2026-11-12:
+    /// View Settings' Light and Dark only gave 0 or 100 %).
+    #[test]
+    fn a_small_range_slides_smoothly() {
+        let ctx = egui::Context::default();
+        let mut x = 0.5f32;
+        let mut seen = Vec::new();
+        for px in [0.3f32, 0.47, 0.81] {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 100.0),
+                )),
+                ..Default::default()
+            };
+            let mut at = None;
+            let mut out = ctx.run_ui(input, |ui| {
+                let r = ui.add(SoftSlider::new(&mut x, 0.0..=1.0, "t"));
+                at = Some(r.rect);
+            });
+            out.textures_delta.clear();
+            let rect = at.expect("drawn");
+            let p = egui::pos2(rect.left() + rect.width() * px, rect.center().y);
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 100.0),
+                )),
+                events: vec![
+                    egui::Event::PointerMoved(p),
+                    egui::Event::PointerButton {
+                        pos: p,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Default::default(),
+                    },
+                ],
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                ui.add(SoftSlider::new(&mut x, 0.0..=1.0, "t"));
+            });
+            out.textures_delta.clear();
+            seen.push(x);
+            let release = egui::RawInput {
+                events: vec![egui::Event::PointerButton {
+                    pos: p,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                }],
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(release, |ui| {
+                ui.add(SoftSlider::new(&mut x, 0.0..=1.0, "t"));
+            });
+            out.textures_delta.clear();
+        }
+        assert!(
+            seen.iter().all(|v| *v > 0.05 && *v < 0.95),
+            "values in between: {seen:?}"
+        );
+        assert!(seen[0] < seen[1] && seen[1] < seen[2], "{seen:?}");
     }
 
     #[test]
