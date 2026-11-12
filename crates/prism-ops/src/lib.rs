@@ -34,6 +34,6 @@ pub mod transform;
 pub use pushpull::push_pull;
 pub use select::{Selection, connected, duplicate, remove};
 pub use sticky::{
-    add_arc, add_circle, add_pie, add_polygon, add_rect, add_segment, face_at, insert_point,
-    vertex_at,
+    add_arc, add_circle, add_pie, add_polygon, add_rect, add_segment, add_spline, face_at,
+    insert_point, vertex_at,
 };

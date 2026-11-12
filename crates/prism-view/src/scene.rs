@@ -490,7 +490,7 @@ impl Scene {
                 a: model.vertex(e.a),
                 b: model.vertex(e.b),
                 mid: e.curve.inner_points(model.vertex(e.a), model.vertex(e.b)),
-                curve: e.curve,
+                curve: e.curve.clone(),
                 normals: [n(0), n(1)],
                 faces: [fid(0), fid(1)],
                 faded: false,

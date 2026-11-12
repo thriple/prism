@@ -45,10 +45,10 @@ fn new_id(model: &mut Model, ids: &mut Ids, old: Option<CurveId>, e: EdgeId) -> 
 /// Replace arc `e` by fine straight segments along it, marked approximate.
 /// Returns the points from the arc's `a` to its `b`.
 pub fn segment_arc(model: &mut Model, e: EdgeId, ids: &mut Ids) -> Vec<VertexId> {
-    let Some(x) = model.edge(e).copied() else {
+    let Some(x) = model.edge(e).cloned() else {
         return Vec::new();
     };
-    if !x.curve.is_arc() {
+    if !x.curve.is_curved() {
         return vec![x.a, x.b];
     }
     let (pa, pb) = (model.vertex(x.a), model.vertex(x.b));
@@ -63,7 +63,7 @@ pub fn segment_arc(model: &mut Model, e: EdgeId, ids: &mut Ids) -> Vec<VertexId>
 /// `a`), making every piece a straight approximate segment. Returns the
 /// points from `a` to `b`.
 fn split_into(model: &mut Model, e: EdgeId, pts: &[DVec3], ids: &mut Ids) -> Vec<VertexId> {
-    let Some(x) = model.edge(e).copied() else {
+    let Some(x) = model.edge(e).cloned() else {
         return Vec::new();
     };
     let cid = new_id(model, ids, x.curve_id, e);
@@ -237,7 +237,7 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
     // arcs become straight segments.
     for seg in loops.iter().flatten() {
         let Some(e) = seg.edge else { continue };
-        let Some(x) = model.edge(e).copied() else {
+        let Some(x) = model.edge(e).cloned() else {
             continue;
         };
         let (pa, pb) = (model.vertex(x.a), model.vertex(x.b));
@@ -260,7 +260,7 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
                         } else {
                             a.y + (b.y - a.y) * r
                         };
-                        us.push(cross_at(&rev, x.curve, pa, pb, span, y, *g, guess));
+                        us.push(cross_at(&rev, x.curve.clone(), pa, pb, span, y, *g, guess));
                     } else if (vb - g).abs() <= ang && k + 1 < n && {
                         // Crossing there, not running along the line.
                         let c = p2[k + 2];
@@ -270,7 +270,7 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
                         // Through a drawn point of an arc: the crossing is
                         // there, found again on the curve about it.
                         let around = ((k as f64 + 0.5) / n as f64, (k as f64 + 1.5) / n as f64);
-                        us.push(cross_at(&rev, x.curve, pa, pb, around, y, *g, vb));
+                        us.push(cross_at(&rev, x.curve.clone(), pa, pb, around, y, *g, vb));
                     }
                 }
             }
@@ -281,7 +281,7 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
             .map(|u| x.curve.point(pa, pb, *u))
             .filter(|q| q.distance(pa) > model.tol().dist && q.distance(pb) > model.tol().dist)
             .collect();
-        if !pts.is_empty() || x.curve.is_arc() {
+        if !pts.is_empty() || x.curve.is_curved() {
             split_into(model, e, &pts, ids);
         }
     }
@@ -505,7 +505,7 @@ pub fn flatten_for(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> 
     let arcs: Vec<EdgeId> = model
         .edges()
         .filter(|(_, e)| {
-            e.curve.is_arc()
+            e.curve.is_curved()
                 && e.curve.transformed(m).is_none()
                 && vs.contains(&e.a)
                 && vs.contains(&e.b)

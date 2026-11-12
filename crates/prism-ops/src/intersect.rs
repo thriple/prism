@@ -277,7 +277,7 @@ fn onto_arcs(m: &Model, faces: &[FaceId], a: DVec3, b: DVec3, tol: &Tol) -> (DVe
         .flat_map(|f| f.edge_ids().collect::<Vec<_>>())
         .filter_map(|e| m.edge(e))
         .filter(|e| e.curve.is_arc())
-        .map(|e| (e.curve, m.vertex(e.a), m.vertex(e.b)))
+        .map(|e| (e.curve.clone(), m.vertex(e.a), m.vertex(e.b)))
         .collect();
     let dir = (b - a).normalize_or_zero();
     let len = a.distance(b);

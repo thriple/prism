@@ -25,6 +25,11 @@ pub const NO_PATH: &str =
 /// Said when the selection is not one chain of lines and arcs.
 pub const NOT_A_PATH: &str = "The path must be lines and arcs joined end to end in one chain.";
 /// Said when the profile is not a flat face.
+/// Said when the path has a freeform curve (until Freeform NURBS part 5).
+pub const FREEFORM_PATH: &str = "Refused: Follow Me along a freeform curve is not built yet.";
+/// Said when the profile has a freeform curve (until Freeform NURBS part 4).
+pub const FREEFORM_PROFILE: &str =
+    "Refused: Follow Me with a freeform curve in the profile is not built yet.";
 pub const NOT_A_PROFILE: &str = "The profile must be a flat face.";
 /// Said when the profile lies along the path's first line.
 pub const ALONG_PATH: &str = "The profile lies along the path's first line: it must cross it.";
@@ -208,7 +213,7 @@ fn plan(
     let arcs = loops
         .iter()
         .flat_map(|l| &l.es)
-        .any(|e| model.edge(*e).is_some_and(|x| x.curve.is_arc()));
+        .any(|e| model.edge(*e).is_some_and(|x| x.curve.is_curved()));
 
     // The path, starting at the end (or point) nearest the profile.
     let near = |v: &VertexId| model.vertex(*v).distance(centre);
@@ -232,6 +237,7 @@ fn plan(
         let e = model.edge(*id).ok_or(NOT_A_PATH)?;
         let (p, q) = (corners[k], corners[(k + 1) % nc]);
         match e.curve {
+            Curve::Spline(_) => return Err(FREEFORM_PATH),
             Curve::Line => {
                 pts.push(p);
                 steps.push(Step::Line((q - p).normalize_or_zero()));
@@ -563,7 +569,7 @@ fn side(
     let m = l.vs.len();
     let (p, q) = (plan.sections[k][li][i], plan.sections[k][li][(i + 1) % m]);
     let e = model.edge(l.es[i])?;
-    let curve = match e.curve {
+    let curve = match e.curve.clone() {
         Curve::Line => Curve::Line,
         c => {
             let c = c.transformed(plan.motions[k].as_ref()?)?;
@@ -584,6 +590,7 @@ fn swept(
     tol: &Tol,
 ) -> Result<Option<Surface>, &'static str> {
     let surface = match (*step, curve) {
+        (_, Curve::Spline(_)) => return Err(FREEFORM_PROFILE),
         (Step::Line(d), Curve::Line) => Surface::Plane(Plane::new(
             p,
             (q - p).cross(d).try_normalize().ok_or(ALONG_PATH)?,
@@ -674,7 +681,7 @@ fn segment_profile(model: &mut Model, profile: FaceId) {
         .face(profile)
         .map(|f| {
             f.edge_ids()
-                .filter(|e| model.edge(*e).is_some_and(|x| x.curve.is_arc()))
+                .filter(|e| model.edge(*e).is_some_and(|x| x.curve.is_curved()))
                 .collect()
         })
         .unwrap_or_default();
@@ -702,7 +709,7 @@ fn best(
     }
     let arcs = model.face(profile).is_some_and(|f| {
         f.edge_ids()
-            .any(|e| model.edge(e).is_some_and(|x| x.curve.is_arc()))
+            .any(|e| model.edge(e).is_some_and(|x| x.curve.is_curved()))
     });
     if arcs {
         let mut m = model.clone();
@@ -786,7 +793,7 @@ pub fn cut_path(
     }) else {
         return path.clone();
     };
-    let Some(x) = model.edge(e).copied() else {
+    let Some(x) = model.edge(e).cloned() else {
         return path.clone();
     };
     if model.vertex(x.a).distance(end) < tol.dist || model.vertex(x.b).distance(end) < tol.dist {
@@ -1088,13 +1095,17 @@ fn build(
             for i in 0..m {
                 let j = (i + 1) % m;
                 let (p, q, curve) = side(model, &plan, k, li, i)?;
-                let surface = match swept(&plan.steps[k], p, q, curve, &tol) {
+                let surface = match swept(&plan.steps[k], p, q, curve.clone(), &tol) {
                     Ok(Some(x)) => x,
                     Ok(None) => continue,
                     Err(_) => return None,
                 };
                 // Face it outward.
                 let (mid, t) = match curve {
+                    Curve::Spline(_) => {
+                        let mid = curve.point(p, q, 0.5);
+                        (mid, curve.tangent_at(p, q, mid))
+                    }
                     Curve::Line => ((p + q) / 2.0, q - p),
                     Curve::Arc { centre, axis, .. } => {
                         let mid = curve.point(p, q, 0.5);
@@ -1284,7 +1295,7 @@ fn smooth_at(model: &Model, es: &[EdgeId], prev: usize, i: usize, vs: &[VertexId
     };
     let arcs = [prev, i]
         .iter()
-        .any(|s| model.edge(es[*s]).is_some_and(|e| e.curve.is_arc()));
+        .any(|s| model.edge(es[*s]).is_some_and(|e| e.curve.is_curved()));
     arcs && a.dot(b) > 1.0 - 1e-9
 }
 

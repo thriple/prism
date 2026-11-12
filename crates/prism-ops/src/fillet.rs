@@ -28,7 +28,7 @@ fn plan(model: &Model, v: VertexId, radius: f64) -> Result<Plan, &'static str> {
     let [(_, e1), (_, e2)] = edges.as_slice() else {
         return Err(NOT_A_CORNER);
     };
-    if e1.curve.is_arc() || e2.curve.is_arc() {
+    if e1.curve.is_curved() || e2.curve.is_curved() {
         return Err(NOT_A_CORNER);
     }
     let tol = model.tol();

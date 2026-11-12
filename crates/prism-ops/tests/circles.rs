@@ -27,7 +27,7 @@ fn arcs(m: &Model) -> Vec<(DVec3, f64)> {
     m.edges()
         .filter_map(|(_, e)| match e.curve {
             Curve::Arc { centre, radius, .. } => Some((centre, radius)),
-            Curve::Line => None,
+            _ => None,
         })
         .collect()
 }

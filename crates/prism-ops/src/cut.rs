@@ -482,7 +482,7 @@ fn split_some_meetings(model: &mut Model, id: FaceId) -> bool {
         if used.contains(&e1) || used.contains(&e2) {
             continue;
         }
-        let (Some(x1), Some(x2)) = (model.edge(e1).copied(), model.edge(e2).copied()) else {
+        let (Some(x1), Some(x2)) = (model.edge(e1).cloned(), model.edge(e2).cloned()) else {
             continue;
         };
         let ends = |x: &prism_topo::Edge| (model.vertex(x.a), model.vertex(x.b));
@@ -490,7 +490,7 @@ fn split_some_meetings(model: &mut Model, id: FaceId) -> bool {
         let (a2, b2) = ends(&x2);
         let near = rev.point(q.x, q.y);
         let p = if !x1.approx && !x2.approx {
-            crate::sticky::meet((x1.curve, a1, b1), (x2.curve, a2, b2), &tol)
+            crate::sticky::meet((&x1.curve, a1, b1), (&x2.curve, a2, b2), &tol)
                 .into_iter()
                 .min_by(|m, n| m.distance(near).total_cmp(&n.distance(near)))
                 .filter(|m| m.distance(near) < (a1.distance(b1) + a2.distance(b2)) * 0.1)
@@ -573,7 +573,7 @@ pub fn split_face(model: &mut Model, id: FaceId) -> Vec<FaceId> {
     let boundary_vs: BTreeSet<VertexId> = face.loops().flatten().copied().collect();
 
     for e in candidates {
-        let Some(x) = pl.model.edge(e).copied() else {
+        let Some(x) = pl.model.edge(e).cloned() else {
             continue;
         };
         let Some(raw) = pl.edge_pts(e) else { continue };

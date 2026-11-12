@@ -260,7 +260,7 @@ fn plan(model: &Model, face: FaceId, distance: f64) -> Result<Plan, &'static str
         .collect();
     let mut curves = Vec::new();
     for (id, e) in model.edges() {
-        if !(vs.contains(&e.a) || vs.contains(&e.b)) || !e.curve.is_arc() {
+        if !(vs.contains(&e.a) || vs.contains(&e.b)) || !e.curve.is_curved() {
             continue;
         }
         if !on_surface.contains(&id) {

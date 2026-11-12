@@ -127,7 +127,7 @@ pub enum Guide {
 
 /// An edge between two vertices. `a` is always the smaller id; an arc runs
 /// from `a` to `b` (counter-clockwise about its axis).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Edge {
     pub a: VertexId,
     pub b: VertexId,
@@ -155,6 +155,15 @@ fn is_false(b: &bool) -> bool {
 }
 
 impl Edge {
+    /// The curve walked starting from end `v`.
+    pub fn curve_from(&self, v: VertexId) -> Curve {
+        if v == self.a {
+            self.curve.clone()
+        } else {
+            self.curve.reversed()
+        }
+    }
+
     pub fn has(&self, v: VertexId) -> bool {
         self.a == v || self.b == v
     }
@@ -461,7 +470,7 @@ impl Model {
         let (a, b) = if a < b { (a, b) } else { (b, a) };
         self.edges
             .iter()
-            .find(|(_, e)| e.a == a && e.b == b && !e.curve.is_arc())
+            .find(|(_, e)| e.a == a && e.b == b && !e.curve.is_curved())
             .map(|(id, _)| *id)
     }
 
@@ -618,13 +627,13 @@ impl Model {
     pub fn face_has_arcs(&self, id: FaceId) -> bool {
         self.face(id).is_some_and(|f| {
             f.edge_ids()
-                .any(|e| self.edges.get(&e).is_some_and(|x| x.curve.is_arc()))
+                .any(|e| self.edges.get(&e).is_some_and(|x| x.curve.is_curved()))
         })
     }
 
     /// Whether any edge is an arc.
     pub fn has_arcs(&self) -> bool {
-        self.edges.values().any(|e| e.curve.is_arc())
+        self.edges.values().any(|e| e.curve.is_curved())
     }
 
     pub fn edge(&self, id: EdgeId) -> Option<&Edge> {
@@ -647,16 +656,18 @@ impl Model {
     /// halves into every face loop that ran along the edge. Returns the two
     /// new edges.
     pub fn split_edge(&mut self, id: EdgeId, mid: VertexId) -> Option<(EdgeId, EdgeId)> {
-        let e = *self.edges.get(&id)?;
+        let e = self.edges.get(&id)?.clone();
         if mid == e.a || mid == e.b {
             return None;
         }
         self.edges.remove(&id);
-        // Arcs split into two arcs of the same circle and curve.
-        let (first, second) = if e.curve.is_arc() {
+        // Arcs split into two arcs of the same circle and curve; splines
+        // into the two parts of the same curve.
+        let (first, second) = if e.curve.is_curved() {
+            let (c1, c2) = e.curve.split_at(self.vertex(mid));
             (
-                self.push_edge(e.a, mid, e.curve, e.curve_id),
-                self.push_edge(mid, e.b, e.curve, e.curve_id),
+                self.push_edge(e.a, mid, c1, e.curve_id),
+                self.push_edge(mid, e.b, c2, e.curve_id),
             )
         } else {
             let first = self.add_edge(e.a, mid)?;
@@ -847,11 +858,7 @@ impl Model {
                 .filter_map(|s| {
                     let e = self.edge(s.edge)?;
                     let (p, q) = (self.vertex(s.from), self.vertex(s.to));
-                    let c = if s.from == e.a {
-                        e.curve
-                    } else {
-                        e.curve.reversed()
-                    };
+                    let c = e.curve_from(s.from);
                     Some(c.bulge_area(p, q, n))
                 })
                 .sum();
@@ -890,7 +897,7 @@ impl Model {
             if let Curve::Arc { axis, .. } = e.curve {
                 let q = self.vertex(l[(i + 1) % l.len()]);
                 let (curve, dir) = if e.a == *v {
-                    (e.curve, axis)
+                    (e.curve.clone(), axis)
                 } else {
                     (e.curve.reversed(), -axis)
                 };
@@ -993,7 +1000,7 @@ impl Model {
             let Some(e) = ids.get(i).and_then(|id| self.edges.get(id)) else {
                 continue;
             };
-            if e.curve.is_arc() {
+            if e.curve.is_curved() {
                 let (pa, pb) = (self.vertex(e.a), self.vertex(e.b));
                 let mut inner = e.curve.inner_points(pa, pb);
                 if *v != e.a {
@@ -1098,7 +1105,7 @@ impl Model {
                 let cid = e
                     .curve_id
                     .map(|c| *cmap.entry(c).or_insert_with(|| self.new_curve_id()));
-                let id = self.push_edge(*a, *b, e.curve, cid);
+                let id = self.push_edge(*a, *b, e.curve.clone(), cid);
                 self.set_soft(id, e.soft, e.smooth);
                 emap.insert(old, id);
             }
@@ -1131,7 +1138,7 @@ impl Model {
     pub fn to_parts(&self) -> ModelParts {
         ModelParts {
             vertices: self.vertices().collect(),
-            edges: self.edges.iter().map(|(k, v)| (*k, *v)).collect(),
+            edges: self.edges.iter().map(|(k, v)| (*k, v.clone())).collect(),
             faces: self.faces.iter().map(|(k, v)| (*k, v.clone())).collect(),
             guides: self.guides.iter().map(|(k, v)| (*k, *v)).collect(),
             counters: self.counters(),
@@ -1244,6 +1251,13 @@ impl Model {
                     out.push(format!("edge {id:?} has curve {cid:?} above its counter"));
                 }
             }
+            if let Curve::Spline(s) = &e.curve {
+                for (v, t) in [(e.a, 0.0), (e.b, 1.0)] {
+                    if self.has_vertex(v) && s.point(t).distance(self.vertex(v)) > tol.dist {
+                        out.push(format!("curve {id:?}: point {v:?} is off it"));
+                    }
+                }
+            }
             if !self.has_vertex(e.a) || !self.has_vertex(e.b) {
                 out.push(format!("edge {id:?} uses a missing vertex"));
             }
@@ -1254,7 +1268,7 @@ impl Model {
             }
             pairs.insert((e.a, e.b));
             // A line and an arc, or two arcs, may join the same two vertices.
-            if !e.curve.is_arc() && !lines.insert((e.a, e.b)) {
+            if !e.curve.is_curved() && !lines.insert((e.a, e.b)) {
                 out.push(format!("edge {id:?} repeats another edge"));
             }
         }
@@ -1271,7 +1285,7 @@ impl Model {
                 let curved = f
                     .loop_edge_ids(k)
                     .iter()
-                    .any(|e| self.edges.get(e).is_some_and(|x| x.curve.is_arc()));
+                    .any(|e| self.edges.get(e).is_some_and(|x| x.curve.is_curved()));
                 if l.len() < 3 && !(l.len() == 2 && curved) {
                     out.push(format!("face {id:?} has a loop of {} vertices", l.len()));
                 }
@@ -1297,6 +1311,18 @@ impl Model {
                                 {
                                     out.push(format!(
                                         "face {id:?} uses arc {e:?}, which is not in its plane"
+                                    ));
+                                }
+                                if x.curve.is_spline()
+                                    && !f.surface.holds(
+                                        &x.curve,
+                                        self.vertex(x.a),
+                                        self.vertex(x.b),
+                                        self.tol().dist,
+                                    )
+                                {
+                                    out.push(format!(
+                                        "face {id:?} uses curve {e:?}, which is not in its plane"
                                     ));
                                 }
                             }

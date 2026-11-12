@@ -55,6 +55,13 @@ impl Planar {
             let (pa, pb) = (m.vertex(e.a), m.vertex(e.b));
             let (a, b) = (fr.to_2d(pa), fr.to_2d(pb));
             match e.curve {
+                // A spline as the straight steps it is drawn with.
+                Curve::Spline(_) => {
+                    let mut pts = vec![a];
+                    pts.extend(e.curve.inner_points(pa, pb).iter().map(|p| fr.to_2d(*p)));
+                    pts.push(b);
+                    sides.extend(pts.windows(2).map(|w| Side2::Line(w[0], w[1])));
+                }
                 Curve::Line => sides.push(Side2::Line(a, b)),
                 Curve::Arc { centre, radius, .. } => sides.push(Side2::Arc {
                     a,

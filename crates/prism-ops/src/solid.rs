@@ -292,7 +292,7 @@ pub fn keep_boundary(model: &mut Model, touched: &BTreeSet<VertexId>, swept: Opt
     let used: BTreeSet<EdgeId> = model.faces().flat_map(|(_, f)| f.edge_ids()).collect();
     let mut points: BTreeSet<VertexId> = BTreeSet::new();
     for e in maybe_loose.difference(&used) {
-        if let Some(ed) = model.edge(*e).copied() {
+        if let Some(ed) = model.edge(*e).cloned() {
             model.remove_edge(*e);
             points.insert(ed.a);
             points.insert(ed.b);

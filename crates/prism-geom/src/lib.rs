@@ -10,7 +10,11 @@ use std::f64::consts::TAU;
 use prism_math::{DAffine3, DVec3, Plane};
 use serde::{Deserialize, Serialize};
 
+mod meeting;
+mod nurbs;
 mod revolved;
+pub use meeting::curves_meet;
+pub use nurbs::{MAX_DEGREE, Nurbs, Spline};
 pub use revolved::{Cone, Profile, Revolution, Sphere, Torus, axis_frame};
 
 /// Segments per full turn when an arc is drawn or used as a polygon. Fine
@@ -18,7 +22,7 @@ pub use revolved::{Cone, Profile, Revolution, Sphere, Torus, axis_frame};
 pub const SEGMENTS_PER_TURN: usize = 128;
 
 /// The curve an edge follows between its two vertices.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum Curve {
     /// A straight line.
     #[default]
@@ -30,6 +34,8 @@ pub enum Curve {
         axis: DVec3,
         radius: f64,
     },
+    /// A part of a NURBS curve (Freeform NURBS part 1).
+    Spline(Spline),
 }
 
 impl Curve {
@@ -37,25 +43,46 @@ impl Curve {
         matches!(self, Curve::Arc { .. })
     }
 
+    pub fn is_spline(&self) -> bool {
+        matches!(self, Curve::Spline(_))
+    }
+
+    /// Not a straight line: an arc or a spline.
+    pub fn is_curved(&self) -> bool {
+        !matches!(self, Curve::Line)
+    }
+
+    pub fn spline(&self) -> Option<&Spline> {
+        match self {
+            Curve::Spline(s) => Some(s),
+            _ => None,
+        }
+    }
+
     /// The same curve walked from `b` to `a`.
     pub fn reversed(&self) -> Curve {
-        match *self {
+        match self {
             Curve::Line => Curve::Line,
             Curve::Arc {
                 centre,
                 axis,
                 radius,
             } => Curve::Arc {
-                centre,
-                axis: -axis,
-                radius,
+                centre: *centre,
+                axis: -*axis,
+                radius: *radius,
             },
+            Curve::Spline(s) => Curve::Spline(s.reversed()),
         }
     }
 
-    /// The angle swept from `a` to `b` (0 for a line). In (0, 2π]: ends at
-    /// the same angle make a full turn.
+    /// The angle swept from `a` to `b` (0 for a line; for a spline, how far
+    /// its direction turns). For an arc in (0, 2π]: ends at the same angle
+    /// make a full turn.
     pub fn sweep(&self, a: DVec3, b: DVec3) -> f64 {
+        if let Curve::Spline(s) = self {
+            return s.curve.turning(s.t0, s.t1);
+        }
         let Some((u, v, c)) = self.frame(a) else {
             return 0.0;
         };
@@ -77,20 +104,24 @@ impl Curve {
 
     /// A point at fraction `t` (0 to 1) of the way from `a` to `b`.
     pub fn point(&self, a: DVec3, b: DVec3, t: f64) -> DVec3 {
-        match *self {
+        match self {
             Curve::Line => a.lerp(b, t),
             Curve::Arc { radius, .. } => {
                 let Some((u, v, c)) = self.frame(a) else {
                     return a;
                 };
                 let th = self.sweep(a, b) * t;
-                c + (u * th.cos() + v * th.sin()) * radius
+                c + (u * th.cos() + v * th.sin()) * *radius
             }
+            Curve::Spline(s) => s.point(t),
         }
     }
 
     /// The unit direction of travel at `a`, walking towards `b`.
     pub fn start_tangent(&self, a: DVec3, b: DVec3) -> DVec3 {
+        if let Curve::Spline(s) = self {
+            return s.tangent(0.0);
+        }
         match self.frame(a) {
             Some((_, v, _)) => v,
             None => (b - a).normalize_or_zero(),
@@ -99,48 +130,78 @@ impl Curve {
 
     /// The unit direction of travel arriving at `b` from `a`.
     pub fn end_tangent(&self, a: DVec3, b: DVec3) -> DVec3 {
+        if let Curve::Spline(s) = self {
+            return s.tangent(1.0);
+        }
         match self.frame(b) {
             Some((_, v, _)) => v,
             None => (b - a).normalize_or_zero(),
         }
     }
 
-    /// The length from `a` to `b`.
-    pub fn length(&self, a: DVec3, b: DVec3) -> f64 {
-        match *self {
-            Curve::Line => a.distance(b),
-            Curve::Arc { radius, .. } => radius * self.sweep(a, b),
+    /// The unit direction of travel at the point of the curve closest to
+    /// `p`.
+    pub fn tangent_at(&self, a: DVec3, b: DVec3, p: DVec3) -> DVec3 {
+        match self {
+            Curve::Line => (b - a).normalize_or_zero(),
+            Curve::Arc { .. } => self.frame(p).map_or(DVec3::ZERO, |(_, v, _)| v),
+            Curve::Spline(s) => s.tangent(s.closest(p)),
         }
     }
 
-    /// The points strictly between `a` and `b`, at even steps (none for a
-    /// line).
-    pub fn inner_points(&self, a: DVec3, b: DVec3) -> Vec<DVec3> {
-        if !self.is_arc() {
-            return Vec::new();
+    /// The length from `a` to `b`.
+    pub fn length(&self, a: DVec3, b: DVec3) -> f64 {
+        match self {
+            Curve::Line => a.distance(b),
+            Curve::Arc { radius, .. } => radius * self.sweep(a, b),
+            Curve::Spline(s) => s.length(),
         }
-        let n = segments(self.sweep(a, b));
-        (1..n)
-            .map(|i| self.point(a, b, i as f64 / n as f64))
-            .collect()
+    }
+
+    /// The points strictly between `a` and `b` that the curve is drawn
+    /// through (none for a line).
+    pub fn inner_points(&self, a: DVec3, b: DVec3) -> Vec<DVec3> {
+        match self {
+            Curve::Line => Vec::new(),
+            Curve::Arc { .. } => {
+                let n = segments(self.sweep(a, b));
+                (1..n)
+                    .map(|i| self.point(a, b, i as f64 / n as f64))
+                    .collect()
+            }
+            Curve::Spline(s) => s.inner_points(),
+        }
     }
 
     /// The area between the chord `a`–`b` and the curve, signed about
     /// `normal`: positive when the curve bulges to the right of the chord
     /// walked from `a` to `b` (out of a counter-clockwise loop).
     pub fn bulge_area(&self, a: DVec3, b: DVec3, normal: DVec3) -> f64 {
-        let Curve::Arc { axis, radius, .. } = *self else {
-            return 0.0;
-        };
-        let th = self.sweep(a, b);
-        radius * radius * 0.5 * (th - th.sin()) * axis.dot(normal).signum()
+        match self {
+            Curve::Line => 0.0,
+            Curve::Arc { axis, radius, .. } => {
+                let th = self.sweep(a, b);
+                radius * radius * 0.5 * (th - th.sin()) * axis.dot(normal).signum()
+            }
+            Curve::Spline(s) => {
+                // The area of the drawn polygon closed by the chord.
+                let mut pts = vec![a];
+                pts.extend(s.inner_points());
+                pts.push(b);
+                pts.windows(2)
+                    .map(|w| (w[0] - a).cross(w[1] - a).dot(normal))
+                    .sum::<f64>()
+                    * 0.5
+            }
+        }
     }
 
     /// The curve after `m`, if it is still this kind of curve. An arc stays
     /// an arc under moves, turns, mirrors and even scales; an uneven scale
-    /// would make an ellipse, so it gives None.
+    /// would make an ellipse, so it gives None. A spline stays a spline
+    /// under any `m`.
     pub fn transformed(&self, m: &DAffine3) -> Option<Curve> {
-        match *self {
+        match self {
             Curve::Line => Some(Curve::Line),
             Curve::Arc {
                 centre,
@@ -150,17 +211,18 @@ impl Curve {
                 let s = even_scale(m)?;
                 let flip = m.matrix3.determinant().signum();
                 Some(Curve::Arc {
-                    centre: m.transform_point3(centre),
-                    axis: (m.matrix3 * axis).normalize() * flip,
+                    centre: m.transform_point3(*centre),
+                    axis: (m.matrix3 * *axis).normalize() * flip,
                     radius: radius * s,
                 })
             }
+            Curve::Spline(s) => Some(Curve::Spline(s.transformed(m))),
         }
     }
 
     /// The point of the curve from `a` to `b` closest to `p`.
     pub fn closest_point(&self, a: DVec3, b: DVec3, p: DVec3) -> DVec3 {
-        match *self {
+        match self {
             Curve::Line => {
                 let d = b - a;
                 let l2 = d.length_squared();
@@ -180,21 +242,40 @@ impl Curve {
                 }
                 let th = y.atan2(x).rem_euclid(TAU);
                 if th <= self.sweep(a, b) {
-                    c + (u * th.cos() + v * th.sin()) * radius
+                    c + (u * th.cos() + v * th.sin()) * *radius
                 } else if p.distance(a) <= p.distance(b) {
                     a
                 } else {
                     b
                 }
             }
+            Curve::Spline(s) => s.point(s.closest(p)),
         }
     }
 
-    /// For an arc, its plane (through the centre, along the axis).
+    /// For an arc, its plane (through the centre, along the axis). For a
+    /// spline that lies in one plane, that plane.
     pub fn plane(&self) -> Option<Plane> {
-        match *self {
+        match self {
             Curve::Line => None,
-            Curve::Arc { centre, axis, .. } => Some(Plane::new(centre, axis)),
+            Curve::Arc { centre, axis, .. } => Some(Plane::new(*centre, *axis)),
+            Curve::Spline(s) => {
+                let pts = s.curve.points();
+                let size = pts.iter().map(|p| p.distance(pts[0])).fold(0.0, f64::max);
+                s.curve.plane(size * 1e-9)
+            }
+        }
+    }
+
+    /// The two halves of the curve from `a` to `b`, cut at `p` on it: what
+    /// the two edges of a split edge follow.
+    pub fn split_at(&self, p: DVec3) -> (Curve, Curve) {
+        match self {
+            Curve::Spline(s) => {
+                let (x, y) = s.split(p);
+                (Curve::Spline(x), Curve::Spline(y))
+            }
+            c => (c.clone(), c.clone()),
         }
     }
 }
@@ -467,6 +548,7 @@ impl Cylinder {
             return false;
         }
         match *curve {
+            Curve::Spline(ref sp) => sp.inner_points().into_iter().all(on),
             Curve::Line => {
                 let d = b - a;
                 (d - self.axis * d.dot(self.axis)).length() <= eps
@@ -615,6 +697,10 @@ impl Surface {
             Surface::Plane(pl) => match curve {
                 Curve::Line => true,
                 Curve::Arc { axis, .. } => (axis.dot(pl.normal).abs() - 1.0).abs() <= 1e-9,
+                Curve::Spline(sp) => sp
+                    .inner_points()
+                    .into_iter()
+                    .all(|p| pl.distance(p).abs() <= eps),
             },
             Surface::Cylinder(c) => c.holds(curve, a, b, eps),
             Surface::Cone(c) => c.holds(curve, a, b, eps),

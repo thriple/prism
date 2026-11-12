@@ -225,7 +225,7 @@ fn run(
                 let e = model.edge(*id).expect("edge");
                 Seg {
                     id: *id,
-                    curve: e.curve,
+                    curve: e.curve.clone(),
                     a: model.vertex(e.a),
                     b: model.vertex(e.b),
                     tag: combine(tag_of(&e.a), tag_of(&e.b)),
@@ -282,6 +282,14 @@ fn meeting_points(segs: &[Seg], tol: &Tol) -> Vec<DVec3> {
                 (centre - r, centre + r)
             }
             Curve::Line => (s.a.min(s.b) - pad, s.a.max(s.b) + pad),
+            // A spline lies inside the box of its control points.
+            Curve::Spline(ref sp) => {
+                let pts = sp.curve.points();
+                (
+                    pts.iter().fold(pts[0], |m, p| m.min(*p)) - pad,
+                    pts.iter().fold(pts[0], |m, p| m.max(*p)) + pad,
+                )
+            }
         })
         .collect();
     let mut points = Vec::new();
@@ -301,14 +309,14 @@ fn meeting_points(segs: &[Seg], tol: &Tol) -> Vec<DVec3> {
             if lo.0.cmpgt(hi.1).any() || hi.0.cmpgt(lo.1).any() {
                 continue;
             }
-            points.extend(meet((s.curve, s.a, s.b), (t.curve, t.a, t.b), tol));
+            points.extend(meet((&s.curve, s.a, s.b), (&t.curve, t.a, t.b), tol));
             for p in [t.a, t.b] {
-                if on_curve_inside(s.curve, s.a, s.b, p, tol) {
+                if on_curve_inside(&s.curve, s.a, s.b, p, tol) {
                     points.push(p);
                 }
             }
             for p in [s.a, s.b] {
-                if on_curve_inside(t.curve, t.a, t.b, p, tol) {
+                if on_curve_inside(&t.curve, t.a, t.b, p, tol) {
                     points.push(p);
                 }
             }
@@ -389,7 +397,7 @@ fn split_at(model: &mut Model, p: DVec3, tol: &Tol) {
     let through: Vec<EdgeId> = model
         .edges()
         .filter(|(_, e)| !e.has(v))
-        .filter(|(_, e)| on_curve_inside(e.curve, model.vertex(e.a), model.vertex(e.b), at, tol))
+        .filter(|(_, e)| on_curve_inside(&e.curve, model.vertex(e.a), model.vertex(e.b), at, tol))
         .map(|(id, _)| id)
         .collect();
     for e in through {

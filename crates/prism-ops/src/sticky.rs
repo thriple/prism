@@ -47,14 +47,14 @@ pub fn on_segment_inside(p: DVec3, a: DVec3, b: DVec3, tol: &Tol) -> Option<f64>
 
 /// Whether `p` lies on the edge `e`, clear of both its ends.
 pub(crate) fn on_edge_inside(model: &Model, e: &Edge, p: DVec3, tol: &Tol) -> bool {
-    on_curve_inside(e.curve, model.vertex(e.a), model.vertex(e.b), p, tol)
+    on_curve_inside(&e.curve, model.vertex(e.a), model.vertex(e.b), p, tol)
 }
 
 /// Whether `p` lies on `curve` from `a` to `b`, clear of both ends.
-pub(crate) fn on_curve_inside(curve: Curve, a: DVec3, b: DVec3, p: DVec3, tol: &Tol) -> bool {
+pub(crate) fn on_curve_inside(curve: &Curve, a: DVec3, b: DVec3, p: DVec3, tol: &Tol) -> bool {
     match curve {
         Curve::Line => on_segment_inside(p, a, b, tol).is_some(),
-        Curve::Arc { .. } => {
+        Curve::Arc { .. } | Curve::Spline(_) => {
             let c = curve.closest_point(a, b, p);
             c.distance(p) < tol.dist && c.distance(a) > tol.dist && c.distance(b) > tol.dist
         }
@@ -63,8 +63,8 @@ pub(crate) fn on_curve_inside(curve: Curve, a: DVec3, b: DVec3, p: DVec3, tol: &
 
 /// Where two curves (each with its ends) cross, clear of all four ends.
 pub(crate) fn meet(
-    (c1, a1, b1): (Curve, DVec3, DVec3),
-    (c2, a2, b2): (Curve, DVec3, DVec3),
+    (c1, a1, b1): (&Curve, DVec3, DVec3),
+    (c2, a2, b2): (&Curve, DVec3, DVec3),
     tol: &Tol,
 ) -> Vec<DVec3> {
     let pts = match (c1, c2) {
@@ -81,7 +81,7 @@ pub(crate) fn meet(
                 radius,
             },
             Curve::Line,
-        ) => circle_line(centre, axis, radius, a2, b2, tol.dist),
+        ) => circle_line(*centre, *axis, *radius, a2, b2, tol.dist),
         (
             Curve::Line,
             Curve::Arc {
@@ -89,7 +89,7 @@ pub(crate) fn meet(
                 axis,
                 radius,
             },
-        ) => circle_line(centre, axis, radius, a1, b1, tol.dist),
+        ) => circle_line(*centre, *axis, *radius, a1, b1, tol.dist),
         (
             Curve::Arc {
                 centre: p,
@@ -101,7 +101,9 @@ pub(crate) fn meet(
                 axis: m,
                 radius: s,
             },
-        ) => circle_circle((p, n, r), (q, m, s), tol.dist),
+        ) => circle_circle((*p, *n, *r), (*q, *m, *s), tol.dist),
+        // Anything with a spline: found by stepping along both.
+        _ => prism_geom::curves_meet((c1, a1, b1), (c2, a2, b2), tol.dist),
     };
     pts.into_iter()
         .filter(|x| on_curve_inside(c1, a1, b1, *x, tol) && on_curve_inside(c2, a2, b2, *x, tol))
@@ -149,7 +151,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     // Crossings with straight edges that do not touch the ends.
     let crossings: Vec<(EdgeId, f64, DVec3)> = model
         .edges()
-        .filter(|(_, e)| !e.has(a) && !e.has(b) && !e.curve.is_arc())
+        .filter(|(_, e)| !e.has(a) && !e.has(b) && !e.curve.is_curved())
         .filter_map(|(id, e)| {
             let (c, d) = (model.vertex(e.a), model.vertex(e.b));
             crossing(pa, pb, c, d, &tol).map(|(s, point)| (id, s, point))
@@ -185,6 +187,11 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
                         radius,
                     } => circle_line(centre, axis, radius, pa, pb, tol.dist),
                     Curve::Line => Vec::new(),
+                    Curve::Spline(_) => prism_geom::curves_meet(
+                        (&e.curve, model.vertex(e.a), model.vertex(e.b)),
+                        (&Curve::Line, pa, pb),
+                        tol.dist,
+                    ),
                 };
                 pts.into_iter().filter(move |x| {
                     on_edge_inside(model, e, *x, &tol)
@@ -259,7 +266,7 @@ pub fn add_polygon(model: &mut Model, points: &[DVec3]) {
     };
     let sides: Vec<EdgeId> = model
         .edges()
-        .filter(|(_, e)| !e.curve.is_arc())
+        .filter(|(_, e)| !e.curve.is_curved())
         .filter(|(_, e)| {
             let (a, b) = (on_side(model.vertex(e.a)), on_side(model.vertex(e.b)));
             // Both ends on one side (a corner is on two: check the middle).
@@ -398,7 +405,7 @@ fn add_arc_from(
         w.dot(v).atan2(w.dot(u)).rem_euclid(TAU)
     };
     let (pa, pb) = (model.vertex(a), model.vertex(b));
-    let on_this = |x: DVec3| full || on_curve_inside(arc, pa, pb, x, &tol);
+    let on_this = |x: DVec3| full || on_curve_inside(&arc, pa, pb, x, &tol);
     // Split the edges the arc crosses.
     let points: Vec<DVec3> = {
         let model = &*model;
@@ -419,6 +426,14 @@ fn add_arc_from(
                         axis,
                         radius: r,
                     } => circle_circle((centre, n, radius), (c, axis, r), tol.dist),
+                    Curve::Spline(_) => {
+                        let ends = (&e.curve, model.vertex(e.a), model.vertex(e.b));
+                        let mut pts = prism_geom::curves_meet(ends, (&arc, pa, pb), tol.dist);
+                        if full {
+                            pts.extend(prism_geom::curves_meet(ends, (&arc, pb, pa), tol.dist));
+                        }
+                        pts
+                    }
                 };
                 pts.into_iter()
                     .filter(move |x| on_edge_inside(model, e, *x, &tol))
@@ -454,11 +469,11 @@ fn add_arc_from(
     on.dedup_by_key(|x| x.1);
     // The same arc drawn again is the one already there.
     let same = |m: &Model, x: VertexId, y: VertexId| {
-        let want = if x < y { arc } else { arc.reversed() };
+        let want = if x < y { arc.clone() } else { arc.reversed() };
         m.edges().any(|(_, e)| {
             e.a == x.min(y)
                 && e.b == x.max(y)
-                && match (e.curve, want) {
+                && match (&e.curve, &want) {
                     (
                         Curve::Arc {
                             centre: c1,
@@ -471,8 +486,8 @@ fn add_arc_from(
                             radius: r2,
                         },
                     ) => {
-                        tol.same_point(c1, c2)
-                            && a1.dot(a2) > 1.0 - 1e-9
+                        tol.same_point(*c1, *c2)
+                            && a1.dot(*a2) > 1.0 - 1e-9
                             && (r1 - r2).abs() < tol.dist
                     }
                     _ => false,
@@ -494,7 +509,7 @@ fn add_arc_from(
     let cid = model.new_curve_id();
     let added: Vec<EdgeId> = missing
         .into_iter()
-        .filter_map(|(x, y)| model.add_curve_edge(x, y, arc, Some(cid)))
+        .filter_map(|(x, y)| model.add_curve_edge(x, y, arc.clone(), Some(cid)))
         .collect();
     let new: BTreeSet<EdgeId> = added.iter().copied().collect();
     let mut faces = rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0);
@@ -631,4 +646,117 @@ pub fn vertex_at(model: &Model, p: DVec3) -> Option<VertexId> {
         .vertices()
         .find(|(_, v)| tol.same_point(*v, p))
         .map(|(id, _)| id)
+}
+
+/// Add a NURBS curve (Freeform NURBS part 1). Like a segment or an arc, it
+/// cuts and is cut by what it crosses, takes in the vertices it passes
+/// through, and closes faces when it lies in a plane. Its pieces share the
+/// curve and one new curve id. A closed curve is two pieces at least, as a
+/// circle is. (A curve that crosses itself is not cut there yet.)
+pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
+    let (d0, d1) = curve.domain();
+    let closed = curve.is_closed();
+    let shared = std::sync::Arc::new(curve.clone());
+    let part = |t0: f64, t1: f64| {
+        Curve::Spline(prism_geom::Spline {
+            curve: shared.clone(),
+            t0,
+            t1,
+        })
+    };
+    let half = (d0 + d1) / 2.0;
+    let (start, far) = (curve.eval(d0), curve.eval(if closed { half } else { d1 }));
+    let mut extent: Vec<DVec3> = curve.points().to_vec();
+    extent.extend([start, far]);
+    let tol = tol_with(model, &extent);
+    if !start.is_finite() || !far.is_finite() || start.distance(far) <= tol.dist {
+        return Added::default();
+    }
+    let a = insert_point(model, start, &tol);
+    let b = insert_point(model, far, &tol);
+    if a == b {
+        return Added::default();
+    }
+    // Split the edges it crosses.
+    let ranges: Vec<(f64, f64)> = if closed {
+        vec![(d0, half), (half, d1)]
+    } else {
+        vec![(d0, d1)]
+    };
+    let crossings: Vec<DVec3> = {
+        let model = &*model;
+        ranges
+            .iter()
+            .flat_map(|&(t0, t1)| {
+                let piece = part(t0, t1);
+                let (pa, pb) = (curve.eval(t0), curve.eval(t1));
+                model
+                    .edges()
+                    .flat_map(|(_, e)| {
+                        prism_geom::curves_meet(
+                            (&piece, pa, pb),
+                            (&e.curve, model.vertex(e.a), model.vertex(e.b)),
+                            tol.dist,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    for x in crossings {
+        insert_point(model, x, &tol);
+    }
+    // Every vertex on the curve, in order along it.
+    let mut on: Vec<(f64, VertexId)> = model
+        .vertices()
+        .filter_map(|(id, x)| {
+            if id == a {
+                return Some((d0, id));
+            }
+            let t = curve.closest(x, d0, d1);
+            (curve.eval(t).distance(x) < tol.dist).then_some((t, id))
+        })
+        .collect();
+    on.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+    on.dedup_by_key(|x| x.1);
+    if closed {
+        on.push((d1, a));
+    } else if let Some(last) = on.iter_mut().find(|x| x.1 == b) {
+        last.0 = d1;
+    }
+    on.sort_by(|x, y| x.0.total_cmp(&y.0));
+    // The same piece drawn again is the one already there.
+    let same = |m: &Model, x: VertexId, y: VertexId, mid: DVec3| {
+        m.edges().any(|(_, e)| {
+            e.has(x)
+                && e.has(y)
+                && e.curve.is_spline()
+                && e.curve
+                    .closest_point(m.vertex(e.a), m.vertex(e.b), mid)
+                    .distance(mid)
+                    < tol.dist
+        })
+    };
+    let cid = model.new_curve_id();
+    let mut added = Vec::new();
+    for w in on.windows(2) {
+        let ((t0, x), (t1, y)) = (w[0], w[1]);
+        if x == y || t1 <= t0 || same(model, x, y, curve.eval((t0 + t1) / 2.0)) {
+            continue;
+        }
+        added.extend(model.add_curve_edge(x, y, part(t0, t1), Some(cid)));
+    }
+    if added.is_empty() {
+        return Added::default();
+    }
+    let new: BTreeSet<EdgeId> = added.iter().copied().collect();
+    let mut faces = Vec::new();
+    if let Some(plane) = curve.plane(tol.dist) {
+        faces = rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0);
+    }
+    faces.retain(|f| model.face(*f).is_some());
+    Added {
+        edges: added,
+        faces,
+    }
 }

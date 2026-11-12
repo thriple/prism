@@ -320,7 +320,7 @@ impl AppHost<'_> {
                 );
                 // An arc as placed in the world (an even group scale keeps
                 // it an arc).
-                let c = e.curve.transformed(&t).unwrap_or(e.curve);
+                let c = e.curve.transformed(&t).unwrap_or(e.curve.clone());
                 let mut j = json!({
                     "id": id.0,
                     "a": point(a),
@@ -331,13 +331,24 @@ impl AppHost<'_> {
                     centre,
                     axis,
                     radius,
-                } = c
+                } = &c
                 {
                     j["arc"] = json!({
-                        "centre": point(centre),
+                        "centre": point(*centre),
                         "axis": [round(axis.x), round(axis.y), round(axis.z)],
-                        "radius": round(radius),
+                        "radius": round(*radius),
                         "runs": "counter-clockwise about the axis from a to b",
+                    });
+                }
+                if let prism_geom::Curve::Spline(s) = &c {
+                    j["spline"] = json!({
+                        "degree": s.curve.degree(),
+                        "closed": s.curve.is_closed(),
+                        "control_points": s.curve.cage().iter().map(|p| point(*p)).collect::<Vec<_>>(),
+                        "knots": s.curve.knots(),
+                        "weights": s.curve.weights(),
+                        "from": s.t0,
+                        "to": s.t1,
                     });
                 }
                 if let Some(cid) = e.curve_id {
@@ -775,6 +786,34 @@ mod tests {
         assert!(has([-1.0, 0.0, 0.0]), "by centre: {g}");
         assert!(has([-1.0, 1.0, 0.0]), "the pie: {g}");
         assert_eq!(g["faces_total"], 1, "the pie is a face");
+    }
+
+    /// Freeform NURBS part 1: the Curve tool by clicks, and the curve in
+    /// `get_geometry`.
+    #[test]
+    fn use_tool_draws_a_nurbs_curve() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        assert!(h.chrome.enabled("tool.curve"));
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.curve", "steps": [{"click": [0, 0, 0]}, {"click": [1, 2, 0]}, {"click": [3, 2, 0]}, {"click": [4, 0, 0]}, {"key": "Enter"}]}),
+        ));
+        let g = value(h.call("get_geometry", &json!({})));
+        let edges = g["edges"].as_array().unwrap();
+        assert_eq!(edges.len(), 1, "{g}");
+        let s = &edges[0]["spline"];
+        assert_eq!(s["degree"], 3, "{g}");
+        assert_eq!(s["closed"], false);
+        assert_eq!(s["control_points"].as_array().unwrap().len(), 4);
+        assert_eq!(s["control_points"][1], json!([1.0, 2.0, 0.0]));
     }
 
     /// Exact Curves 5b: cones, spheres and tori are listed with their

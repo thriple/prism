@@ -18,7 +18,9 @@ use crate::FileError;
 /// is. Layout 6 (part 6a) adds approximate edges (DECISIONS #32). Layout 7
 /// (Basic Materials) adds each face's paint. Layout 8 (Basic Materials part
 /// 2) adds the texture placement of painted flat faces that have one.
-pub const VERSION: u32 = 8;
+/// Layout 9 (Freeform NURBS) adds NURBS curves and patches, each stored
+/// once and named by the edges and faces on it.
+pub const VERSION: u32 = 9;
 
 type P = [f64; 3];
 
@@ -119,7 +121,71 @@ struct GeometryV2 {
 #[derive(Serialize, Deserialize)]
 enum CurveV3 {
     Line,
-    Arc { centre: P, axis: P, radius: f64 },
+    Arc {
+        centre: P,
+        axis: P,
+        radius: f64,
+    },
+    /// Freeform NURBS (layout 9): added at the end, so older entries read
+    /// as they are. `curve` is a place in the layout's `splines`.
+    Spline {
+        curve: u32,
+        t0: f64,
+        t1: f64,
+    },
+}
+
+/// A NURBS curve (layout 9).
+#[derive(Serialize, Deserialize)]
+struct SplineV9 {
+    degree: u32,
+    knots: Vec<f64>,
+    points: Vec<P>,
+    weights: Vec<f64>,
+    periodic: bool,
+}
+
+/// A NURBS patch (layout 9): the control net row by row along u.
+#[derive(Serialize, Deserialize)]
+struct PatchV9 {
+    degree: [u32; 2],
+    knots: [Vec<f64>; 2],
+    count: [u32; 2],
+    points: Vec<P>,
+    weights: Vec<f64>,
+    periodic: [bool; 2],
+}
+
+/// Layout 9: as layout 8, and the NURBS curves and patches that edges and
+/// faces name.
+#[derive(Serialize, Deserialize)]
+struct GeometryV9 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV6>,
+    faces: Vec<FaceV2>,
+    guides: Vec<(u32, GuideV1)>,
+    /// Vertex, edge, face, guide and curve counters.
+    counters: [u32; 5],
+    paint: Vec<(u32, Option<u32>, Option<u32>)>,
+    uv: Vec<(u32, P, P, P)>,
+    splines: Vec<SplineV9>,
+    patches: Vec<PatchV9>,
+}
+
+impl From<GeometryV8> for GeometryV9 {
+    fn from(g: GeometryV8) -> GeometryV9 {
+        GeometryV9 {
+            vertices: g.vertices,
+            edges: g.edges,
+            faces: g.faces,
+            guides: g.guides,
+            counters: g.counters,
+            paint: g.paint,
+            uv: g.uv,
+            splines: Vec::new(),
+            patches: Vec::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -354,7 +420,61 @@ fn ids(l: &[VertexId]) -> Vec<u32> {
 
 pub fn encode(m: &Model) -> Vec<u8> {
     let parts = m.to_parts();
-    let g = GeometryV8 {
+    // Each NURBS curve once: edges on the same curve name the same entry.
+    let mut shared: Vec<std::sync::Arc<prism_geom::Nurbs>> = Vec::new();
+    let mut place = |c: &std::sync::Arc<prism_geom::Nurbs>| -> u32 {
+        let at = shared
+            .iter()
+            .position(|x| std::sync::Arc::ptr_eq(x, c) || x == c)
+            .unwrap_or_else(|| {
+                shared.push(c.clone());
+                shared.len() - 1
+            });
+        at as u32
+    };
+    let edges = parts
+        .edges
+        .iter()
+        .map(|(id, e)| EdgeV6 {
+            id: id.0,
+            a: e.a.0,
+            b: e.b.0,
+            curve: match &e.curve {
+                Curve::Line => CurveV3::Line,
+                Curve::Arc {
+                    centre,
+                    axis,
+                    radius,
+                } => CurveV3::Arc {
+                    centre: p(*centre),
+                    axis: p(*axis),
+                    radius: *radius,
+                },
+                Curve::Spline(s) => CurveV3::Spline {
+                    curve: place(&s.curve),
+                    t0: s.t0,
+                    t1: s.t1,
+                },
+            },
+            curve_id: e.curve_id.map(|c| c.0),
+            soft: e.soft,
+            smooth: e.smooth,
+            approx: e.approx,
+        })
+        .collect();
+    let g = GeometryV9 {
+        splines: shared
+            .iter()
+            .map(|c| SplineV9 {
+                degree: c.degree() as u32,
+                knots: c.knots().to_vec(),
+                points: c.points().iter().map(|x| p(*x)).collect(),
+                weights: c.weights().to_vec(),
+                periodic: c.is_periodic(),
+            })
+            .collect(),
+        patches: Vec::new(),
+        edges,
         uv: parts
             .faces
             .iter()
@@ -371,31 +491,6 @@ pub fn encode(m: &Model) -> Vec<u8> {
             .map(|(id, f)| (id.0, f.paint.front.map(|x| x.0), f.paint.back.map(|x| x.0)))
             .collect(),
         vertices: parts.vertices.iter().map(|(id, v)| (id.0, p(*v))).collect(),
-        edges: parts
-            .edges
-            .iter()
-            .map(|(id, e)| EdgeV6 {
-                id: id.0,
-                a: e.a.0,
-                b: e.b.0,
-                curve: match e.curve {
-                    Curve::Line => CurveV3::Line,
-                    Curve::Arc {
-                        centre,
-                        axis,
-                        radius,
-                    } => CurveV3::Arc {
-                        centre: p(centre),
-                        axis: p(axis),
-                        radius,
-                    },
-                },
-                curve_id: e.curve_id.map(|c| c.0),
-                soft: e.soft,
-                smooth: e.smooth,
-                approx: e.approx,
-            })
-            .collect(),
         faces: parts
             .faces
             .iter()
@@ -468,8 +563,9 @@ pub fn encode(m: &Model) -> Vec<u8> {
 
 pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
     let bad = |e: postcard::Error| FileError::Damaged(format!("geometry: {e}"));
-    let v4 = |g: GeometryV4| GeometryV8::from(GeometryV7::from(GeometryV6::from(g)));
-    let g: GeometryV8 = match version {
+    let v4 =
+        |g: GeometryV4| GeometryV9::from(GeometryV8::from(GeometryV7::from(GeometryV6::from(g))));
+    let g: GeometryV9 = match version {
         1 => v4(GeometryV3::from(GeometryV2::from(
             postcard::from_bytes::<GeometryV1>(bytes).map_err(bad)?,
         ))
@@ -479,11 +575,15 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             .map_err(bad)?
             .into()),
         4 | 5 => v4(postcard::from_bytes(bytes).map_err(bad)?),
-        6 => GeometryV7::from(postcard::from_bytes::<GeometryV6>(bytes).map_err(bad)?).into(),
-        7 => postcard::from_bytes::<GeometryV7>(bytes)
+        6 => GeometryV8::from(GeometryV7::from(
+            postcard::from_bytes::<GeometryV6>(bytes).map_err(bad)?,
+        ))
+        .into(),
+        7 => GeometryV8::from(postcard::from_bytes::<GeometryV7>(bytes).map_err(bad)?).into(),
+        8 => postcard::from_bytes::<GeometryV8>(bytes)
             .map_err(bad)?
             .into(),
-        8 => postcard::from_bytes(bytes).map_err(bad)?,
+        9 => postcard::from_bytes(bytes).map_err(bad)?,
         _ => {
             return Err(FileError::Damaged(format!(
                 "unknown geometry layout {version}"
@@ -491,6 +591,24 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
         }
     };
     let v = |a: u32| VertexId(a);
+    let splines: Vec<std::sync::Arc<prism_geom::Nurbs>> = g
+        .splines
+        .iter()
+        .map(|c| {
+            prism_geom::Nurbs::new(
+                c.degree as usize,
+                c.knots.clone(),
+                c.points.iter().map(|x| DVec3::from_array(*x)).collect(),
+                c.weights.clone(),
+                c.periodic,
+            )
+            .map(std::sync::Arc::new)
+            .ok_or_else(|| {
+                FileError::Damaged("geometry: a NURBS curve does not fit together".into())
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let mut bad_curve = false;
     let paint: std::collections::BTreeMap<u32, prism_topo::Paint> = g
         .paint
         .iter()
@@ -531,6 +649,21 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                                 axis: DVec3::from_array(axis),
                                 radius,
                             },
+                            CurveV3::Spline { curve, t0, t1 } => {
+                                match splines.get(curve as usize) {
+                                    Some(c) if t0.is_finite() && t1.is_finite() => {
+                                        Curve::Spline(prism_geom::Spline {
+                                            curve: c.clone(),
+                                            t0,
+                                            t1,
+                                        })
+                                    }
+                                    _ => {
+                                        bad_curve = true;
+                                        Curve::Line
+                                    }
+                                }
+                            }
                         },
                         curve_id: e.curve_id.map(CurveId),
                         soft: e.soft,
@@ -659,6 +792,11 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                 f.paint.uv = uv.get(&id.0).copied();
             }
         }
+    }
+    if bad_curve {
+        return Err(FileError::Damaged(
+            "geometry: an edge names a NURBS curve that is not there".into(),
+        ));
     }
     Model::from_parts(parts).map_err(|e| FileError::Damaged(format!("geometry: {e}")))
 }

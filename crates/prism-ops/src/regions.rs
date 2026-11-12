@@ -49,7 +49,7 @@ fn side_polygon(model: &Model, frame: &Frame, sides: &[Side]) -> Vec<DVec2> {
         let p = model.vertex(*from);
         out.push(frame.to_2d(p));
         if let Some(ed) = model.edge(*e)
-            && ed.curve.is_arc()
+            && ed.curve.is_curved()
         {
             let (pa, pb) = (model.vertex(ed.a), model.vertex(ed.b));
             let mut inner = ed.curve.inner_points(pa, pb);
@@ -111,6 +111,7 @@ pub(crate) fn rebuild_plane(
             Curve::Arc { centre, axis, .. } => {
                 plane.contains(centre, tol) && tol.parallel(axis, plane.normal)
             }
+            Curve::Spline(ref s) => s.curve.points().iter().all(|p| plane.contains(*p, tol)),
         })
         .map(|(id, e)| (id, e.a, e.b))
         .collect();
@@ -474,8 +475,19 @@ fn trace(
         let Some(ed) = model.edge(e) else {
             return (on[&to], 0.0);
         };
-        match ed.curve {
+        match ed.curve.clone() {
             Curve::Line => (on[&to], 0.0),
+            Curve::Spline(_) => {
+                // Its direction at this end, and how it bends to the left.
+                let c = ed.curve_from(from);
+                let Some(s) = c.spline() else {
+                    return (on[&to], 0.0);
+                };
+                let t = s.tangent(0.0);
+                let t2 = DVec2::new(t.dot(frame.u), t.dot(frame.v));
+                let bend = s.curve.curvature(s.t0).dot(frame.normal.cross(t));
+                (o + t2 * model.vertex(from).distance(model.vertex(to)), bend)
+            }
             c @ Curve::Arc { axis, radius, .. } => {
                 let (pa, pb) = (model.vertex(ed.a), model.vertex(ed.b));
                 let (c, p, q) = if from == ed.a {

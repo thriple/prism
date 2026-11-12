@@ -66,6 +66,9 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             // Schema 9 adds texture images (`images/`) and placement on
             // faces (geometry layout 8, which reads layout 7 with none).
             8 => raw,
+            // Schema 10 adds NURBS curves and patches (geometry layout 9,
+            // which reads layout 8 with none).
+            9 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

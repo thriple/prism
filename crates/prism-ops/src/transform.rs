@@ -50,6 +50,9 @@ pub fn scaling(centre: DVec3, k: DVec3) -> DAffine3 {
 /// Said when a move would bend an arc.
 pub const ARC_WOULD_BEND: &str =
     "Refused: an arc would bend. Move its whole curve, or scale it evenly.";
+/// Said when one end of a NURBS curve would move without the other.
+pub const SPLINE_WOULD_BEND: &str =
+    "Refused: one end of a curve cannot move alone. Move the whole curve, or its control points.";
 /// Said when a move would fold a face with arcs.
 pub const ARC_FACE_WOULD_FOLD: &str =
     "Refused: a face with arcs would fold. Keep it flat, or move all of it.";
@@ -79,13 +82,18 @@ pub fn arcs_follow(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> bool
 /// Why moving `vs` by `m` is refused ([`arcs_follow`]), if it is: what the
 /// tools say.
 pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Option<&'static str> {
-    let arcs_ok = model.edges().all(|(_, e)| {
-        let (a, b) = (vs.contains(&e.a), vs.contains(&e.b));
-        // A whole arc scaled unevenly falls back to segments (`approx`).
-        !e.curve.is_arc() || a == b
-    });
-    if !arcs_ok {
+    let bends = |spline: bool| {
+        model.edges().any(|(_, e)| {
+            let (a, b) = (vs.contains(&e.a), vs.contains(&e.b));
+            // A whole arc scaled unevenly falls back to segments (`approx`).
+            e.curve.is_curved() && e.curve.is_spline() == spline && a != b
+        })
+    };
+    if bends(false) {
         return Some(ARC_WOULD_BEND);
+    }
+    if bends(true) {
+        return Some(SPLINE_WOULD_BEND);
     }
     // Curved faces move whole, or not at all (Exact Curves 4a).
     let curved_bends = model.faces().any(|(_, f)| {
@@ -113,7 +121,7 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
     // points (`settle_face`), which would take these off their circles.
     let arc_ends: BTreeSet<VertexId> = model
         .edges()
-        .filter(|(_, e)| e.curve.is_arc())
+        .filter(|(_, e)| e.curve.is_curved())
         .flat_map(|(_, e)| [e.a, e.b])
         .collect();
     let flat = model.faces().all(|(id, f)| {
@@ -165,7 +173,7 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
 fn move_arcs(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
     let arcs: Vec<(prism_topo::EdgeId, prism_geom::Curve)> = model
         .edges()
-        .filter(|(_, e)| e.curve.is_arc() && vs.contains(&e.a) && vs.contains(&e.b))
+        .filter(|(_, e)| e.curve.is_curved() && vs.contains(&e.a) && vs.contains(&e.b))
         .filter_map(|(id, e)| Some((id, e.curve.transformed(m)?)))
         .collect();
     for (id, c) in arcs {
@@ -334,7 +342,7 @@ fn settle_face(model: &mut Model, id: FaceId, tol: &Tol) {
     };
     if face
         .edge_ids()
-        .any(|e| model.edge(e).is_some_and(|x| x.curve.is_arc()))
+        .any(|e| model.edge(e).is_some_and(|x| x.curve.is_curved()))
     {
         // Faces with arcs only move whole or within their plane
         // (`arcs_follow`), so they stay flat: refit the plane.
@@ -460,10 +468,12 @@ fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
     for (id, a, b) in edges {
         let (ma, mb) = (map(a), map(b));
         if (ma, mb) != (a, b) {
-            let e = model.edge(id).copied();
+            let e = model.edge(id).cloned();
             model.remove_edge(id);
-            let made = match e {
-                Some(e) if e.curve.is_arc() => model.add_curve_edge(ma, mb, e.curve, e.curve_id),
+            let made = match &e {
+                Some(e) if e.curve.is_curved() => {
+                    model.add_curve_edge(ma, mb, e.curve.clone(), e.curve_id)
+                }
                 _ => model.add_edge(ma, mb),
             };
             if let (Some(id), Some(e)) = (made, e) {
@@ -615,7 +625,7 @@ fn keep_straight(model: &mut Model, vs: &BTreeSet<VertexId>) {
     // An arc's end is never a point on a straight edge.
     let on_arc: BTreeSet<VertexId> = model
         .edges()
-        .filter(|(_, e)| e.curve.is_arc())
+        .filter(|(_, e)| e.curve.is_curved())
         .flat_map(|(_, e)| [e.a, e.b])
         .collect();
     for (id, face) in model.faces() {

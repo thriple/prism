@@ -244,7 +244,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     // slides would need a stretched arc in its neighbour. Not yet.
     let arc_sides: Vec<(VertexId, VertexId)> = f
         .sides()
-        .filter(|s| model.edge(s.edge).is_some_and(|e| e.curve.is_arc()))
+        .filter(|s| model.edge(s.edge).is_some_and(|e| e.curve.is_curved()))
         .map(|s| (s.from, s.to))
         .collect();
     let bends = arc_sides.iter().any(|(a, b)| {
@@ -356,7 +356,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         let quad = vec![u, w, nw, nu];
         let arc = model.edge(side.edge).and_then(|e| match e.curve {
             prism_geom::Curve::Arc { centre, radius, .. } => Some((centre, radius)),
-            prism_geom::Curve::Line => None,
+            _ => None,
         });
         let up = model.add_edge(w, nw);
         let top = move_side(model, side.edge);

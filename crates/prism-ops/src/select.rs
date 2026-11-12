@@ -246,7 +246,7 @@ pub fn duplicate(model: &mut Model, sel: &Selection) -> Selection {
     let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
     let mut cmap = BTreeMap::new();
     for e in edges {
-        let Some(ed) = model.edge(e).copied() else {
+        let Some(ed) = model.edge(e).cloned() else {
             continue;
         };
         if let Some(c) = copy_edge(model, &ed, map[&ed.a], map[&ed.b], &mut cmap) {
@@ -274,10 +274,10 @@ fn copy_edge(
     let cid = e
         .curve_id
         .map(|c| *cmap.entry(c).or_insert_with(|| to.new_curve_id()));
-    let id = if e.curve.is_arc() {
+    let id = if e.curve.is_curved() {
         // `a` and `b` stand for the edge's own `a` and `b`, so the arc runs
         // from `a` to `b` as before.
-        to.add_curve_edge(a, b, e.curve, cid)?
+        to.add_curve_edge(a, b, e.curve.clone(), cid)?
     } else {
         let id = to.add_edge(a, b)?;
         to.set_curve_id(id, cid);

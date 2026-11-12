@@ -27,6 +27,7 @@ use crate::select::box_select;
 
 mod arcs;
 mod construct;
+mod curve;
 mod edit;
 mod follow;
 mod groups;
@@ -40,6 +41,7 @@ mod texpos;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
+pub use curve::{CURVE, curve_for};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
@@ -61,7 +63,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 25] = [
+pub const TOOLS: [&str; 26] = [
     SELECT,
     LINE,
     RECT,
@@ -90,6 +92,8 @@ pub const TOOLS: [&str; 25] = [
     paint::PAINT,
     // Basic Materials part 3: Texture > Position.
     texpos::TEXTURE,
+    // Freeform NURBS part 1.
+    curve::CURVE,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -349,6 +353,10 @@ pub struct Session {
     shape: Option<shapes::ShapeOp>,
     /// The arc being drawn (the Arc tools).
     arc: Option<arcs::ArcOp>,
+    /// The Curve tool's curve in progress, and whether it passes through
+    /// its clicks.
+    curve: Option<curve::CurveOp>,
+    curve_through: bool,
     /// The Arc tools' last typed radius (for fillets), the corner of the
     /// last fillet (a typed radius changes it), and why the last fillet
     /// was refused.
@@ -461,6 +469,8 @@ impl Session {
             preview: None,
             rot_lock: None,
             shift_held: false,
+            curve: None,
+            curve_through: false,
             ctrl_copy: false,
             alt_loop: false,
             press_alt: false,
@@ -642,6 +652,7 @@ impl Session {
             || self.rect.is_some()
             || self.shape.is_some()
             || self.arc.is_some()
+            || self.curve.is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
             || self.texpos_active()
@@ -755,6 +766,9 @@ impl Session {
             return h;
         }
         if let Some(h) = self.arc_hint() {
+            return h;
+        }
+        if let Some(h) = self.curve_hint() {
             return h;
         }
         match self.tool.as_str() {
@@ -933,6 +947,11 @@ impl Session {
             Input::AltTap if self.tool == FOLLOW => self.toggle_follow_perimeter(),
             Input::AltTap if self.tool == PAINT => self.toggle_sampling(),
             Input::Held { ctrl, alt } => {
+                if *ctrl && !self.ctrl_held && self.tool == CURVE {
+                    self.curve_through = !self.curve_through;
+                    self.overlay_dirty = true;
+                    self.dirty = true;
+                }
                 self.ctrl_held = *ctrl;
                 self.alt_held = *alt;
                 self.paint_keys_changed();
@@ -1009,6 +1028,7 @@ impl Session {
         self.rect = None;
         self.shape = None;
         self.arc = None;
+        self.curve = None;
         self.last_fillet = None;
         self.round_last = None;
         self.round_notice = None;
@@ -1410,6 +1430,7 @@ impl Session {
             || self.tool == RECT
             || shapes::is_shape(&self.tool)
             || arcs::is_arc(&self.tool)
+            || self.tool == CURVE
             || self.edit_wants_inference()
     }
 
@@ -1432,6 +1453,10 @@ impl Session {
             t if arcs::is_arc(t) => Context {
                 start: self.arc.as_ref().and_then(|a| a.pts.last().copied()),
                 no_lock: true,
+                ..Default::default()
+            },
+            CURVE => Context {
+                start: self.curve.as_ref().and_then(|c| c.pts.last().copied()),
                 ..Default::default()
             },
             MOVE => match &self.edit {
@@ -1606,6 +1631,10 @@ impl Session {
                 t if arcs::is_arc(t) => {
                     let n = self.clicks.press(self.time, s);
                     self.arc_press(s, n);
+                }
+                CURVE => {
+                    let n = self.clicks.press(self.time, s);
+                    self.curve_press(s, n);
                 }
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
@@ -1944,7 +1973,11 @@ impl Session {
             self.edit_enter(&text);
             return;
         }
-        if self.shape_enter(&text) || self.arc_enter(&text) || self.round_enter(&text) {
+        if self.shape_enter(&text)
+            || self.arc_enter(&text)
+            || self.round_enter(&text)
+            || self.curve_enter()
+        {
             return;
         }
         if !text.is_empty() && self.edit_retype(&text) {
@@ -2080,7 +2113,7 @@ impl Session {
         for k in arcs {
             if let prism_infer::Key::Edge(e) | prism_infer::Key::Mid(e) = k
                 && let Some(prism_geom::Curve::Arc { centre, .. }) =
-                    self.scene.edge(e).map(|e| e.curve)
+                    self.scene.edge(e).map(|e| e.curve.clone())
             {
                 o.marks.push(Mark {
                     at: centre,
@@ -2164,6 +2197,7 @@ impl Session {
         }
         self.shape_overlay(&mut o);
         self.arc_overlay(&mut o);
+        self.curve_overlay(&mut o);
         // The snap: its target, glyph and label.
         let glyph_color = match i.kind {
             Kind::Endpoint => fb.endpoint,

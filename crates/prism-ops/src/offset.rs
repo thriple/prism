@@ -175,7 +175,7 @@ fn largest_valid<T>(
 }
 
 /// One piece of a loop, walked from `a` to `b`, the face on its left.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Piece {
     pub a: DVec3,
     pub b: DVec3,
@@ -197,11 +197,7 @@ fn face_pieces(model: &Model, face: FaceId) -> Option<Vec<Vec<Piece>>> {
                     Some(Piece {
                         a: model.vertex(s.from),
                         b: model.vertex(s.to),
-                        curve: if s.from == e.a {
-                            e.curve
-                        } else {
-                            e.curve.reversed()
-                        },
+                        curve: e.curve_from(s.from),
                     })
                 })
                 .collect()
@@ -213,6 +209,8 @@ fn face_pieces(model: &Model, face: FaceId) -> Option<Vec<Vec<Piece>>> {
 /// its ends go if nothing trims them.
 fn moved(p: &Piece, n: DVec3, d: f64) -> Option<Piece> {
     match p.curve {
+        // A spline's offset is not a spline: not built.
+        Curve::Spline(_) => None,
         Curve::Line => {
             let left = n.cross(p.b - p.a).normalize_or_zero();
             Some(Piece {
@@ -253,7 +251,8 @@ fn join(p: &Piece, q: &Piece, n: DVec3, eps: f64) -> Option<DVec3> {
     if p.b.distance(q.a) <= eps {
         return Some(near);
     }
-    let pts = match (p.curve, q.curve) {
+    let pts = match (p.curve.clone(), q.curve.clone()) {
+        (Curve::Spline(_), _) | (_, Curve::Spline(_)) => return None,
         (Curve::Line, Curve::Line) => {
             let (u, w) = (p.b - p.a, q.b - q.a);
             let den = n.dot(u.cross(w));
@@ -305,7 +304,7 @@ fn offset_pieces(l: &[Piece], n: DVec3, d: f64, gap: f64) -> Option<Vec<Piece>> 
         .filter_map(|p| match moved(p, n, d) {
             Some(m) => Some(Some((p, m))),
             // Only an arc can shrink away.
-            None if p.curve.is_arc() => None,
+            None if p.curve.is_curved() => None,
             None => Some(None),
         })
         .collect::<Option<_>>()?;
@@ -320,11 +319,12 @@ fn offset_pieces(l: &[Piece], n: DVec3, d: f64, gap: f64) -> Option<Vec<Piece>> 
         .map(|i| Piece {
             a: joints[(i + k - 1) % k],
             b: joints[i],
-            curve: kept[i].1.curve,
+            curve: kept[i].1.curve.clone(),
         })
         .collect();
     for ((p, _), q) in kept.iter().zip(&out) {
         let ok = match q.curve {
+            Curve::Spline(_) => false,
             Curve::Line => (q.b - q.a).dot(p.b - p.a) > 0.0 && q.a.distance(q.b) >= gap,
             Curve::Arc { radius, .. } => {
                 let (s0, s1) = (p.curve.sweep(p.a, p.b), q.curve.sweep(q.a, q.b));
@@ -489,6 +489,7 @@ fn arc_distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
         .iter()
         .flatten()
         .filter_map(|x| match x.curve {
+            Curve::Spline(_) => Some(x.curve.closest_point(x.a, x.b, p).distance(p)),
             Curve::Line => {
                 let e = x.b - x.a;
                 let along = (p - x.a).dot(e) / e.length_squared().max(f64::MIN_POSITIVE);
@@ -531,6 +532,7 @@ pub fn offset(model: &mut Model, face: FaceId, distance: f64) -> Option<f64> {
         let (loops, used) = offset_arc_loops(model, face, distance)?;
         for p in loops.iter().flatten() {
             match p.curve {
+                Curve::Spline(_) => {}
                 Curve::Line => {
                     add_segment(model, p.a, p.b);
                 }

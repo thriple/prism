@@ -33,7 +33,7 @@ fn edges_of(m: &Model, faces: &[FaceId]) -> Vec<Edge3> {
         .flat_map(|f| f.sides().collect::<Vec<_>>())
         .filter_map(|s| {
             let e = m.edge(s.edge)?;
-            Some((m.vertex(e.a), m.vertex(e.b), e.curve))
+            Some((m.vertex(e.a), m.vertex(e.b), e.curve.clone()))
         })
         .collect()
 }
@@ -443,7 +443,7 @@ fn grid_search(laid: &Laid, mover: &Mover, tol: &Tol, best: &mut f64) {
 pub(crate) fn has_arcs(m: &Model, id: FaceId) -> bool {
     m.face(id).is_some_and(|f| {
         f.edge_ids()
-            .any(|e| m.edge(e).is_some_and(|x| x.curve.is_arc()))
+            .any(|e| m.edge(e).is_some_and(|x| x.curve.is_curved()))
     })
 }
 

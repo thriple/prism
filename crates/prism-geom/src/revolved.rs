@@ -112,6 +112,7 @@ impl Cone {
             return false;
         }
         match *curve {
+            Curve::Spline(ref sp) => sp.inner_points().into_iter().all(on),
             Curve::Line => {
                 let d = (b - a).normalize_or_zero();
                 let w = self.apex - a;
@@ -178,6 +179,7 @@ impl Sphere {
             return false;
         }
         match *curve {
+            Curve::Spline(ref sp) => sp.inner_points().into_iter().all(on),
             Curve::Line => a.distance(b) <= eps,
             Curve::Arc {
                 centre,
@@ -252,6 +254,7 @@ impl Torus {
             return false;
         }
         match *curve {
+            Curve::Spline(ref sp) => sp.inner_points().into_iter().all(on),
             Curve::Line => a.distance(b) <= eps,
             Curve::Arc {
                 centre,

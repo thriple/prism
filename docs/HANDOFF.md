@@ -32,8 +32,9 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   Materials (part ...)"). **The NURBS Spike is done** (brief 30): the
   kernel is **arris** (`docs/research/nurbs-spike.md`, DECISIONS #9; the
   test program is `spikes/nurbs/`, run with `cargo run --release`).
-  **Next: Freeform NURBS** (6 parts, PLAN 6.0a; part 1 NURBS curves), then
-  Fillet Joins. Freeform NURBS needs a brief first.
+  **Freeform NURBS is in progress** (brief 31, 6 parts; NOTES "Freeform
+  NURBS (part ...)" says what each part built and left). Then Fillet
+  Joins.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0`; if space runs out, delete
   `target/debug` and rebuild (about 2 minutes).

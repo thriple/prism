@@ -104,6 +104,10 @@ fn cases() -> Vec<(&'static str, Contents)> {
             Contents::with_model(circle_in_a_plate(), Settings::default()),
         ),
         (
+            "curves.prism",
+            Contents::with_model(curves(), Settings::default()),
+        ),
+        (
             "painted.prism",
             Contents {
                 assembly: painted().assembly().clone(),
@@ -234,6 +238,35 @@ fn painted() -> prism_doc::Document {
         material: Some(ids[1]),
     });
     d
+}
+
+/// A closed NURBS curve crossed by a line, and an open curve through
+/// points, off the plane (Freeform NURBS part 1, schema 10).
+fn curves() -> prism_topo::Model {
+    use prism_geom::Nurbs;
+    use prism_math::DVec3;
+    let mut m = prism_topo::Model::new();
+    let ring = [
+        DVec3::new(0.0, 0.0, 0.0),
+        DVec3::new(4.0, 0.0, 0.0),
+        DVec3::new(4.0, 3.0, 0.0),
+        DVec3::new(2.0, 5.0, 0.0),
+        DVec3::new(0.0, 3.0, 0.0),
+    ];
+    prism_ops::add_spline(&mut m, &Nurbs::closed(&ring, 3).expect("a closed curve"));
+    prism_ops::add_segment(
+        &mut m,
+        DVec3::new(-1.0, 2.0, 0.0),
+        DVec3::new(5.0, 2.0, 0.0),
+    );
+    let wire = [
+        DVec3::new(6.0, 0.0, 0.0),
+        DVec3::new(7.0, 1.0, 1.0),
+        DVec3::new(8.0, 0.0, 2.0),
+        DVec3::new(9.0, 2.0, 1.0),
+    ];
+    prism_ops::add_spline(&mut m, &Nurbs::through(&wire, false).expect("a curve"));
+    m
 }
 
 /// A square plate with an exact circle in it: a hole and a disc (Exact

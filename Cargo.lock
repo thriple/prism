@@ -2250,6 +2250,7 @@ name = "prism-doc"
 version = "0.0.1"
 dependencies = [
  "image",
+ "prism-geom",
  "prism-math",
  "prism-ops",
  "prism-topo",

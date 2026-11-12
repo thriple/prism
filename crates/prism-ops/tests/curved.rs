@@ -454,7 +454,7 @@ fn radii(m: &Model) -> (Vec<f64>, Vec<f64>) {
         .edges()
         .filter_map(|(_, e)| match e.curve {
             Curve::Arc { radius, .. } => Some(radius),
-            Curve::Line => None,
+            _ => None,
         })
         .collect();
     let points = m.vertices().map(|(_, p)| p.truncate().length()).collect();

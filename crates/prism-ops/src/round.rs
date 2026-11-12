@@ -71,7 +71,7 @@ fn sides(model: &Model, edge: EdgeId) -> Option<[(FaceId, DVec3, DVec3); 2]> {
 fn plan(model: &Model, edge: EdgeId, size: f64, fillet: bool) -> Result<Plan, &'static str> {
     let tol = model.tol();
     let e = model.edge(edge).ok_or(NOT_AN_EDGE)?;
-    if e.curve.is_arc() || size <= tol.dist {
+    if e.curve.is_curved() || size <= tol.dist {
         return Err(NOT_AN_EDGE);
     }
     let [(f1, n1, u1), (f2, n2, u2)] = sides(model, edge).ok_or(NOT_AN_EDGE)?;
@@ -103,7 +103,7 @@ fn plan(model: &Model, edge: EdgeId, size: f64, fillet: bool) -> Result<Plan, &'
         let (Some((w1, q1)), Some((w2, q2))) = (other(f1v), other(f2v)) else {
             return Err(NOT_AN_EDGE);
         };
-        if w1 == w2 || at.iter().any(|(_, x)| x.curve.is_arc()) {
+        if w1 == w2 || at.iter().any(|(_, x)| x.curve.is_curved()) {
             return Err(NOT_AN_EDGE);
         }
         let p = model.vertex(v);
@@ -254,7 +254,7 @@ pub fn round(model: &mut Model, edge: EdgeId, size: f64, fillet: bool) -> bool {
                     add_arc(model, c, n, r, end.p1, sweep);
                     model
                         .edges()
-                        .find(|(_, x)| x.has(p1) && x.has(p2) && x.curve.is_arc())
+                        .find(|(_, x)| x.has(p1) && x.has(p2) && x.curve.is_curved())
                         .map(|(id, _)| id)
                 } else {
                     let cid = model.new_curve_id();

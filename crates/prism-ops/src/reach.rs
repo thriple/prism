@@ -127,7 +127,7 @@ fn straight_edges(model: &Model, face: FaceId) -> Vec<(DVec3, DVec3)> {
         .map(|f| {
             f.sides()
                 .filter_map(|s| model.edge(s.edge))
-                .filter(|e| !e.curve.is_arc())
+                .filter(|e| !e.curve.is_curved())
                 .map(|e| (model.vertex(e.a), model.vertex(e.b)))
                 .collect()
         })

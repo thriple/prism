@@ -2160,7 +2160,7 @@ fn arc_list(d: &Driver) -> Vec<(DVec3, f64, f64)> {
             prism_geom::Curve::Arc { centre, radius, .. } => {
                 Some((centre, radius, e.curve.sweep(m.vertex(e.a), m.vertex(e.b))))
             }
-            prism_geom::Curve::Line => None,
+            _ => None,
         })
         .collect()
 }
@@ -3824,4 +3824,118 @@ fn an_import_brings_its_materials_in_one_step() {
     assert_eq!(d.s.document().undo_name(), Some("Import"));
     act(&mut d, "edit.undo");
     assert_eq!(d.s.document().assembly().materials().0.len(), 1);
+}
+
+// ---------- Freeform NURBS part 1: the Curve tool ----------
+
+fn spline_edges(d: &Driver) -> usize {
+    d.s.model()
+        .edges()
+        .filter(|(_, e)| e.curve.is_spline())
+        .count()
+}
+
+#[test]
+fn the_curve_tool_draws_a_curve_and_enter_ends_it() {
+    use prism_tools::session::CURVE;
+    let mut d = Driver::empty();
+    d.tool(CURVE);
+    for p in [(0.0, 0.0), (1.0, 2.0), (3.0, 2.0), (4.0, 0.0)] {
+        d.click(DVec3::new(p.0, p.1, 0.0));
+    }
+    assert!(d.s.in_operation());
+    assert_eq!(spline_edges(&d), 0);
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(spline_edges(&d), 1);
+    assert!(!d.s.in_operation());
+    valid(&d);
+    // The curve starts and ends at the first and last click, and is pulled
+    // towards the others without reaching them.
+    let m = d.s.model();
+    let (_, e) = m.edges().next().unwrap();
+    let c = e.curve.spline().unwrap();
+    assert_eq!(c.curve.cage().len(), 4);
+    assert!(c.curve.eval(0.5).y < 2.0);
+    undo(&mut d);
+    assert_eq!(d.s.model().edge_count(), 0);
+}
+
+#[test]
+fn clicking_the_start_closes_the_curve_into_a_face() {
+    use prism_tools::session::CURVE;
+    let mut d = Driver::empty();
+    d.tool(CURVE);
+    for p in [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0), (0.0, 0.0)] {
+        d.click(DVec3::new(p.0, p.1, 0.0));
+    }
+    assert_eq!(spline_edges(&d), 2, "a closed curve is two halves");
+    assert_eq!(d.faces(), 1);
+    valid(&d);
+    // A click on it selects the whole curve.
+    d.tool(SELECT);
+    let on = d.s.model().edges().next().map(|(_, e)| {
+        let m = d.s.model();
+        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.3)
+    });
+    d.click(on.unwrap());
+    assert_eq!(d.s.selection().edges.len(), 2);
+}
+
+#[test]
+fn ctrl_makes_the_curve_pass_through_the_clicks_and_a_double_click_ends_it() {
+    use prism_tools::session::CURVE;
+    let mut d = Driver::empty();
+    d.tool(CURVE);
+    d.send(Input::Held {
+        ctrl: true,
+        alt: false,
+    });
+    d.send(Input::Held {
+        ctrl: false,
+        alt: false,
+    });
+    assert!(d.s.curve_through());
+    let pts = [(0.0, 0.0), (1.0, 2.0), (3.0, 2.0)];
+    for p in pts {
+        d.click(DVec3::new(p.0, p.1, 0.0));
+    }
+    double_click(&mut d, DVec3::new(4.0, 0.0, 0.0));
+    assert_eq!(spline_edges(&d), 1);
+    let m = d.s.model();
+    let (_, e) = m.edges().next().unwrap();
+    let (pa, pb) = (m.vertex(e.a), m.vertex(e.b));
+    for p in pts {
+        let p = DVec3::new(p.0, p.1, 0.0);
+        assert!(e.curve.closest_point(pa, pb, p).distance(p) < 1e-9);
+    }
+    valid(&d);
+}
+
+#[test]
+fn a_line_snaps_onto_a_curve_and_splits_it() {
+    use prism_tools::session::CURVE;
+    let mut d = Driver::empty();
+    d.tool(CURVE);
+    for p in [(0.0, 0.0), (1.0, 2.0), (3.0, 2.0), (4.0, 0.0)] {
+        d.click(DVec3::new(p.0, p.1, 0.0));
+    }
+    d.send(Input::Key { key: Key::Enter });
+    let on = {
+        let m = d.s.model();
+        let (_, e) = m.edges().next().unwrap();
+        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.5)
+    };
+    d.tool(LINE);
+    d.click(DVec3::new(1.3, -1.0, 0.0));
+    d.hover(on + DVec3::new(0.02, 0.02, 0.0));
+    let i = d.s.inference().expect("a snap");
+    assert_eq!(i.label, "On Curve");
+    assert!(i.point.distance(on) < 0.05);
+    d.click(on + DVec3::new(0.02, 0.02, 0.0));
+    assert_eq!(
+        spline_edges(&d),
+        2,
+        "the curve is split where the line lands"
+    );
+    valid(&d);
 }

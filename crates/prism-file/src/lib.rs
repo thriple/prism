@@ -45,8 +45,8 @@ pub use migrate::{Raw, migrate};
 /// edges (geometry layout 6, DECISIONS #32). Schema 8: materials
 /// (`materials.json`) and painted faces (geometry layout 7). Schema 9:
 /// texture images (`images/`) and texture placement on faces (geometry
-/// layout 8).
-pub const SCHEMA: u32 = 9;
+/// layout 8). Schema 10: NURBS curves and patches (geometry layout 9).
+pub const SCHEMA: u32 = 10;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.

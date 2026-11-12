@@ -544,6 +544,30 @@ pub fn infer(
             }
             continue;
         }
+        if e.curve.is_spline() {
+            // On the curve: the closest drawn piece, then exactly onto it.
+            let near = e
+                .segments()
+                .filter_map(|(a, b)| {
+                    let (s, t, _) = closest(o, dir, a, b - a)?;
+                    let p = a.lerp(b, t.clamp(0.0, 1.0));
+                    let (q, _) = view.to_screen(p)?;
+                    (s > 0.0).then(|| (q.distance(cursor), p))
+                })
+                .min_by(|x, y| x.0.total_cmp(&y.0));
+            if let Some((_, p)) = near {
+                let mut c = blank(Kind::OnArc, Key::Edge(e.id));
+                c.edge = Some(e.id);
+                push(
+                    Kind::OnArc,
+                    e.curve.closest_point(e.a, e.b, p),
+                    Key::Edge(e.id),
+                    true,
+                    c,
+                );
+            }
+            continue;
+        }
         let u = e.b - e.a;
         let mut c = blank(Kind::Midpoint, Key::Mid(e.id));
         c.edge = Some(e.id);
@@ -574,7 +598,7 @@ pub fn infer(
             .map(|w| (w.serial, w.point)),
     );
     for (n, p) in ends {
-        for e in scene.edges.iter().filter(|e| e.curve.is_arc()) {
+        for e in scene.edges.iter().filter(|e| e.curve.is_curved()) {
             let d = if e.a.distance(p) <= tol {
                 e.curve.start_tangent(e.a, e.b)
             } else if e.b.distance(p) <= tol {
@@ -814,6 +838,14 @@ pub fn infer(
                     .filter(|_| matches!(b.kind, Kind::Guide) || b.guides.len() == 1);
                 let label = match b.kind {
                     Kind::Guide | Kind::Tangent => b.guides[0].label(),
+                    // A spline is not an arc.
+                    Kind::OnArc
+                        if b.edge
+                            .and_then(|e| scene.edge(e))
+                            .is_some_and(|e| e.curve.is_spline()) =>
+                    {
+                        "On Curve".to_owned()
+                    }
                     k => k.label().to_owned(),
                 };
                 Inference {

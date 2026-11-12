@@ -54,6 +54,10 @@ pub enum Command {
         sweep: f64,
         pie: bool,
     },
+    /// A NURBS curve (the Curve tool, Freeform NURBS).
+    Spline {
+        curve: prism_geom::Nurbs,
+    },
     /// Round the corner at `corner` with an arc of `radius` (the Arc tools'
     /// double-click).
     Fillet {
@@ -381,6 +385,7 @@ impl Command {
             Command::Loop { points } if points.len() == 4 => "Rectangle",
             Command::Loop { .. } => "Shape",
             Command::Circle { .. } => "Circle",
+            Command::Spline { .. } => "Curve",
             Command::Polygon { .. } => "Polygon",
             Command::Arc { pie: true, .. } => "Pie",
             Command::Arc { .. } => "Arc",
@@ -505,6 +510,9 @@ impl Command {
             }
             Command::Loop { points } => Command::Loop {
                 points: points.iter().map(|v| p(*v)).collect(),
+            },
+            Command::Spline { curve } => Command::Spline {
+                curve: curve.transformed(to_local),
             },
             Command::Polygon { points } => Command::Polygon {
                 points: points.iter().map(|v| p(*v)).collect(),
@@ -788,6 +796,9 @@ impl Command {
                 prism_ops::add_circle(m, *centre, *normal, *radius);
             }
             Command::Polygon { points } => prism_ops::add_polygon(m, points),
+            Command::Spline { curve } => {
+                prism_ops::add_spline(m, curve);
+            }
             Command::Fillet { corner, radius } => {
                 prism_ops::fillet::fillet(m, *corner, *radius);
             }

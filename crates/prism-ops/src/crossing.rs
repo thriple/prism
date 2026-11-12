@@ -439,7 +439,7 @@ impl Tracer<'_> {
         if d > self.tol.dist * 1000.0 {
             return x;
         }
-        let Some(e) = m.edge(id).copied() else {
+        let Some(e) = m.edge(id).cloned() else {
             return x;
         };
         if e.approx {
@@ -457,6 +457,7 @@ impl Tracer<'_> {
             }
         };
         let t_of = |p: DVec3| match e.curve {
+            Curve::Spline(ref s) => s.closest(p),
             Curve::Line => {
                 let dd = pb - pa;
                 (p - pa).dot(dd) / dd.length_squared().max(f64::MIN_POSITIVE)

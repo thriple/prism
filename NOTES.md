@@ -3012,3 +3012,46 @@ Part 3 is split: 3a placing textures on faces, 3b materials in glTF,
   regions of Prism's non-manifold model to arris solids at the boundary;
   turn the spike's cases into tests; add arris's DEPENDENCIES row when the
   app first depends on it.
+
+## Freeform NURBS (part 1): NURBS curves
+Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
+- **The type:** `prism_geom::Nurbs` (degree, knots, control points,
+  weights; `periodic` for a closed smooth curve, whose last `degree`
+  points repeat its first). Prism's own evaluation (de Boor, with the
+  first derivative), knot insertion, closest point, a curve through
+  points (`Nurbs::through`). No kernel needed yet.
+- **On an edge:** `Curve::Spline(Spline { curve: Arc<Nurbs>, t0, t1 })`:
+  the shared curve and the part the edge runs along. `t1 < t0` is an edge
+  walked against the curve, so reversing never copies control points. A
+  split edge's halves share the curve (`Curve::split_at`), as an arc's
+  share its circle. A closed curve is two edges at least.
+- **`Curve`, `Surface` and `Edge` are no longer `Copy`** (a curve holds an
+  `Arc`). Use `.clone()`, `Edge::curve_from(v)`, and match on references.
+- **`is_arc` or `is_curved`:** `Curve::is_curved()` is "not a straight
+  line" (arc or spline); most of ops now asks that. `is_arc()` is left
+  only where a circle's centre and radius are used.
+- **Sticky geometry:** `add_spline` cuts and is cut by what it crosses
+  (`prism_geom::curves_meet`: stepping along both curves, then each
+  meeting put on both exactly; used for any pair with a spline), takes in
+  vertices it passes through, and a flat closed curve makes a face
+  (regions order edges at a vertex by direction and bend, as for arcs).
+- **Transforms:** a spline moved whole stays exact under any Move, Rotate
+  or Scale, uneven too. One end moved alone is refused
+  (`SPLINE_WOULD_BEND`); its shape changes through its cage (part 3).
+- **The Curve tool** (`tool.curve`, was greyed): clicks are control
+  points, Ctrl switches to a curve through the clicks, a double-click or
+  Enter ends, a click on the start closes. Points come from the inference
+  engine (3D curves work). Two clicks give a plain line.
+- **Inference:** "On Curve" on a spline, its ends, and a tangent guide
+  off its ends.
+- **Files:** schema 10, geometry layout 9: each NURBS curve stored once,
+  edges name it with their two parameters. A table for patches is in the
+  layout already (empty until part 2). Golden file `curves.prism`.
+- **MCP:** `get_geometry` gives a spline edge's degree, control points,
+  knots, weights and its part; `use_tool` takes `tool.curve`.
+- **Refused for now, with a reason or by doing nothing:** Offset of a
+  face with a spline edge; Follow Me with a spline in the path or profile
+  (parts 4 and 5); Push/Pull of a face with a spline edge (part 2).
+- **Left over:** a curve that crosses itself is not cut at the crossing;
+  no midpoint snap on a spline; the Freehand tool is not built (brief:
+  out of scope).
