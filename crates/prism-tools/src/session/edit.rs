@@ -18,6 +18,7 @@ use super::construct::{OFFSET, PROTRACTOR, TAPE};
 use super::follow::FOLLOW;
 use super::paint::PAINT;
 use super::round::FILLET;
+use super::texpos::TEXTURE;
 use super::{LastOp, Session, rect_basis};
 
 pub const PUSH: &str = "tool.push";
@@ -133,7 +134,17 @@ pub(super) enum EditOp {
 pub(super) fn is_edit(t: &str) -> bool {
     matches!(
         t,
-        PUSH | MOVE | ROTATE | SCALE | ERASE | OFFSET | TAPE | PROTRACTOR | FILLET | FOLLOW | PAINT
+        PUSH | MOVE
+            | ROTATE
+            | SCALE
+            | ERASE
+            | OFFSET
+            | TAPE
+            | PROTRACTOR
+            | FILLET
+            | FOLLOW
+            | PAINT
+            | TEXTURE
     )
 }
 
@@ -174,6 +185,8 @@ impl Session {
             || (self.tool == FOLLOW && matches!(self.edit, Some(EditOp::Follow { .. })))
             // Scale's grip goes level with what it snaps to.
             || (self.tool == SCALE && matches!(self.edit, Some(EditOp::Scale { .. })))
+            // A texture's pins snap too.
+            || (self.tool == TEXTURE && self.texpos_active())
     }
 
     /// The selection a tool works on: the selection, or else (Move, Rotate)
@@ -257,6 +270,7 @@ impl Session {
     pub(super) fn edit_hover(&mut self, s: DVec2, view: &View) {
         match self.tool.as_str() {
             PAINT => self.paint_hover(s, view),
+            TEXTURE => self.texpos_hover(s, view),
             FILLET => self.round_hover(s, view),
             FOLLOW => self.follow_hover(s, view),
             PUSH => {
@@ -771,6 +785,7 @@ impl Session {
     pub(super) fn edit_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
         match self.tool.as_str() {
             PAINT => self.paint_press(shift, ctrl),
+            TEXTURE => self.texpos_press(s),
             FILLET => self.round_press(s, ctrl),
             FOLLOW => self.follow_press(s),
             PUSH => self.push_press(s, n_clicks),
@@ -806,6 +821,10 @@ impl Session {
     pub(super) fn edit_release(&mut self, s: DVec2) {
         if self.tool == FOLLOW {
             self.follow_release(s);
+            return;
+        }
+        if self.tool == TEXTURE {
+            self.texpos_release();
             return;
         }
         let view = self.view();
@@ -1359,6 +1378,7 @@ impl Session {
     pub(super) fn edit_overlay(&self, o: &mut Overlay) {
         self.paint_overlay(o);
         self.follow_overlay(o);
+        self.texpos_overlay(o);
         if self.tool == SCALE {
             self.scale_overlay(o);
         }

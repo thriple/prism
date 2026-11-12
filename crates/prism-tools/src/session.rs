@@ -36,6 +36,7 @@ mod paint;
 mod round;
 mod scalebox;
 mod shapes;
+mod texpos;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
@@ -48,6 +49,7 @@ pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
+pub use texpos::{NOT_TEXTURED, TEXTURE};
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -59,7 +61,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 24] = [
+pub const TOOLS: [&str; 25] = [
     SELECT,
     LINE,
     RECT,
@@ -86,6 +88,8 @@ pub const TOOLS: [&str; 24] = [
     follow::FOLLOW,
     // Basic Materials 1b.
     paint::PAINT,
+    // Basic Materials part 3: Texture > Position.
+    texpos::TEXTURE,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -427,6 +431,10 @@ pub struct Session {
     refused: Option<&'static str>,
     /// Why the Materials window's last request was refused.
     material_refused: Option<&'static str>,
+    /// Texture > Position: the texture being placed, and why the last
+    /// click could not start it.
+    texpos: Option<texpos::TexPos>,
+    texpos_notice: Option<&'static str>,
     /// The open group (empty at the root), and the selected groups in it.
     ctx: Vec<prism_doc::InstanceId>,
     groups: BTreeSet<prism_doc::InstanceId>,
@@ -470,6 +478,8 @@ impl Session {
             hover_guide: None,
             refused: None,
             material_refused: None,
+            texpos: None,
+            texpos_notice: None,
             ctx: Vec::new(),
             groups: BTreeSet::new(),
             last_hidden: BTreeSet::new(),
@@ -634,6 +644,7 @@ impl Session {
             || self.arc.is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
+            || self.texpos_active()
     }
     pub fn take_dirty(&mut self) -> bool {
         std::mem::take(&mut self.dirty)
@@ -733,6 +744,9 @@ impl Session {
     pub fn hint(&self) -> &'static str {
         if let Some(r) = self.refused.filter(|_| self.edit.is_some()) {
             return r;
+        }
+        if let Some(h) = self.texpos_hint() {
+            return h;
         }
         if let Some(h) = self.edit_hint() {
             return h;
@@ -974,6 +988,9 @@ impl Session {
             self.dirty = true;
         }
         self.inference = None;
+        if id == TEXTURE {
+            self.texpos_picked();
+        }
         self.overlay_dirty = true;
         self.dirty = true;
         self.refresh();
@@ -998,6 +1015,8 @@ impl Session {
         self.round_clear();
         self.follow_notice = None;
         self.follow_perimeter = false;
+        self.texpos_cancel();
+        self.texpos_notice = None;
         self.boxing = None;
         self.typed.clear();
         self.lock = Lock::None;
@@ -1125,6 +1144,12 @@ impl Session {
         }
         let t0 = self.measure.map(|f| f());
         self.build_scene();
+        // The face being positioned went (undo, another edit).
+        if let Some(f) = self.texpos.as_ref().map(|t| t.face())
+            && self.work_model().face(f).is_none()
+        {
+            self.texpos_cancel();
+        }
         if self.health_view {
             self.refresh_health();
         }
@@ -1266,6 +1291,7 @@ impl Session {
             }
             "edit.delete" => self.delete(),
             "edit.selmat" => self.select_same_material(),
+            "tex.reset" => self.texture_reset(),
             "edit.group" => self.make_group(),
             "edit.comp" => self.make_component(),
             // Edit > Reverse Faces and Orient Faces (Model Health).
@@ -1867,6 +1893,10 @@ impl Session {
     // ---------- typing ----------
 
     fn enter(&mut self) {
+        if self.texpos_active() {
+            self.texpos_commit();
+            return;
+        }
         let text = std::mem::take(&mut self.typed);
         self.overlay_dirty = true;
         if text.is_empty()

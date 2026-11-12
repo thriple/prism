@@ -858,6 +858,21 @@ pub const ACTIONS: &[RawAction] = &[
         proto_run: "",
         when: "",
     },
+    // Basic Materials part 3 (brief 28): not in the prototype.
+    RawAction {
+        id: "tool.texture",
+        name: "Position Texture",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "tex.reset",
+        name: "Reset Texture Position",
+        key: "",
+        proto_run: "",
+        when: "sel",
+    },
     RawAction {
         id: "tool.fillet",
         name: "Fillet / Chamfer",
@@ -1727,6 +1742,8 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("tool.select"),
             Item::Action("tool.erase"),
             Item::Action("tool.paint"),
+            Item::Action("tool.texture"),
+            Item::Action("tex.reset"),
             Item::Separator,
             Item::Action("tool.move"),
             Item::Action("tool.rotate"),

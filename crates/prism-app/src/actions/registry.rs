@@ -184,6 +184,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "edit.orient"
         // Basic Materials 1c.
         || id == "edit.selmat"
+        // Basic Materials part 3.
+        || id == "tex.reset"
         // Exact Curves 4c.
         || id == "edit.soften"
         // Part 3: hiding.
@@ -470,6 +472,7 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
             A("edit.revface"),
             A("edit.orient"),
             Sub("Select", vec![A("edit.selmat")]),
+            Sub("Texture", vec![A("tool.texture"), A("tex.reset")]),
         ]);
     }
     if sel.edges > 0 {

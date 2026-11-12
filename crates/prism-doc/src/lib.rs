@@ -261,6 +261,12 @@ pub enum Command {
         sides: BTreeSet<(FaceId, FaceSide)>,
         material: Option<prism_topo::MaterialId>,
     },
+    /// Place the texture on flat faces (part 3, Texture > Position): their
+    /// placement, or None for the default (Reset Position).
+    PlaceTexture {
+        faces: BTreeSet<FaceId>,
+        map: Option<prism_topo::UvMap>,
+    },
     /// Paint groups and components as a whole.
     PaintInstances {
         instances: BTreeSet<InstanceId>,
@@ -434,6 +440,8 @@ impl Command {
             Command::AddImage { .. } => "Add Image",
             Command::Paint { .. } | Command::PaintInstances { .. } => "Paint",
             Command::ReplaceMaterial { .. } => "Replace Material",
+            Command::PlaceTexture { map: Some(_), .. } => "Position Texture",
+            Command::PlaceTexture { .. } => "Reset Texture",
         }
     }
 
@@ -605,6 +613,10 @@ impl Command {
                     .iter()
                     .map(|c| c.to_local(to_local, model))
                     .collect(),
+            },
+            Command::PlaceTexture { faces, map } => Command::PlaceTexture {
+                faces: faces.clone(),
+                map: map.map(|m| m.transformed(to_local)),
             },
             other => other.clone(),
         }
@@ -898,6 +910,13 @@ impl Command {
             | Command::PaintInstances { .. }
             | Command::ReplaceMaterial { .. } => {}
             Command::Paint { sides, material } => material::paint(m, sides, *material),
+            Command::PlaceTexture { faces, map } => {
+                for f in faces {
+                    if m.face(*f).is_some_and(|x| x.plane().is_some()) {
+                        m.edit_face(*f, |x| x.paint.uv = *map);
+                    }
+                }
+            }
         }
     }
 }

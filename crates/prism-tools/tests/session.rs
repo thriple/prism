@@ -3702,3 +3702,95 @@ fn the_materials_window_loads_sizes_and_removes_textures() {
     assert!(d.s.material_rows().is_empty());
     assert!(d.s.document().assembly().images().is_empty());
 }
+
+fn press_at(d: &mut Driver, p: DVec3) {
+    let s = d.screen(p);
+    d.send(Input::Move { x: s.x, y: s.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: s.x,
+        y: s.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+}
+
+fn release(d: &mut Driver) {
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.t += 0.5;
+}
+
+/// Texture > Position (Basic Materials part 3): the red pin moves the
+/// texture, the green pin turns and sizes it about the red one; Enter
+/// keeps it as one step, Esc puts it back; Reset Position goes back to the
+/// default; a face without a texture is refused.
+#[test]
+fn position_texture_moves_turns_and_sizes_with_pins() {
+    use prism_tools::session::{NOT_TEXTURED, TEXTURE};
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    let top = DVec3::new(1.0, 1.0, 2.0);
+    // An untextured face is refused.
+    d.tool(TEXTURE);
+    d.click(top);
+    assert_eq!(d.s.hint(), NOT_TEXTURED);
+    // Paint the top with a 1 m × 0.5 m texture.
+    d.s.load_image(None, "wood.png", png(40, 20, [150, 100, 50, 255]))
+        .expect("loads");
+    d.tool(prism_tools::session::PAINT);
+    d.click(top);
+    let face = face_at(&d, top);
+    let map0 = d.s.model().face(face).unwrap().texture_map().unwrap();
+    // Pick the tool, click the top: the pins sit one image-width apart.
+    d.tool(TEXTURE);
+    d.click(top);
+    let (red, green) = d.s.texture_pins().expect("started");
+    assert!((green - red).length() - 1.0 < 1e-9 && (green - red).length() > 1.0 - 1e-9);
+    // Drag the red pin: the texture moves with it.
+    press_at(&mut d, red);
+    let to = red + DVec3::new(0.25, 0.1, 0.0);
+    d.hover(to);
+    release(&mut d);
+    let m = d.s.texture_map_now().expect("still placing");
+    let moved = |p: DVec3| m.at(p + (to - red));
+    for p in [top, DVec3::new(0.3, 1.7, 2.0)] {
+        assert!(moved(p).distance(map0.at(p)) < 1e-6, "moved with the pin");
+    }
+    // The model is untouched until Enter.
+    assert_eq!(d.s.model().face(face).unwrap().paint.uv, None);
+    // Drag the green pin a quarter turn round and to twice as far.
+    let (red, green) = d.s.texture_pins().unwrap();
+    let a = green - red;
+    let b = DVec3::new(-a.y, a.x, 0.0) * 2.0;
+    press_at(&mut d, green);
+    d.hover(red + b);
+    release(&mut d);
+    let m = d.s.texture_map_now().unwrap();
+    // Along the new direction the image is twice as long.
+    let du = m.at(red + b) - m.at(red);
+    assert!((du.length() - 1.0).abs() < 1e-6, "one image across: {du}");
+    assert!(du.y.abs() < 1e-6, "along the image's width: {du}");
+    // Enter keeps it, in one step.
+    d.send(Input::Key { key: Key::Enter });
+    let stored = d.s.model().face(face).unwrap().paint.uv.expect("stored");
+    assert_eq!(stored, m);
+    assert_eq!(d.s.document().undo_name(), Some("Position Texture"));
+    // Esc puts a placement in progress back.
+    d.click(top);
+    let (red, _) = d.s.texture_pins().unwrap();
+    press_at(&mut d, red);
+    d.hover(red + DVec3::new(0.3, 0.0, 0.0));
+    release(&mut d);
+    d.send(Input::Key { key: Key::Escape });
+    assert!(d.s.texture_pins().is_none());
+    assert_eq!(d.s.model().face(face).unwrap().paint.uv, Some(stored));
+    // Reset Position: the default again.
+    d.tool(SELECT);
+    d.click(top);
+    act(&mut d, "tex.reset");
+    assert_eq!(d.s.model().face(face).unwrap().paint.uv, None);
+    assert_eq!(d.s.document().undo_name(), Some("Reset Texture"));
+}

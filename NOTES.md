@@ -2920,3 +2920,26 @@ You can load images now.
 - **Left over:** the Purge Unused button in the window counts materials
   only (Model Health counts images too); no thumbnail of the image in the
   window, only its average colour.
+
+## Basic Materials (part 3, step 3a): Position Texture
+Part 3 is split: 3a placing textures on faces, 3b materials in glTF,
+3c OBJ's `.mtl` and 3MF colours.
+- **Position Texture** (`tool.texture`, Tools menu, and right-click a
+  face > Texture): pick it with a textured face selected, or click a
+  textured face with it. Two pins on a corner of one copy of the image
+  (the copy nearest the middle of the face, outlined dashed): drag the
+  **red pin**, or anywhere else on the face, to move the texture; drag the
+  **green pin** to turn it and size it about the red pin (the shape is
+  kept). Pins snap with the inference engine to points on the face's
+  plane. Enter, or a click off the face, keeps it as one command
+  (`Command::PlaceTexture`, "Position Texture"); Esc puts it back. The
+  model is untouched until then; the viewport previews it. Flat faces
+  only (curved faces keep their exact coordinates, per the brief).
+- **Reset Texture Position** (`tex.reset`, same menus): the selected faces
+  go back to the default placement ("Reset Texture").
+- `PlaceTexture` goes into a group's own coordinates like other commands
+  (`UvMap::transformed`).
+- Tests: `prism-tools` `position_texture_moves_turns_and_sizes_with_pins`.
+- **Left over:** the pins act on one face (SketchUp's too); typed values
+  for the move or turn are not offered; free four-pin distortion is out of
+  scope (brief).
