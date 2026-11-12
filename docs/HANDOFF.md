@@ -19,6 +19,9 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   window with Fillet / Chamfer and the size, and a live preview on the
   hovered edge. NOTES: "The Fillet window".
 - **Next: Basic Materials part 2** (textures, brief 28), then part 3.
+- **Fillet Joins** (fillet many edges, clean corners, a face's edges at
+  once, whole lines): owner request, moved after Freeform NURBS by the
+  owner. NOTES: "Fillet on many edges".
 - **Owner:** testing the latest release. Standing asks: every tool needs
   a logical way of use, and every tool that places a point uses the
   inference engine.

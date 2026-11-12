@@ -2743,3 +2743,21 @@ closes it until the tool is picked again.
   - Checking by eye: under Xvfb with no window manager the window never
     gets keyboard focus, so egui text fields ignore typing. Run
     `xdotool windowfocus <id>` first. Not a bug in the app.
+
+## Fillet on many edges (owner request, 2026-11-12): moved after NURBS
+Owner asked for: double-clicking a face (or faces) and running Fillet /
+Chamfer rounds all its edges and leaves the face alone; several picked
+edges that meet at angles join cleanly; a line split into segments on one
+axis is rounded as a whole, unless segments were picked by hand before
+choosing the tool. The owner said it could wait until after NURBS, and it
+should: where rounded edges meet, the corner needs a piece of its own (a
+vertex blend). Two cases have a simple exact answer (a mitre at a prism's
+top corner, a sphere patch where three edges of a box meet), but faces
+meeting at uneven angles need a real blend surface, which is what the
+kernel chosen by the NURBS Spike provides. Built now, most corners would be
+refused and the code redone later. **Plan step:** "Fillet Joins", right
+after Freeform NURBS (DECISIONS #33). Notes for it: the round op already
+makes slanted ends as approximate ellipses (DECISIONS #32), and a mitre
+between two equal-radius fillets is exactly such an ellipse in the plane
+through both axes' meeting point; a ball corner is a sphere through which
+all three cylinders' axes pass.
