@@ -16,8 +16,9 @@ use crate::FileError;
 /// smooth edges. Layout 5 (part 5b) adds cone, sphere and torus faces; it
 /// is layout 4 with more kinds of surface, so a layout 4 entry reads as it
 /// is. Layout 6 (part 6a) adds approximate edges (DECISIONS #32). Layout 7
-/// (Basic Materials) adds each face's paint.
-pub const VERSION: u32 = 7;
+/// (Basic Materials) adds each face's paint. Layout 8 (Basic Materials part
+/// 2) adds the texture placement of painted flat faces that have one.
+pub const VERSION: u32 = 8;
 
 type P = [f64; 3];
 
@@ -215,6 +216,34 @@ impl From<GeometryV6> for GeometryV7 {
     }
 }
 
+/// Layout 8: as layout 7, and painted flat faces may have a texture
+/// placement: (face, origin, u, v).
+#[derive(Serialize, Deserialize)]
+struct GeometryV8 {
+    vertices: Vec<(u32, P)>,
+    edges: Vec<EdgeV6>,
+    faces: Vec<FaceV2>,
+    guides: Vec<(u32, GuideV1)>,
+    /// Vertex, edge, face, guide and curve counters.
+    counters: [u32; 5],
+    paint: Vec<(u32, Option<u32>, Option<u32>)>,
+    uv: Vec<(u32, P, P, P)>,
+}
+
+impl From<GeometryV7> for GeometryV8 {
+    fn from(g: GeometryV7) -> GeometryV8 {
+        GeometryV8 {
+            vertices: g.vertices,
+            edges: g.edges,
+            faces: g.faces,
+            guides: g.guides,
+            counters: g.counters,
+            paint: g.paint,
+            uv: Vec::new(),
+        }
+    }
+}
+
 /// Layout 3: as layout 2, and edges may be arcs and share curve ids.
 #[derive(Serialize, Deserialize)]
 struct GeometryV3 {
@@ -325,7 +354,16 @@ fn ids(l: &[VertexId]) -> Vec<u32> {
 
 pub fn encode(m: &Model) -> Vec<u8> {
     let parts = m.to_parts();
-    let g = GeometryV7 {
+    let g = GeometryV8 {
+        uv: parts
+            .faces
+            .iter()
+            .filter(|(_, f)| !f.paint.is_default())
+            .filter_map(|(id, f)| {
+                let m = f.paint.uv?;
+                Some((id.0, p(m.origin), p(m.u), p(m.v)))
+            })
+            .collect(),
         paint: parts
             .faces
             .iter()
@@ -430,8 +468,8 @@ pub fn encode(m: &Model) -> Vec<u8> {
 
 pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
     let bad = |e: postcard::Error| FileError::Damaged(format!("geometry: {e}"));
-    let v4 = |g: GeometryV4| GeometryV7::from(GeometryV6::from(g));
-    let g: GeometryV7 = match version {
+    let v4 = |g: GeometryV4| GeometryV8::from(GeometryV7::from(GeometryV6::from(g)));
+    let g: GeometryV8 = match version {
         1 => v4(GeometryV3::from(GeometryV2::from(
             postcard::from_bytes::<GeometryV1>(bytes).map_err(bad)?,
         ))
@@ -441,10 +479,11 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             .map_err(bad)?
             .into()),
         4 | 5 => v4(postcard::from_bytes(bytes).map_err(bad)?),
-        6 => postcard::from_bytes::<GeometryV6>(bytes)
+        6 => GeometryV7::from(postcard::from_bytes::<GeometryV6>(bytes).map_err(bad)?).into(),
+        7 => postcard::from_bytes::<GeometryV7>(bytes)
             .map_err(bad)?
             .into(),
-        7 => postcard::from_bytes(bytes).map_err(bad)?,
+        8 => postcard::from_bytes(bytes).map_err(bad)?,
         _ => {
             return Err(FileError::Damaged(format!(
                 "unknown geometry layout {version}"
@@ -461,6 +500,7 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
                 prism_topo::Paint {
                     front: front.map(MaterialId),
                     back: back.map(MaterialId),
+                    uv: None,
                 },
             )
         })
@@ -598,9 +638,26 @@ pub fn decode(bytes: &[u8], version: u32) -> Result<Model, FileError> {
             curve: g.counters[4],
         },
     };
+    let uv: std::collections::BTreeMap<u32, prism_topo::UvMap> =
+        g.uv.iter()
+            .map(|(f, o, u, w)| {
+                (
+                    *f,
+                    prism_topo::UvMap {
+                        origin: DVec3::from_array(*o),
+                        u: DVec3::from_array(*u),
+                        v: DVec3::from_array(*w),
+                    },
+                )
+            })
+            .collect();
     for (id, f) in &mut parts.faces {
         if let Some(p) = paint.get(&id.0) {
             f.paint = *p;
+            // Placement belongs to flat faces only.
+            if f.plane().is_some() {
+                f.paint.uv = uv.get(&id.0).copied();
+            }
         }
     }
     Model::from_parts(parts).map_err(|e| FileError::Damaged(format!("geometry: {e}")))

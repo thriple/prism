@@ -13,6 +13,8 @@ prism-topo.workspace = true
 prism-ops.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+image.workspace = true
+sha2.workspace = true
 
 # Property tests run natively only (proptest's randomness does not build for wasm).
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

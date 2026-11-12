@@ -1,6 +1,7 @@
 //! Golden files: `.prism` files written by earlier versions must still open,
-//! and saving them again gives the same bytes. Regenerate (only when the
-//! format changes on purpose, with a new schema) with PRISM_WRITE_GOLDEN=1.
+//! and saving them again gives the same bytes. After a new schema, save them
+//! again with PRISM_RESAVE_GOLDEN=1 (their models kept; new cases written);
+//! PRISM_WRITE_GOLDEN=1 writes every case afresh.
 
 use prism_file::{Contents, Settings, read, write};
 use prism_math::{DisplayUnits, LengthUnit};
@@ -109,7 +110,70 @@ fn cases() -> Vec<(&'static str, Contents)> {
                 settings: Settings::default(),
             },
         ),
+        (
+            "textured.prism",
+            Contents {
+                assembly: textured().assembly().clone(),
+                settings: Settings::default(),
+            },
+        ),
     ]
+}
+
+/// A small checked PNG, made the same way every time.
+pub fn checks_png() -> Vec<u8> {
+    let img = image::RgbaImage::from_fn(8, 4, |x, y| {
+        if (x + y) % 2 == 0 {
+            image::Rgba([180, 60, 40, 255])
+        } else {
+            image::Rgba([230, 220, 200, 255])
+        }
+    });
+    let mut out = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut out, image::ImageFormat::Png)
+        .expect("png");
+    out.into_inner()
+}
+
+/// Basic Materials part 2 (schema 9): a textured material on a cube moved
+/// a little, so its painted faces carry their texture placement.
+fn textured() -> prism_doc::Document {
+    use prism_doc::{Command, FaceSide, Image, Material, Texture};
+    let mut d = prism_tools::scenes::cube();
+    let image = Image::read(checks_png()).expect("a png");
+    let mut brick = Material::colour("Brick", [178, 34, 34]);
+    brick.texture = Some(Texture {
+        image: image.id(),
+        size: [0.4, 0.2],
+    });
+    d.run(Command::Batch {
+        commands: vec![
+            Command::AddImage { image },
+            Command::AddMaterial { material: brick },
+        ],
+    });
+    let id = *d
+        .assembly()
+        .materials()
+        .0
+        .keys()
+        .next()
+        .expect("a material");
+    let sides = d
+        .model()
+        .faces()
+        .map(|(f, _)| (f, FaceSide::Front))
+        .collect();
+    d.run(Command::Paint {
+        sides,
+        material: Some(id),
+    });
+    let all = d.model().vertices().map(|(v, _)| v).collect();
+    d.run(Command::Translate {
+        vertices: all,
+        by: prism_math::DVec3::new(0.25, 0.5, 0.0),
+    });
+    d
 }
 
 /// Basic Materials (schema 8): two materials; a cube's top painted front,
@@ -266,6 +330,18 @@ fn golden_files_open_and_save_the_same() {
             std::fs::write(dir().join(name), write(&c, APP)).expect("write");
         }
     }
+    // After a schema change: save the existing golden files again in the
+    // new schema, keeping their models (new cases are written new).
+    if std::env::var_os("PRISM_RESAVE_GOLDEN").is_some() {
+        for (name, c) in cases() {
+            let path = dir().join(name);
+            let c = match std::fs::read(&path) {
+                Ok(bytes) => read(&bytes).expect("an existing golden file"),
+                Err(_) => c,
+            };
+            std::fs::write(path, write(&c, APP)).expect("write");
+        }
+    }
     let mut seen = 0;
     for e in std::fs::read_dir(dir()).expect("docs/acceptance/files") {
         let path = e.expect("entry").path();
@@ -287,13 +363,14 @@ fn golden_files_open_and_save_the_same() {
 /// before arcs (schema 3, layout 2) open the same too, and so do files
 /// saved before soft edges (schema 4, layout 3), files saved before
 /// cones, spheres and tori (schema 5, layout 4), files saved before
-/// approximate edges (schema 6, layout 5), and files saved before materials
-/// (schema 7, layout 6).
+/// approximate edges (schema 6, layout 5), files saved before materials
+/// (schema 7, layout 6) and files saved before textures (schema 8, layout
+/// 7).
 #[test]
-fn schema_2_to_7_files_open_as_now() {
+fn schema_2_to_8_files_open_as_now() {
     let mut seen = 0;
     let older = [
-        "schema-2", "schema-3", "schema-4", "schema-5", "schema-6", "schema-7",
+        "schema-2", "schema-3", "schema-4", "schema-5", "schema-6", "schema-7", "schema-8",
     ]
     .map(|d| std::fs::read_dir(dir().join(d)).expect(d));
     for e in older.into_iter().flatten() {

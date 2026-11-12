@@ -53,6 +53,9 @@ postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 # 3MF's XML (we write 3MF ourselves, DECISIONS #25).
 quick-xml = "0.42"
 proptest = "1.12.0"
+# Textures (Basic Materials part 2): PNG and JPEG only, pure Rust.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+sha2 = "0.10"
 
 [profile.release]
 # Smaller web build; native speed is unaffected in practice.

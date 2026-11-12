@@ -2761,3 +2761,53 @@ makes slanted ends as approximate ellipses (DECISIONS #32), and a mitre
 between two equal-radius fillets is exactly such an ellipse in the plane
 through both axes' meeting point; a ball corner is a sphere through which
 all three cylinders' axes pass.
+
+## Basic Materials (part 2, step 2a): textures in the core
+Nothing shows yet (2b draws them); this is the data and the maths.
+- **Images:** `prism_doc::image`. PNG and JPEG through the `image` crate
+  (only those features; builds for the web; DEPENDENCIES rows added),
+  named by the first 16 bytes of their SHA-256 (`ImageId`), kept once in
+  the Assembly. `Image::rgba(max)` decodes and downscales (2048 for the
+  viewport, the original kept); `average()` is the colour for the Shaded
+  style without textures. `Command::AddImage` adds one (in a `Batch` with
+  the material's edit, so one undo step named by it). Purge Materials
+  also removes images no material uses.
+- **A material's texture:** `Material.texture: Option<Texture>` (image id
+  and real-world size in metres; `Texture::of` makes it 1 m wide, keeping
+  the image's shape). Default (not decided elsewhere): it sits on the
+  material beside the principled node rather than inside it, so
+  `Principled` stays `Copy`; the Rendering chunk can move it into the
+  graph without a file change (it is its own JSON field).
+- **Files:** schema 9. Images are stored as loaded, `images/<id>.png` or
+  `.jpg` (kind `image`); a texture naming a missing image is dropped and
+  the material keeps its colour. Geometry layout 8 stores painted flat
+  faces' placements. Golden files: the schema 8 set kept in
+  `schema-8/` and opened by the older-schemas test; the goldens re-saved
+  in schema 9 with their models unchanged (new switch
+  `PRISM_RESAVE_GOLDEN=1`, since regenerating changed
+  `approximate.prism`: uneven scales have changed since it was written);
+  a new `textured.prism`.
+- **Placement** (`prism_topo::UvMap`, in `Paint.uv`): a flat face's
+  texture is at `((p − origin)·u, (p − origin)·v)` metres. None means the
+  default, anchored to the model (`UvMap::default_for`): u level along the
+  face (red on floors and ceilings), v = normal × u (green on floors, up
+  the face on walls, not mirrored on ceilings), origin the model origin
+  on the plane. Coplanar faces line up; rows stay level round corners (u
+  cannot run on round a corner, as in SketchUp). Move, Rotate, Scale and
+  Explode carry the placement of every painted face they move whole
+  (`transform::moved_maps`, using the inverse transpose, so uneven scales
+  stretch the texture with the face). Push/Pull's walls are new faces with
+  the default. Splits and merges copy `Paint`, placement included.
+  Default (not decided elsewhere): **one placement per face, shared by
+  both sides** (the brief says per side; part 3's Position can split it
+  if the owner wants different back faces).
+- **Curved faces:** `Revolution::texture_at(θ, s)`: a cylinder (θ·r, s);
+  a cone exactly into a sector; a sphere (θ·R, s·R) and a torus
+  (θ·R, s·r).
+- Tests: `prism-doc` `images.rs` and `image.rs` units; `prism-ops`
+  `texture.rs` (default placement, moves, cylinder and cone unrolled);
+  the golden files.
+- **Left over (for 2b and later):** a curved face's texture frame comes
+  from its axis alone, so turning a cylinder about its own axis does not
+  turn its texture; small, for part 3 if it shows. Model Health's
+  "unused materials" row does not count unused images yet (2c).

@@ -24,7 +24,16 @@ Materials), 1.13 (files), 1.14 (Shaded with textures, transparency), 4
   - **1c:** the Materials window, Entity Info, Select by material, Model
     Health and MCP; a `[release]`. *(Built.)*
 - **Part 2. Textures:** images in the file, placement on flat and curved
-  faces, Shaded with textures, texture size, opacity.
+  faces, Shaded with textures, texture size, opacity. Built in three
+  steps:
+  - **2a:** the core: images in the document and the file (schema 9),
+    a material's texture and real-world size, placement on flat faces
+    (default, and carried by Move, Rotate and Scale) and exact
+    coordinates on curved ones. *(Built.)*
+  - **2b:** the viewport: texture coordinates, Shaded with textures,
+    average colours, opacity.
+  - **2c:** the Materials window (load an image, drag and drop, size),
+    Model Health's purge, MCP; a `[release]`.
 - **Part 3. Placing and exchanging:** moving, turning and sizing a texture
   on a face; materials in glTF, OBJ and 3MF import and export.
 

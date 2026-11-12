@@ -18,7 +18,13 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
 - **The Fillet window is built** (brief 29, released): a right-column
   window with Fillet / Chamfer and the size, and a live preview on the
   hovered edge. NOTES: "The Fillet window".
-- **Next: Basic Materials part 2** (textures, brief 28), then part 3.
+- **Basic Materials part 2, step 2a is built** (the core of textures;
+  NOTES: "Basic Materials (part 2, step 2a)"). **Next: 2b**, the
+  viewport (texture coordinates, Shaded with textures, opacity), then
+  2c (the window, MCP, a release), then part 3.
+- **Disk:** `target/debug` grows past the session's allowance after many
+  builds. Build with `CARGO_INCREMENTAL=0`; if space runs out, delete
+  `target/debug` and rebuild (about 2 minutes).
 - **Fillet Joins** (fillet many edges, clean corners, a face's edges at
   once, whole lines): owner request, moved after Freeform NURBS by the
   owner. NOTES: "Fillet on many edges".

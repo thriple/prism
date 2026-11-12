@@ -9,11 +9,13 @@
 use std::collections::BTreeSet;
 
 pub mod assembly;
+pub mod image;
 pub mod material;
 
 pub use assembly::{
     Assembly, Attributes, DefId, Definition, Instance, InstanceId, Placed, ROOT, Tag, TagId,
 };
+pub use image::{Image, ImageId, Texture};
 pub use material::{FaceSide, Material, Principled};
 use prism_math::{DAffine3, DQuat, DVec3, Plane};
 use prism_ops::select::Selection;
@@ -246,8 +248,14 @@ pub enum Command {
     RemoveMaterial {
         id: prism_topo::MaterialId,
     },
-    /// Remove every material nothing uses.
+    /// Remove every material nothing uses (and every image no material
+    /// uses).
     PurgeMaterials,
+    /// Keep an image in the document (part 2), for a material's texture.
+    /// An image already there (the same bytes) is kept once.
+    AddImage {
+        image: crate::image::Image,
+    },
     /// Paint face sides (None: back to Default).
     Paint {
         sides: BTreeSet<(FaceId, FaceSide)>,
@@ -393,6 +401,8 @@ impl Command {
             // A new material added for the step is named by the step.
             Command::Batch { commands } => match commands.as_slice() {
                 [Command::AddMaterial { .. }, rest @ ..] if !rest.is_empty() => rest[0].name(),
+                // An image added for a texture: named by the texture's step.
+                [Command::AddImage { .. }, rest @ ..] if !rest.is_empty() => rest[0].name(),
                 _ => commands.first().map_or("Edit", |c| c.name()),
             },
             Command::MakeGroup { .. } => "Make Group",
@@ -421,6 +431,7 @@ impl Command {
             Command::EditMaterial { .. } => "Edit Material",
             Command::RemoveMaterial { .. } => "Delete Material",
             Command::PurgeMaterials => "Purge Materials",
+            Command::AddImage { .. } => "Add Image",
             Command::Paint { .. } | Command::PaintInstances { .. } => "Paint",
             Command::ReplaceMaterial { .. } => "Replace Material",
         }
@@ -661,6 +672,7 @@ impl Command {
             Command::EditMaterial { id, material } => asm.edit_material(*id, material.clone()),
             Command::RemoveMaterial { id } => asm.remove_material(*id),
             Command::PurgeMaterials => asm.purge_materials(),
+            Command::AddImage { image } => asm.add_image(image.clone()),
             Command::Paint { sides, material } => {
                 // Only a material the document has.
                 if material.is_none_or(|m| asm.material(m).is_some())
@@ -882,6 +894,7 @@ impl Command {
             | Command::EditMaterial { .. }
             | Command::RemoveMaterial { .. }
             | Command::PurgeMaterials
+            | Command::AddImage { .. }
             | Command::PaintInstances { .. }
             | Command::ReplaceMaterial { .. } => {}
             Command::Paint { sides, material } => material::paint(m, sides, *material),

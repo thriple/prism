@@ -5,7 +5,7 @@
 //! These faces are made by Follow Me (steps 5c and 5d). Like cylinder
 //! faces, a face never goes all the way round its axis: seams split it.
 
-use prism_math::{DAffine3, DVec3, Plane};
+use prism_math::{DAffine3, DVec2, DVec3, Plane};
 use serde::{Deserialize, Serialize};
 
 use crate::{Curve, Cylinder, even_scale};
@@ -322,6 +322,29 @@ impl Revolution {
                     -radius * sn,
                     radius * cs,
                 )
+            }
+        }
+    }
+
+    /// Where (θ, s) sits in a texture, in metres (Basic Materials part 2):
+    /// a cylinder unrolls exactly as (θ·r, s); a cone exactly into a sector
+    /// of a disc (no stretch); a sphere is (θ·R, s·R) and a torus
+    /// (θ·R, s·r), which stretch towards the poles and the inner rim, as in
+    /// every modeller.
+    pub fn texture_at(&self, theta: f64, s: f64) -> DVec2 {
+        match self.profile {
+            Profile::Line { r0, slope: 0.0 } => DVec2::new(theta * r0, s),
+            Profile::Line { r0, slope } => {
+                // Unrolled, the cone is a sector: a point is its slant
+                // distance from the apex, at θ·sin(half angle) round it.
+                let k = slope.abs() / slope.hypot(1.0);
+                let slant = (r0 + slope * s) / k;
+                let a = theta * k;
+                DVec2::new(slant * a.sin(), -slant * a.cos())
+            }
+            Profile::Circle { r0, radius, .. } => {
+                let round = if r0 > 0.0 { r0 } else { radius };
+                DVec2::new(theta * round, s * radius)
             }
         }
     }

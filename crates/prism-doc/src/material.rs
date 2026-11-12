@@ -42,6 +42,11 @@ pub enum Node {
 pub struct Material {
     pub name: String,
     pub nodes: Vec<Node>,
+    /// The principled surface's base-colour image, if it has one (part 2):
+    /// it replaces the base colour's red, green and blue; alpha still
+    /// comes from the base colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture: Option<crate::image::Texture>,
 }
 
 impl Material {
@@ -54,6 +59,7 @@ impl Material {
                 base: [lin[0], lin[1], lin[2], 1.0],
                 ..Principled::default()
             })],
+            texture: None,
         }
     }
 

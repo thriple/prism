@@ -11,7 +11,10 @@
 //!   separately;
 //! - only when there are groups: `groups.json`, the definitions and the
 //!   instances that place them, and `geometry/defs/<id>.bin`, each group's
-//!   own model in the same layout (schema 2).
+//!   own model in the same layout (schema 2);
+//! - only when there are materials: `materials.json` (schema 8), and each
+//!   texture image as it was loaded, `images/<id>.png` or `.jpg`, named by
+//!   its content (schema 9).
 //!
 //! Pure: no clock, no files, no randomness. The same document gives the
 //! same bytes, because every zip entry has a fixed timestamp.
@@ -40,8 +43,10 @@ pub use migrate::{Raw, migrate};
 /// soft and smooth edges (geometry layout 4; cylinder faces too). Schema 6:
 /// cone, sphere and torus faces (geometry layout 5). Schema 7: approximate
 /// edges (geometry layout 6, DECISIONS #32). Schema 8: materials
-/// (`materials.json`) and painted faces (geometry layout 7).
-pub const SCHEMA: u32 = 8;
+/// (`materials.json`) and painted faces (geometry layout 7). Schema 9:
+/// texture images (`images/`) and texture placement on faces (geometry
+/// layout 8).
+pub const SCHEMA: u32 = 9;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -61,6 +66,10 @@ struct MaterialsV1 {
     /// Groups and components painted as a whole: (instance, material).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     painted: Vec<(u32, u32)>,
+}
+
+fn image_path(i: &prism_doc::Image) -> String {
+    format!("images/{}.{}", i.id().0, i.kind.extension())
 }
 
 fn def_path(id: u32) -> String {
@@ -249,6 +258,15 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         };
         files.push((MATERIALS.to_owned(), pretty(&m)));
     }
+    for image in asm.images().values() {
+        let path = image_path(image);
+        manifest.entries.push(Entry {
+            path: path.clone(),
+            kind: "image".to_owned(),
+            version: 1,
+        });
+        files.push((path, image.bytes.as_ref().clone()));
+    }
     let (tags, next_tag) = asm.tags();
     if asm.defs().count() > 1 || asm.has_instances() || !tags.is_empty() {
         let (next_def, next_instance) = asm.counters();
@@ -333,6 +351,26 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
         None => Assembly::with_model(model),
         Some(json) => read_groups(&raw, json, model)?,
     };
+    // Images first: a texture naming one that is missing is dropped.
+    let mut images = BTreeMap::new();
+    let listed: Vec<Entry> = raw
+        .manifest
+        .get("entries")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| serde_json::from_value::<Entry>(e.clone()).ok())
+        .filter(|e| e.kind == "image")
+        .collect();
+    for e in listed {
+        let bytes = raw
+            .files
+            .get(&e.path)
+            .ok_or_else(|| FileError::Damaged(format!("no {}", e.path)))?;
+        let image = prism_doc::Image::read(bytes.clone())
+            .map_err(|why| FileError::Damaged(format!("{}: {why}", e.path)))?;
+        images.insert(image.id(), image);
+    }
     if let Some(json) = raw.files.get(MATERIALS) {
         let m: MaterialsV1 = serde_json::from_slice(json)
             .map_err(|e| FileError::Damaged(format!("{MATERIALS}: {e}")))?;
@@ -348,6 +386,7 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
                 .collect(),
         );
     }
+    let assembly = assembly.with_images(images);
     Ok(Contents { assembly, settings })
 }
 

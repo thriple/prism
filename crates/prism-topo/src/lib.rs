@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 
 use prism_geom::{Curve, Surface};
-use prism_math::{DVec2, DVec3, Plane, Tol, newell};
+use prism_math::{DAffine3, DVec2, DVec3, Plane, Tol, newell};
 use serde::{Deserialize, Serialize};
 
 macro_rules! id {
@@ -33,10 +33,66 @@ id!(MaterialId);
 /// What a face is painted with, front and back (Basic Materials, DECISIONS
 /// #35). None is Default: drawn in the style's front or back colour, or a
 /// painted group's material.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Paint {
     pub front: Option<MaterialId>,
     pub back: Option<MaterialId>,
+    /// Where a flat face's texture sits (Basic Materials part 2), once the
+    /// face has been moved, turned or scaled; None is the default placement
+    /// ([`UvMap::default_for`]). Both sides share it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uv: Option<UvMap>,
+}
+
+/// A flat face's texture placement: a point at the texture's corner and
+/// the directions of its u and v, so a point `p` sits at
+/// `((p - origin) · u, (p - origin) · v)` metres into the texture
+/// (DECISIONS #35). Divided by the material's texture size, that is the
+/// place in the image.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UvMap {
+    pub origin: DVec3,
+    pub u: DVec3,
+    pub v: DVec3,
+}
+
+impl UvMap {
+    /// The default placement on a plane, anchored to the model: u runs
+    /// level along the face (along red on floors and ceilings), v runs up
+    /// it (along green on floors), and the origin is the model's origin
+    /// dropped onto the plane. Coplanar faces line up, and the rows of a
+    /// texture stay level round a box's corners.
+    pub fn default_for(plane: &Plane) -> UvMap {
+        let n = plane.normal;
+        let u = if n.z.abs() > 1.0 - 1e-9 {
+            DVec3::X
+        } else {
+            DVec3::Z.cross(n).normalize()
+        };
+        UvMap {
+            origin: n * n.dot(plane.origin),
+            u,
+            v: n.cross(u),
+        }
+    }
+
+    /// Where `p` sits in the texture, in metres.
+    pub fn at(&self, p: DVec3) -> DVec2 {
+        let w = p - self.origin;
+        DVec2::new(w.dot(self.u), w.dot(self.v))
+    }
+
+    /// The placement after the face moved by `m`: every point keeps its
+    /// place in the texture.
+    pub fn transformed(&self, m: &DAffine3) -> UvMap {
+        // (m p - m o) · u' = (p - o) · u for all p: u' = M⁻ᵀ u.
+        let inv_t = m.matrix3.inverse().transpose();
+        UvMap {
+            origin: m.transform_point3(self.origin),
+            u: inv_t * self.u,
+            v: inv_t * self.v,
+        }
+    }
 }
 
 impl Paint {
@@ -49,6 +105,7 @@ impl Paint {
         Paint {
             front: self.back,
             back: self.front,
+            uv: self.uv,
         }
     }
 }
@@ -187,6 +244,14 @@ impl Face {
 
     pub fn is_curved(&self) -> bool {
         self.surface.is_curved()
+    }
+
+    /// A flat face's texture placement: the stored one, else the default
+    /// for its plane. None for a curved face, which uses its surface's own
+    /// coordinates (`Revolution::texture_at`).
+    pub fn texture_map(&self) -> Option<UvMap> {
+        let plane = self.plane()?;
+        Some(self.paint.uv.unwrap_or_else(|| UvMap::default_for(plane)))
     }
 
     pub fn uses_vertex(&self, v: VertexId) -> bool {

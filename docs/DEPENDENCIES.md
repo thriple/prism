@@ -65,5 +65,6 @@ Checked with `cargo metadata` for Windows, macOS and the web. All are permissive
 | objc2, objc2-foundation | 0.6, 0.3 | prism-app (macOS only) | MIT | Not used on the web | The Apple event for double-clicked files (winit does not pass it on) |
 | ureq | 3.5 | prism-app (native only) | MIT OR Apache-2.0 | Not used on the web | Downloads updates (brief 20). Default features off; `native-tls-no-default`, so the system's TLS and certificates are used |
 | native-tls | 0.2 | prism-app (native only, through ureq) | MIT OR Apache-2.0 | Not used on the web | Schannel on Windows, Security framework on macOS, OpenSSL on Linux (CI only) |
-| sha2 | 0.10 | prism-app | MIT OR Apache-2.0 | Yes | Checks a downloaded update against its published SHA-256 |
+| sha2 | 0.10 | prism-app, prism-doc | MIT OR Apache-2.0 | Yes | Checks a downloaded update against its published SHA-256; names texture images by their content (Basic Materials part 2) |
+| image | 0.25 | prism-doc | MIT OR Apache-2.0 | Yes (default features off: `png` and `jpeg` only, pure Rust) | Reads texture images (Basic Materials part 2). Brings png (MIT OR Apache-2.0), zune-jpeg and zune-core (MIT OR Apache-2.0 OR Zlib), moxcms and pxfm (BSD-3-Clause OR Apache-2.0), byteorder-lite (Unlicense OR MIT) |
 | tiny_http | 0.12 | prism-app (native only) | MIT OR Apache-2.0 | Not used on the web (browsers cannot listen) | The local MCP server's HTTP (brief 21) |

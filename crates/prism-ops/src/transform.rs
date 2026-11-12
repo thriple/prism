@@ -258,6 +258,7 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
     }
     let vs = &fallback(model, vs, m);
     keep_straight(model, vs);
+    let maps = moved_maps(model, vs);
     for v in vs {
         let p = model.vertex(*v);
         model.set_vertex(*v, m.transform_point3(p));
@@ -265,6 +266,7 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
     move_arcs(model, vs, m);
     let tol = model.tol();
     weld(model, &tol);
+    follow_maps(model, &maps, m);
     let touched: Vec<FaceId> = model
         .faces()
         .filter(|(_, face)| face.loops().flatten().any(|v| vs.contains(v)))
@@ -275,6 +277,26 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
             continue;
         }
         settle_face(model, id, &tol);
+    }
+}
+
+/// The texture placement of every painted flat face that moves whole
+/// (Basic Materials part 2): it travels with the face.
+fn moved_maps(model: &Model, vs: &BTreeSet<VertexId>) -> Vec<(FaceId, prism_topo::UvMap)> {
+    model
+        .faces()
+        .filter(|(_, f)| !f.paint.is_default() && f.loops().flatten().all(|v| vs.contains(v)))
+        .filter_map(|(id, f)| Some((id, f.texture_map()?)))
+        .collect()
+}
+
+/// Give faces their placements carried by `m`.
+fn follow_maps(model: &mut Model, maps: &[(FaceId, prism_topo::UvMap)], m: &DAffine3) {
+    for (id, map) in maps {
+        if model.face(*id).is_some_and(|f| f.plane().is_some()) {
+            let moved = map.transformed(m);
+            model.edit_face(*id, |f| f.paint.uv = Some(moved));
+        }
     }
 }
 
@@ -531,6 +553,8 @@ pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
         let all: BTreeSet<VertexId> = model.vertices().map(|(id, _)| id).collect();
         crate::approx::flatten_for(model, &all, m);
     }
+    let all: BTreeSet<VertexId> = model.vertices().map(|(id, _)| id).collect();
+    let maps = moved_maps(model, &all);
     let verts: Vec<(VertexId, DVec3)> = model.vertices().collect();
     for (v, p) in verts {
         model.set_vertex(v, m.transform_point3(p));
@@ -572,6 +596,7 @@ pub fn affine(model: &mut Model, m: &prism_math::DAffine3) {
         };
         model.edit_face(id, |f| f.surface = Surface::Plane(plane));
     }
+    follow_maps(model, &maps, m);
 }
 
 /// A moving point that only splits a straight edge of a face that stays

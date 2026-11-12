@@ -101,6 +101,8 @@ pub struct Assembly {
     /// The document's materials (Basic Materials), shared by every model.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     materials: BTreeMap<MaterialId, Material>,
+    /// Texture images by their content (part 2): each stored once.
+    images: BTreeMap<crate::image::ImageId, crate::image::Image>,
     #[serde(default)]
     next_material: u32,
     /// Instances painted as a whole: drawn on their Default faces.
@@ -143,6 +145,7 @@ impl Assembly {
             tags: BTreeMap::new(),
             next_tag: 0,
             materials: BTreeMap::new(),
+            images: BTreeMap::new(),
             next_material: 0,
             painted: BTreeMap::new(),
         }
@@ -213,6 +216,7 @@ impl Assembly {
             tags: BTreeMap::new(),
             next_tag: 0,
             materials: BTreeMap::new(),
+            images: BTreeMap::new(),
             next_material: 0,
             painted: BTreeMap::new(),
         })
@@ -927,10 +931,67 @@ impl Assembly {
             .collect()
     }
 
-    /// Remove every material nothing uses.
+    /// Remove every material nothing uses, then every image no material
+    /// uses.
     pub fn purge_materials(&mut self) {
         for m in self.unused_materials() {
             self.materials.remove(&m);
+        }
+        self.purge_images();
+    }
+
+    // ---------- images (Basic Materials part 2) ----------
+
+    /// The texture images (for files).
+    pub fn images(&self) -> &BTreeMap<crate::image::ImageId, crate::image::Image> {
+        &self.images
+    }
+
+    pub fn image(&self, id: &crate::image::ImageId) -> Option<&crate::image::Image> {
+        self.images.get(id)
+    }
+
+    /// Keep an image (once: the same bytes have the same id).
+    pub fn add_image(&mut self, image: crate::image::Image) {
+        self.images.entry(image.id()).or_insert(image);
+    }
+
+    /// Images read from a file. A texture naming a missing image is
+    /// dropped (the material keeps its colour).
+    pub fn with_images(
+        mut self,
+        images: BTreeMap<crate::image::ImageId, crate::image::Image>,
+    ) -> Assembly {
+        self.images = images;
+        for m in self.materials.values_mut() {
+            if m.texture
+                .as_ref()
+                .is_some_and(|t| !self.images.contains_key(&t.image))
+            {
+                m.texture = None;
+            }
+        }
+        self
+    }
+
+    /// Images no material uses.
+    pub fn unused_images(&self) -> BTreeSet<crate::image::ImageId> {
+        let used: BTreeSet<&crate::image::ImageId> = self
+            .materials
+            .values()
+            .filter_map(|m| m.texture.as_ref().map(|t| &t.image))
+            .collect();
+        self.images
+            .keys()
+            .filter(|i| !used.contains(i))
+            .cloned()
+            .collect()
+    }
+
+    /// Remove every image no material uses.
+    pub fn purge_images(&mut self) {
+        for i in self.unused_images() {
+            self.images.remove(&i);
         }
     }
 

@@ -21,6 +21,7 @@ prism-view.workspace = true
 quick-xml.workspace = true
 
 [dev-dependencies]
+image.workspace = true
 prism-ops.workspace = true
 prism-tools.workspace = true
 zip.workspace = true
