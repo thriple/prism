@@ -3,6 +3,7 @@
 //! command search, the hotkeys window and the Planned Features window.
 
 mod components;
+mod fillet;
 mod materials;
 mod panels;
 pub use panels::{PanelData, PanelOp};
@@ -268,7 +269,13 @@ impl Chrome {
     /// Whether the Outliner, Entity Info or Tags is open (their data is
     /// only gathered then).
     pub fn panels_open(&self) -> bool {
-        self.panels.any_open()
+        self.panels.any_open() || self.fillet_shown()
+    }
+
+    /// Whether the Fillet window shows: open, and only with its tool
+    /// (brief 29).
+    pub(crate) fn fillet_shown(&self) -> bool {
+        self.panels.fillet && self.active_tool == prism_tools::session::FILLET
     }
 
     /// Whether Model Health is open (its checks run only then).
@@ -371,6 +378,11 @@ impl Chrome {
                     self.panels.materials = true;
                     self.panels.folded.remove("Materials");
                 }
+                // The Fillet tool brings its settings window (brief 29).
+                if id == prism_tools::session::FILLET {
+                    self.panels.fillet = true;
+                    self.panels.folded.remove("Fillet");
+                }
             }
             Run::Event => {
                 if a.check == Check::Toggle && !self.toggles.remove(id) {
@@ -433,7 +445,7 @@ impl Chrome {
     /// Whether a window is docked in the side column. These windows do
     /// not take the keyboard or dim the viewport.
     pub(crate) fn side_open(&self) -> bool {
-        self.components.is_some() || self.panels.any_open()
+        self.components.is_some() || self.panels.any_open() || self.fillet_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -697,5 +709,21 @@ mod tests {
         c.run("tool.paint", Source::Key);
         assert_eq!(c.active_tool, "tool.paint");
         assert!(c.panels.materials && !c.panels.folded.contains("Materials"));
+    }
+
+    /// Choosing the Fillet tool opens its window, unfolded; it is shown
+    /// only while that tool is active (brief 29).
+    #[test]
+    fn the_fillet_tool_opens_its_window_only_while_active() {
+        let mut c = chrome();
+        assert!(!c.fillet_shown() && !c.side_open());
+        c.panels.folded.insert("Fillet");
+        c.run("tool.fillet", Source::Key);
+        assert!(c.fillet_shown() && c.side_open() && c.panels_open());
+        assert!(!c.panels.folded.contains("Fillet"));
+        c.run("tool.select", Source::Key);
+        assert!(!c.fillet_shown() && !c.side_open(), "not with another tool");
+        c.run("tool.fillet", Source::Key);
+        assert!(c.fillet_shown());
     }
 }

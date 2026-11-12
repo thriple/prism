@@ -46,7 +46,7 @@ pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
 pub use materials::{MaterialOp, MaterialRow, PaintWith};
 pub use paint::{Brush, PAINT};
-pub use round::FILLET;
+pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
 
 /// Tool ids (the action registry's).
@@ -174,6 +174,10 @@ pub enum Input {
     Text {
         text: String,
     },
+    /// A change from the Fillet window.
+    Round {
+        op: RoundOp,
+    },
     Tool {
         id: String,
     },
@@ -216,6 +220,11 @@ pub struct Recording {
     /// replay in their colours.
     #[serde(default)]
     pub materials: Vec<(prism_topo::MaterialId, prism_doc::Material)>,
+    /// The Fillet window's size and kind when recording started.
+    #[serde(default)]
+    pub round_size: Option<f64>,
+    #[serde(default)]
+    pub round_chamfer: bool,
 }
 
 impl Recording {
@@ -347,6 +356,12 @@ pub struct Session {
     round_size: Option<f64>,
     round_last: Option<(prism_topo::EdgeId, bool)>,
     round_notice: Option<&'static str>,
+    /// The Fillet window's kind (chamfer, else fillet), the cursor, what
+    /// the preview shows, and why the hovered edge cannot be rounded.
+    round_chamfer: bool,
+    round_at: Option<DVec2>,
+    round_shown: Option<(round::Target, bool, Option<f64>)>,
+    round_refused: Option<&'static str>,
     follow_notice: Option<&'static str>,
     /// Follow Me follows the selected face's edge (Alt).
     follow_perimeter: bool,
@@ -490,6 +505,10 @@ impl Session {
             round_size: None,
             round_last: None,
             round_notice: None,
+            round_chamfer: false,
+            round_at: None,
+            round_shown: None,
+            round_refused: None,
             follow_notice: None,
             follow_perimeter: false,
             scale_grip: None,
@@ -780,6 +799,8 @@ impl Session {
                 .iter()
                 .map(|(id, m)| (*id, m.clone()))
                 .collect(),
+            round_size: self.round_size,
+            round_chamfer: self.round_chamfer,
         });
     }
 
@@ -807,6 +828,8 @@ impl Session {
         s.alt_loop = r.alt_loop;
         s.brush = r.brush;
         s.brush_copy = r.brush_copy.clone();
+        s.round_size = r.round_size;
+        s.round_chamfer = r.round_chamfer;
         for e in &r.events {
             s.handle(e);
         }
@@ -894,7 +917,9 @@ impl Session {
                 self.ctrl_held = *ctrl;
                 self.alt_held = *alt;
                 self.paint_keys_changed();
+                self.round_preview();
             }
+            Input::Round { op } => self.round_set(*op),
             Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {
                 self.shift_held = false;
@@ -965,6 +990,7 @@ impl Session {
         self.last_fillet = None;
         self.round_last = None;
         self.round_notice = None;
+        self.round_clear();
         self.follow_notice = None;
         self.follow_perimeter = false;
         self.boxing = None;
@@ -1087,6 +1113,11 @@ impl Session {
 
     fn model_changed(&mut self) {
         self.version += 1;
+        // The Fillet preview was of the old model.
+        if self.round_shown.take().is_some() && self.tool == FILLET {
+            self.preview = None;
+            self.highlight_dirty = true;
+        }
         let t0 = self.measure.map(|f| f());
         self.build_scene();
         if self.health_view {

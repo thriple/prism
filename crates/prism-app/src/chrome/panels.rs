@@ -27,6 +27,9 @@ pub enum PanelOp {
     View(prism_view::ViewStyle),
     /// The Materials window.
     Material(prism_tools::session::MaterialOp),
+    /// The Fillet window: its kind, or its size as typed.
+    Round(prism_tools::session::RoundOp),
+    RoundSize(String),
 }
 
 /// The panels' data, set by the app each frame.
@@ -45,6 +48,8 @@ pub struct PanelData {
     pub materials: Vec<prism_tools::session::MaterialRow>,
     pub brush: prism_tools::session::Brush,
     pub default_colour: [u8; 4],
+    /// The Fillet window (while its tool is active).
+    pub round: Option<prism_tools::session::RoundPanel>,
 }
 
 /// Which panels are open, and text being edited.
@@ -59,6 +64,10 @@ pub struct Panels {
     /// The Materials window, and the chosen material's name being edited.
     pub materials: bool,
     pub material_name: Option<(prism_topo::MaterialId, String)>,
+    /// The Fillet window (shown only with its tool), and its size field
+    /// while it is being typed in.
+    pub fillet: bool,
+    pub fillet_size: Option<String>,
     /// Model Health's problems not drawn in the model (its switch off).
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
@@ -95,6 +104,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.set_width(rect.width());
+                    if chrome.active_tool == prism_tools::session::FILLET {
+                        super::fillet::card(ui, &mut p, &data, &mut ops);
+                    }
                     info(ui, &mut p, &data, &mut ops);
                     super::materials::card(ui, &mut p, &data, &mut ops);
                     outliner(ui, &mut p, &data, &mut ops);

@@ -52,6 +52,8 @@ impl Driver {
             brush: Brush::default(),
             brush_copy: None,
             materials: Vec::new(),
+            round_size: None,
+            round_chamfer: false,
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -2575,7 +2577,7 @@ fn the_fillet_tool_rounds_an_edge_and_ctrl_chamfers_one() {
     d.typed("2");
     let faces = d.faces();
     d.tool(FILLET);
-    assert!(d.s.hint().contains("Ctrl cuts it off"), "{}", d.s.hint());
+    assert!(d.s.hint().contains("Ctrl swaps"), "{}", d.s.hint());
     // An upright corner edge, at its middle: rounded with a tenth of the
     // face's width.
     d.click(DVec3::new(2.0, 0.0, 1.0));
@@ -2600,6 +2602,91 @@ fn the_fillet_tool_rounds_an_edge_and_ctrl_chamfers_one() {
     undo(&mut d);
     undo(&mut d);
     assert_eq!(d.faces(), faces, "one undo each");
+}
+
+/// The Fillet window (brief 29): hovering an edge previews the round at
+/// the window's kind and size without changing the model; Ctrl and the
+/// window's kind swap it; a refused edge says why and shows nothing; the
+/// window's size and kind change the last round in one undo step; leaving
+/// the tool takes the preview away.
+#[test]
+fn the_fillet_window_previews_and_changes_the_last_round() {
+    use prism_tools::session::{FILLET, RoundOp};
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("2");
+    let faces = d.faces();
+    d.tool(FILLET);
+    let panel = d.s.round_panel().expect("shown with the tool");
+    assert!(!panel.chamfer && panel.size.is_empty() && !panel.changes_last);
+    let shown = |d: &Driver| d.s.display_scene().faces.len();
+    let real = shown(&d);
+    // Hovering an upright edge: the preview has the round, the model not.
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    assert_eq!(d.faces(), faces, "the model is unchanged");
+    assert_eq!(shown(&d), real + 1, "the preview has one more face");
+    let curved = |d: &Driver| {
+        d.s.display_scene()
+            .faces
+            .iter()
+            .filter(|f| f.curved.is_some())
+            .count()
+    };
+    assert_eq!(curved(&d), 1, "rounded");
+    assert!(
+        d.s.round_panel().unwrap().fits.is_some(),
+        "the size that fits"
+    );
+    // Ctrl held: the preview is a chamfer.
+    d.send(Input::Held {
+        ctrl: true,
+        alt: false,
+    });
+    assert_eq!(curved(&d), 0, "flat while Ctrl is held");
+    assert_eq!(d.s.measurement().0, "Distance");
+    d.send(Input::Held {
+        ctrl: false,
+        alt: false,
+    });
+    assert_eq!(curved(&d), 1);
+    // The window's kind: chamfer.
+    d.s.round_input(RoundOp::Fillet(false));
+    assert_eq!(curved(&d), 0, "the window chose chamfer");
+    d.s.round_input(RoundOp::Fillet(true));
+    // Too big a size: nothing previewed, and the reason shows first.
+    d.s.round_text("5");
+    assert_eq!(shown(&d), real, "no preview");
+    assert_eq!(d.s.hint(), prism_ops::round::TOO_WIDE);
+    assert_eq!(
+        d.s.round_panel().unwrap().refused,
+        Some(prism_ops::round::TOO_WIDE)
+    );
+    // Back to fitting each edge, then click.
+    d.s.round_text("");
+    assert_eq!(shown(&d), real + 1);
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    assert_eq!(d.faces(), faces + 1);
+    assert!((radii(&d)[0] - 0.2).abs() < 1e-9, "{:?}", radii(&d));
+    assert!(d.s.round_panel().unwrap().changes_last);
+    // The window's size and kind change it in place.
+    d.s.round_text("0.5");
+    assert!((radii(&d)[0] - 0.5).abs() < 1e-9, "{:?}", radii(&d));
+    assert_eq!(d.s.round_panel().unwrap().size, d.s.number.show(0.5));
+    d.s.round_input(RoundOp::Fillet(false));
+    assert!(radii(&d).is_empty(), "now a chamfer");
+    assert_eq!(d.faces(), faces + 1);
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), faces, "one undo step");
+    // Hover again, then leave the tool: no preview left behind.
+    d.hover(DVec3::new(0.0, 0.0, 1.0));
+    assert_eq!(shown(&d), real + 1);
+    d.tool(PUSH);
+    assert_eq!(shown(&d), real);
+    assert!(d.s.round_panel().is_none(), "only with the tool");
 }
 
 #[test]

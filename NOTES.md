@@ -2706,4 +2706,40 @@ are listed above).
   panel to set the size (and fillet or chamfer) with a live preview before
   applying. **Plan step:** "Fillet panel", after Basic Materials part 1
   (owner confirmed, 2026-11-12). Editable fillets after the fact belong to
-  Inspector & Features.
+  Inspector & Features. **Built** (brief 29, see "The Fillet window").
+
+## The Fillet window (brief 29, owner, 2026-11-12)
+The Fillet / Chamfer tool now has a window in the right-hand column
+(owner: "a right-side window instead of floating"). Picking the tool
+opens it, unfolded; it shows only while that tool is active, and its ×
+closes it until the tool is picked again.
+- **Kind:** Fillet and Chamfer buttons. Ctrl still swaps the kind while
+  held (it used to mean "chamfer"; now it means "the other one").
+- **Size:** Radius or Distance. Empty fits each edge (a tenth of the
+  narrower face, as before), shown as the hint "Fit: …" while an edge is
+  hovered; the Fit button empties it. Typing into the measurement box
+  still works and fills the field.
+- **Live preview:** hovering an edge shows the model with that edge
+  rounded (or a flat corner rounded) at the window's kind and size; it
+  follows Ctrl. An edge that cannot be done shows nothing, and the status
+  line and the window say why before the click. The preview is rebuilt
+  only when the edge, kind, size or model changes.
+- **Changing the last one:** right after a round, a new kind or size in
+  the window changes it in place (one undo step), as typing did.
+- **Recorded:** the window's changes are `Input::Round { op }` events, and
+  recordings save the size and kind at their start.
+- Code: `session/round.rs` (`RoundOp`, `RoundPanel`, `round_panel`,
+  `round_input`, `round_text`, `round_preview`), `chrome/fillet.rs`.
+- Tests: `the_fillet_window_previews_and_changes_the_last_round`
+  (session), `the_fillet_tool_opens_its_window_only_while_active` (app).
+  Checked by eye under Xvfb.
+- **Left over:**
+  - The edit tools do nothing on the edges and faces of a closed group,
+    and say nothing either (Fillet, Push/Pull, Follow Me). A hint
+    ("double-click the group to open it") would make that clear. Small;
+    for a known-gaps session.
+  - Rounding several edges in one click, and dragging to set the size
+    (PLAN 1.4), wait for Inspector & Features.
+  - Checking by eye: under Xvfb with no window manager the window never
+    gets keyboard focus, so egui text fields ignore typing. Run
+    `xdotool windowfocus <id>` first. Not a bug in the app.
