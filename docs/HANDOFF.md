@@ -4,28 +4,27 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
 
 ## Start here (2026-11-12, Guam)
 - **State:** `main` = session branch, clean. Basic Materials part 1
-  (colours) is done and released (1a core, 1b Paint Bucket and viewport
-  colours, 1c the Materials window, Entity Info, Select by material,
-  Model Health, MCP `paint`). A known-gaps session and owner fixes also
-  went out (faces closing a hole face out, pulled bases keep colour and
-  close beside another face, inside-out cylinders found, a fast model
-  check, circle retyping). NOTES has a section for each.
+  (colours) is done and released. Since then, owner feedback, all
+  released: Follow Me works as in SketchUp (press on a face, drag along
+  the joined edges; it stops where the inference engine snaps on the
+  path; a face of a body swept out grows the body); the Paint Bucket
+  opens Window > Materials; Push/Pull, Follow Me and Scale use the
+  inference engine (edges, arcs, crossings, guides, points lined up).
+  NOTES: "Inference in every tool that places a point" and "Owner
+  feedback on release 193".
 - **CI:** the Linux job skips the Mesa install until the owner says
   otherwise (screenshot tests skip there unless `PRISM_REQUIRE_GPU` is
-  set); they run locally before each push. Ubuntu's servers looked
-  reachable again on 2026-11-12. CI and the release build for 55461aa
-  (1c) were green.
-- **Owner:** testing the 1c release. Waiting on nothing else. Decided
-  today: no bundled textures (#34), Fillet panel after part 1, new loop
-  lasts one pull, a rectangle beside another gets a base when pulled
-  (as SketchUp), the Linux Mesa step stays skipped until further notice.
+  set); they run locally before each push. Recent runs were green.
+- **Next: the Fillet panel** (owner request; the one tool without a
+  logical flow): write its brief first. A panel to set the size and
+  fillet or chamfer, with a live preview on the hovered edge before
+  applying. Then Basic Materials part 2 (textures, brief 28), part 3.
+- **Owner:** testing the latest release. Standing asks: every tool needs
+  a logical way of use, and every tool that places a point uses the
+  inference engine.
 - **Checking the app by eye:** `Xvfb :77`, run `target/debug/prism-app`
   with a file, drive it with `xdotool`, grab with `import -window root`
   (MCP's screenshot shows the viewport only).
-- **Next: the Fillet panel** (owner request, NOTES "Owner feedback on the
-  6e build"): a panel to set the size, fillet or chamfer, with a live
-  preview before applying; write its brief first. Then Basic Materials
-  part 2 (textures, brief 28) and part 3.
 - **After Basic Materials: NURBS Spike, then Freeform NURBS** (owner
   moved them up, 2026-11-11).
 - **Owner's answers (2026-11-12):** the Fillet panel comes after part 1
