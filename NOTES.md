@@ -2478,6 +2478,29 @@ No `[release]` yet (1c has it).
   - Colours other than Brick Red, and editing them: the Materials window,
     1c.
 
+## Inference in every tool that places a point (owner, 2026-11-12)
+
+The owner asked whether Follow Me uses the inference engine (it did
+not), said Push/Pull did not snap to edges, and asked that no other tool
+have the same problem. Each tool was checked:
+
+| Tool | Inference |
+|---|---|
+| Line, Rectangle, Circle, Polygon, the Arcs | full engine (already) |
+| Move, Rotate, Tape Measure, Protractor | full engine (already) |
+| Offset | full engine while dragging (already) |
+| **Push/Pull** | **now:** after its own end and midpoint matching, it matches the height of whatever the engine snaps to: a point on an edge or arc, a crossing, a guide or guide point, a point lined up along the push. Not the pushed face's own points and edges (they move with it). |
+| **Follow Me** | **now:** the path stops where the engine snaps on it: a point on an edge or arc, a midpoint, an end or corner, or where a line from a woken point along an axis crosses the path ("Green from Point"); else at the point on the edge under the cursor. The last edge is cut there (`follow::cut_path`; `Command::FollowMe` has an optional `end`), and the rest of it stays as an edge. Arcs are no longer taken whole: the path goes as far as the cursor says. |
+| **Scale** | **now:** dragging a grip, the geometry (not the box drawn 5% off it) goes level with what the engine snaps to: a point, an edge or arc, a guide; not the geometry being scaled. A typed factor still decides. |
+| Select, Eraser, Paint Bucket, Fillet / Chamfer | pick a face or an edge, not a point: no inference needed. |
+
+- **Tests:** `push_pull_matches_a_point_on_an_edge`,
+  `follow_me_stops_where_the_inference_snaps_on_the_path` (partway along
+  a line; at a corner), `follow_me_stops_level_with_another_point` (a
+  woken point's green guide), `scale_matches_a_point_it_snaps_to`; the
+  older Scale test no longer expects no inference, and the Follow Me drag
+  test drags to the line's end.
+
 ## Owner feedback on release 193 (2026-11-12): Follow Me, the Paint Bucket
 
 - **Follow Me works as in SketchUp.** It needed a path selected first;

@@ -228,6 +228,10 @@ pub enum Command {
     FollowMe {
         path: BTreeSet<prism_topo::EdgeId>,
         profile: FaceId,
+        /// Stop partway along the path (Follow Me dragged to a point on an
+        /// edge): the path is cut there first.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end: Option<DVec3>,
     },
     /// Add a material to the document (its name made unique).
     AddMaterial {
@@ -441,6 +445,11 @@ impl Command {
         let scale = to_local.matrix3.determinant().abs().cbrt();
         match self {
             Command::Segment { p: a, q: b } => Command::Segment { p: p(*a), q: p(*b) },
+            Command::FollowMe { path, profile, end } => Command::FollowMe {
+                path: path.clone(),
+                profile: *profile,
+                end: end.map(p),
+            },
             Command::Rect { x0, y0, x1, y1, z } => Command::Loop {
                 points: [
                     DVec3::new(*x0, *y0, *z),
@@ -695,7 +704,14 @@ impl Command {
             Command::RoundEdge { edge, size, fillet } => {
                 prism_ops::round::refusal(m, *edge, *size, *fillet)
             }
-            Command::FollowMe { path, profile } => prism_ops::follow::refusal(m, path, *profile),
+            Command::FollowMe { path, profile, end } => match end {
+                None => prism_ops::follow::refusal(m, path, *profile),
+                Some(p) => {
+                    let mut m = m.clone();
+                    let path = prism_ops::follow::cut_path(&mut m, path, *profile, *p);
+                    prism_ops::follow::refusal(&m, &path, *profile)
+                }
+            },
             Command::Offset { face, .. } if m.face(*face).is_some_and(|f| f.is_curved()) => {
                 Some(prism_ops::offset::CURVED_OFFSET)
             }
@@ -744,8 +760,12 @@ impl Command {
             Command::RoundEdge { edge, size, fillet } => {
                 prism_ops::round::round(m, *edge, *size, *fillet);
             }
-            Command::FollowMe { path, profile } => {
-                prism_ops::follow::follow(m, path, *profile);
+            Command::FollowMe { path, profile, end } => {
+                let path = match end {
+                    Some(p) => prism_ops::follow::cut_path(m, path, *profile, *p),
+                    None => path.clone(),
+                };
+                prism_ops::follow::follow(m, &path, *profile);
             }
             Command::Arc {
                 centre,

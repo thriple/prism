@@ -47,6 +47,8 @@ pub(super) enum EditOp {
     Follow {
         profile: FaceId,
         path: BTreeSet<EdgeId>,
+        /// Where the path stops partway along its last edge.
+        end: Option<DVec3>,
         /// Where the press was, while the button is down: releasing after
         /// a drag commits (click-move-click works too).
         pressed: Option<DVec2>,
@@ -166,6 +168,12 @@ impl Session {
     pub(super) fn edit_wants_inference(&self) -> bool {
         matches!(self.tool.as_str(), MOVE | ROTATE | TAPE | PROTRACTOR)
             || (self.tool == OFFSET && matches!(self.edit, Some(EditOp::Offset { .. })))
+            // Push/Pull matches what the engine snaps to, and Follow Me
+            // stops where it snaps on the path (owner, 2026-11-12).
+            || (self.tool == PUSH && matches!(self.edit, Some(EditOp::Push { .. })))
+            || (self.tool == FOLLOW && matches!(self.edit, Some(EditOp::Follow { .. })))
+            // Scale's grip goes level with what it snaps to.
+            || (self.tool == SCALE && matches!(self.edit, Some(EditOp::Scale { .. })))
     }
 
     /// The selection a tool works on: the selection, or else (Move, Rotate)
@@ -345,7 +353,32 @@ impl Session {
         self.hover = h;
     }
 
+    /// What the inference engine snapped to, for Push/Pull to match its
+    /// height: points, edges and arcs, crossings, guides, and lines from
+    /// other points square to the push. Not the pushed face's own, which
+    /// moves with it.
+    fn push_inferred(&self) -> Option<(String, DVec3)> {
+        let Some(EditOp::Push { face, n, .. }) = &self.edit else {
+            return None;
+        };
+        let i = self.inference.as_ref()?;
+        let f = self.work_model().face(*face)?;
+        let own_edge = i.edge.is_some_and(|e| f.edge_ids().any(|x| x == e));
+        let own_vertex = i
+            .vertex
+            .is_some_and(|v| f.loops().flatten().any(|x| *x == v));
+        if own_edge || own_vertex || i.face == Some(*face) {
+            return None;
+        }
+        let usable = match i.kind {
+            Kind::Guide => i.guides.first().is_some_and(|g| g.dir.dot(*n).abs() < 1e-6),
+            k => k.is_point() || matches!(k, Kind::OnEdge | Kind::OnArc),
+        };
+        usable.then(|| (format!("Match {}", i.label), i.point))
+    }
+
     fn push_drag(&mut self, s: DVec2, view: &View) {
+        let inferred = self.push_inferred();
         let Some(EditOp::Push {
             face,
             p0,
@@ -393,6 +426,15 @@ impl Session {
                     *snap = Some(("Match Midpoint".to_owned(), p));
                 }
             }
+        }
+        // Whatever else the inference engine snaps to (an edge, an arc, a
+        // crossing, a guide, a point lined up along the face): its height
+        // (owner, 2026-11-12: edges were not matched).
+        if snap.is_none()
+            && let Some((label, p)) = inferred
+        {
+            t = (p - *p0).dot(*n);
+            *snap = Some((label, p));
         }
         // Over a face parallel to the pushed one: pull level with it
         // (a lower stair step up to the next).

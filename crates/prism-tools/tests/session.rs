@@ -781,7 +781,8 @@ fn square_to_scale() -> Driver {
 fn scale_by_a_corner_grip_and_a_typed_factor() {
     let mut d = square_to_scale();
     d.click(DVec3::new(2.1, 2.1, 0.0));
-    assert!(d.s.inference().is_none(), "no inference while scaling");
+    // The inference engine runs while scaling (owner, 2026-11-12); a typed
+    // factor still decides.
     d.typed("1.5");
     // About the opposite corner.
     assert!(has_point(&d, 3.0, 3.0) && has_point(&d, 0.0, 0.0));
@@ -3281,7 +3282,7 @@ fn follow_me_drags_a_face_along_the_edges_joined_to_it() {
         ctrl: false,
         alt: false,
     });
-    d.hover(DVec3::new(4.0, 0.0, 0.0));
+    d.hover(DVec3::new(5.0, 0.0, 0.0));
     assert!(d.s.in_operation(), "dragging");
     assert!(
         d.s.display_scene().faces.len() > faces,
@@ -3308,7 +3309,7 @@ fn follow_me_drags_a_face_along_the_edges_joined_to_it() {
         ctrl: false,
         alt: false,
     });
-    d.hover(DVec3::new(4.0, 0.0, 0.0));
+    d.hover(DVec3::new(5.0, 0.0, 0.0));
     d.send(Input::Release {
         button: Button::Left,
     });
@@ -3324,8 +3325,153 @@ fn follow_me_drags_a_face_along_the_edges_joined_to_it() {
     build(&mut d);
     d.tool(FOLLOW);
     d.click(DVec3::new(2.0, 1.0, 1.0));
-    d.hover(DVec3::new(4.0, 0.0, 0.0));
-    d.click(DVec3::new(4.0, 0.0, 0.0));
+    d.hover(DVec3::new(5.0, 0.0, 0.0));
+    d.click(DVec3::new(5.0, 0.0, 0.0));
     let v = volume(&d);
     assert!((v - 20.0).abs() < 1e-6, "{v}");
+}
+
+/// Push/Pull matches the height of a point on an edge (owner,
+/// 2026-11-12: only points, midpoints and faces were matched).
+#[test]
+fn push_pull_matches_a_point_on_an_edge() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    // A post: a vertical line 4 m tall beside it.
+    d.tool(LINE);
+    d.click(DVec3::new(5.0, 0.0, 0.0));
+    d.click(DVec3::new(5.0, 0.0, 4.0));
+    key(&mut d, Key::Escape);
+    d.tool(PAINT_PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    // Over the post three metres up (not an end or its middle).
+    d.hover(DVec3::new(5.0, 0.0, 3.0));
+    assert!(d.s.hint().contains("pull"), "{}", d.s.hint());
+    d.click(DVec3::new(5.0, 0.0, 3.0));
+    let (lo, hi) = d.s.model().bbox().expect("box");
+    let top =
+        d.s.model()
+            .faces()
+            .filter_map(|(_, f)| {
+                f.plane()
+                    .filter(|p| p.normal.z.abs() > 0.9)
+                    .map(|p| p.origin.z)
+            })
+            .fold(f64::MIN, f64::max);
+    assert!(
+        (top - 3.0).abs() < 1e-6,
+        "pulled level with the point: {top} ({lo:?} {hi:?})"
+    );
+}
+
+/// Follow Me stops partway along an edge, at the snapped point, and at a
+/// path's corner (owner, 2026-11-12: inference while following).
+#[test]
+fn follow_me_stops_where_the_inference_snaps_on_the_path() {
+    use prism_tools::session::FOLLOW;
+    let volume = |d: &Driver| -> f64 {
+        let m = d.s.model();
+        m.faces()
+            .map(|(id, _)| prism_ops::health::face_volume(m, id))
+            .sum()
+    };
+    let build = |d: &mut Driver| {
+        paint_box(d);
+        d.tool(LINE);
+        d.click(DVec3::new(2.0, 0.0, 0.0));
+        d.click(DVec3::new(5.0, 0.0, 0.0));
+        d.click(DVec3::new(5.0, 3.0, 0.0));
+        key(d, Key::Escape);
+    };
+    // Partway along the first line.
+    let mut d = Driver::empty();
+    build(&mut d);
+    d.tool(FOLLOW);
+    d.click(DVec3::new(2.0, 1.0, 1.0));
+    d.hover(DVec3::new(3.5, 0.0, 0.0));
+    d.click(DVec3::new(3.5, 0.0, 0.0));
+    let v = volume(&d);
+    assert!((v - 8.0 - 6.0).abs() < 1e-6, "swept 1.5 m: {v}");
+    valid(&d);
+    // The rest of the line stays.
+    let m = d.s.model();
+    assert!(m.edges().any(|(_, e)| {
+        let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+        (a.x.max(b.x) - 5.0).abs() < 1e-9 && (a.x.min(b.x) - 3.5).abs() < 1e-9
+    }));
+    // At the corner: the whole first line, not round the corner.
+    let mut d = Driver::empty();
+    build(&mut d);
+    d.tool(FOLLOW);
+    d.click(DVec3::new(2.0, 1.0, 1.0));
+    d.hover(DVec3::new(5.0, 0.0, 0.0));
+    d.click(DVec3::new(5.0, 0.0, 0.0));
+    let v = volume(&d);
+    assert!((v - 20.0).abs() < 1e-6, "swept 3 m: {v}");
+}
+
+/// Follow Me stops where the path lines up with another point along an
+/// axis (a woken point's guide crossing the path).
+#[test]
+fn follow_me_stops_level_with_another_point() {
+    use prism_tools::session::FOLLOW;
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    d.tool(LINE);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.click(DVec3::new(6.0, 0.0, 0.0));
+    key(&mut d, Key::Escape);
+    // A short line elsewhere, whose end is the point to line up with.
+    d.click(DVec3::new(3.2, 4.0, 0.0));
+    d.click(DVec3::new(3.2, 5.0, 0.0));
+    key(&mut d, Key::Escape);
+    d.tool(FOLLOW);
+    d.click(DVec3::new(2.0, 1.0, 1.0));
+    // Wake the point, then come back near the path along green.
+    d.hover(DVec3::new(3.2, 4.0, 0.0));
+    d.wait(0.5);
+    d.hover(DVec3::new(3.2, 4.0, 0.0));
+    d.hover(DVec3::new(3.2, 0.25, 0.0));
+    let i = d.s.inference().expect("inference").clone();
+    d.click(DVec3::new(3.2, 0.25, 0.0));
+    let m = d.s.model();
+    let v: f64 = m
+        .faces()
+        .map(|(id, _)| prism_ops::health::face_volume(m, id))
+        .sum();
+    assert!(
+        (v - 8.0 - 1.2 * 4.0).abs() < 1e-6,
+        "swept to x = 3.2: {v} ({:?} {})",
+        i.kind,
+        i.label
+    );
+}
+
+/// Scale's grip goes level with a point it snaps to (owner, 2026-11-12:
+/// make sure no tool misses inference).
+#[test]
+fn scale_matches_a_point_it_snaps_to() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    // A line whose end, at x = 3, the right grip should reach.
+    d.tool(LINE);
+    d.click(DVec3::new(3.0, 4.0, 0.0));
+    d.click(DVec3::new(3.0, 5.0, 0.0));
+    key(&mut d, Key::Escape);
+    d.tool(SCALE);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    // The right face grip (middle of the box's right side), dragged to the
+    // line's end.
+    d.click(DVec3::new(2.1, 1.0, 0.0));
+    d.hover(DVec3::new(3.0, 4.0, 0.0));
+    d.click(DVec3::new(3.0, 4.0, 0.0));
+    let (lo, hi) = d.s.model().bbox().expect("model");
+    let right =
+        d.s.model()
+            .vertices()
+            .filter(|(_, p)| p.y < 2.5)
+            .map(|(_, p)| p.x)
+            .fold(f64::MIN, f64::max);
+    // The square's right side (not the box drawn 5% off it) reaches x = 3.
+    assert!((right - 3.0).abs() < 1e-6, "{right} ({lo:?} {hi:?})");
 }

@@ -767,6 +767,66 @@ fn attempt(
     out
 }
 
+/// Cut the path at `end` (Follow Me stopped partway along an edge, owner
+/// 2026-11-12): the path edge that `end` lies inside is split there, and
+/// the piece on the profile's side is kept in the path. The far piece
+/// stays in the model as an edge. Returns the path to follow; unchanged
+/// if `end` is at a path point or on no path edge.
+pub fn cut_path(
+    model: &mut Model,
+    path: &BTreeSet<EdgeId>,
+    profile: FaceId,
+    end: DVec3,
+) -> BTreeSet<EdgeId> {
+    let tol = model.tol();
+    let Some(e) = path.iter().copied().find(|e| {
+        model
+            .edge(*e)
+            .is_some_and(|x| crate::sticky::on_edge_inside(model, x, end, &tol))
+    }) else {
+        return path.clone();
+    };
+    let Some(x) = model.edge(e).copied() else {
+        return path.clone();
+    };
+    if model.vertex(x.a).distance(end) < tol.dist || model.vertex(x.b).distance(end) < tol.dist {
+        return path.clone();
+    }
+    // Which end of the cut edge leads back to the profile: the one other
+    // path edges or the profile's own corners touch.
+    let corners: BTreeSet<VertexId> = model
+        .face(profile)
+        .map(|f| f.loops().flatten().copied().collect())
+        .unwrap_or_default();
+    let joined = |v: VertexId| {
+        corners.contains(&v)
+            || path
+                .iter()
+                .any(|o| *o != e && model.edge(*o).is_some_and(|y| y.has(v)))
+    };
+    let keep_a = if joined(x.a) != joined(x.b) {
+        joined(x.a)
+    } else {
+        // A lone edge not touching the profile: the end nearer it.
+        let c = model
+            .face(profile)
+            .map(|f| model.points(&f.outer))
+            .and_then(|p| {
+                (!p.is_empty()).then(|| p.iter().copied().sum::<DVec3>() / p.len() as f64)
+            })
+            .unwrap_or(end);
+        model.vertex(x.a).distance(c) <= model.vertex(x.b).distance(c)
+    };
+    let v = model.add_vertex(end);
+    let Some((first, second)) = model.split_edge(e, v) else {
+        return path.clone();
+    };
+    let mut out = path.clone();
+    out.remove(&e);
+    out.insert(if keep_a { first } else { second });
+    out
+}
+
 /// Why following `path` with `profile` is refused, if it is.
 pub fn refusal(model: &Model, path: &BTreeSet<EdgeId>, profile: FaceId) -> Option<&'static str> {
     if let Err(e) = best(model, path, profile) {

@@ -46,7 +46,7 @@ pub fn on_segment_inside(p: DVec3, a: DVec3, b: DVec3, tol: &Tol) -> Option<f64>
 }
 
 /// Whether `p` lies on the edge `e`, clear of both its ends.
-fn on_edge_inside(model: &Model, e: &Edge, p: DVec3, tol: &Tol) -> bool {
+pub(crate) fn on_edge_inside(model: &Model, e: &Edge, p: DVec3, tol: &Tol) -> bool {
     on_curve_inside(e.curve, model.vertex(e.a), model.vertex(e.b), p, tol)
 }
 

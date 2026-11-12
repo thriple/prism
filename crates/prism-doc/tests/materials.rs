@@ -339,7 +339,11 @@ fn follow_me_walls_take_the_profile_paint() {
         .filter(|(_, e)| d.model().vertex(e.b).x.abs() > 1.0 || d.model().vertex(e.a).x.abs() > 1.0)
         .map(|(id, _)| id)
         .collect();
-    assert!(d.run(Command::FollowMe { path, profile }));
+    assert!(d.run(Command::FollowMe {
+        path,
+        profile,
+        end: None,
+    }));
     assert_eq!(d.model().face_count(), 6);
     assert!(d.model().faces().all(|(_, f)| f.paint.front == Some(red)));
 }

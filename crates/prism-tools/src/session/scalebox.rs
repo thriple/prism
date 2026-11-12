@@ -4,7 +4,9 @@
 //! and face middles (one axis). Dragging a grip scales about the opposite
 //! grip, or about the centre after Alt. Shift switches an edge or face
 //! grip between its own axes and even scaling. The drag follows the line
-//! from the anchor through the grip, so no inference is used.
+//! from the anchor through the grip; when the inference engine snaps to a
+//! point, an edge or a guide that is not being scaled, the grip goes level
+//! with it along that line (owner, 2026-11-12).
 
 use prism_math::{DVec2, DVec3};
 use prism_view::View;
@@ -261,8 +263,24 @@ impl Session {
                 }
             }))
         } else {
-            // Along the line from the anchor through the grip.
-            let Some(t) = along_line(o, d, a, span) else {
+            // Along the line from the anchor through the grip, or level
+            // with what the inference engine snaps to.
+            // The geometry itself (not the box drawn 5% off it) goes level
+            // with the snapped point.
+            let (ga, gg) = (
+                if self.scale_centre {
+                    b.at([1, 1, 1], false)
+                } else {
+                    b.at(opposite(grip), false)
+                },
+                b.at(grip, false),
+            );
+            let gspan = gg - ga;
+            let snapped = self
+                .scale_inferred()
+                .filter(|_| gspan.length_squared() > 0.0)
+                .map(|p| (p - ga).dot(gspan) / gspan.length_squared());
+            let Some(t) = snapped.or_else(|| along_line(o, d, a, span)) else {
                 return;
             };
             let t = if (t - 1.0).abs() < SNAP { 1.0 } else { t };
@@ -273,6 +291,30 @@ impl Session {
         }
         self.overlay_dirty = true;
         self.update_preview();
+    }
+
+    /// What the inference engine snapped to, if it is a point, an edge, an
+    /// arc or a guide, and not part of what is being scaled.
+    fn scale_inferred(&self) -> Option<DVec3> {
+        let i = self.inference.as_ref()?;
+        let usable = i.kind.is_point()
+            || matches!(
+                i.kind,
+                prism_infer::Kind::OnEdge | prism_infer::Kind::OnArc | prism_infer::Kind::Guide
+            );
+        if !usable {
+            return None;
+        }
+        let m = self.work_model();
+        let moving = self.selection.all_vertices(m);
+        if i.vertex.is_some_and(|v| moving.contains(&v))
+            || i.edge
+                .and_then(|e| m.edge(e))
+                .is_some_and(|e| moving.contains(&e.a) || moving.contains(&e.b))
+        {
+            return None;
+        }
+        Some(i.point)
     }
 
     /// Factor `f` on the axes the grip scales: a corner all three, an edge
