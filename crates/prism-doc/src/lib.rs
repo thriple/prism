@@ -80,6 +80,15 @@ pub enum Command {
     Revolve {
         edges: std::collections::BTreeSet<prism_topo::EdgeId>,
     },
+    /// Two curves swept: one along the other (Sweep, Freeform NURBS part
+    /// 5).
+    Sweep {
+        edges: std::collections::BTreeSet<prism_topo::EdgeId>,
+    },
+    /// The surface inside a ring of four curves (Patch).
+    Patch {
+        edges: std::collections::BTreeSet<prism_topo::EdgeId>,
+    },
     /// Round the corner at `corner` with an arc of `radius` (the Arc tools'
     /// double-click).
     Fillet {
@@ -411,6 +420,8 @@ impl Command {
             Command::MoveCage { .. } => "Move Control Points",
             Command::Loft { .. } => "Loft",
             Command::Revolve { .. } => "Revolve",
+            Command::Sweep { .. } => "Sweep",
+            Command::Patch { .. } => "Patch",
             Command::AddCagePoints { .. } => "Add Control Points",
             Command::Polygon { .. } => "Polygon",
             Command::Arc { pie: true, .. } => "Pie",
@@ -781,6 +792,8 @@ impl Command {
             }
             Command::Loft { edges } => prism_ops::loft::lofted(m, edges).err(),
             Command::Revolve { edges } => prism_ops::loft::revolved(m, edges).err(),
+            Command::Sweep { edges } => prism_ops::sweep::swept(m, edges).err(),
+            Command::Patch { edges } => prism_ops::sweep::patched(m, edges).err(),
             Command::PushPull { face, distance, .. } => {
                 prism_ops::pushpull::refusal(m, *face, *distance)
             }
@@ -856,6 +869,12 @@ impl Command {
             }
             Command::Revolve { edges } => {
                 let _ = prism_ops::loft::revolve(m, edges);
+            }
+            Command::Sweep { edges } => {
+                let _ = prism_ops::sweep::sweep(m, edges);
+            }
+            Command::Patch { edges } => {
+                let _ = prism_ops::sweep::patch(m, edges);
             }
             Command::Fillet { corner, radius } => {
                 prism_ops::fillet::fillet(m, *corner, *radius);

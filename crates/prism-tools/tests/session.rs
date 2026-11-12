@@ -4245,3 +4245,63 @@ fn revolve_turns_a_curve_about_the_selected_line() {
     undo(&mut d);
     assert_eq!(d.faces(), 0);
 }
+
+// ---------- Freeform NURBS part 5: Sweep and Patch ----------
+
+#[test]
+fn sweep_and_patch_run_from_the_selection() {
+    let curve = |pts: &[[f64; 3]]| {
+        let pts: Vec<DVec3> = pts.iter().map(|p| DVec3::from_array(*p)).collect();
+        prism_geom::Nurbs::open(&pts, 3).unwrap()
+    };
+    // Sweep: a profile along a path.
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_spline(
+        &mut m,
+        &curve(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 2.0],
+            [3.0, 0.0, -1.0],
+            [4.0, 0.0, 0.0],
+        ]),
+    );
+    prism_ops::add_spline(
+        &mut m,
+        &curve(&[
+            [0.0, 0.0, 0.0],
+            [0.0, 2.0, 1.0],
+            [1.0, 4.0, 0.0],
+            [0.0, 6.0, 0.0],
+        ]),
+    );
+    let mut d = Driver::new(Document::with_model(m));
+    action(&mut d, "surf.sweep");
+    assert_eq!(d.s.hint(), prism_ops::sweep::TWO_FOR_SWEEP);
+    action(&mut d, "edit.selall");
+    action(&mut d, "surf.sweep");
+    assert_eq!(d.faces(), 1);
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 0);
+    // Patch: a ring of four.
+    let mut m = prism_topo::Model::new();
+    for c in [
+        curve(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.5],
+            [3.0, 0.0, 1.5],
+            [4.0, 0.0, 0.0],
+        ]),
+        curve(&[[4.0, 0.0, 0.0], [4.5, 1.0, 1.0], [4.0, 3.0, 0.0]]),
+        curve(&[[4.0, 3.0, 0.0], [2.0, 3.0, -1.0], [0.0, 3.0, 0.0]]),
+        curve(&[[0.0, 3.0, 0.0], [-0.5, 1.5, 0.5], [0.0, 0.0, 0.0]]),
+    ] {
+        prism_ops::add_spline(&mut m, &c);
+    }
+    let mut d = Driver::new(Document::with_model(m));
+    action(&mut d, "edit.selall");
+    action(&mut d, "surf.patch");
+    assert_eq!(d.faces(), 1);
+    assert_eq!(d.s.model().edge_count(), 4, "the four curves are its sides");
+    valid(&d);
+}

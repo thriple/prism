@@ -31,6 +31,7 @@ pub mod settle;
 mod shell;
 pub mod solid;
 pub mod sticky;
+pub mod sweep;
 pub mod transform;
 
 pub use pushpull::push_pull;

@@ -3138,7 +3138,7 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
   curve's seam moved).
 - **Loft** (`prism_ops::loft`, `Command::Loft`, action `surf.loft`):
   select two or more curves (splines whole, the arcs of one circle
-  together, lines each alone) and run Draw > Loft. They are ordered
+  together, lines each alone) and run Draw > Surface > Loft. They are ordered
   nearest next from an end, turned the same way, closed ones started
   beside each other, made alike, and skinned (smooth across from three
   curves; straight between two). A tube faces out.
@@ -3164,3 +3164,31 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
   circles drawn from different start points twists); no picking of the
   order by hand; no caps (draw or keep the flat faces yourself); surfaces
   that come to a point (a pole) wait for three-sided faces.
+
+## Freeform NURBS (part 5): Sweep and Patch
+- `prism_ops::sweep`; `Command::Sweep`, `Command::Patch`; actions
+  `surf.sweep`, `surf.patch` (Draw > Surface), run from the selection as
+  Loft and Revolve are.
+- **Sweep, two open curves:** one slid along the other, keeping its
+  direction. Exact (the control net is the sum of the two curves'), and
+  the same whichever is called the profile. Both curves are sides of the
+  face when they meet at an end; the path's vertices cut the surface
+  across.
+- **Sweep, a closed curve and an open one (a pipe):** the closed curve is
+  carried along the path, turning with it and never twisting about it
+  (rotation-minimising frames, the double reflection method), and the
+  kernel skins through the copies (4 to 48 of them, by how much the path
+  turns). It passes through every copy; between them it is fitted, so a
+  pipe's radius is true to about 1 % on a tight path. It faces out.
+- **Patch:** a ring of four curves joined end to end (lines and freeform
+  curves; lines in one straight run count as one side). The surface is a
+  Coons patch, exact along all four, built in Prism (no kernel).
+- **Lines in a straight run are one section** for Loft, Revolve, Sweep
+  and Patch.
+- Follow Me still refuses freeform paths and profiles, and now points to
+  Draw > Surface.
+- **Changed from the brief:** Sweep is its own action, not Follow Me;
+  Patch takes four sides only.
+- **Left over:** an open profile does not turn with its path (it keeps
+  its direction); two- and three-sided patches (they come to a point);
+  arcs as patch sides; the pipe has no caps.

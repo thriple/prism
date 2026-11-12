@@ -41,8 +41,9 @@ added: splines and freeform faces follow the same pattern).
    normal inference. Add control points (knot insertion) keeps the shape.
 4. **Loft and revolve.** Loft: select two or more curves, run Loft.
    Revolve: select curves and one straight line as the axis, run Revolve.
-5. **Sweep and patch.** Follow Me along a spline path (a fitted sweep);
-   Patch fills a closed ring of two to four curves.
+5. **Sweep and patch.** Sweep: select a profile and a path, run Sweep
+   (two open curves exactly; a closed curve along a path as a fitted
+   pipe). Patch fills a ring of four curves.
 6. **Curvature display.** Zebra stripes (a view toggle) and curvature
    combs on selected curves.
 

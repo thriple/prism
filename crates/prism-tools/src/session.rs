@@ -1361,8 +1361,9 @@ impl Session {
             "tex.reset" => self.texture_reset(),
             "cage.edit" => self.cage_toggle(),
             "cage.add" => self.cage_add(),
-            "surf.loft" => self.surface_from_selection(true),
-            "surf.revolve" => self.surface_from_selection(false),
+            "surf.loft" | "surf.revolve" | "surf.sweep" | "surf.patch" => {
+                self.surface_from_selection(id)
+            }
             "edit.group" => self.make_group(),
             "edit.comp" => self.make_component(),
             // Edit > Reverse Faces and Orient Faces (Model Health).

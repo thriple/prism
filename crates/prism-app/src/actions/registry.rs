@@ -192,6 +192,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Freeform NURBS part 4.
         || id == "surf.loft"
         || id == "surf.revolve"
+        // Freeform NURBS part 5.
+        || id == "surf.sweep"
+        || id == "surf.patch"
         // Exact Curves 4c.
         || id == "edit.soften"
         // Part 3: hiding.

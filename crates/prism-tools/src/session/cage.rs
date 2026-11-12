@@ -121,14 +121,14 @@ impl Session {
         self.dirty = true;
     }
 
-    /// Loft through the selected curves, or Revolve them about the
-    /// selected axis line. The new faces are selected; a refusal says why.
-    pub(super) fn surface_from_selection(&mut self, loft: bool) {
+    /// Loft, Revolve, Sweep or Patch from the selected curves. The new faces are selected; a refusal says why.
+    pub(super) fn surface_from_selection(&mut self, action: &str) {
         let edges = self.selection.edges.clone();
-        let c = if loft {
-            Command::Loft { edges }
-        } else {
-            Command::Revolve { edges }
+        let c = match action {
+            "surf.loft" => Command::Loft { edges },
+            "surf.revolve" => Command::Revolve { edges },
+            "surf.sweep" => Command::Sweep { edges },
+            _ => Command::Patch { edges },
         };
         self.cage_notice = c.refusal(self.work_model());
         if self.cage_notice.is_none() {

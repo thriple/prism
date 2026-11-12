@@ -24,9 +24,9 @@ pub const DEGENERATE: &str =
     "Refused: the curves touch or cross, so the surface would pinch to a point.";
 
 /// One curve to loft through: its shape, and the edges on it.
-struct Section {
-    curve: Nurbs,
-    edges: Vec<EdgeId>,
+pub(crate) struct Section {
+    pub curve: Nurbs,
+    pub edges: Vec<EdgeId>,
 }
 
 fn same_curve(a: &Arc<Nurbs>, b: &Arc<Nurbs>) -> bool {
@@ -35,7 +35,7 @@ fn same_curve(a: &Arc<Nurbs>, b: &Arc<Nurbs>) -> bool {
 
 /// The selected edges as sections: a spline with every edge on it, the
 /// arcs of one circle together, each line alone.
-fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> {
+pub(crate) fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> {
     let tol = model.tol();
     let mut out: Vec<Section> = Vec::new();
     let mut done: BTreeSet<EdgeId> = BTreeSet::new();
@@ -120,10 +120,40 @@ fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> {
             }
         }
     }
+    // Lines end to end in one straight run are one section.
+    let is_line = |s: &Section| s.curve.degree() == 1 && s.curve.points().len() == 2;
+    loop {
+        let mut pair = None;
+        'find: for i in 0..out.len() {
+            for j in i + 1..out.len() {
+                if !is_line(&out[i]) || !is_line(&out[j]) {
+                    continue;
+                }
+                let (a, b) = (out[i].curve.points(), out[j].curve.points());
+                for (x, y) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                    let (far_a, far_b) = (a[1 - x], b[1 - y]);
+                    let straight = (a[x] - far_a)
+                        .normalize_or_zero()
+                        .dot((far_b - b[y]).normalize_or_zero())
+                        > 1.0 - 1e-12;
+                    if tol.same_point(a[x], b[y]) && straight {
+                        pair = Some((i, j, far_a, far_b));
+                        break 'find;
+                    }
+                }
+            }
+        }
+        let Some((i, j, a, b)) = pair else { break };
+        let other = out.remove(j);
+        if let Some(c) = Nurbs::line(a, b) {
+            out[i].curve = c;
+        }
+        out[i].edges.extend(other.edges);
+    }
     out
 }
 
-fn middle(c: &Nurbs) -> DVec3 {
+pub(crate) fn middle(c: &Nurbs) -> DVec3 {
     let pts = c.cage();
     pts.iter().copied().sum::<DVec3>() / pts.len() as f64
 }
