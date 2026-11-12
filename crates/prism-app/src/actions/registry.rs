@@ -186,6 +186,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "edit.selmat"
         // Basic Materials part 3.
         || id == "tex.reset"
+        // Freeform NURBS part 3: cage editing.
+        || id == "cage.edit"
+        || id == "cage.add"
         // Exact Curves 4c.
         || id == "edit.soften"
         // Part 3: hiding.
@@ -479,6 +482,7 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         items.extend([A("edit.soften"), A("edit.weld")]);
     }
     items.extend([
+        Sub("Cage", vec![A("cage.edit"), A("cage.add")]),
         Sub("Convert", vec![A("conv.curve"), A("conv.patch")]),
         S,
         A("edit.center"),

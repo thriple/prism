@@ -3987,3 +3987,179 @@ fn push_pull_makes_freeform_walls_that_are_drawn_and_picked() {
     undo(&mut d);
     assert_eq!(d.faces(), 1);
 }
+
+// ---------- Freeform NURBS part 3: cage editing ----------
+
+fn drawn_curve() -> Driver {
+    use prism_tools::session::CURVE;
+    let mut d = Driver::empty();
+    d.tool(CURVE);
+    for p in [(0.0, 0.0), (1.0, 2.0), (3.0, 2.0), (4.0, 0.0)] {
+        d.click(DVec3::new(p.0, p.1, 0.0));
+    }
+    d.send(Input::Key { key: Key::Enter });
+    d
+}
+
+#[test]
+fn edit_cage_moves_a_control_point_with_the_move_tool() {
+    let mut d = drawn_curve();
+    // Nothing selected: it says what to select.
+    action(&mut d, "cage.edit");
+    assert!(!d.s.cage_active());
+    assert_eq!(d.s.hint(), prism_ops::cage::NO_CAGE);
+    d.tool(SELECT);
+    let on = {
+        let m = d.s.model();
+        let (_, e) = m.edges().next().unwrap();
+        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.3)
+    };
+    d.click(on);
+    action(&mut d, "cage.edit");
+    assert!(d.s.cage_active());
+    assert_eq!(d.s.cage_points().len(), 4);
+    // Select picks a control point; Shift adds another.
+    d.click(DVec3::new(1.0, 2.0, 0.0));
+    assert_eq!(d.s.cage_picked(), vec![1]);
+    let s = d.screen(DVec3::new(3.0, 2.0, 0.0));
+    d.click_px(s, true, false);
+    assert_eq!(d.s.cage_picked(), vec![1, 2]);
+    // Move: both picked points go 1 m along green, by a typed distance.
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, -1.0, 0.0));
+    d.hover(DVec3::new(0.0, 0.0, 0.0));
+    d.typed("1");
+    let pts = d.s.cage_points();
+    assert!(
+        pts[1].distance(DVec3::new(1.0, 3.0, 0.0)) < 1e-9,
+        "{:?}",
+        pts[1]
+    );
+    assert!(pts[2].distance(DVec3::new(3.0, 3.0, 0.0)) < 1e-9);
+    valid(&d);
+    // A click on a point that is not picked moves that one alone.
+    d.click(DVec3::new(4.0, 0.0, 0.0));
+    d.click(DVec3::new(5.0, 0.0, 0.0));
+    assert!(d.s.cage_points()[3].distance(DVec3::new(5.0, 0.0, 0.0)) < 1e-9);
+    assert!(
+        d.s.model()
+            .vertices()
+            .any(|(_, p)| p.distance(DVec3::new(5.0, 0.0, 0.0)) < 1e-9)
+    );
+    valid(&d);
+    // Undo takes the last step back; Esc leaves the cage.
+    undo(&mut d);
+    assert!(d.s.cage_points()[3].distance(DVec3::new(4.0, 0.0, 0.0)) < 1e-9);
+    d.send(Input::Key { key: Key::Escape });
+    assert!(!d.s.cage_active());
+}
+
+#[test]
+fn rotate_scale_and_add_work_on_the_cage_and_refusals_say_why() {
+    let mut d = drawn_curve();
+    d.tool(SELECT);
+    d.click(DVec3::new(0.0, 0.0, 0.0) + DVec3::new(0.02, 0.04, 0.0));
+    if d.s.selection().edges.is_empty() {
+        let on = {
+            let m = d.s.model();
+            let (_, e) = m.edges().next().unwrap();
+            e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.3)
+        };
+        d.click(on);
+    }
+    action(&mut d, "cage.edit");
+    assert!(d.s.cage_active());
+    // Rotate with nothing picked: it says to pick first.
+    d.tool(ROTATE);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    assert_eq!(d.s.hint(), prism_tools::session::PICK_FIRST);
+    // The two middle points turned a quarter about their middle (2, 2).
+    d.s.cage_pick(&[1, 2]);
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    d.typed("90");
+    let pts = d.s.cage_points();
+    assert!(
+        pts[1].distance(DVec3::new(2.0, 1.0, 0.0)) < 1e-9,
+        "{:?}",
+        pts[1]
+    );
+    assert!(
+        pts[2].distance(DVec3::new(2.0, 3.0, 0.0)) < 1e-9,
+        "{:?}",
+        pts[2]
+    );
+    // Scaled to twice the size about the same middle.
+    d.tool(SCALE);
+    d.click(DVec3::new(2.0, 3.0, 0.0));
+    d.typed("2");
+    let pts = d.s.cage_points();
+    assert!(
+        pts[1].distance(DVec3::new(2.0, 0.0, 0.0)) < 1e-9,
+        "{:?}",
+        pts[1]
+    );
+    assert!(pts[2].distance(DVec3::new(2.0, 4.0, 0.0)) < 1e-9);
+    valid(&d);
+    // Add Control Points: one more, the shape kept.
+    action(&mut d, "cage.add");
+    assert_eq!(d.s.cage_points().len(), 5);
+    valid(&d);
+}
+
+#[test]
+fn a_freeform_solid_is_pulled_into_shape_by_its_cage() {
+    use prism_tools::session::CURVE;
+    let mut d = Driver::empty();
+    d.tool(CURVE);
+    for p in [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0), (0.0, 0.0)] {
+        d.click(DVec3::new(p.0, p.1, 0.0));
+    }
+    d.tool(PUSH);
+    d.click(DVec3::new(2.0, 1.5, 0.0));
+    d.hover(DVec3::new(2.0, 1.5, 0.5));
+    d.typed("2");
+    let walls: Vec<_> =
+        d.s.model()
+            .faces()
+            .filter(|(_, f)| f.surface.patch().is_some())
+            .map(|(id, f)| {
+                let p = f.surface.patch().unwrap();
+                (
+                    id,
+                    p.surface.eval((p.u.0 + p.u.1) / 2.0, (p.v.0 + p.v.1) / 2.0),
+                )
+            })
+            .collect();
+    d.tool(SELECT);
+    for (id, on) in walls {
+        d.click(on);
+        if d.s.selection().faces.contains(&id) {
+            break;
+        }
+    }
+    assert!(
+        !d.s.selection().faces.is_empty(),
+        "a click takes the smooth wall whole"
+    );
+    action(&mut d, "cage.edit");
+    assert_eq!(d.s.cage_points().len(), 8);
+    // The top row lifted 1 m: the flat top goes with it.
+    d.s.cage_pick(&[1, 3, 5, 7]);
+    d.tool(MOVE);
+    d.click(DVec3::new(2.0, -1.0, 0.0));
+    d.send(Input::Key { key: Key::Up });
+    d.hover(DVec3::new(2.0, -1.0, 0.5));
+    d.typed("1");
+    let (_, hi) = d.s.model().bbox().unwrap();
+    assert!((hi.z - 3.0).abs() < 1e-9, "{hi}");
+    valid(&d);
+    // One top point alone would bend the flat top: refused, with why.
+    d.s.cage_pick(&[1]);
+    d.click(DVec3::new(2.0, -1.0, 0.0));
+    d.send(Input::Key { key: Key::Up });
+    d.hover(DVec3::new(2.0, -1.0, 0.5));
+    d.typed("1");
+    assert_eq!(d.s.hint(), prism_ops::cage::FLAT_BESIDE);
+    let (_, hi) = d.s.model().bbox().unwrap();
+    assert!((hi.z - 3.0).abs() < 1e-9);
+}

@@ -58,6 +58,18 @@ pub enum Command {
     Spline {
         curve: prism_geom::Nurbs,
     },
+    /// Send control points of a NURBS curve or surface through `m` (cage
+    /// editing, Freeform NURBS part 3). `points` are places in
+    /// `prism_ops::cage::points`.
+    MoveCage {
+        cage: prism_ops::cage::Cage,
+        points: std::collections::BTreeSet<usize>,
+        m: DAffine3,
+    },
+    /// Add control points to a NURBS curve or surface, keeping its shape.
+    AddCagePoints {
+        cage: prism_ops::cage::Cage,
+    },
     /// Round the corner at `corner` with an arc of `radius` (the Arc tools'
     /// double-click).
     Fillet {
@@ -386,6 +398,8 @@ impl Command {
             Command::Loop { .. } => "Shape",
             Command::Circle { .. } => "Circle",
             Command::Spline { .. } => "Curve",
+            Command::MoveCage { .. } => "Move Control Points",
+            Command::AddCagePoints { .. } => "Add Control Points",
             Command::Polygon { .. } => "Polygon",
             Command::Arc { pie: true, .. } => "Pie",
             Command::Arc { .. } => "Arc",
@@ -513,6 +527,11 @@ impl Command {
             },
             Command::Spline { curve } => Command::Spline {
                 curve: curve.transformed(to_local),
+            },
+            Command::MoveCage { cage, points, m } => Command::MoveCage {
+                cage: *cage,
+                points: points.clone(),
+                m: *to_local * *m * to_local.inverse(),
             },
             Command::Polygon { points } => Command::Polygon {
                 points: points.iter().map(|v| p(*v)).collect(),
@@ -739,6 +758,15 @@ impl Command {
     pub fn refusal(&self, m: &Model) -> Option<&'static str> {
         use prism_ops::transform::{arcs_refusal, scaling, turn};
         match self {
+            Command::MoveCage {
+                cage,
+                points,
+                m: by,
+            } => prism_ops::cage::moved(m, *cage, points, by).err(),
+            Command::AddCagePoints { cage } => {
+                let mut w = m.clone();
+                prism_ops::cage::add_points(&mut w, *cage).err()
+            }
             Command::PushPull { face, distance, .. } => {
                 prism_ops::pushpull::refusal(m, *face, *distance)
             }
@@ -798,6 +826,16 @@ impl Command {
             Command::Polygon { points } => prism_ops::add_polygon(m, points),
             Command::Spline { curve } => {
                 prism_ops::add_spline(m, curve);
+            }
+            Command::MoveCage {
+                cage,
+                points,
+                m: by,
+            } => {
+                let _ = prism_ops::cage::move_points(m, *cage, points, by);
+            }
+            Command::AddCagePoints { cage } => {
+                let _ = prism_ops::cage::add_points(m, *cage);
             }
             Command::Fillet { corner, radius } => {
                 prism_ops::fillet::fillet(m, *corner, *radius);

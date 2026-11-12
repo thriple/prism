@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::select::box_select;
 
 mod arcs;
+mod cage;
 mod construct;
 mod curve;
 mod edit;
@@ -40,6 +41,7 @@ mod shapes;
 mod texpos;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
+pub use cage::PICK_FIRST;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use curve::{CURVE, curve_for};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
@@ -356,6 +358,9 @@ pub struct Session {
     /// The Curve tool's curve in progress, and whether it passes through
     /// its clicks.
     curve: Option<curve::CurveOp>,
+    /// Edit Cage (Freeform NURBS part 3), and what it last refused.
+    cage: Option<cage::CageEdit>,
+    cage_notice: Option<&'static str>,
     curve_through: bool,
     /// The Arc tools' last typed radius (for fillets), the corner of the
     /// last fillet (a typed radius changes it), and why the last fillet
@@ -470,6 +475,8 @@ impl Session {
             rot_lock: None,
             shift_held: false,
             curve: None,
+            cage: None,
+            cage_notice: None,
             curve_through: false,
             ctrl_copy: false,
             alt_loop: false,
@@ -653,6 +660,7 @@ impl Session {
             || self.shape.is_some()
             || self.arc.is_some()
             || self.curve.is_some()
+            || self.cage_start().is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
             || self.texpos_active()
@@ -753,6 +761,9 @@ impl Session {
 
     /// The status bar's hint for the tool's next step (feel test `hintText(`).
     pub fn hint(&self) -> &'static str {
+        if let Some(h) = self.cage_hint() {
+            return h;
+        }
         if let Some(r) = self.refused.filter(|_| self.edit.is_some()) {
             return r;
         }
@@ -986,6 +997,7 @@ impl Session {
         if id == self.tool {
             return;
         }
+        self.cage_notice = None;
         if is_nav(id) && !is_nav(&self.tool) {
             self.before_nav = self.tool.clone();
         }
@@ -1029,6 +1041,7 @@ impl Session {
         self.shape = None;
         self.arc = None;
         self.curve = None;
+        self.cage_cancel();
         self.last_fillet = None;
         self.round_last = None;
         self.round_notice = None;
@@ -1064,6 +1077,8 @@ impl Session {
                     self.mem.clear();
                     self.overlay_dirty = true;
                     self.refresh();
+                } else if self.cage.is_some() {
+                    self.cage_leave();
                 } else if !self.close_group() {
                     resp.used_escape = false;
                 }
@@ -1164,6 +1179,7 @@ impl Session {
         }
         let t0 = self.measure.map(|f| f());
         self.build_scene();
+        self.cage_check();
         // The face being positioned went (undo, another edit).
         if let Some(f) = self.texpos.as_ref().map(|t| t.face())
             && self.work_model().face(f).is_none()
@@ -1343,6 +1359,8 @@ impl Session {
             "edit.delete" => self.delete(),
             "edit.selmat" => self.select_same_material(),
             "tex.reset" => self.texture_reset(),
+            "cage.edit" => self.cage_toggle(),
+            "cage.add" => self.cage_add(),
             "edit.group" => self.make_group(),
             "edit.comp" => self.make_component(),
             // Edit > Reverse Faces and Orient Faces (Model Health).
@@ -1431,10 +1449,17 @@ impl Session {
             || shapes::is_shape(&self.tool)
             || arcs::is_arc(&self.tool)
             || self.tool == CURVE
+            || self.cage_wants_inference()
             || self.edit_wants_inference()
     }
 
     fn context(&self) -> Context {
+        if self.cage_takes() {
+            return Context {
+                start: self.cage_start(),
+                ..Default::default()
+            };
+        }
         match self.tool.as_str() {
             LINE => Context {
                 start: self.line_start,
@@ -1550,6 +1575,7 @@ impl Session {
             }
             self.shape_hover(s, &view);
             self.arc_hover(s, &view);
+            self.cage_hover();
             if is_edit(&self.tool) {
                 self.edit_hover(s, &view);
             }
@@ -1620,6 +1646,7 @@ impl Session {
                     _ => Drag::Pan { grab: q },
                 });
             }
+            Button::Left if self.cage_takes() => self.cage_press(s, shift, ctrl),
             Button::Left => match self.tool.as_str() {
                 SELECT => self.select_press(s, shift, ctrl),
                 LINE => self.line_press(s),
@@ -1977,6 +2004,7 @@ impl Session {
             || self.arc_enter(&text)
             || self.round_enter(&text)
             || self.curve_enter()
+            || self.cage_enter(&text)
         {
             return;
         }
@@ -2198,6 +2226,7 @@ impl Session {
         self.shape_overlay(&mut o);
         self.arc_overlay(&mut o);
         self.curve_overlay(&mut o);
+        self.cage_overlay(&mut o);
         // The snap: its target, glyph and label.
         let glyph_color = match i.kind {
             Kind::Endpoint => fb.endpoint,

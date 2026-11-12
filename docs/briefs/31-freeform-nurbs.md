@@ -35,9 +35,9 @@ added: splines and freeform faces follow the same pattern).
    transforms, adaptive tessellation (finer where it bends), shading,
    picking. Push/Pull of a flat face with spline edges makes exact
    freeform side faces.
-3. **Cage editing.** A selected curve or freeform face shows its control
-   points; Edit Cage (double-click, or the context menu) makes them
-   pickable; Move, Rotate and Scale act on the picked points with the
+3. **Cage editing.** Edit Cage (Tools menu, or the context menu) shows
+   the control points of the selected curve or freeform face and makes
+   them pickable; Move, Rotate and Scale act on the picked points with the
    normal inference. Add control points (knot insertion) keeps the shape.
 4. **Loft and revolve.** Loft: select two or more curves, run Loft.
    Revolve: Follow Me turns spline profiles about an arc's axis.

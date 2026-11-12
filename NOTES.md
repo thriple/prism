@@ -3087,3 +3087,40 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
 - **Left over:** texture places on a patch are distances along its middle
   lines (stretched where the patch widens); Position Texture is for flat
   faces only, as before.
+
+## Freeform NURBS (part 3): cage editing
+- **Ops:** `prism_ops::cage`. `Cage::Curve(edge)` or `Cage::Surface(face)`
+  names the NURBS curve or surface an edge or face is on. `points` and
+  `lines` give its cage; `moved` returns the model with picked control
+  points sent through a transform, or why not; `add_points` inserts a
+  knot in the widest gap (one along a curve, one row each way across a
+  surface) without changing the shape.
+- **What follows:** every edge on the curve (its ends move with it, and
+  lines joined there); every face on the surface, with its four corners
+  and sides (a side that is straight stays a plain line). **A flat face
+  beside it stays flat:** it follows in its plane, or moves whole to a new
+  plane; otherwise the edit is refused (`FLAT_BESIDE`). Another curved
+  face or curve joined there refuses (`NEIGHBOUR`); a curve that is the
+  side of a freeform face is edited through the face (`SIDE_OF_FACE`).
+- **Rule kept by every freeform face:** its outer loop is its patch's four
+  corners in order, and loop edge `k` is `Patch::side(k)`.
+- **Commands:** `MoveCage { cage, points, m }`, `AddCagePoints { cage }`.
+- **In the app:** Tools > Edit Cage (Control Points) (`cage.edit`, also
+  in the context menu under Cage) with a freeform curve or face
+  selected. Then Select picks control points (Shift or Ctrl adds and
+  removes); Move takes them from one click to the next (a click on a
+  point picks and moves it), with inference, axis locks and a typed
+  distance; Rotate turns them about their middle (locked axis, or blue;
+  typed degrees); Scale sizes them about their middle (typed factor).
+  A live preview shows the result; refusals show in the status bar. Esc
+  ends a step, then leaves the cage. Add Control Points (`cage.add`).
+- `Session::cage_pick` picks by place (tests, MCP hosts).
+- **Changed from the brief:** no double-click to enter (double-click
+  already selects connected geometry); the cage shows only while Edit
+  Cage is on.
+- **Left over:** no box select of control points; Rotate and Scale use
+  the points' middle (no protractor or grips); adding points round a
+  closed curve or direction is refused; a wall extruded straight is
+  degree 1 along its height, so a row added there makes a crease, not a
+  bulge (lofts are smooth, part 4); an edit that makes a curve cross
+  other edges does not cut them.
