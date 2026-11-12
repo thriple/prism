@@ -2997,3 +2997,18 @@ Part 3 is split: 3a placing textures on faces, 3b materials in glTF,
   `three_mf_carries_colours`.
 - **Left over:** OBJ's other maps (bump, specular) are ignored; a texture
   without Prism's size comment gets the size its coordinates imply.
+
+## NURBS Spike (brief 30): arris
+- **Decision:** arris (pure Rust, MIT OR Apache-2.0) is the NURBS kernel,
+  behind a `Kernel` trait in one crate, version pinned. Full results in
+  `docs/research/nurbs-spike.md`; DECISIONS #9.
+- **Test program:** `spikes/nurbs/`, its own Cargo workspace (not in the
+  app's build, CI or Cargo.lock). `cargo run --release` there prints the
+  table. arris 12/12 cases and 40/40 random holes; monstertruck 4/12 (a
+  panic on twelve fillets) and 39/40. NURBS lofts in booleans (arris)
+  consistent to 2.5e-11 but slow (12 s).
+- **For Freeform NURBS:** run kernel calls off the interface thread
+  natively and cancellable on the web (arris's `Control`); convert closed
+  regions of Prism's non-manifold model to arris solids at the boundary;
+  turn the spike's cases into tests; add arris's DEPENDENCIES row when the
+  app first depends on it.

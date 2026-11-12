@@ -1,0 +1,13 @@
+[package]
+name = "wasm-mt"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[workspace]
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+monstertruck = { version = "0.4.1", features = ["modeling", "meshing", "solid"] }
+[profile.release]
+opt-level = "s"
+lto = true

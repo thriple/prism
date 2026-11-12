@@ -1,0 +1,13 @@
+[package]
+name = "wasm-arris"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[workspace]
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+arris = "0.10.0"
+[profile.release]
+opt-level = "s"
+lto = true

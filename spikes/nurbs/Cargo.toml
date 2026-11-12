@@ -1,0 +1,13 @@
+[package]
+name = "nurbs-spike"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "NURBS Spike (PLAN 6.0): robustness tests of the pure-Rust kernels. Not part of the app."
+
+# Its own workspace: kept out of Prism's build.
+[workspace]
+
+[dependencies]
+monstertruck = { version = "0.4.1", features = ["modeling", "meshing", "solid"] }
+arris = "0.10.0"

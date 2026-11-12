@@ -29,8 +29,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   window with Fillet / Chamfer and the size, and a live preview on the
   hovered edge. NOTES: "The Fillet window".
 - **Basic Materials is done and released** (parts 1 to 3; NOTES "Basic
-  Materials (part ...)"). **Next: NURBS Spike**, then Freeform NURBS,
-  then Fillet Joins. The owner wants NURBS started today (2026-11-12).
+  Materials (part ...)"). **The NURBS Spike is done** (brief 30): the
+  kernel is **arris** (`docs/research/nurbs-spike.md`, DECISIONS #9; the
+  test program is `spikes/nurbs/`, run with `cargo run --release`).
+  **Next: Freeform NURBS** (6 parts, PLAN 6.0a; part 1 NURBS curves), then
+  Fillet Joins. Freeform NURBS needs a brief first.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0`; if space runs out, delete
   `target/debug` and rebuild (about 2 minutes).
