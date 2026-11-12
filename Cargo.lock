@@ -2344,6 +2344,7 @@ dependencies = [
 name = "prism-tools"
 version = "0.0.1"
 dependencies = [
+ "image",
  "prism-doc",
  "prism-file",
  "prism-geom",

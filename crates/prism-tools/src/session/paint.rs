@@ -108,7 +108,16 @@ impl Session {
                 .material(id)
                 .or(self.brush_copy.as_ref())
             {
-                Some(m) => (m.name.clone(), Rgba(m.srgba()).with_alpha(255)),
+                // A textured material: its image's average colour.
+                Some(m) => {
+                    let c = self
+                        .scene
+                        .textures
+                        .get(&id)
+                        .filter(|_| m.texture.is_some())
+                        .map_or(Rgba(m.srgba()), |t| t.average);
+                    (m.name.clone(), c.with_alpha(255))
+                }
                 None => ("Default".to_owned(), self.style.face_front),
             },
         }

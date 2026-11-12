@@ -44,7 +44,7 @@ use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
-pub use materials::{MaterialOp, MaterialRow, PaintWith};
+pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
@@ -425,6 +425,8 @@ pub struct Session {
     hover_guide: Option<prism_topo::GuideId>,
     /// Why the edit in progress changes nothing (arcs), for the status bar.
     refused: Option<&'static str>,
+    /// Why the Materials window's last request was refused.
+    material_refused: Option<&'static str>,
     /// The open group (empty at the root), and the selected groups in it.
     ctx: Vec<prism_doc::InstanceId>,
     groups: BTreeSet<prism_doc::InstanceId>,
@@ -467,6 +469,7 @@ impl Session {
             view: prism_view::ViewStyle::default(),
             hover_guide: None,
             refused: None,
+            material_refused: None,
             ctx: Vec::new(),
             groups: BTreeSet::new(),
             last_hidden: BTreeSet::new(),

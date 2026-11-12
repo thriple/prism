@@ -130,6 +130,12 @@ impl AppHost<'_> {
                 "roughness": r.roughness,
                 "metalness": r.metalness,
                 "used": r.used,
+                // A textured material's colour above is its image's average.
+                "texture": r.texture.map(|t| json!({
+                    "pixels": t.pixels,
+                    "width_m": t.size[0],
+                    "height_m": t.size[1],
+                })),
             })).collect::<Vec<_>>(),
             "can_undo": self.viewport.can_undo(),
             "can_redo": self.viewport.can_redo(),
@@ -1247,6 +1253,80 @@ mod tests {
         assert!(value(h.call("get_health", &none)).as_array().is_some());
     }
 
+    /// MCP lists a textured material's image size and real size (Basic
+    /// Materials 2c); its colour is the image's average.
+    #[test]
+    fn get_model_shows_textures() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/acceptance/files/textured.prism"
+        );
+        let c = prism_file::read(&std::fs::read(path).expect("golden")).expect("opens");
+        let (mut chrome, mut viewport, mut files) =
+            parts(prism_doc::Document::with_assembly(c.assembly));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let m = value(h.call("get_model", &json!({})));
+        let t = &m["materials"][0]["texture"];
+        assert_eq!(t["width_m"], 0.4, "{m}");
+        assert_eq!(t["height_m"], 0.2);
+        assert!(t["pixels"][0].as_u64().is_some_and(|w| w > 0));
+    }
+
+    /// A PNG dropped on the window becomes a new textured material, picked
+    /// for the Paint Bucket with the Materials window open (Basic Materials
+    /// 2c); a file that is not really an image says so.
+    #[test]
+    fn a_dropped_image_becomes_a_textured_material() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/acceptance/files/textured.prism"
+        );
+        let c = prism_file::read(&std::fs::read(path).expect("golden")).expect("opens");
+        let png = c
+            .assembly
+            .images()
+            .values()
+            .next()
+            .expect("an image")
+            .clone();
+        let (mut chrome, mut viewport, mut files) = parts(prism_tools::scenes::cube());
+        let o = |name: &str, bytes: Vec<u8>| crate::doc_files::Opened {
+            name: name.into(),
+            path: None,
+            bytes,
+        };
+        files.dropped(
+            o("bricks.png", png.bytes.to_vec()),
+            &mut viewport.session,
+            &mut chrome,
+        );
+        let rows = viewport.session.material_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "bricks");
+        assert!(rows[0].texture.is_some());
+        assert_eq!(chrome.active_tool, prism_tools::session::PAINT);
+        assert!(chrome.panels.materials, "the Materials window opens");
+        files.dropped(
+            o("fake.jpg", b"no".to_vec()),
+            &mut viewport.session,
+            &mut chrome,
+        );
+        assert_eq!(viewport.session.material_rows().len(), 1, "nothing added");
+        assert!(
+            chrome
+                .note
+                .as_ref()
+                .is_some_and(|(t, _)| t.starts_with("fake.jpg: "))
+        );
+    }
+
     /// MCP `paint` (Basic Materials 1c): a new colour on faces by id, one
     /// undo step; an existing material by name on the selection; the
     /// Paint Bucket through use_tool, with keys held.
@@ -1286,6 +1366,7 @@ mod tests {
         assert_eq!(m["materials"][0]["name"], "Brick");
         assert_eq!(m["materials"][0]["colour"], "#cc3322");
         assert_eq!(m["materials"][0]["used"], true);
+        assert_eq!(m["materials"][0]["texture"], Value::Null);
         // One step: Undo takes the paint and the new material away.
         value(h.call("run_action", &json!({"id": "edit.undo"})));
         assert!(

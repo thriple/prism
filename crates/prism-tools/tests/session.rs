@@ -3594,3 +3594,111 @@ fn a_textured_material_reaches_the_scene() {
     s.set_view_style(v);
     assert!(!s.scene().textures_shown);
 }
+
+fn png(w: u32, h: u32, rgba: [u8; 4]) -> Vec<u8> {
+    let img = image::RgbaImage::from_pixel(w, h, image::Rgba(rgba));
+    let mut out = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut out, image::ImageFormat::Png)
+        .expect("png");
+    out.into_inner()
+}
+
+/// The Materials window's textures (Basic Materials 2c): an image becomes
+/// a new material named after its file and picked; loading onto a material
+/// keeps its texture's width; the size typed keeps the shape (or not);
+/// Remove Texture and undo; Model Health counts the image left unused.
+#[test]
+fn the_materials_window_loads_sizes_and_removes_textures() {
+    use prism_tools::session::{Brush, MaterialOp, PAINT};
+    let mut d = Driver::empty();
+    paint_box(&mut d);
+    // Not an image: refused, nothing changes.
+    assert_eq!(
+        d.s.load_image(None, "notes.png", b"hello".to_vec()),
+        Err(prism_doc::image::NOT_AN_IMAGE)
+    );
+    assert!(d.s.material_rows().is_empty());
+    // A new material from an image, 1 m wide keeping its shape.
+    let tool = d.s.load_image(
+        None,
+        "C:\\pics\\Oak Floor.jpg.png",
+        png(40, 20, [150, 100, 50, 255]),
+    );
+    assert_eq!(tool, Ok(Some(PAINT)));
+    let rows = d.s.material_rows();
+    assert_eq!(rows.len(), 1);
+    let id = rows[0].id;
+    assert_eq!(rows[0].name, "Oak Floor.jpg");
+    assert_eq!(d.s.brush(), Brush::Material(id), "picked to paint with");
+    let t = rows[0].texture.clone().expect("textured");
+    assert_eq!((t.pixels, t.size), ([40, 20], [1.0, 0.5]));
+    assert_eq!(&rows[0].srgba[..3], &[150, 100, 50], "its average colour");
+    assert_eq!(d.s.document().undo_name(), Some("New Material"), "one step");
+    // A width typed keeps the shape; unlocked, a height leaves the width.
+    d.s.material_op(MaterialOp::TextureSize {
+        id,
+        text: "2".into(),
+        height: false,
+        keep_shape: true,
+    });
+    assert_eq!(
+        d.s.material_rows()[0].texture.as_ref().unwrap().size,
+        [2.0, 1.0]
+    );
+    d.s.material_op(MaterialOp::TextureSize {
+        id,
+        text: "300mm".into(),
+        height: true,
+        keep_shape: false,
+    });
+    assert_eq!(
+        d.s.material_rows()[0].texture.as_ref().unwrap().size,
+        [2.0, 0.3]
+    );
+    d.s.material_op(MaterialOp::TextureSize {
+        id,
+        text: "-1".into(),
+        height: false,
+        keep_shape: true,
+    });
+    assert_eq!(
+        d.s.take_material_refusal(),
+        Some(prism_tools::session::NOT_A_SIZE)
+    );
+    assert_eq!(
+        d.s.material_rows()[0].texture.as_ref().unwrap().size,
+        [2.0, 0.3]
+    );
+    // Another image onto it: the width stays, the height follows the image.
+    assert_eq!(
+        d.s.load_image(Some(id), "b.png", png(10, 30, [0, 0, 0, 255])),
+        Ok(None)
+    );
+    let t = d.s.material_rows()[0].texture.clone().unwrap();
+    assert_eq!((t.pixels, t.size), ([10, 30], [2.0, 6.0]));
+    assert_eq!(d.s.material_rows().len(), 1, "no new material");
+    // The first image is now unused, and so is the material (painted on
+    // nothing yet): Model Health counts both.
+    let row = |s: &Session| {
+        s.health_rows()
+            .into_iter()
+            .find(|r| r.key == "materials")
+            .expect("the row")
+    };
+    assert_eq!(row(&d.s).count, 2);
+    let detail = row(&d.s).detail;
+    assert_eq!(
+        detail,
+        "1 material painted on nothing, 1 image no material uses"
+    );
+    // Remove Texture: back to its colour; undo brings it back.
+    d.s.material_op(MaterialOp::RemoveTexture(id));
+    assert!(d.s.material_rows()[0].texture.is_none());
+    assert_eq!(row(&d.s).count, 3, "both images unused");
+    act(&mut d, "edit.undo");
+    assert!(d.s.material_rows()[0].texture.is_some());
+    // Painted on nothing, it goes with Purge, and its images with it.
+    d.s.health_fix("materials");
+    assert!(d.s.material_rows().is_empty());
+    assert!(d.s.document().assembly().images().is_empty());
+}

@@ -6,6 +6,7 @@ mod components;
 mod fillet;
 mod materials;
 mod panels;
+pub use materials::image_loaded;
 pub use panels::{PanelData, PanelOp};
 mod dock;
 mod features;
@@ -151,7 +152,7 @@ pub struct Chrome {
     pub lock_chip: Option<(String, egui::Color32)>,
     pub measure: (String, String, bool),
     /// A message that replaces the tool hint until the tool changes.
-    note: Option<(String, &'static str)>,
+    pub(crate) note: Option<(String, &'static str)>,
 }
 
 impl Chrome {

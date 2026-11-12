@@ -7,11 +7,36 @@ use crate::doc_files::Opened;
 /// The extensions File > Import offers (and drops accept).
 pub const IMPORTS: [&str; 6] = ["stl", "obj", "3mf", "glb", "gltf", "ply"];
 
+/// The images the Materials window loads (Basic Materials part 2).
+pub const IMAGES: [&str; 3] = ["png", "jpg", "jpeg"];
+
+/// Whether a file name is an image the Materials window loads.
+pub fn is_image(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    IMAGES.iter().any(|e| lower.ends_with(&format!(".{e}")))
+}
+
 pub use imp::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::{IMPORTS, Opened};
+    use super::{IMAGES, IMPORTS, Opened};
+
+    /// Ask for an image (a texture). `Ok(None)` if the user cancelled.
+    pub fn pick_image() -> Result<Option<Opened>, String> {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Images", &IMAGES)
+            .pick_file()
+        else {
+            return Ok(None);
+        };
+        crate::doc_files::open_path(&path.display().to_string()).map(Some)
+    }
+
+    /// Web only.
+    pub fn take_picked_image() -> Option<Result<Opened, String>> {
+        None
+    }
 
     /// Ask for a mesh file. `Ok(None)` if the user cancelled.
     pub fn pick() -> Result<Option<Opened>, String> {
@@ -60,10 +85,11 @@ mod imp {
     use wasm_bindgen::closure::Closure;
     use wasm_bindgen_futures::JsFuture;
 
-    use super::{IMPORTS, Opened};
+    use super::{IMAGES, IMPORTS, Opened};
 
     thread_local! {
         static PICKED: RefCell<Option<Result<Opened, String>>> = const { RefCell::new(None) };
+        static PICKED_IMAGE: RefCell<Option<Result<Opened, String>>> = const { RefCell::new(None) };
         static DROPPED: RefCell<Option<Result<Opened, String>>> = const { RefCell::new(None) };
         static LISTENING: RefCell<bool> = const { RefCell::new(false) };
     }
@@ -87,6 +113,22 @@ mod imp {
     }
 
     pub fn pick() -> Result<Option<Opened>, String> {
+        pick_into(&IMPORTS, &PICKED)
+    }
+
+    /// The image comes later, through [`take_picked_image`].
+    pub fn pick_image() -> Result<Option<Opened>, String> {
+        pick_into(&IMAGES, &PICKED_IMAGE)
+    }
+
+    pub fn take_picked_image() -> Option<Result<Opened, String>> {
+        PICKED_IMAGE.with(|p| p.borrow_mut().take())
+    }
+
+    fn pick_into(
+        exts: &[&str],
+        slot: &'static std::thread::LocalKey<RefCell<Option<Result<Opened, String>>>>,
+    ) -> Result<Option<Opened>, String> {
         let doc = web_sys::window()
             .and_then(|w| w.document())
             .ok_or("no document")?;
@@ -96,12 +138,12 @@ mod imp {
             .dyn_into()
             .map_err(|_| "no input".to_owned())?;
         input.set_type("file");
-        let accept: Vec<String> = IMPORTS.iter().map(|e| format!(".{e}")).collect();
+        let accept: Vec<String> = exts.iter().map(|e| format!(".{e}")).collect();
         input.set_accept(&accept.join(","));
         let picked = input.clone();
         let on_change = Closure::<dyn FnMut()>::new(move || {
             if let Some(file) = picked.files().and_then(|f| f.get(0)) {
-                read_into(file, &PICKED);
+                read_into(file, slot);
             }
         });
         input.set_onchange(Some(on_change.as_ref().unchecked_ref()));

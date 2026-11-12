@@ -1,8 +1,10 @@
 //! Window > Materials (Basic Materials 1c, brief 28): the document's
 //! materials as swatches (used ones first), the built-in colours, New,
 //! Duplicate, Delete and Purge Unused, and the chosen material's name,
-//! colour, roughness and metalness. Clicking a swatch picks the Paint
-//! Bucket with it.
+//! colour, opacity, roughness, metalness and texture (Basic Materials 2c:
+//! load an image, its size, remove it). Clicking a swatch picks the Paint
+//! Bucket with it. A PNG or JPEG dropped on the window becomes a new
+//! textured material ([`image_loaded`]).
 
 use egui::{RichText, Ui};
 use prism_doc::material::PALETTE;
@@ -11,6 +13,29 @@ use prism_ui::theme::{self, color, size};
 use prism_ui::widgets::{SideCard, SoftButton, SoftSlider, field, swatch};
 
 use super::panels::{PanelData, PanelOp, Panels, after_card};
+
+/// An image picked or dropped: onto material `target`, or as a new
+/// material, which is picked for the Paint Bucket and shown in the open
+/// Materials window. Says in the status bar if the image cannot be read.
+pub fn image_loaded(
+    chrome: &mut super::Chrome,
+    s: &mut prism_tools::Session,
+    target: Option<prism_topo::MaterialId>,
+    o: crate::doc_files::Opened,
+) {
+    match s.load_image(target, &o.name, o.bytes) {
+        Ok(tool) => {
+            if let Some(tool) = tool {
+                chrome.active_tool = tool;
+            }
+            chrome.panels.materials = true;
+            chrome.panels.folded.remove("Materials");
+            chrome.panels.texture_text = None;
+            s.mark_all_dirty();
+        }
+        Err(why) => chrome.status_note(format!("{}: {why}", o.name)),
+    }
+}
 
 pub(super) fn card(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
     if !p.materials {
@@ -79,6 +104,13 @@ pub(super) fn card(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<
                 if ui.add(SoftButton::new("New").small()).clicked() {
                     ops.push(PanelOp::Material(MaterialOp::New));
                 }
+                if ui
+                    .add(SoftButton::new("New from Image…").small())
+                    .on_hover_text("A PNG or JPEG; you can also drop one on the window")
+                    .clicked()
+                {
+                    ops.push(PanelOp::LoadImage(None));
+                }
                 if let Some(m) = chosen {
                     if ui.add(SoftButton::new("Duplicate").small()).clicked() {
                         ops.push(PanelOp::Material(MaterialOp::Duplicate(m.id)));
@@ -132,22 +164,36 @@ fn edit(ui: &mut Ui, p: &mut Panels, m: &MaterialRow, ops: &mut Vec<PanelOp>) {
             ops.push(PanelOp::Material(MaterialOp::Edit(m.id, x)));
         }
     });
-    ui.horizontal_wrapped(|ui| {
-        ui.label("Colour");
-        let mut rgb = [m.srgba[0], m.srgba[1], m.srgba[2]];
-        if egui::widgets::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
-            let mut x = base(m);
-            let lin = prism_doc::Material::colour("", rgb).surface().base;
-            let s = x.surface_mut();
-            s.base = [lin[0], lin[1], lin[2], s.base[3]];
-            ops.push(PanelOp::Material(MaterialOp::Edit(m.id, x)));
-        }
-        ui.label(
-            RichText::new(format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]))
-                .font(theme::mono())
-                .color(color::MUTED),
-        );
-    });
+    // A texture replaces the colour.
+    if m.texture.is_none() {
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Colour");
+            let mut rgb = [m.srgba[0], m.srgba[1], m.srgba[2]];
+            if egui::widgets::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
+                let mut x = base(m);
+                let lin = prism_doc::Material::colour("", rgb).surface().base;
+                let s = x.surface_mut();
+                s.base = [lin[0], lin[1], lin[2], s.base[3]];
+                ops.push(PanelOp::Material(MaterialOp::Edit(m.id, x)));
+            }
+            ui.label(
+                RichText::new(format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]))
+                    .font(theme::mono())
+                    .color(color::MUTED),
+            );
+        });
+    }
+    let mut opacity = f32::from(m.srgba[3]) / 255.0 * 100.0;
+    caption(ui, &format!("Opacity {opacity:.0} %"));
+    if ui
+        .add(SoftSlider::new(&mut opacity, 0.0..=100.0, "Opacity").suffix(" %"))
+        .changed()
+    {
+        let mut x = base(m);
+        x.surface_mut().base[3] = (opacity / 100.0).clamp(0.0, 1.0);
+        ops.push(PanelOp::Material(MaterialOp::Edit(m.id, x)));
+    }
+    texture(ui, p, m, ops);
     let mut rough = m.roughness;
     caption(ui, &format!("Roughness {rough:.2}"));
     if ui
@@ -174,6 +220,80 @@ fn edit(ui: &mut Ui, p: &mut Panels, m: &MaterialRow, ops: &mut Vec<PanelOp>) {
         )
         .color(color::MUTED),
     );
+}
+
+/// The chosen material's texture: load or replace its image, its size in
+/// the model (the shape kept unless unlocked), or remove it.
+fn texture(ui: &mut Ui, p: &mut Panels, m: &MaterialRow, ops: &mut Vec<PanelOp>) {
+    ui.add_space(size::MENU_PAD);
+    let Some(t) = &m.texture else {
+        caption(ui, "Texture: none");
+        if ui
+            .add(SoftButton::new("Load Image…").small())
+            .on_hover_text("A PNG or JPEG, repeated to fill each face")
+            .clicked()
+        {
+            ops.push(PanelOp::LoadImage(Some(m.id)));
+        }
+        return;
+    };
+    caption(
+        ui,
+        &format!("Texture: {} × {} pixels", t.pixels[0], t.pixels[1]),
+    );
+    let text = match &mut p.texture_text {
+        Some((id, x)) if *id == m.id => x,
+        _ => {
+            p.texture_text = Some((m.id, t.size_text.clone()));
+            &mut p.texture_text.as_mut().expect("set").1
+        }
+    };
+    let mut typed = None;
+    egui::Grid::new("texture size").show(ui, |ui| {
+        for (k, label) in ["Width", "Height"].into_iter().enumerate() {
+            ui.label(label);
+            let resp = field(ui, &mut text[k], label, 120.0);
+            if resp.lost_focus() && text[k].trim() != t.size_text[k] {
+                typed = Some((k, text[k].clone()));
+            }
+            ui.end_row();
+        }
+    });
+    if let Some((k, text)) = typed {
+        ops.push(PanelOp::Material(MaterialOp::TextureSize {
+            id: m.id,
+            text,
+            height: k == 1,
+            keep_shape: !p.texture_free_shape,
+        }));
+        p.texture_text = None;
+    } else if !ui.memory(|mem| mem.focused().is_some())
+        && p.texture_text
+            .as_ref()
+            .is_some_and(|(_, x)| *x != t.size_text)
+    {
+        // The size changed elsewhere (undo, the other side): follow it.
+        p.texture_text = None;
+    }
+    let mut keep = !p.texture_free_shape;
+    if ui
+        .add(prism_ui::widgets::SoftToggle::new(&mut keep, "Keep shape"))
+        .changed()
+    {
+        p.texture_free_shape = !keep;
+    }
+    ui.horizontal_wrapped(|ui| {
+        if ui.add(SoftButton::new("Replace Image…").small()).clicked() {
+            ops.push(PanelOp::LoadImage(Some(m.id)));
+        }
+        if ui
+            .add(SoftButton::new("Remove Texture").small())
+            .on_hover_text("Back to its colour")
+            .clicked()
+        {
+            ops.push(PanelOp::Material(MaterialOp::RemoveTexture(m.id)));
+        }
+    });
 }
 
 fn caption(ui: &mut Ui, text: &str) {

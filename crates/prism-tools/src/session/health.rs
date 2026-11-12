@@ -108,16 +108,25 @@ impl Session {
             ),
             fix: None,
         });
-        // Information: materials nothing uses (Basic Materials 1c).
-        let unused = asm.unused_materials().len();
+        // Information: materials nothing uses (Basic Materials 1c), and
+        // images no material uses (2c: a texture removed or replaced).
+        let (mats, images) = (asm.unused_materials().len(), asm.unused_images().len());
+        let unused = mats + images;
+        let plural =
+            |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
         rows.push(HealthRow {
             key: "materials",
             label: "Unused materials",
             count: unused,
-            detail: if unused == 0 {
-                String::new()
-            } else {
-                "in the document, painted on nothing".into()
+            detail: match (mats, images) {
+                (0, 0) => String::new(),
+                (_, 0) => "in the document, painted on nothing".into(),
+                (0, _) => format!("{} no material uses", plural(images, "image", "images")),
+                _ => format!(
+                    "{} painted on nothing, {} no material uses",
+                    plural(mats, "material", "materials"),
+                    plural(images, "image", "images")
+                ),
             },
             fix: (unused > 0).then_some("Purge"),
         });

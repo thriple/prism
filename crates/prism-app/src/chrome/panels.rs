@@ -27,6 +27,8 @@ pub enum PanelOp {
     View(prism_view::ViewStyle),
     /// The Materials window.
     Material(prism_tools::session::MaterialOp),
+    /// Load an image: onto this material, or as a new one.
+    LoadImage(Option<prism_topo::MaterialId>),
     /// The Fillet window: its kind, or its size as typed.
     Round(prism_tools::session::RoundOp),
     RoundSize(String),
@@ -64,6 +66,14 @@ pub struct Panels {
     /// The Materials window, and the chosen material's name being edited.
     pub materials: bool,
     pub material_name: Option<(prism_topo::MaterialId, String)>,
+    /// The chosen material's texture width and height being typed.
+    pub texture_text: Option<(prism_topo::MaterialId, [String; 2])>,
+    /// Typing a texture's width leaves its height alone (the shape is
+    /// kept by default).
+    pub texture_free_shape: bool,
+    /// On the web, the image being picked is for this material (or a new
+    /// one); it arrives a few frames later.
+    pub image_for: Option<Option<prism_topo::MaterialId>>,
     /// The Fillet window (shown only with its tool), and its size field
     /// while it is being typed in.
     pub fillet: bool,

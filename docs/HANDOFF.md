@@ -28,11 +28,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
 - **The Fillet window is built** (brief 29, released): a right-column
   window with Fillet / Chamfer and the size, and a live preview on the
   hovered edge. NOTES: "The Fillet window".
-- **Basic Materials part 2, steps 2a and 2b are built** (the core of
-  textures, then the viewport: NOTES "Basic Materials (part 2, step
-  2a)" and "(part 2, step 2b)"). **Next: 2c** (the Materials window
-  loads an image and sets its size, drag and drop, Model Health counts
-  unused images, MCP, a `[release]`), then part 3.
+- **Basic Materials part 2 is built and released** (2a the core, 2b the
+  viewport, 2c the window: NOTES "Basic Materials (part 2, step ...)").
+  **Next: part 3** (placing textures, materials in glTF/OBJ/3MF), then
+  NURBS Spike: the owner wants NURBS started soon (2026-11-12) and said
+  to push through part 3 without stopping.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0`; if space runs out, delete
   `target/debug` and rebuild (about 2 minutes).

@@ -256,11 +256,14 @@ impl Files {
         }
     }
 
-    /// A file dropped onto the window: a `.prism` opens (asking about
+    /// A file dropped onto the window: an image becomes a new textured
+    /// material; a `.prism` opens (asking about
     /// unsaved changes first), anything else imports.
     pub fn dropped(&mut self, o: Opened, s: &mut Session, chrome: &mut Chrome) {
-        let _ = s;
-        if o.name.to_ascii_lowercase().ends_with(".prism") {
+        if crate::mesh_files::is_image(&o.name) {
+            // A PNG or JPEG becomes a new textured material.
+            crate::chrome::image_loaded(chrome, s, None, o);
+        } else if o.name.to_ascii_lowercase().ends_with(".prism") {
             self.requests.push(Request::Open(o));
         } else {
             self.transfer.open(o, chrome);

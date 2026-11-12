@@ -2886,3 +2886,37 @@ show what is behind them.
   faces are batched but the batches are rebuilt with the scene, not kept.
   2c: the Materials window loads images and sets their size; Model
   Health counts unused images; MCP shows textures; then a `[release]`.
+
+## Basic Materials (part 2, step 2c): textures in the Materials window
+You can load images now.
+- **New from Image…** (Materials window), or **drop a PNG or JPEG on the
+  window**: a new material named after the file (its colour the image's
+  average), 1 m wide keeping the image's shape, picked for the Paint
+  Bucket with the window open. One undo step ("New Material"). A file
+  that is not a PNG or JPEG Prism can read says so in the status bar.
+- **The chosen material's Edit section:** Opacity (0 to 100 %, see-through
+  from 2b); **Texture**: its size in pixels, **Width** and **Height** in
+  the model (typed in the document's units; **Keep shape** on by default
+  changes the other side with it), **Replace Image…** (keeps the width,
+  the height follows the new image's shape) and **Remove Texture** (back
+  to its colour). The colour picker is hidden while a texture shows.
+  Swatches of textured materials show the image's average colour, and so
+  does the Paint Bucket's preview (default: the preview tint is one
+  colour, not the image).
+- **Session:** `Session::load_image(target, file name, bytes)`,
+  `MaterialOp::TextureSize` and `RemoveTexture`, `MaterialRow.texture`
+  (`TextureRow`), `take_material_refusal` for the status bar. Web: the
+  picked image arrives later (`mesh_files::take_picked_image`,
+  `Panels.image_for`).
+- **Model Health:** the Unused materials row also counts images no
+  material uses (after Remove or Replace); Purge removes both.
+- **MCP:** `get_model` lists each material's `texture` (pixels, width_m,
+  height_m) or null; a textured material's `colour` is its image's
+  average.
+- Tests: `prism-tools` `the_materials_window_loads_sizes_and_removes_textures`;
+  `prism-app` `a_dropped_image_becomes_a_textured_material` and
+  `get_model_shows_textures`. Checked by eye under Xvfb: textured.prism
+  draws its texture, the window shows it, typing a width resizes it.
+- **Left over:** the Purge Unused button in the window counts materials
+  only (Model Health counts images too); no thumbnail of the image in the
+  window, only its average colour.

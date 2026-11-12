@@ -460,9 +460,28 @@ impl App {
                         if let Some(tool) = s.material_op(op) {
                             chrome.active_tool = tool;
                         }
+                        if let Some(why) = s.take_material_refusal() {
+                            chrome.status_note(why.to_owned());
+                        }
+                    }
+                    crate::chrome::PanelOp::LoadImage(target) => {
+                        match crate::mesh_files::pick_image() {
+                            Ok(Some(o)) => crate::chrome::image_loaded(chrome, s, target, o),
+                            // On the web the image comes later.
+                            Ok(None) => chrome.panels.image_for = Some(target),
+                            Err(e) => chrome.status_note(format!("Could not load the image: {e}")),
+                        }
                     }
                 }
                 s.mark_all_dirty();
+            }
+            // An image picked on the web arrives later.
+            if let Some(r) = crate::mesh_files::take_picked_image() {
+                let target = chrome.panels.image_for.take().flatten();
+                match r {
+                    Ok(o) => crate::chrome::image_loaded(chrome, &mut viewport.session, target, o),
+                    Err(e) => chrome.status_note(format!("Could not load the image: {e}")),
+                }
             }
             let status = viewport.status();
             chrome.set_hint(status.hint);

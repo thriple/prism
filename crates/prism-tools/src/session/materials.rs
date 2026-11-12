@@ -4,7 +4,7 @@
 //! and Select > All with the Same Material.
 
 use prism_doc::material::PALETTE;
-use prism_doc::{Command, Material};
+use prism_doc::{Command, Image, Material, Texture};
 use prism_ops::Selection;
 use prism_topo::MaterialId;
 
@@ -24,8 +24,19 @@ pub struct MaterialRow {
     pub used: bool,
     /// The material itself (to edit a copy).
     pub material: Material,
+    /// Its texture, if it has one.
+    pub texture: Option<TextureRow>,
 }
 
+/// A material's texture in the window.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextureRow {
+    /// The image's size in pixels.
+    pub pixels: [u32; 2],
+    /// One copy's width and height in the model, and as shown.
+    pub size: [f64; 2],
+    pub size_text: [String; 2],
+}
 /// What the Materials window asks for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MaterialOp {
@@ -38,7 +49,20 @@ pub enum MaterialOp {
     Delete(MaterialId),
     Purge,
     Edit(MaterialId, Material),
+    /// A texture's width (or height) as typed; `keep_shape` changes the
+    /// other side with it.
+    TextureSize {
+        id: MaterialId,
+        text: String,
+        height: bool,
+        keep_shape: bool,
+    },
+    /// The material goes back to its colour.
+    RemoveTexture(MaterialId),
 }
+
+/// Said when a texture size cannot be read.
+pub const NOT_A_SIZE: &str = "Type a size greater than zero, such as 1.2 or 600mm.";
 
 /// What to paint with from outside the window (MCP's `paint`).
 #[derive(Clone, Debug, PartialEq)]
@@ -113,10 +137,22 @@ impl Session {
             .iter()
             .map(|(id, m)| {
                 let s = m.surface();
+                let image = m.texture.as_ref().and_then(|t| asm.images().get(&t.image));
+                let texture = m.texture.as_ref().zip(image).map(|(t, i)| TextureRow {
+                    pixels: [i.width, i.height],
+                    size: t.size,
+                    size_text: t.size.map(|x| self.number.show(x)),
+                });
+                // A textured material's swatch: its image's average colour.
+                let mut srgba = m.srgba();
+                if let Some(a) = image.and_then(|i| i.viewport()).map(|p| p.average) {
+                    srgba = [a[0], a[1], a[2], srgba[3]];
+                }
                 MaterialRow {
                     id: *id,
                     name: m.name.clone(),
-                    srgba: m.srgba(),
+                    srgba,
+                    texture,
                     roughness: s.roughness,
                     metalness: s.metalness,
                     used: !unused.contains(id),
@@ -161,6 +197,32 @@ impl Session {
                     self.set_brush(Brush::default());
                 }
             }
+            MaterialOp::TextureSize {
+                id,
+                text,
+                height,
+                keep_shape,
+            } => {
+                let mut m = self.doc.assembly().material(id).cloned()?;
+                let t = m.texture.as_mut()?;
+                let Some(x) = self.number.length(text.trim()).filter(|x| *x > 0.0) else {
+                    self.material_refused = Some(NOT_A_SIZE);
+                    return None;
+                };
+                let k = usize::from(height);
+                let ratio = t.size[1 - k] / t.size[k];
+                t.size[k] = x;
+                if keep_shape && ratio.is_finite() {
+                    t.size[1 - k] = x * ratio;
+                }
+                self.run(Command::EditMaterial { id, material: m });
+            }
+            MaterialOp::RemoveTexture(id) => {
+                let mut m = self.doc.assembly().material(id).cloned()?;
+                if m.texture.take().is_some() {
+                    self.run(Command::EditMaterial { id, material: m });
+                }
+            }
             MaterialOp::Purge => {
                 self.run(Command::PurgeMaterials);
             }
@@ -182,6 +244,61 @@ impl Session {
         }
         self.mark_all_dirty();
         None
+    }
+
+    /// An image loaded for the Materials window (picked or dropped): onto
+    /// material `target`, keeping its texture's width, or as a new
+    /// material named after the file and picked for the Paint Bucket. One
+    /// undo step. Returns the tool to choose, or why the image was refused.
+    pub fn load_image(
+        &mut self,
+        target: Option<MaterialId>,
+        file_name: &str,
+        bytes: Vec<u8>,
+    ) -> Result<Option<&'static str>, &'static str> {
+        let image = Image::read(bytes)?;
+        let mut texture = Texture::of(&image);
+        let add = Command::AddImage {
+            image: image.clone(),
+        };
+        let next = MaterialId(self.doc.assembly().materials().1);
+        self.cancel();
+        let tool = match target.and_then(|id| Some((id, self.doc.assembly().material(id)?.clone())))
+        {
+            Some((id, mut m)) => {
+                if let Some(old) = &m.texture {
+                    texture.size = [old.size[0], old.size[0] * texture.size[1]];
+                }
+                m.texture = Some(texture);
+                self.run(Command::Batch {
+                    commands: vec![add, Command::EditMaterial { id, material: m }],
+                });
+                None
+            }
+            None => {
+                let stem = file_name.rsplit(['/', '\\']).next().unwrap_or(file_name);
+                let stem = stem.rsplit_once('.').map_or(stem, |(a, _)| a).trim();
+                let a = image.average().unwrap_or([255; 4]);
+                let mut m = Material::colour(
+                    if stem.is_empty() { "Texture" } else { stem },
+                    [a[0], a[1], a[2]],
+                );
+                m.texture = Some(texture);
+                self.run(Command::Batch {
+                    commands: vec![add, Command::AddMaterial { material: m }],
+                });
+                self.set_brush(Brush::Material(next));
+                Some(PAINT)
+            }
+        };
+        self.mark_all_dirty();
+        Ok(tool)
+    }
+
+    /// Why the Materials window's last request was refused (taken once,
+    /// for the status bar).
+    pub fn take_material_refusal(&mut self) -> Option<&'static str> {
+        self.material_refused.take()
     }
 
     /// The material named by a face side, for Entity Info and MCP.
