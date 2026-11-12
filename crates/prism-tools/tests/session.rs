@@ -4163,3 +4163,85 @@ fn a_freeform_solid_is_pulled_into_shape_by_its_cage() {
     let (_, hi) = d.s.model().bbox().unwrap();
     assert!((hi.z - 3.0).abs() < 1e-9);
 }
+
+// ---------- Freeform NURBS part 4: Loft and Revolve ----------
+
+fn three_curves() -> Driver {
+    let mut m = prism_topo::Model::new();
+    for (z, bump) in [(0.0, 2.0), (2.0, 0.5), (5.0, 1.0)] {
+        let c = prism_geom::Nurbs::open(
+            &[
+                DVec3::new(0.0, 0.0, z),
+                DVec3::new(1.0, bump, z),
+                DVec3::new(3.0, -bump, z),
+                DVec3::new(4.0, 0.0, z),
+            ],
+            3,
+        )
+        .unwrap();
+        prism_ops::add_spline(&mut m, &c);
+    }
+    Driver::new(Document::with_model(m))
+}
+
+#[test]
+fn a_loft_you_can_pull_into_shape() {
+    let mut d = three_curves();
+    // With nothing selected, Loft says what it needs.
+    action(&mut d, "surf.loft");
+    assert_eq!(d.s.hint(), prism_ops::loft::TWO_CURVES);
+    action(&mut d, "edit.selall");
+    action(&mut d, "surf.loft");
+    assert_eq!(d.faces(), 2);
+    assert_eq!(d.s.selection().faces.len(), 2, "the new faces are selected");
+    valid(&d);
+    // Straight into its cage: pull a middle control point 1.5 m up green.
+    action(&mut d, "cage.edit");
+    assert_eq!(d.s.cage_points().len(), 12);
+    let before = d.s.cage_points()[4];
+    d.s.cage_pick(&[4]);
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, -2.0, 0.0));
+    d.hover(DVec3::new(0.0, -1.0, 0.0));
+    d.typed("1.5");
+    let after = d.s.cage_points()[4];
+    assert!(
+        (after - before).distance(DVec3::new(0.0, 1.5, 0.0)) < 1e-9,
+        "{after}"
+    );
+    valid(&d);
+    // Two undos: the pull, then the loft.
+    d.send(Input::Key { key: Key::Escape });
+    undo(&mut d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 0);
+    assert_eq!(d.s.model().edge_count(), 3);
+}
+
+#[test]
+fn revolve_turns_a_curve_about_the_selected_line() {
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_segment(&mut m, DVec3::ZERO, DVec3::new(0.0, 0.0, 4.0));
+    let side = prism_geom::Nurbs::open(
+        &[
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(2.5, 0.0, 1.0),
+            DVec3::new(0.5, 0.0, 2.5),
+            DVec3::new(1.5, 0.0, 4.0),
+        ],
+        3,
+    )
+    .unwrap();
+    prism_ops::add_spline(&mut m, &side);
+    let mut d = Driver::new(Document::with_model(m));
+    action(&mut d, "edit.selall");
+    action(&mut d, "surf.revolve");
+    assert_eq!(d.faces(), 2);
+    valid(&d);
+    let scene = d.s.scene();
+    for (id, _) in d.s.model().faces() {
+        assert!(scene.face(id).is_some_and(|f| f.tris.len() > 300));
+    }
+    undo(&mut d);
+    assert_eq!(d.faces(), 0);
+}

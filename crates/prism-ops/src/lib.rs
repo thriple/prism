@@ -18,6 +18,7 @@ pub mod fillet;
 pub mod follow;
 pub mod health;
 pub mod intersect;
+pub mod loft;
 mod meet;
 pub mod offset;
 pub mod pushpull;

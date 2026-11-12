@@ -141,14 +141,13 @@ pub fn members(model: &Model, cage: Cage) -> (Vec<EdgeId>, Vec<FaceId>) {
 }
 
 /// A side of a patch as an edge's curve: a plain line when it is straight.
-fn side_curve(s: Spline, tol: f64) -> Curve {
-    let pts = s.curve.points();
-    let (a, b) = (pts[0], pts[pts.len() - 1]);
-    let straight = !s.curve.is_periodic()
-        && pts
-            .iter()
-            .all(|p| Curve::Line.closest_point(a, b, *p).distance(*p) <= tol);
-    if straight && s.is_whole() {
+pub(crate) fn side_curve(s: Spline, tol: f64) -> Curve {
+    let (a, b) = (s.point(0.0), s.point(1.0));
+    let n = s.curve.steps(s.t0, s.t1).max(4);
+    let straight = (1..n)
+        .map(|i| s.point(i as f64 / n as f64))
+        .all(|p| Curve::Line.closest_point(a, b, p).distance(p) <= tol);
+    if straight {
         Curve::Line
     } else {
         Curve::Spline(s)
@@ -351,10 +350,25 @@ pub fn moved(
         |old| {
             let mut s = old.clone();
             let [nu, nv] = old.cage();
+            // A direction that closes on itself with a seam (a turned
+            // surface): its first and last rows are one, and move as one.
+            let seam_u = nu > 1 && (0..nv).all(|j| old.control(0, j) == old.control(nu - 1, j));
+            let seam_v = nv > 1 && (0..nu).all(|i| old.control(i, 0) == old.control(i, nv - 1));
             for k in picked {
                 let (i, j) = (k / nv, k % nv);
-                if i < nu {
-                    s.set_control(i, j, m.transform_point3(old.control(i, j)));
+                if i >= nu {
+                    continue;
+                }
+                let p = m.transform_point3(old.control(i, j));
+                let twin = |a: usize, n: usize, seam: bool| match a {
+                    0 if seam => vec![0, n - 1],
+                    a if seam && a == n - 1 => vec![0, n - 1],
+                    a => vec![a],
+                };
+                for a in twin(i, nu, seam_u) {
+                    for b in twin(j, nv, seam_v) {
+                        s.set_control(a, b, p);
+                    }
                 }
             }
             Ok(s)

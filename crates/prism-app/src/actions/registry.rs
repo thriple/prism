@@ -189,6 +189,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Freeform NURBS part 3: cage editing.
         || id == "cage.edit"
         || id == "cage.add"
+        // Freeform NURBS part 4.
+        || id == "surf.loft"
+        || id == "surf.revolve"
         // Exact Curves 4c.
         || id == "edit.soften"
         // Part 3: hiding.

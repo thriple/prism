@@ -40,7 +40,7 @@ added: splines and freeform faces follow the same pattern).
    them pickable; Move, Rotate and Scale act on the picked points with the
    normal inference. Add control points (knot insertion) keeps the shape.
 4. **Loft and revolve.** Loft: select two or more curves, run Loft.
-   Revolve: Follow Me turns spline profiles about an arc's axis.
+   Revolve: select curves and one straight line as the axis, run Revolve.
 5. **Sweep and patch.** Follow Me along a spline path (a fitted sweep);
    Patch fills a closed ring of two to four curves.
 6. **Curvature display.** Zebra stripes (a view toggle) and curvature

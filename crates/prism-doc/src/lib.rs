@@ -70,6 +70,16 @@ pub enum Command {
     AddCagePoints {
         cage: prism_ops::cage::Cage,
     },
+    /// A surface through the curves these edges are on (Loft, Freeform
+    /// NURBS part 4).
+    Loft {
+        edges: std::collections::BTreeSet<prism_topo::EdgeId>,
+    },
+    /// The curves these edges are on turned about the one line among them
+    /// that touches none of the others (Revolve).
+    Revolve {
+        edges: std::collections::BTreeSet<prism_topo::EdgeId>,
+    },
     /// Round the corner at `corner` with an arc of `radius` (the Arc tools'
     /// double-click).
     Fillet {
@@ -399,6 +409,8 @@ impl Command {
             Command::Circle { .. } => "Circle",
             Command::Spline { .. } => "Curve",
             Command::MoveCage { .. } => "Move Control Points",
+            Command::Loft { .. } => "Loft",
+            Command::Revolve { .. } => "Revolve",
             Command::AddCagePoints { .. } => "Add Control Points",
             Command::Polygon { .. } => "Polygon",
             Command::Arc { pie: true, .. } => "Pie",
@@ -767,6 +779,8 @@ impl Command {
                 let mut w = m.clone();
                 prism_ops::cage::add_points(&mut w, *cage).err()
             }
+            Command::Loft { edges } => prism_ops::loft::lofted(m, edges).err(),
+            Command::Revolve { edges } => prism_ops::loft::revolved(m, edges).err(),
             Command::PushPull { face, distance, .. } => {
                 prism_ops::pushpull::refusal(m, *face, *distance)
             }
@@ -836,6 +850,12 @@ impl Command {
             }
             Command::AddCagePoints { cage } => {
                 let _ = prism_ops::cage::add_points(m, *cage);
+            }
+            Command::Loft { edges } => {
+                let _ = prism_ops::loft::loft(m, edges);
+            }
+            Command::Revolve { edges } => {
+                let _ = prism_ops::loft::revolve(m, edges);
             }
             Command::Fillet { corner, radius } => {
                 prism_ops::fillet::fillet(m, *corner, *radius);

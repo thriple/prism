@@ -3124,3 +3124,43 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
   degree 1 along its height, so a row added there makes a crease, not a
   bulge (lofts are smooth, part 4); an edit that makes a curve cross
   other edges does not cut them.
+
+## Freeform NURBS (part 4): Loft and Revolve
+- **The kernel arrives:** crate `prism-kernel`, trait `Kernel` (`skin`,
+  `revolve`), one implementation `Arris` (arris-geom =0.10.0, pinned;
+  every arris call is in that one file). `prism-ops` depends on it.
+  DEPENDENCIES has its row. Only arris's geometry crate is used (no
+  solids yet), which keeps the web build small.
+- **Curves made alike, exactly** (`prism_geom::Nurbs`): `line`, `arc`
+  (rational, a full circle closes), `elevated` (one degree higher),
+  `alike` (the same degree, knots and count for open curves; closed
+  smooth curves must already match), `reversed`, `started_at` (a closed
+  curve's seam moved).
+- **Loft** (`prism_ops::loft`, `Command::Loft`, action `surf.loft`):
+  select two or more curves (splines whole, the arcs of one circle
+  together, lines each alone) and run Draw > Loft. They are ordered
+  nearest next from an end, turned the same way, closed ones started
+  beside each other, made alike, and skinned (smooth across from three
+  curves; straight between two). A tube faces out.
+- **`loft::lay`** puts any NURBS surface into the model as a grid of
+  freeform faces: cut across at each section and along wherever a section
+  has a vertex, so the sections' own edges become the faces' sides (their
+  curves replaced by the surface's own, the same shape). All the faces
+  share the surface, so its cage moves them together.
+- **Revolve** (`Command::Revolve`, `surf.revolve`): select the curves and
+  one straight line that touches none of them; the curves turn a full
+  turn about it. A turned surface closes with a seam: the cage moves its
+  first and last rows as one.
+- **Changed from the brief:** Revolve is its own action with a selected
+  axis line, not Follow Me (Follow Me still refuses spline profiles,
+  `FREEFORM_PROFILE`; part 5 looks at its paths).
+- **Refused, with why:** fewer than two curves; open with closed; closed
+  smooth curves with different numbers of control points; curves that
+  touch (the surface would pinch: a face needs four corners); a curve
+  touching the axis.
+- An arc or circle used as a section becomes a NURBS edge of the same
+  shape (it is then a side of a freeform face); lines stay lines.
+- **Left over:** circles are not started beside each other (a loft of
+  circles drawn from different start points twists); no picking of the
+  order by hand; no caps (draw or keep the flat faces yourself); surfaces
+  that come to a point (a pole) wait for three-sided faces.

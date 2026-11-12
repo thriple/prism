@@ -121,6 +121,37 @@ impl Session {
         self.dirty = true;
     }
 
+    /// Loft through the selected curves, or Revolve them about the
+    /// selected axis line. The new faces are selected; a refusal says why.
+    pub(super) fn surface_from_selection(&mut self, loft: bool) {
+        let edges = self.selection.edges.clone();
+        let c = if loft {
+            Command::Loft { edges }
+        } else {
+            Command::Revolve { edges }
+        };
+        self.cage_notice = c.refusal(self.work_model());
+        if self.cage_notice.is_none() {
+            let before: BTreeSet<prism_topo::FaceId> =
+                self.work_model().faces().map(|(id, _)| id).collect();
+            if self.run(c) {
+                self.selection = prism_ops::Selection {
+                    faces: self
+                        .work_model()
+                        .faces()
+                        .map(|(id, _)| id)
+                        .filter(|id| !before.contains(id))
+                        .collect(),
+                    ..Default::default()
+                };
+                self.highlight_dirty = true;
+            }
+        }
+        self.overlay_dirty = true;
+        self.dirty = true;
+        self.refresh();
+    }
+
     /// The cage went (undo, another edit): leave it.
     pub(super) fn cage_check(&mut self) {
         if self.cage.is_some() && self.cage_points().is_empty() {

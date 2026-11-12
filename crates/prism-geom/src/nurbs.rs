@@ -441,6 +441,218 @@ impl Nurbs {
         )
     }
 
+    /// A straight line as a curve.
+    pub fn line(a: DVec3, b: DVec3) -> Option<Nurbs> {
+        Nurbs::open(&[a, b], 1)
+    }
+
+    /// An arc as an exact (rational) curve: from `start`, counter-clockwise
+    /// about `axis` through `centre` by `sweep` radians (a full turn at
+    /// most, which closes it).
+    pub fn arc(centre: DVec3, axis: DVec3, start: DVec3, sweep: f64) -> Option<Nurbs> {
+        let n = axis.try_normalize()?;
+        let r = start - centre;
+        let u = r - n * r.dot(n);
+        let radius = u.length();
+        let sweep = sweep.min(std::f64::consts::TAU);
+        if radius <= 0.0 || sweep.is_nan() || sweep <= 0.0 {
+            return None;
+        }
+        let (u, v) = (u / radius, n.cross(u / radius));
+        let base = centre + n * r.dot(n);
+        let pieces = (sweep / std::f64::consts::FRAC_PI_2 - 1e-9).ceil().max(1.0) as usize;
+        let step = sweep / pieces as f64;
+        let w = (step / 2.0).cos();
+        let at = |t: f64, k: f64| base + (u * t.cos() + v * t.sin()) * radius * k;
+        let mut points = vec![at(0.0, 1.0)];
+        let mut weights = vec![1.0];
+        let mut knots = vec![0.0; 3];
+        for i in 0..pieces {
+            let t = step * i as f64;
+            points.push(at(t + step / 2.0, 1.0 / w));
+            weights.push(w);
+            points.push(at(t + step, 1.0));
+            weights.push(1.0);
+            let k = (i + 1) as f64 / pieces as f64;
+            knots.extend([k, k]);
+        }
+        knots.push(1.0);
+        if sweep >= std::f64::consts::TAU {
+            // Closed exactly.
+            let last = points.len() - 1;
+            points[last] = points[0];
+        }
+        Nurbs::new(2, knots, points, weights, false)
+    }
+
+    /// The same curve walked the other way.
+    pub fn reversed(&self) -> Nurbs {
+        let (lo, hi) = (self.knots[0], self.knots[self.knots.len() - 1]);
+        Nurbs {
+            degree: self.degree,
+            knots: self.knots.iter().rev().map(|k| lo + hi - k).collect(),
+            points: self.points.iter().rev().copied().collect(),
+            weights: self.weights.iter().rev().copied().collect(),
+            periodic: self.periodic,
+        }
+    }
+
+    /// The same curve with its parameter running from 0 to 1.
+    pub fn normalized(&self) -> Nurbs {
+        let (lo, hi) = self.domain();
+        let mut c = self.clone();
+        for k in &mut c.knots {
+            *k = (*k - lo) / (hi - lo);
+        }
+        c
+    }
+
+    /// A closed smooth curve started `k` control points later (the same
+    /// shape; its seam moves).
+    pub fn started_at(&self, k: usize) -> Nurbs {
+        if !self.periodic {
+            return self.clone();
+        }
+        let n = self.cage().len();
+        let turn =
+            |v: &[f64]| -> Vec<f64> { (0..n + self.degree).map(|i| v[(i + k) % n]).collect() };
+        let xs: Vec<f64> = self.weights[..n].to_vec();
+        let pts: Vec<DVec3> = (0..n + self.degree)
+            .map(|i| self.points[(i + k) % n])
+            .collect();
+        Nurbs {
+            points: pts,
+            weights: turn(&xs),
+            ..self.clone()
+        }
+    }
+
+    /// How many times `t` is a knot.
+    fn multiplicity(&self, t: f64) -> usize {
+        self.knots.iter().filter(|k| **k == t).count()
+    }
+
+    /// The distinct knots strictly inside the domain.
+    fn breaks(&self) -> Vec<f64> {
+        let (lo, hi) = self.domain();
+        let mut out: Vec<f64> = self
+            .knots
+            .iter()
+            .copied()
+            .filter(|k| *k > lo && *k < hi)
+            .collect();
+        out.dedup();
+        out
+    }
+
+    /// The same curve, one degree higher (exact). None for a periodic
+    /// curve or one already at the highest degree.
+    pub fn elevated(&self) -> Option<Nurbs> {
+        if self.periodic || self.degree >= MAX_DEGREE {
+            return None;
+        }
+        let p = self.degree;
+        // Cut into Bézier pieces: every inside knot `p` times.
+        let mut c = self.clone();
+        for t in self.breaks() {
+            for _ in c.multiplicity(t)..p {
+                c = c.insert_knot(t)?;
+            }
+        }
+        let breaks = c.breaks();
+        let pieces = breaks.len() + 1;
+        let h = |i: usize| H::of(c.points[i], c.weights[i]);
+        let mut q: Vec<H> = vec![h(0)];
+        for s in 0..pieces {
+            let at = |i: usize| h(s * p + i);
+            for i in 1..=p {
+                let a = i as f64 / (p + 1) as f64;
+                q.push(at(i).lerp(at(i - 1), a));
+            }
+            q.push(at(p));
+        }
+        let (lo, hi) = c.domain();
+        let mut knots = vec![lo; p + 2];
+        for t in breaks {
+            knots.extend(std::iter::repeat_n(t, p + 1));
+        }
+        knots.extend(std::iter::repeat_n(hi, p + 2));
+        Nurbs::new(
+            p + 1,
+            knots,
+            q.iter().map(|x| x.p / x.w).collect(),
+            q.iter().map(|x| x.w).collect(),
+            false,
+        )
+    }
+
+    /// The curves made alike, so a surface can run through them: the same
+    /// degree, knots and number of control points, each still its own
+    /// shape exactly, over 0 to 1. Open curves are raised to the highest
+    /// degree and share every knot. Closed smooth curves must already
+    /// match (the same degree and number of control points). None if they
+    /// cannot be made alike.
+    pub fn alike(curves: &[Nurbs]) -> Option<Vec<Nurbs>> {
+        let first = curves.first()?;
+        if curves.iter().any(|c| c.periodic) {
+            let same = curves.iter().all(|c| {
+                c.periodic && c.degree == first.degree && c.points.len() == first.points.len()
+            });
+            let out: Vec<Nurbs> = curves.iter().map(|c| c.normalized()).collect();
+            let knots_match = out.iter().all(|c| {
+                c.knots
+                    .iter()
+                    .zip(&out[0].knots)
+                    .all(|(a, b)| (a - b).abs() < 1e-12)
+            });
+            return (same && knots_match).then(|| {
+                let k = out[0].knots.clone();
+                out.into_iter()
+                    .map(|c| Nurbs {
+                        knots: k.clone(),
+                        ..c
+                    })
+                    .collect()
+            });
+        }
+        let degree = curves.iter().map(|c| c.degree).max()?;
+        let mut out = Vec::with_capacity(curves.len());
+        for c in curves {
+            let mut c = c.normalized();
+            while c.degree < degree {
+                c = c.elevated()?;
+            }
+            out.push(c);
+        }
+        // Every inside knot, as many times as the curve that has it most.
+        // Knots a hair apart count as one.
+        let mut all: Vec<(f64, usize)> = Vec::new();
+        for c in &out {
+            for t in c.breaks() {
+                let m = c.multiplicity(t);
+                match all.iter_mut().find(|x| (x.0 - t).abs() < 1e-9) {
+                    Some(x) => x.1 = x.1.max(m),
+                    None => all.push((t, m)),
+                }
+            }
+        }
+        all.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for c in &mut out {
+            // Its own knots onto the shared values first.
+            for k in &mut c.knots {
+                if let Some(x) = all.iter().find(|x| (x.0 - *k).abs() < 1e-9) {
+                    *k = x.0;
+                }
+            }
+            for (t, m) in &all {
+                for _ in c.multiplicity(*t)..*m {
+                    *c = c.insert_knot(*t)?;
+                }
+            }
+        }
+        Some(out)
+    }
+
     /// The number of knot spans of non-zero length in the domain.
     pub fn spans(&self) -> usize {
         let (p, n) = (self.degree, self.points.len());
@@ -747,5 +959,78 @@ mod tests {
         let r = s.reversed();
         assert!(r.point(0.0).distance(s.point(1.0)) < 1e-15);
         assert!(r.tangent(0.0).distance(-s.tangent(1.0)) < 1e-12);
+    }
+    #[test]
+    fn an_arc_is_exact_and_a_full_turn_closes() {
+        let c = Nurbs::arc(
+            DVec3::new(1.0, 2.0, 3.0),
+            DVec3::Z,
+            DVec3::new(3.0, 2.0, 3.0),
+            4.0,
+        )
+        .unwrap();
+        for i in 0..=40 {
+            let p = c.eval(i as f64 / 40.0);
+            assert!((p.distance(DVec3::new(1.0, 2.0, 3.0)) - 2.0).abs() < 1e-13);
+        }
+        let end = DVec3::new(1.0 + 2.0 * 4f64.cos(), 2.0 + 2.0 * 4f64.sin(), 3.0);
+        assert!(c.eval(1.0).distance(end) < 1e-13);
+        let full = Nurbs::arc(DVec3::ZERO, DVec3::Z, DVec3::X, 7.0).unwrap();
+        assert!(full.is_closed() && !full.is_periodic());
+    }
+
+    #[test]
+    fn raising_the_degree_and_making_curves_alike_keep_their_shapes() {
+        let line = Nurbs::line(DVec3::ZERO, DVec3::new(4.0, 0.0, 0.0)).unwrap();
+        let arc = Nurbs::arc(
+            DVec3::new(2.0, 0.0, 2.0),
+            DVec3::Y,
+            DVec3::new(0.0, 0.0, 2.0),
+            3.0,
+        )
+        .unwrap();
+        let wave = Nurbs::open(
+            &[
+                DVec3::new(0.0, 0.0, 4.0),
+                DVec3::new(1.0, 2.0, 4.0),
+                DVec3::new(2.0, -2.0, 4.0),
+                DVec3::new(3.0, 1.0, 4.0),
+                DVec3::new(4.0, 0.0, 4.0),
+            ],
+            3,
+        )
+        .unwrap();
+        let up = arc.elevated().unwrap();
+        assert_eq!(up.degree(), 3);
+        for i in 0..=30 {
+            let t = i as f64 / 30.0;
+            assert!(up.eval(t).distance(arc.eval(t)) < 1e-13);
+        }
+        let all = [line.clone(), arc.clone(), wave.clone()];
+        let alike = Nurbs::alike(&all).unwrap();
+        for (a, b) in alike.iter().zip(&all) {
+            assert_eq!(a.degree(), 3);
+            assert_eq!(a.knots(), alike[0].knots());
+            assert_eq!(a.points().len(), alike[0].points().len());
+            for i in 0..=30 {
+                let t = i as f64 / 30.0;
+                assert!(a.eval(t).distance(b.eval(t)) < 1e-12);
+            }
+        }
+        let back = wave.reversed();
+        assert!(back.eval(0.25).distance(wave.eval(0.75)) < 1e-13);
+        // Closed curves of different sizes cannot be made alike.
+        let sq = |n: usize| {
+            let pts: Vec<DVec3> = (0..n)
+                .map(|i| {
+                    let a = i as f64 / n as f64 * std::f64::consts::TAU;
+                    DVec3::new(a.cos(), a.sin(), 0.0)
+                })
+                .collect();
+            Nurbs::closed(&pts, 3).unwrap()
+        };
+        assert!(Nurbs::alike(&[sq(5), sq(6)]).is_none());
+        assert!(Nurbs::alike(&[sq(5), sq(5).started_at(2)]).is_some());
+        assert!(sq(5).started_at(2).eval(0.0).distance(sq(5).eval(0.4)) < 1e-12);
     }
 }

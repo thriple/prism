@@ -1,0 +1,16 @@
+[package]
+name = "prism-kernel"
+description = "The NURBS kernel behind Prism's Kernel trait (arris)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prism-math.workspace = true
+prism-geom.workspace = true
+# The kernel picked by the NURBS Spike (DECISIONS #9). Pre-1.0: pinned, and
+# used only in this crate.
+arris-geom = { version = "=0.10.0", default-features = false }
+arris-math = { version = "=0.10.0", default-features = false }

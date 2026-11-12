@@ -4,6 +4,7 @@ members = [
     "crates/prism-math",
     "crates/prism-geom",
     "crates/prism-topo",
+    "crates/prism-kernel",
     "crates/prism-ops",
     "crates/prism-doc",
     "crates/prism-file",
@@ -33,6 +34,7 @@ prism-ui = { path = "crates/prism-ui" }
 prism-math = { path = "crates/prism-math" }
 prism-geom = { path = "crates/prism-geom" }
 prism-topo = { path = "crates/prism-topo" }
+prism-kernel = { path = "crates/prism-kernel" }
 prism-ops = { path = "crates/prism-ops" }
 prism-doc = { path = "crates/prism-doc" }
 prism-file = { path = "crates/prism-file" }
