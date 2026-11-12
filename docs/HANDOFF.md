@@ -15,6 +15,17 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
 - **CI:** the Linux job skips the Mesa install until the owner says
   otherwise (screenshot tests skip there unless `PRISM_REQUIRE_GPU` is
   set); they run locally before each push. Recent runs were green.
+- **Latest (2026-11-12, after the Fillet window), all pushed:** face
+  style buttons (Wireframe, Base Colour, Colour/Material beside X-ray;
+  NOTES "Face style buttons"), sliders smooth instead of only their ends
+  (NOTES "Sliders only gave their ends"), Planned Features' behaviours
+  list brought up to date. CI for 66eee51, 7386163 and 295f0d0 was still
+  running at the compaction: check it first.
+- **Planned Features window:** actions tick themselves when built; the
+  "Behaviours and feel" list is ticked by hand in `BUILT_BEHAVIOURS`
+  (`registry.rs`). Owner: keep it up to date with each step.
+- **The action table** (`actions/table.rs`) is edited by hand now; the
+  import script no longer reproduces it, so do not rerun it.
 - **The Fillet window is built** (brief 29, released): a right-column
   window with Fillet / Chamfer and the size, and a live preview on the
   hovered edge. NOTES: "The Fillet window".

@@ -523,7 +523,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 17] = [
+const BUILT_BEHAVIOURS: [&str; 20] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -541,6 +541,11 @@ const BUILT_BEHAVIOURS: [&str; 17] = [
     "Push/Pull: stretch, extrude, Alt new loop",
     "Live ghost previews",
     "Tool memory: double-click or Enter repeats the last value",
+    // Brought up to date (owner, 2026-11-12). "Exact circles, arcs and
+    // NURBS" waits for NURBS.
+    "Model Health: reversed faces, holes, interior faces, nesting counts",
+    "Save, open and export",
+    "Trackpad gestures",
 ];
 
 fn collect(
@@ -589,6 +594,15 @@ mod tests {
 
     /// View Settings part 1: the View menu's items work, except lighting
     /// and hidden geometry (part 2) and section display.
+    /// Every behaviour ticked as built is one the Planned Features window
+    /// lists (a misspelt name would stay unticked).
+    #[test]
+    fn every_built_behaviour_is_listed() {
+        for b in BUILT_BEHAVIOURS {
+            assert!(BEHAVIOURS.iter().any(|(n, _)| *n == b), "{b} is not listed");
+        }
+    }
+
     #[test]
     fn the_view_menu_is_built() {
         let reg = Registry::new();
