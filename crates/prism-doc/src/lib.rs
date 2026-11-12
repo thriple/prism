@@ -404,13 +404,23 @@ impl Command {
             Command::CleanEnvelope { .. } => "Clean Envelope",
             Command::RemoveStray => "Remove Stray Edges",
             Command::RepairArcs => "Repair Arcs",
-            // A new material added for the step is named by the step.
-            Command::Batch { commands } => match commands.as_slice() {
-                [Command::AddMaterial { .. }, rest @ ..] if !rest.is_empty() => rest[0].name(),
-                // An image added for a texture: named by the texture's step.
-                [Command::AddImage { .. }, rest @ ..] if !rest.is_empty() => rest[0].name(),
-                _ => commands.first().map_or("Edit", |c| c.name()),
-            },
+            // Materials and images added for the step are named by the
+            // step (a material on its own by the material).
+            Command::Batch { commands } => {
+                let adding = |c: &&Command| {
+                    matches!(c, Command::AddMaterial { .. } | Command::AddImage { .. })
+                };
+                commands
+                    .iter()
+                    .find(|c| !adding(c))
+                    .or_else(|| {
+                        commands
+                            .iter()
+                            .find(|c| matches!(c, Command::AddMaterial { .. }))
+                    })
+                    .or(commands.first())
+                    .map_or("Edit", |c| c.name())
+            }
             Command::MakeGroup { .. } => "Make Group",
             Command::Explode { .. } => "Explode",
             Command::MakeComponent { .. } => "Make Component",

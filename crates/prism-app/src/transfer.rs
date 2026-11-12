@@ -184,10 +184,25 @@ impl Transfer {
             && yes
         {
             let scale = i.stated.unwrap_or(i.unit.metres());
-            let model = mesh::build(&i.mesh, scale, i.y_up, i.merge);
-            let faces = model.face_count();
-            if s.import(model) {
-                chrome.status_note(format!("Imported {} ({faces} faces)", i.name));
+            // The file's materials come in too (Basic Materials part 3).
+            let (model, sizes) = mesh::build_painted(&i.mesh, scale, i.y_up, i.merge);
+            let materials: Vec<_> = i
+                .mesh
+                .materials
+                .iter()
+                .zip(sizes)
+                .map(|(m, size)| m.to_doc(size))
+                .collect();
+            let (faces, n_mat) = (model.face_count(), materials.len());
+            if s.import_painted(model, materials) {
+                chrome.status_note(match n_mat {
+                    0 => format!("Imported {} ({faces} faces)", i.name),
+                    n => format!(
+                        "Imported {} ({faces} faces, {n} material{})",
+                        i.name,
+                        if n == 1 { "" } else { "s" }
+                    ),
+                });
             } else {
                 chrome.status_note(format!("{} had nothing to import", i.name));
             }
@@ -249,9 +264,10 @@ impl Transfer {
             // (selection-only export works on loose geometry at the root).
             let whole = (faces.is_none() && s.document().assembly().has_instances())
                 .then(|| s.document().assembly().flattened_visible());
+            let asm = Some(s.document().assembly());
             let bytes = match &whole {
-                Some(m) => mesh::export(m, None, &o),
-                None => mesh::export(s.model(), faces.as_ref(), &o),
+                Some(m) => mesh::export_with(m, None, &o, asm),
+                None => mesh::export_with(s.model(), faces.as_ref(), &o, asm),
             };
             // Check what was written (PLAN 1.3): printing formats must be
             // watertight. The export still happens.

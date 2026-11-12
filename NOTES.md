@@ -2943,3 +2943,32 @@ Part 3 is split: 3a placing textures on faces, 3b materials in glTF,
 - **Left over:** the pins act on one face (SketchUp's too); typed values
   for the move or turn are not offered; free four-pin distortion is out of
   scope (brief).
+
+## Basic Materials (part 3, step 3b): materials in glTF
+- **Export (GLB):** with materials in the document, faces are written as
+  the viewport draws them (`mesh::to_painted_mesh`, from the scene: each
+  face its own corners, texture coordinates seamless on curved faces),
+  one primitive per front material, `pbrMetallicRoughness` (base colour,
+  roughness, metalness; with a texture the factor is white and the image
+  is the colour), images embedded as stored, REPEAT samplers,
+  `alphaMode: BLEND` below full opacity, `doubleSided`. Prism's own
+  texture size rides in `extras.prism_texture_size_m` so a re-import
+  keeps it. Without materials the file is as before.
+- **Import:** `mesh::build_painted` paints each face with the file's
+  material (front) and works its placement out from the triangle's
+  texture coordinates; neighbours merge into one face only with the same
+  material and placement. A texture's size is the file's, else one copy's
+  size where it is first used. `Session::import_painted` adds the images
+  and materials in the same step as the geometry ("Import"). glTF's
+  defaults for missing factors (fully rough and metal) are kept.
+- **Groups:** `Assembly::flattened_visible` (what export writes) gives a
+  painted group's material to its Default faces and keeps textures where
+  the group put them.
+- **Fixed on the way:** `Model::append` dropped faces' paint, so Explode
+  and exporting groups lost materials. A batch's undo name is its first
+  step that is not adding a material or image.
+- Tests: `prism-file` `gltf_keeps_materials_and_texture_placement`;
+  `prism-tools` `an_import_brings_its_materials_in_one_step`.
+- **Left over:** back materials are not exported (glTF has one material a
+  triangle); imported materials with the same name as existing ones are
+  added as copies ("Name #2"), not merged.

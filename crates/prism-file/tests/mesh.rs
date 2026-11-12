@@ -88,6 +88,7 @@ fn glb_applies_node_transforms() {
     let src = Mesh {
         positions: vec![DVec3::ZERO, DVec3::X, DVec3::Y],
         polygons: vec![vec![0, 1, 2]],
+        ..Default::default()
     };
     let m = {
         let mut model = Model::new();
@@ -140,6 +141,7 @@ fn coplanar_triangles_merge_and_rings_get_holes() {
             DVec3::new(0.0, 1.0, 0.0),
         ],
         polygons: vec![vec![0, 1, 2], vec![0, 2, 3]],
+        ..Default::default()
     };
     let m = mesh::build(&sq, 1.0, false, true);
     assert_eq!(m.face_count(), 1);
@@ -176,6 +178,7 @@ fn coplanar_triangles_merge_and_rings_get_holes() {
             DVec3::new(0.0, 0.0, 1.0),
         ],
         polygons: vec![vec![0, 1, 2], vec![1, 0, 3]],
+        ..Default::default()
     };
     assert_eq!(mesh::build(&bend, 1.0, false, true).face_count(), 2);
 }
@@ -330,4 +333,61 @@ fn spheres_export_as_triangles_on_the_surface() {
             .triangle_count()
             > 1000
     );
+}
+
+/// glTF carries materials (Basic Materials part 3): a textured cube out and
+/// back in keeps its material's colour, image and size, every face painted,
+/// and each face's texture placement.
+#[test]
+fn gltf_keeps_materials_and_texture_placement() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/acceptance/files/textured.prism"
+    );
+    let c = prism_file::read(&std::fs::read(path).expect("golden")).expect("opens");
+    let asm = &c.assembly;
+    let model = &asm.root().model;
+    let o = ExportOptions::for_format(Format::Glb);
+    let bytes = mesh::export_with(model, None, &o, Some(asm));
+    let back = mesh::read(&bytes, Format::Glb).expect("reads");
+    assert_eq!(back.materials.len(), 1);
+    let (id, brick) = asm.materials().0.iter().next().expect("brick");
+    let mm = &back.materials[0];
+    assert_eq!(mm.name, brick.name);
+    let t = mm.texture.as_ref().expect("its image");
+    let image = asm.images().values().next().unwrap();
+    assert_eq!(*t.bytes, *image.bytes, "the image as stored");
+    assert_eq!(t.size, Some([0.4, 0.2]));
+    assert_eq!(back.uvs.len(), back.positions.len());
+    // In again: the same faces, painted, textures where they were.
+    let (built, sizes) = mesh::build_painted(&back, 1.0, true, true);
+    assert_eq!(sizes, vec![[0.4, 0.2]]);
+    assert_eq!(
+        built.face_count(),
+        model.face_count(),
+        "triangles merged back"
+    );
+    for (_, f) in built.faces() {
+        assert_eq!(f.paint.front, Some(prism_topo::MaterialId(0)));
+        let map = f.paint.uv.expect("placed");
+        let p = built.loop_points(f, 0)[0];
+        let (_, g) = model
+            .faces()
+            .find(|(_, g)| {
+                g.plane().is_some_and(|q| {
+                    q.distance(p).abs() < 1e-6 && q.normal.dot(f.plane().unwrap().normal) > 0.9
+                })
+            })
+            .expect("the same face");
+        assert_eq!(g.paint.front, Some(*id));
+        let want = g.texture_map().unwrap();
+        for q in built.loop_points(f, 0) {
+            let (a, b) = (map.at(q), want.at(q));
+            assert!(a.distance(b) < 1e-4, "{a} vs {b}");
+        }
+    }
+    // Without materials nothing changes: one plain primitive.
+    let plain = mesh::export(model, None, &o);
+    let back = mesh::read(&plain, Format::Glb).unwrap();
+    assert!(back.materials.is_empty() && back.uvs.is_empty());
 }

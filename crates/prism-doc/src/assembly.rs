@@ -475,12 +475,27 @@ impl Assembly {
         out
     }
 
-    /// What is shown as one model in world coordinates (mesh export).
+    /// What is shown as one model in world coordinates (mesh export),
+    /// groups' materials on their Default faces.
     pub fn flattened_visible(&self) -> Model {
         let mut out = self.root().model.clone();
         for p in self.placed_visible() {
             if let Some(d) = self.def(p.def) {
                 let mut m = d.model.clone();
+                // As shown: the group's material on Default sides, and
+                // textures placed in the group's own coordinates (so they
+                // travel with it).
+                let group = p.path.iter().rev().find_map(|i| self.painted_with(*i));
+                let ids: Vec<prism_topo::FaceId> = m.faces().map(|(id, _)| id).collect();
+                for f in ids {
+                    m.edit_face(f, |x| {
+                        x.paint.front = x.paint.front.or(group);
+                        x.paint.back = x.paint.back.or(group);
+                        if x.paint.front.is_some() || x.paint.back.is_some() {
+                            x.paint.uv = x.texture_map();
+                        }
+                    });
+                }
                 transform::affine(&mut m, &p.world);
                 out.append(&m);
             }

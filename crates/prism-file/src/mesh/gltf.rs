@@ -4,7 +4,9 @@
 use prism_math::{DMat4, DQuat, DVec3};
 use serde_json::{Value, json};
 
-use super::{Mesh, damaged};
+use prism_doc::image::ImageKind;
+
+use super::{Mesh, MeshImage, MeshMaterial, damaged};
 use crate::FileError;
 
 const GLB: u32 = 0x4654_6C67; // "glTF"
@@ -19,6 +21,8 @@ fn pad(v: &mut Vec<u8>, with: u8) {
 
 pub fn write(m: &Mesh) -> Vec<u8> {
     let mut bin = Vec::new();
+    let mut views: Vec<Value> = Vec::new();
+    let mut accessors: Vec<Value> = Vec::new();
     let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
     for p in &m.positions {
         for (k, c) in p.to_array().iter().enumerate() {
@@ -31,35 +35,110 @@ pub fn write(m: &Mesh) -> Vec<u8> {
     if m.positions.is_empty() {
         (lo, hi) = ([0.0; 3], [0.0; 3]);
     }
-    let pos_len = bin.len();
-    let mut count = 0usize;
-    for p in &m.polygons {
+    views.push(json!({"buffer": 0, "byteOffset": 0, "byteLength": bin.len(), "target": 34962}));
+    accessors.push(
+        json!({"bufferView": 0, "componentType": 5126, "count": m.positions.len(),
+        "type": "VEC3", "min": lo, "max": hi}),
+    );
+    let mut attributes = json!({"POSITION": 0});
+    if !m.uvs.is_empty() && m.uvs.len() == m.positions.len() {
+        let at = bin.len();
+        for q in &m.uvs {
+            bin.extend_from_slice(&(q.x as f32).to_le_bytes());
+            bin.extend_from_slice(&(q.y as f32).to_le_bytes());
+        }
+        views.push(
+            json!({"buffer": 0, "byteOffset": at, "byteLength": bin.len() - at, "target": 34962}),
+        );
+        accessors.push(json!({"bufferView": views.len() - 1, "componentType": 5126,
+            "count": m.uvs.len(), "type": "VEC2"}));
+        attributes["TEXCOORD_0"] = json!(accessors.len() - 1);
+    }
+    // One primitive per material (polygons without one together).
+    let mut groups: std::collections::BTreeMap<Option<u32>, Vec<u32>> = Default::default();
+    for (k, p) in m.polygons.iter().enumerate() {
+        let mat = m.polygon_materials.get(k).copied().flatten();
+        let idx = groups.entry(mat).or_default();
         for i in 1..p.len().saturating_sub(1) {
-            for v in [p[0], p[i], p[i + 1]] {
-                bin.extend_from_slice(&v.to_le_bytes());
-                count += 1;
-            }
+            idx.extend([p[0], p[i], p[i + 1]]);
         }
     }
-    let idx_len = bin.len() - pos_len;
+    let mut primitives = Vec::new();
+    for (mat, idx) in &groups {
+        let at = bin.len();
+        for v in idx {
+            bin.extend_from_slice(&v.to_le_bytes());
+        }
+        views.push(
+            json!({"buffer": 0, "byteOffset": at, "byteLength": bin.len() - at, "target": 34963}),
+        );
+        accessors.push(json!({"bufferView": views.len() - 1, "componentType": 5125,
+            "count": idx.len(), "type": "SCALAR"}));
+        let mut p = json!({"attributes": attributes, "indices": accessors.len() - 1, "mode": 4});
+        if let Some(k) = mat {
+            p["material"] = json!(k);
+        }
+        primitives.push(p);
+    }
+    if primitives.is_empty() {
+        views.push(json!({"buffer": 0, "byteOffset": bin.len(), "byteLength": 0, "target": 34963}));
+        accessors.push(json!({"bufferView": views.len() - 1, "componentType": 5125,
+            "count": 0, "type": "SCALAR"}));
+        primitives
+            .push(json!({"attributes": attributes, "indices": accessors.len() - 1, "mode": 4}));
+    }
+    // Materials, and their images in the binary chunk.
+    let (mut images, mut textures, mut materials) = (Vec::new(), Vec::new(), Vec::new());
+    for mm in &m.materials {
+        let mut pbr = json!({
+            "baseColorFactor": mm.base,
+            "metallicFactor": mm.metalness,
+            "roughnessFactor": mm.roughness,
+        });
+        if let Some(t) = &mm.texture {
+            pad(&mut bin, 0);
+            let at = bin.len();
+            bin.extend_from_slice(&t.bytes);
+            views.push(json!({"buffer": 0, "byteOffset": at, "byteLength": t.bytes.len()}));
+            let mime = match t.kind {
+                ImageKind::Png => "image/png",
+                ImageKind::Jpeg => "image/jpeg",
+            };
+            images.push(json!({"bufferView": views.len() - 1, "mimeType": mime}));
+            textures.push(json!({"source": images.len() - 1, "sampler": 0}));
+            pbr["baseColorTexture"] = json!({"index": textures.len() - 1});
+            // The image shows as it is; the material keeps its opacity.
+            pbr["baseColorFactor"] = json!([1.0, 1.0, 1.0, mm.base[3]]);
+        }
+        let mut x = json!({"name": mm.name, "pbrMetallicRoughness": pbr, "doubleSided": true});
+        if mm.base[3] < 1.0 {
+            x["alphaMode"] = json!("BLEND");
+        }
+        if let Some(size) = mm.texture.as_ref().and_then(|t| t.size) {
+            // Prism's own: one copy's size in metres, so a re-import keeps it.
+            x["extras"] = json!({"prism_texture_size_m": size});
+        }
+        materials.push(x);
+    }
     pad(&mut bin, 0);
-    let doc = json!({
+    let mut doc = json!({
         "asset": {"version": "2.0", "generator": "Prism"},
         "scene": 0,
         "scenes": [{"nodes": [0]}],
         "nodes": [{"mesh": 0, "name": "Prism"}],
-        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "mode": 4}]}],
+        "meshes": [{"primitives": primitives}],
         "buffers": [{"byteLength": bin.len()}],
-        "bufferViews": [
-            {"buffer": 0, "byteOffset": 0, "byteLength": pos_len, "target": 34962},
-            {"buffer": 0, "byteOffset": pos_len, "byteLength": idx_len, "target": 34963}
-        ],
-        "accessors": [
-            {"bufferView": 0, "componentType": 5126, "count": m.positions.len(), "type": "VEC3",
-             "min": lo, "max": hi},
-            {"bufferView": 1, "componentType": 5125, "count": count, "type": "SCALAR"}
-        ]
+        "bufferViews": views,
+        "accessors": accessors,
     });
+    if !materials.is_empty() {
+        doc["materials"] = json!(materials);
+    }
+    if !images.is_empty() {
+        doc["images"] = json!(images);
+        doc["textures"] = json!(textures);
+        doc["samplers"] = json!([{"wrapS": 10497, "wrapT": 10497}]);
+    }
     let mut js = serde_json::to_vec(&doc).unwrap_or_default();
     pad(&mut js, b' ');
     let total = 12 + 8 + js.len() + 8 + bin.len();
@@ -182,6 +261,7 @@ impl Doc<'_> {
         let count = a.get("count").and_then(Value::as_u64).unwrap_or(0) as usize;
         let width = match a.get("type").and_then(Value::as_str) {
             Some("SCALAR") => 1,
+            Some("VEC2") => 2,
             Some("VEC3") => 3,
             Some(t) => return Err(damaged(format!("glTF: accessor type {t}"))),
             None => return Err(damaged("glTF: an accessor without a type")),
@@ -260,6 +340,26 @@ impl Doc<'_> {
                         .push(world.transform_point3(DVec3::new(c[0], c[1], c[2])));
                 }
                 let n_pos = (pos.len() / 3) as u32;
+                // Texture coordinates, one per position (zero where none).
+                let uv = match p
+                    .get("attributes")
+                    .and_then(|a| a.get("TEXCOORD_0"))
+                    .and_then(Value::as_u64)
+                {
+                    Some(ui) => self.accessor(ui)?.0,
+                    None => Vec::new(),
+                };
+                for k in 0..n_pos as usize {
+                    m.uvs.push(match uv.get(2 * k..2 * k + 2) {
+                        Some(q) => prism_math::DVec2::new(q[0], q[1]),
+                        None => prism_math::DVec2::ZERO,
+                    });
+                }
+                let mat = p
+                    .get("material")
+                    .and_then(Value::as_u64)
+                    .map(|k| k as u32)
+                    .filter(|k| (*k as usize) < m.materials.len());
                 let idx: Vec<u32> = match p.get("indices").and_then(Value::as_u64) {
                     Some(ii) => self.accessor(ii)?.0.iter().map(|x| *x as u32).collect(),
                     None => (0..n_pos).collect(),
@@ -267,6 +367,7 @@ impl Doc<'_> {
                 for t in idx.chunks(3) {
                     if t.len() == 3 && t.iter().all(|i| *i < n_pos) {
                         m.polygons.push(t.iter().map(|i| first + i).collect());
+                        m.polygon_materials.push(mat);
                     }
                 }
             }
@@ -304,7 +405,10 @@ pub fn read(b: &[u8]) -> Result<Mesh, FileError> {
         }
     }
     let d = Doc { doc: &doc, buffers };
-    let mut m = Mesh::default();
+    let mut m = Mesh {
+        materials: d.materials(),
+        ..Mesh::default()
+    };
     let scene = doc.get("scene").and_then(Value::as_u64).unwrap_or(0);
     let roots: Vec<u64> = match doc
         .get("scenes")
@@ -322,7 +426,102 @@ pub fn read(b: &[u8]) -> Result<Mesh, FileError> {
     for r in roots {
         d.node(r, DMat4::IDENTITY, 0, &mut m)?;
     }
+    // Nothing used a material, or nothing had coordinates: leave them out.
+    if m.polygon_materials.iter().all(Option::is_none) {
+        m.polygon_materials.clear();
+        m.materials.clear();
+    }
+    if m.uvs.iter().all(|q| *q == prism_math::DVec2::ZERO) {
+        m.uvs.clear();
+    }
     Ok(m)
+}
+
+impl Doc<'_> {
+    /// The bytes of a buffer view.
+    fn view_bytes(&self, i: u64) -> Option<&[u8]> {
+        let v = self.get("bufferViews", i).ok()?;
+        let buf = self.buffers.get(v.get("buffer")?.as_u64()? as usize)?;
+        let at = v.get("byteOffset").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let len = v.get("byteLength")?.as_u64()? as usize;
+        buf.get(at..at.checked_add(len)?)
+    }
+
+    /// An image's bytes, if it is a PNG or JPEG inside the file.
+    fn image(&self, i: u64) -> Option<MeshImage> {
+        let img = self.get("images", i).ok()?;
+        let bytes = match (
+            img.get("bufferView").and_then(Value::as_u64),
+            img.get("uri"),
+        ) {
+            (Some(v), _) => self.view_bytes(v)?.to_vec(),
+            (None, Some(Value::String(uri))) if uri.starts_with("data:") => {
+                base64(uri.split_once(',')?.1)?
+            }
+            _ => return None,
+        };
+        let kind = prism_doc::Image::read(bytes.clone()).ok()?.kind;
+        Some(MeshImage {
+            kind,
+            bytes: std::sync::Arc::new(bytes),
+            size: None,
+        })
+    }
+
+    /// The file's materials, in order (so a primitive's index names one).
+    fn materials(&self) -> Vec<MeshMaterial> {
+        let Some(list) = self.doc.get("materials").and_then(Value::as_array) else {
+            return Vec::new();
+        };
+        list.iter()
+            .enumerate()
+            .map(|(k, x)| {
+                let pbr = x.get("pbrMetallicRoughness");
+                let num = |key: &str, d: f64| {
+                    pbr.and_then(|p| p.get(key))
+                        .and_then(Value::as_f64)
+                        .unwrap_or(d) as f32
+                };
+                let mut base = [1.0f32; 4];
+                if let Some(c) = pbr
+                    .and_then(|p| p.get("baseColorFactor"))
+                    .and_then(Value::as_array)
+                {
+                    for (b, v) in base.iter_mut().zip(c) {
+                        *b = v.as_f64().unwrap_or(1.0).clamp(0.0, 1.0) as f32;
+                    }
+                }
+                let texture = pbr
+                    .and_then(|p| p.get("baseColorTexture"))
+                    .and_then(|t| t.get("index"))
+                    .and_then(Value::as_u64)
+                    .and_then(|t| self.get("textures", t).ok())
+                    .and_then(|t| t.get("source"))
+                    .and_then(Value::as_u64)
+                    .and_then(|i| self.image(i))
+                    .map(|mut i| {
+                        i.size = x
+                            .get("extras")
+                            .and_then(|e| e.get("prism_texture_size_m"))
+                            .and_then(Value::as_array)
+                            .and_then(|a| Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?]))
+                            .filter(|s| s[0] > 0.0 && s[1] > 0.0);
+                        i
+                    });
+                MeshMaterial {
+                    name: x
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map_or_else(|| format!("Material {}", k + 1), str::to_owned),
+                    base,
+                    // glTF's defaults are fully rough and metal.
+                    roughness: num("roughnessFactor", 1.0).clamp(0.0, 1.0),
+                    metalness: num("metallicFactor", 1.0).clamp(0.0, 1.0),
+                    texture,
+                }
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

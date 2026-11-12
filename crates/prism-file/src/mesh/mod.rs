@@ -19,13 +19,84 @@ mod ply;
 mod stl;
 mod threemf;
 
-pub use build::build;
+pub use build::{build, build_painted};
 
 /// Triangles or polygons, as indices into `positions`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Mesh {
     pub positions: Vec<DVec3>,
     pub polygons: Vec<Vec<u32>>,
+    /// Materials (Basic Materials part 3), and each polygon's (empty: none
+    /// at all).
+    pub materials: Vec<MeshMaterial>,
+    pub polygon_materials: Vec<Option<u32>>,
+    /// Each position's place on its material's texture, in copies of the
+    /// image, v down from the image's top as glTF and OBJ have it (empty:
+    /// none).
+    pub uvs: Vec<DVec2>,
+}
+
+/// A material as mesh formats carry it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeshMaterial {
+    pub name: String,
+    /// Linear RGBA; alpha is opacity.
+    pub base: [f32; 4],
+    pub roughness: f32,
+    pub metalness: f32,
+    /// The base colour image, as stored (PNG or JPEG bytes).
+    pub texture: Option<MeshImage>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeshImage {
+    pub kind: prism_doc::image::ImageKind,
+    pub bytes: std::sync::Arc<Vec<u8>>,
+    /// One copy's size in the model (metres), where known (Prism's own
+    /// exports and OBJ's `-s`); else worked out from the coordinates.
+    pub size: Option<[f64; 2]>,
+}
+
+impl MeshMaterial {
+    /// A document material as a mesh material (its image looked up).
+    pub fn of(m: &prism_doc::Material, asm: &prism_doc::Assembly) -> MeshMaterial {
+        let s = m.surface();
+        let texture = m.texture.as_ref().and_then(|t| {
+            let i = asm.images().get(&t.image)?;
+            Some(MeshImage {
+                kind: i.kind,
+                bytes: i.bytes.clone(),
+                size: Some(t.size),
+            })
+        });
+        MeshMaterial {
+            name: m.name.clone(),
+            base: s.base,
+            roughness: s.roughness,
+            metalness: s.metalness,
+            texture,
+        }
+    }
+
+    /// The document material it becomes, and its image (to add first).
+    pub fn to_doc(&self, size: [f64; 2]) -> (prism_doc::Material, Option<prism_doc::Image>) {
+        let mut m = prism_doc::Material::colour(&self.name, [255, 255, 255]);
+        let sf = m.surface_mut();
+        sf.base = self.base;
+        sf.roughness = self.roughness;
+        sf.metalness = self.metalness;
+        let image = self
+            .texture
+            .as_ref()
+            .and_then(|t| prism_doc::Image::read(t.bytes.to_vec()).ok());
+        if let Some(i) = &image {
+            m.texture = Some(prism_doc::Texture {
+                image: i.id(),
+                size,
+            });
+        }
+        (m, image)
+    }
 }
 
 impl Mesh {
@@ -229,13 +300,85 @@ pub fn to_mesh(
 // The viewport's triangulator, so exports match what is drawn.
 use prism_view::tess as prism_view_tess;
 
+/// The faces of a model (or just `faces`) as triangles with their front
+/// materials and texture coordinates, as the viewport draws them (Basic
+/// Materials part 3). Each face has its own corners.
+pub fn to_painted_mesh(
+    m: &Model,
+    faces: Option<&BTreeSet<FaceId>>,
+    o: &ExportOptions,
+    asm: &prism_doc::Assembly,
+) -> Mesh {
+    let scene = prism_view::Scene::build_with(m, false);
+    let mut mesh = Mesh::default();
+    let mut index: std::collections::BTreeMap<prism_topo::MaterialId, u32> = Default::default();
+    let mut textured = false;
+    for face in &scene.faces {
+        if faces.is_some_and(|s| !s.contains(&face.id)) {
+            continue;
+        }
+        let mat = face.paint[0].and_then(|id| Some((id, asm.material(id)?)));
+        let k = mat.map(|(id, x)| {
+            *index.entry(id).or_insert_with(|| {
+                mesh.materials.push(MeshMaterial::of(x, asm));
+                (mesh.materials.len() - 1) as u32
+            })
+        });
+        let size = mat
+            .and_then(|(_, x)| x.texture.as_ref())
+            .filter(|_| k.is_some_and(|k| mesh.materials[k as usize].texture.is_some()))
+            .map(|t| DVec2::from_array(t.size).max(DVec2::splat(1e-9)));
+        textured |= size.is_some();
+        let mut corner: std::collections::BTreeMap<u32, u32> = Default::default();
+        let tris = &scene.mesh.indices[face.tris.start as usize..face.tris.end as usize];
+        for t in tris.as_chunks::<3>().0 {
+            let poly = t
+                .iter()
+                .map(|&i| {
+                    *corner.entry(i).or_insert_with(|| {
+                        mesh.positions
+                            .push(out(scene.mesh.positions[i as usize], o));
+                        let q = size.map_or(DVec2::ZERO, |s| scene.mesh.uvs[i as usize] / s);
+                        mesh.uvs.push(DVec2::new(q.x, -q.y));
+                        (mesh.positions.len() - 1) as u32
+                    })
+                })
+                .collect();
+            mesh.polygons.push(poly);
+            mesh.polygon_materials.push(k);
+        }
+    }
+    if !textured {
+        mesh.uvs.clear();
+    }
+    if mesh.materials.is_empty() {
+        mesh.polygon_materials.clear();
+    }
+    mesh
+}
+
 /// Export a model (or some of its faces) as `o.format`.
 pub fn export(m: &Model, faces: Option<&BTreeSet<FaceId>>, o: &ExportOptions) -> Vec<u8> {
+    export_with(m, faces, o, None)
+}
+
+/// Export with the document's materials (glTF carries them; the others
+/// as their formats allow).
+pub fn export_with(
+    m: &Model,
+    faces: Option<&BTreeSet<FaceId>>,
+    o: &ExportOptions,
+    asm: Option<&prism_doc::Assembly>,
+) -> Vec<u8> {
+    let painted = asm.filter(|a| !a.materials().0.is_empty());
     match o.format {
         Format::Stl => stl::write(&to_mesh(m, faces, o, false)),
         Format::Obj => obj::write(&to_mesh(m, faces, o, true)),
         Format::Ply => ply::write(&to_mesh(m, faces, o, true)),
-        Format::Glb => gltf::write(&to_mesh(m, faces, o, false)),
+        Format::Glb => gltf::write(&match painted {
+            Some(a) => to_painted_mesh(m, faces, o, a),
+            None => to_mesh(m, faces, o, false),
+        }),
         Format::ThreeMf => threemf::write(&to_mesh(m, faces, o, false), o.unit),
     }
 }

@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use prism_geom::Surface;
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Plane, Tol, newell};
-use prism_topo::{EdgeId, Face, Model, VertexId};
+use prism_topo::{EdgeId, Face, MaterialId, Model, UvMap, VertexId};
 
 use super::{Mesh, into_model};
 
@@ -17,8 +17,59 @@ use super::{Mesh, into_model};
 const MERGE_ANGLE: f64 = 1e-10;
 
 /// Build a model from a mesh in file units: `metres_per_unit` scales it,
-/// `y_up` turns a Y-up file into Prism's Z up.
+/// `y_up` turns a Y-up file into Prism's Z up. Materials are left out.
 pub fn build(mesh: &Mesh, metres_per_unit: f64, y_up: bool, merge: bool) -> Model {
+    let plain = Mesh {
+        materials: Vec::new(),
+        polygon_materials: Vec::new(),
+        uvs: Vec::new(),
+        ..mesh.clone()
+    };
+    build_painted(&plain, metres_per_unit, y_up, merge).0
+}
+
+/// The texture placement (metres, Prism's v up) that puts the corners
+/// `p` at texture places `uv` (copies of the image, v down), for an image
+/// `size` metres a copy. None for a sliver.
+fn uv_map(p: [DVec3; 3], uv: [DVec2; 3], size: [f64; 2]) -> Option<UvMap> {
+    let t = uv.map(|q| DVec2::new(q.x * size[0], -q.y * size[1]));
+    let (e1, e2) = (p[1] - p[0], p[2] - p[0]);
+    let (d1, d2) = (t[1] - t[0], t[2] - t[0]);
+    let (a, b, c) = (e1.dot(e1), e1.dot(e2), e2.dot(e2));
+    let det = a * c - b * b;
+    if det <= 1e-24 * a.max(c).powi(2) {
+        return None;
+    }
+    // The gradient g of each coordinate in the plane: g·e1 = d1, g·e2 = d2.
+    let grad = |x1: f64, x2: f64| {
+        let s = (x1 * c - x2 * b) / det;
+        let r = (x2 * a - x1 * b) / det;
+        e1 * s + e2 * r
+    };
+    let (u, v) = (grad(d1.x, d2.x), grad(d1.y, d2.y));
+    // The origin: where both are zero, in the plane.
+    let (ua, ub, uc) = (u.dot(u), u.dot(v), v.dot(v));
+    let det2 = ua * uc - ub * ub;
+    if det2 <= 1e-24 * ua.max(uc).powi(2) {
+        return None;
+    }
+    let (x, y) = (t[0].x, t[0].y);
+    let s = (x * uc - y * ub) / det2;
+    let r = (y * ua - x * ub) / det2;
+    let origin = p[0] - (u * s + v * r);
+    Some(UvMap { origin, u, v })
+}
+
+/// [`build`] with each polygon's material on its face's front, as
+/// `MaterialId(k)` for the mesh's material `k`, and textured faces given
+/// their placement. Also returns each material's texture size (metres a
+/// copy): as the file says, else worked out from its coordinates.
+pub fn build_painted(
+    mesh: &Mesh,
+    metres_per_unit: f64,
+    y_up: bool,
+    merge: bool,
+) -> (Model, Vec<[f64; 2]>) {
     let pts: Vec<DVec3> = mesh
         .positions
         .iter()
@@ -26,9 +77,42 @@ pub fn build(mesh: &Mesh, metres_per_unit: f64, y_up: bool, merge: bool) -> Mode
         .collect();
     let tol = Tol::for_points(&pts);
     let (welded, map) = weld(&pts, &tol);
-    // Polygons on welded vertices, without repeats or zero area.
+    let mat_of = |k: usize| mesh.polygon_materials.get(k).copied().flatten();
+    let has_uv = mesh.uvs.len() == mesh.positions.len();
+    let corners = |p: &[u32]| -> Option<([DVec3; 3], [DVec2; 3])> {
+        if !has_uv || p.len() < 3 {
+            return None;
+        }
+        let i = [p[0], p[1], p[2]].map(|i| i as usize);
+        Some((i.map(|i| pts[i]), i.map(|i| mesh.uvs[i])))
+    };
+    // Each textured material's size: the file's, else one copy's size
+    // where it is first used (the coordinates' rate along the face).
+    let sizes: Vec<[f64; 2]> = (0..mesh.materials.len())
+        .map(|k| {
+            let t = mesh.materials[k].texture.as_ref();
+            if let Some(s) = t.and_then(|t| t.size) {
+                return s;
+            }
+            let found = t.and_then(|_| {
+                (0..mesh.polygons.len())
+                    .filter(|j| mat_of(*j) == Some(k as u32))
+                    .find_map(|j| {
+                        let (p, uv) = corners(&mesh.polygons[j])?;
+                        let m = uv_map(p, uv, [1.0, 1.0])?;
+                        let s = [1.0 / m.u.length(), 1.0 / m.v.length()];
+                        s.iter().all(|x| x.is_finite() && *x > 0.0).then_some(s)
+                    })
+            });
+            found.unwrap_or([1.0, 1.0])
+        })
+        .collect();
+    let textured = |k: Option<u32>| k.filter(|k| mesh.materials[*k as usize].texture.is_some());
+    // Polygons on welded vertices, without repeats or zero area, with
+    // their material and placement.
     let mut polys: Vec<Vec<usize>> = Vec::new();
-    for p in &mesh.polygons {
+    let mut looks: Vec<(Option<u32>, Option<UvMap>)> = Vec::new();
+    for (j, p) in mesh.polygons.iter().enumerate() {
         let mut q: Vec<usize> = p.iter().map(|i| map[*i as usize]).collect();
         q.dedup();
         while q.len() > 1 && q.first() == q.last() {
@@ -42,18 +126,39 @@ pub fn build(mesh: &Mesh, metres_per_unit: f64, y_up: bool, merge: bool) -> Mode
         if newell(&ring).length() * 0.5 <= tol.area() {
             continue;
         }
+        let mat = mat_of(j);
+        let uv = textured(mat).and_then(|k| {
+            let (c, uv) = corners(p)?;
+            uv_map(c, uv, sizes[k as usize])
+        });
         polys.push(q);
+        looks.push((mat, uv));
     }
-    let regions = if merge {
-        merged(&welded, &polys, &tol)
+    // Neighbours join only with the same material and placement.
+    let same = |a: usize, b: usize| {
+        let ((ma, ua), (mb, ub)) = (looks[a], looks[b]);
+        ma == mb
+            && match (ua, ub) {
+                (None, None) => true,
+                (Some(x), Some(y)) => polys[b].iter().all(|i| {
+                    let (p, q) = (x.at(welded[*i]), y.at(welded[*i]));
+                    p.distance(q) <= 1e-6 * (1.0 + p.length())
+                }),
+                _ => false,
+            }
+    };
+    let regions: Vec<(Region, usize)> = if merge {
+        merged(&welded, &polys, &tol, same)
     } else {
-        polys.into_iter().map(|p| (p, Vec::new())).collect()
+        (0..polys.len())
+            .map(|k| ((polys[k].clone(), Vec::new()), k))
+            .collect()
     };
     let mut m = Model::new();
     let ids: Vec<VertexId> = welded.iter().map(|p| m.add_vertex(*p)).collect();
     let mut used = vec![false; welded.len()];
     let mut edges: BTreeMap<(usize, usize), EdgeId> = BTreeMap::new();
-    for (outer, holes) in &regions {
+    for ((outer, holes), seed) in &regions {
         let mut loop_edges = Vec::new();
         for l in std::iter::once(outer).chain(holes.iter()) {
             let mut le = Vec::new();
@@ -70,7 +175,7 @@ pub fn build(mesh: &Mesh, metres_per_unit: f64, y_up: bool, merge: bool) -> Mode
         let ring: Vec<DVec3> = outer.iter().map(|i| welded[*i]).collect();
         let n = newell(&ring).normalize_or_zero();
         let centre = ring.iter().copied().sum::<DVec3>() / ring.len() as f64;
-        m.add_face(Face::with_edges(
+        let mut face = Face::with_edges(
             outer.iter().map(|i| ids[*i]).collect(),
             holes
                 .iter()
@@ -78,14 +183,18 @@ pub fn build(mesh: &Mesh, metres_per_unit: f64, y_up: bool, merge: bool) -> Mode
                 .collect(),
             Surface::Plane(Plane::new(centre, n)),
             loop_edges,
-        ));
+        );
+        let (mat, uv) = looks[*seed];
+        face.paint.front = mat.map(MaterialId);
+        face.paint.uv = uv;
+        m.add_face(face);
     }
     for (k, id) in ids.iter().enumerate() {
         if !used[k] {
             m.remove_vertex(*id);
         }
     }
-    m
+    (m, sizes)
 }
 
 /// Points within the tolerance become one. Returns the points kept and,
@@ -135,7 +244,12 @@ fn weld(pts: &[DVec3], tol: &Tol) -> (Vec<DVec3>, Vec<usize>) {
 type Region = (Vec<usize>, Vec<Vec<usize>>);
 
 /// Merge polygons that share an edge and lie on one plane into faces.
-fn merged(pts: &[DVec3], polys: &[Vec<usize>], tol: &Tol) -> Vec<Region> {
+fn merged(
+    pts: &[DVec3],
+    polys: &[Vec<usize>],
+    tol: &Tol,
+    same: impl Fn(usize, usize) -> bool,
+) -> Vec<(Region, usize)> {
     let normal = |p: &Vec<usize>| {
         let ring: Vec<DVec3> = p.iter().map(|i| pts[*i]).collect();
         newell(&ring).normalize_or_zero()
@@ -173,6 +287,7 @@ fn merged(pts: &[DVec3], polys: &[Vec<usize>], tol: &Tol) -> Vec<Region> {
                 }
                 for &j in next {
                     if region_of[j] != usize::MAX
+                        || !same(seed, j)
                         || 1.0 - normals[j].dot(n) > MERGE_ANGLE
                         || polys[j]
                             .iter()
@@ -186,18 +301,21 @@ fn merged(pts: &[DVec3], polys: &[Vec<usize>], tol: &Tol) -> Vec<Region> {
                 }
             }
         }
-        out.push(region_loops(pts, polys, &members, n).unwrap_or_else(|| {
-            // A region that does not make one clean face stays as it was.
-            (polys[seed].clone(), Vec::new())
-        }));
+        out.push((
+            region_loops(pts, polys, &members, n).unwrap_or_else(|| {
+                // A region that does not make one clean face stays as it was.
+                (polys[seed].clone(), Vec::new())
+            }),
+            seed,
+        ));
         // Members of a region that fell back become their own faces.
         if out
             .last()
-            .is_some_and(|r| r.0 == polys[seed] && members.len() > 1)
+            .is_some_and(|r| r.0.0 == polys[seed] && members.len() > 1)
         {
             out.pop();
             for &k in &members {
-                out.push((polys[k].clone(), Vec::new()));
+                out.push(((polys[k].clone(), Vec::new()), k));
             }
         }
     }

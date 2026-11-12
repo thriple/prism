@@ -1111,12 +1111,15 @@ impl Model {
                 .iter()
                 .map(|l| l.iter().map(|e| *emap.get(e).unwrap_or(&NO_EDGE)).collect())
                 .collect();
-            faces.push(self.add_face(Face::with_edges(
+            let mut nf = Face::with_edges(
                 map(&f.outer),
                 f.holes.iter().map(|h| map(h)).collect(),
                 f.surface,
                 edges,
-            )));
+            );
+            // Its paint and texture placement come too.
+            nf.paint = f.paint;
+            faces.push(self.add_face(nf));
         }
         for (_, g) in other.guides() {
             self.add_guide(*g);

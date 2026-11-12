@@ -1184,11 +1184,42 @@ impl Session {
     /// Add imported geometry beside the model, in one undo step, and fit
     /// the view to it. Returns whether anything was added.
     pub fn import(&mut self, model: Model) -> bool {
+        self.import_painted(model, Vec::new())
+    }
+
+    /// [`Session::import`] with the file's materials (Basic Materials part
+    /// 3): faces painted `MaterialId(k)` get the `k`-th of `materials`,
+    /// which are added to the document (with their images) in the same
+    /// step.
+    pub fn import_painted(
+        &mut self,
+        mut model: Model,
+        materials: Vec<(prism_doc::Material, Option<prism_doc::Image>)>,
+    ) -> bool {
         let Some((lo, hi)) = model.bbox() else {
             return false;
         };
         self.cancel();
-        if !self.run(Command::Import { model }) {
+        let next = self.doc.assembly().materials().1;
+        let ids: Vec<prism_topo::FaceId> = model.faces().map(|(id, _)| id).collect();
+        for f in ids {
+            model.edit_face(f, |x| {
+                for side in [&mut x.paint.front, &mut x.paint.back] {
+                    *side = side
+                        .filter(|k| (k.0 as usize) < materials.len())
+                        .map(|k| prism_topo::MaterialId(next + k.0));
+                }
+            });
+        }
+        let mut commands = Vec::new();
+        for (m, image) in materials {
+            if let Some(image) = image {
+                commands.push(Command::AddImage { image });
+            }
+            commands.push(Command::AddMaterial { material: m });
+        }
+        commands.push(Command::Import { model });
+        if !self.run(Command::Batch { commands }) {
             return false;
         }
         let goal = self.camera.extents(lo, hi, self.view().aspect());

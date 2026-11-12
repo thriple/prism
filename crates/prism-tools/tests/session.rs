@@ -3794,3 +3794,34 @@ fn position_texture_moves_turns_and_sizes_with_pins() {
     assert_eq!(d.s.model().face(face).unwrap().paint.uv, None);
     assert_eq!(d.s.document().undo_name(), Some("Reset Texture"));
 }
+
+/// Imported materials join the document in the same step as the geometry,
+/// after the ones already there (Basic Materials part 3).
+#[test]
+fn an_import_brings_its_materials_in_one_step() {
+    let mut d = Driver::empty();
+    d.s.load_image(None, "a.png", png(4, 4, [9, 9, 9, 255]))
+        .unwrap();
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_rect(&mut m, 5.0, 5.0, 6.0, 6.0, 0.0);
+    let f = m.faces().next().unwrap().0;
+    m.edit_face(f, |x| x.paint.front = Some(prism_topo::MaterialId(0)));
+    let glass = prism_doc::Material::colour("Glass", [200, 220, 255]);
+    assert!(d.s.import_painted(m, vec![(glass, None)]));
+    let mats = d.s.document().assembly().materials().0.clone();
+    assert_eq!(mats.len(), 2);
+    let glass = mats
+        .iter()
+        .find(|(_, x)| x.name == "Glass")
+        .expect("added")
+        .0;
+    let painted =
+        d.s.model()
+            .faces()
+            .filter(|(_, x)| x.paint.front == Some(*glass))
+            .count();
+    assert_eq!(painted, 1);
+    assert_eq!(d.s.document().undo_name(), Some("Import"));
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.document().assembly().materials().0.len(), 1);
+}
