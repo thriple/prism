@@ -4,7 +4,7 @@ Owner request, 2026-11-13, after a recorded test: three arcs round a cut
 box corner could not be filled. The owner is used to Curviloft (a
 SketchUp plugin) and wants a hands-on tool rather than a command run on
 a selection. This brief is the owner's description, turned into steps.
-Its place in PLAN 6.0 is the owner's to choose.
+PLAN 6.0 row "Loft Tool", right after Everyday Commands (owner, 2026-11-13).
 
 **Read first:** PLAN 5 (feel), NOTES "Freeform NURBS (part 4)" and
 "(part 5)" (Loft, Patch, `lay`), NOTES "Owner test, 2026-11-13".

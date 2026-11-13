@@ -42,7 +42,9 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   Rectangle, Freehand, Preferences, About and the Tool Hint Panel (NOTES
   "Everyday Commands (part 1)", "(part 2)" and "(part 3)"). **Next: part
   4, Smart Guides** (PLAN 5.1; the prototype's `smartInit(`,
-  `smartSnap(`, `smartDraw(`). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
+  `smartSnap(`, `smartDraw(`). Then the **Loft Tool** (brief 34, owner
+  request: Curviloft-style; rings of 3 or 5+ sides filled from a centre
+  point; `docs/research/loft-corners.md`). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
   defaults until the owner answers; start at step A, the kernel bridge),
   then Solids & CAD, which was moved up to follow it.
 - **Disk:** `target/debug` grows past the session's allowance after many
