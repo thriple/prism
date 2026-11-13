@@ -39,8 +39,8 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
 - **The order changed on 2026-11-13** (owner request, PLAN 6.0 "Order"):
   **next is Everyday Commands** (a new chunk for greyed basics nobody
   owned: Copy and Paste, Lock, standard views, parallel projection, Zoom
-  Selection, Rotated Rectangle, Freehand, Preferences; write its brief
-  first). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
+  Selection, Rotated Rectangle, Freehand, Preferences, and Smart Guides
+  from PLAN 5.1 as part 3; write its brief first). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
   defaults until the owner answers; start at step A, the kernel bridge),
   then Solids & CAD, which was moved up to follow it.
 - **Disk:** `target/debug` grows past the session's allowance after many
