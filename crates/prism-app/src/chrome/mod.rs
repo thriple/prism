@@ -781,6 +781,19 @@ mod tests {
         assert!(!c.is_on("help.debug"));
     }
 
+    /// The Camera menu ticks the lens in use (the app sets it from the
+    /// session every frame).
+    #[test]
+    fn the_lens_in_use_is_ticked() {
+        let mut c = chrome();
+        c.set_on("cam.persp", true);
+        c.set_on("cam.parallel", false);
+        assert!(c.checked("cam.persp") && !c.checked("cam.parallel"));
+        c.set_on("cam.persp", false);
+        c.set_on("cam.parallel", true);
+        assert!(!c.checked("cam.persp") && c.checked("cam.parallel"));
+    }
+
     /// Choosing the Paint Bucket opens the Materials window (owner,
     /// 2026-11-12), unfolded if it was folded.
     #[test]

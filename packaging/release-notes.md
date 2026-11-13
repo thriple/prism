@@ -1,7 +1,7 @@
-**New in this build: easier cage editing** (Edit Cage, on a selected freeform curve or face).
-- **Box select control points:** drag a box with Select. Shift toggles the points inside, Ctrl adds them.
-- **Scale has its box and grips:** the box is drawn round the picked control points. Drag a corner to scale evenly, an edge or face grip to scale along its axes; Alt scales about the middle, and you can type a factor.
-- **Rotate shows its protractor** about the picked points' middle, with the angle as you turn.
+**New in this build: camera and clipboard.**
+- **Copy and paste between windows:** Copy (or Cut) in one Prism window, then Paste in another. The copy goes through the system clipboard.
+- **Walk with the arrow keys:** up and down step forward and back, left and right turn. **Type an eye height** and press Enter to stand at that height.
+- **The Camera menu ticks** Perspective or Parallel Projection, whichever is in use.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

@@ -143,7 +143,7 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 20] = [
+const TOGGLES: [&str; 22] = [
     "view.smart",
     "view.hidden",
     "view.wireframe",
@@ -164,6 +164,9 @@ const TOGGLES: [&str; 20] = [
     "help.debug",
     "help.themedemo",
     "help.record",
+    // The lens: one of the two is ticked (Camera menu).
+    "cam.persp",
+    "cam.parallel",
 ];
 
 /// Decide how an imported action runs in Rust.

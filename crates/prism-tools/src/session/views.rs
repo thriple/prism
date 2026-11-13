@@ -17,6 +17,10 @@ pub const WINDOW: &str = "cam.window";
 const TURN_PER_PX: f64 = 0.004;
 /// Walk: share of the camera's distance moved per pixel dragged.
 const WALK_PER_PX: f64 = 0.004;
+/// Walk: share of the camera's distance one arrow press steps.
+const WALK_STEP: f64 = 0.05;
+/// Walk: radians one arrow press turns (5°).
+const WALK_TURN: f64 = 5.0 * std::f64::consts::PI / 180.0;
 /// A Zoom Window smaller than this (pixels) is a click: it zooms in a step.
 const WINDOW_MIN: f64 = 6.0;
 /// The step a click with Zoom Window zooms in by.
@@ -109,13 +113,52 @@ impl Session {
         self.refresh();
     }
 
-    /// Typing goes to the Zoom tool's field of view.
+    /// Typing goes to the Zoom tool's field of view, or Walk's eye height.
     pub(super) fn fov_measurement(&self) -> Option<(&'static str, String)> {
-        (self.tool == ZOOM).then(|| ("Field of View", format!("{:.0}°", self.lens.fov)))
+        match self.tool.as_str() {
+            ZOOM => Some(("Field of View", format!("{:.0}°", self.lens.fov))),
+            WALK => Some(("Eye Height", self.number.show(self.camera.eye.z))),
+            _ => None,
+        }
+    }
+
+    /// Walk with the arrow keys: up and down step forward and back along
+    /// the ground, left and right turn. True if it was one.
+    pub(super) fn walk_key(&mut self, key: super::Key) -> bool {
+        if self.tool != WALK {
+            return false;
+        }
+        let step = WALK_STEP * self.camera.distance();
+        self.camera = match key {
+            super::Key::Up => self.camera.walk(step, 0.0),
+            super::Key::Down => self.camera.walk(-step, 0.0),
+            super::Key::Left => self.camera.walk(0.0, WALK_TURN),
+            super::Key::Right => self.camera.walk(0.0, -WALK_TURN),
+            _ => return false,
+        };
+        self.dirty = true;
+        self.highlight_dirty = true;
+        self.overlay_dirty = true;
+        true
     }
 
     /// Enter with the Zoom tool: a typed field of view, in degrees.
     pub(super) fn fov_enter(&mut self, text: &str) -> bool {
+        if self.tool == WALK {
+            // A typed eye height above the ground: the view keeps looking
+            // the same way.
+            if let Some(h) = self.number.length(text) {
+                let up = DVec3::Z * (h - self.camera.eye.z);
+                self.camera = Camera {
+                    eye: self.camera.eye + up,
+                    target: self.camera.target + up,
+                };
+                self.dirty = true;
+                self.highlight_dirty = true;
+                self.overlay_dirty = true;
+            }
+            return true;
+        }
         if self.tool != ZOOM {
             return false;
         }
@@ -217,7 +260,7 @@ impl Session {
     pub(super) fn camera_hint(&self) -> Option<&'static str> {
         Some(match self.tool.as_str() {
             WALK => {
-                "Walk: drag up to go forward, down to go back, sideways to turn · Esc returns to your tool"
+                "Walk: drag up to go forward, down to go back, sideways to turn · or the arrow keys · type an eye height + Enter · Esc returns to your tool"
             }
             LOOK => {
                 "Look Around: drag to turn the view about where you stand · Esc returns to your tool"

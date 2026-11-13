@@ -202,7 +202,26 @@ impl Viewport {
             }
             return;
         }
+        // Paste takes a clip another Prism window put on the system
+        // clipboard; Copy and Cut put this one's there.
+        if matches!(id, "edit.paste" | "edit.pasteip")
+            && let Some(clip) = crate::clipboard::get_text()
+                .as_deref()
+                .and_then(prism_file::clip::from_text)
+        {
+            self.session.set_clipboard(Some(std::sync::Arc::new(clip)));
+        }
+        let before = self.session.clipboard();
         self.send(Input::Action { id: id.to_owned() });
+        if matches!(id, "edit.copy" | "edit.cut")
+            && let Some(clip) = self.session.clipboard()
+            && !before.is_some_and(|b| std::sync::Arc::ptr_eq(&b, &clip))
+        {
+            crate::clipboard::set_text(&prism_file::clip::to_text(
+                &clip,
+                crate::files::app_version(),
+            ));
+        }
     }
 
     pub fn tool_changed(&mut self, to: &'static str) {

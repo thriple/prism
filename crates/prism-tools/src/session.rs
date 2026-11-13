@@ -779,7 +779,8 @@ impl Session {
         let editable = self.in_operation() && self.boxing.is_none()
             || self.last_op.is_some() && self.typing_tool()
             || self.tool == FILLET
-            || self.tool == ZOOM;
+            || self.tool == ZOOM
+            || self.tool == views::WALK;
         editable && (c.is_ascii_digit() || c == '.' || c == '-' || c == self.number.decimal)
     }
 
@@ -1189,6 +1190,7 @@ impl Session {
                 self.overlay_dirty = true;
             }
             Key::Enter => self.enter(),
+            Key::Up | Key::Right | Key::Left | Key::Down if self.walk_key(key) => {}
             Key::Up | Key::Right | Key::Left | Key::Down
                 if matches!(self.tool.as_str(), ROTATE | PROTRACTOR) && self.edit.is_none() =>
             {

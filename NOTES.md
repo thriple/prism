@@ -3292,9 +3292,9 @@ Brief 33, part 2, built 2026-11-13.
   middle; a click zooms in two times. **Look Around** turns the view about
   the eye; **Walk** moves along the ground (the height kept) and turns.
   All three are camera tools: Esc returns to the tool before.
-- **Left over:** Walk with arrow keys, eye height typed, and collision;
-  the menu's check mark on Perspective / Parallel; the measurement box
-  showing the eye height in Walk.
+- **Left over:** Walk collision. (Arrow keys, a typed eye height and the
+  Perspective / Parallel check mark are done: see "Closing gaps: camera
+  and clipboard".)
 
 ## Owner test, 2026-11-13: an arc's plane, Loft on a ring, Patch with arcs
 From the owner's recording (a box with a corner cut off, three arcs round
@@ -3467,10 +3467,10 @@ Collected from the "Left over" lines above, for the owner to order.
   (Self-crossings, the midpoint snap and twisting circles are done: see
   "Closing gaps: curves".)
 - **Cage editing:** done (see "Closing gaps: cage editing").
-- **Camera:** Walk has no arrow keys, typed eye height or collision; the
-  Perspective / Parallel check mark in the menu.
-- **Clipboard:** not the system clipboard; a component holding groups
-  pastes as a new definition.
+- **Camera:** Walk has no collision. (The rest is done: see "Closing
+  gaps: camera and clipboard".)
+- **Clipboard:** not the system clipboard on the web; a component holding
+  groups pastes as a new definition.
 - **Freehand:** no Shift for a 3D stroke.
 - **Smart Guides:** equal sizes; Rotate and Scale do not use them.
 - **Preferences:** no reset for units; no colour or autosave settings.
@@ -3524,3 +3524,28 @@ Collected from the "Left over" lines above, for the owner to order.
 - Tests: the cage rotate-and-scale test now scales by a grip with Alt;
   a new test boxes points (plain, then Shift) and checks the protractor's
   pivot and angle label.
+
+## Closing gaps: camera and clipboard (2026-11-13)
+- **Camera menu check marks:** Perspective or Parallel Projection is
+  ticked, whichever is in use (both are toggles in the registry; the app
+  sets them from the session's lens every frame, as the View menu does).
+- **Walk with the arrow keys:** up and down step forward and back along
+  the ground (5% of the camera's distance a press; the key repeats), left
+  and right turn 5 degrees where you stand.
+- **Walk's eye height:** the measurement box shows "Eye Height" (the eye
+  above the ground plane); a typed length + Enter puts the eye there,
+  still looking the same way. Walk now takes typed digits.
+- **The system clipboard** (desktop): Copy and Cut also put the clip on
+  the system clipboard as text (`prism_file::clip`: a header line, then
+  the clip written as a `.prism` file, in hex). Paste and Paste in Place
+  take a clip found there first, so a copy in one Prism window pastes in
+  another; any other text there leaves this window's own clip in use.
+  `prism-app/src/clipboard.rs`: arboard on macOS and Linux (one handle
+  kept for the app's life, as X11 serves the text from it); Win32 calls
+  on Windows, as arboard's Windows backend is BSL-1.0 (DEPENDENCIES).
+  Checked here: a round trip under X11 (an ignored test, run by hand) and
+  clippy for Windows and macOS. **The owner should try copy in one window
+  and paste in another on Windows and macOS.**
+- Left over: Walk collision; the web's clipboard (asynchronous, asks for
+  permission); pasting Prism geometry into other programs (they would
+  see the text).

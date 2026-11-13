@@ -53,8 +53,13 @@ web-sys = { version = "0.3.107", features = ["Window", "MediaQueryList", "Naviga
 js-sys = "0.3.107"
 wasm-bindgen = "0.2.130"
 
+# The system clipboard, for copy and paste between windows (text only).
+# Not on Windows: its backend there is BSL-1.0 (clipboard.rs does it).
+[target.'cfg(all(not(target_arch = "wasm32"), not(windows)))'.dependencies]
+arboard = { version = "3.4", default-features = false }
+
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_DataExchange", "Win32_System_Memory"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSWorkspace"] }

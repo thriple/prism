@@ -5,6 +5,7 @@
 pub mod actions;
 mod app;
 pub mod chrome;
+mod clipboard;
 mod doc_files;
 mod files;
 pub mod frame_stats;

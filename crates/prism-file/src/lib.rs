@@ -29,6 +29,7 @@ use prism_topo::Model;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+pub mod clip;
 mod geometry;
 pub mod mesh;
 mod migrate;

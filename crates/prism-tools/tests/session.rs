@@ -4669,6 +4669,34 @@ fn look_around_and_walk_by_dragging() {
     assert!(walked.eye.distance(looked.eye) > 1e-3, "it went forward");
 }
 
+#[test]
+fn walk_steps_with_the_arrow_keys_and_takes_a_typed_eye_height() {
+    let mut d = Driver::empty();
+    d.tool(prism_tools::session::WALK);
+    assert_eq!(d.s.measurement().0, "Eye Height");
+    let start = d.s.camera();
+    d.send(Input::Key { key: Key::Up });
+    let ahead = d.s.camera();
+    assert!(ahead.eye.distance(start.eye) > 1e-3, "a step forward");
+    assert!((ahead.eye.z - start.eye.z).abs() < 1e-9, "on the level");
+    assert!((ahead.forward() - start.forward()).length() < 1e-9);
+    d.send(Input::Key { key: Key::Down });
+    assert!(d.s.camera().eye.distance(start.eye) < 1e-9, "and back");
+    d.send(Input::Key { key: Key::Left });
+    let turned = d.s.camera();
+    assert_eq!(turned.eye, start.eye, "it turns where it stands");
+    let (f0, f1) = (start.forward(), turned.forward());
+    let deg = f0.truncate().angle_to(f1.truncate()).to_degrees();
+    assert!((deg - 5.0).abs() < 1e-6, "five degrees left: {deg}");
+    // A typed eye height: the eye goes to it, still looking the same way.
+    assert!(d.s.accepts_char('1'), "typing goes to the eye height");
+    d.typed("1.6");
+    let tall = d.s.camera();
+    assert!((tall.eye.z - 1.6).abs() < 1e-9, "{}", tall.eye.z);
+    assert!((tall.forward() - turned.forward()).length() < 1e-9);
+    assert_eq!(d.s.tool(), prism_tools::session::WALK);
+}
+
 // ---------- Everyday Commands part 3: Rotated Rectangle and Freehand ----------
 
 #[test]

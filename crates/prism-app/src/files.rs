@@ -120,7 +120,7 @@ fn view_style(extra: &mut Map<String, Value>) -> prism_view::ViewStyle {
         .unwrap_or_default()
 }
 
-fn app_version() -> &'static str {
+pub(crate) fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
