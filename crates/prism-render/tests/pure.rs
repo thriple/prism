@@ -396,3 +396,128 @@ fn a_rigidly_moved_scene_matches_a_rebuilt_one() {
     let one: std::collections::BTreeSet<_> = all.iter().take(1).copied().collect();
     assert!(Scene::build(&m).rigidly_moved(&one, f, |n| q * n).is_none());
 }
+
+// ---------- Everyday Commands part 2 (brief 33): lens and views ----------
+
+use prism_render::camera::{Lens, standard_view};
+
+fn parallel() -> Lens {
+    Lens {
+        parallel: true,
+        ..Lens::default()
+    }
+}
+
+#[test]
+fn a_parallel_view_projects_and_picks_alike_and_sees_behind_the_eye() {
+    for k in SCALES {
+        let cam = home(k);
+        let view = View::with_lens(&cam, W, H, parallel());
+        // The target looks the same size as in perspective.
+        let persp = View::new(&cam, W, H);
+        let a = cam.target + view.r * k;
+        let s_par = screen(&view, a) - screen(&view, cam.target);
+        let s_per = screen(&persp, a) - screen(&persp, cam.target);
+        assert!((s_par.length() - s_per.length()).abs() < 1e-6 * s_per.length());
+        // A ray through a point's screen position passes through it, even
+        // a point behind the eye.
+        for p in [
+            cam.target,
+            cam.eye - cam.forward() * k,
+            DVec3::new(k, -k, 0.3 * k),
+        ] {
+            let s = view.to_screen(p).expect("parallel sees everything").0;
+            let (o, d) = view.ray(s);
+            assert!((d - view.f).length() < 1e-12, "rays are parallel");
+            let t = (p - o).dot(d);
+            assert!(t > 0.0, "the ray starts behind the point");
+            assert!((o + d * t).distance(p) < 1e-6 * k, "{k}");
+        }
+        // Units per pixel are the same everywhere.
+        assert_eq!(view.units_per_px(1.0), view.units_per_px(1e6));
+    }
+}
+
+#[test]
+fn parallel_zoom_and_pan_keep_the_point_under_the_cursor() {
+    for k in SCALES {
+        let cam = home(k);
+        let lens = parallel();
+        let q = DVec3::new(0.7 * k, 0.2 * k, 0.0);
+        let before = screen(&View::with_lens(&cam, W, H, lens), q);
+        let z = cam.wheel_lens(q, 1.0, 1e-9 * k, lens);
+        let v2 = View::with_lens(&z, W, H, lens);
+        assert!((screen(&v2, q) - before).length() < 1e-6, "{k}");
+        assert!(z.distance() < cam.distance(), "the view shrinks");
+        assert!((z.forward() - cam.forward()).length() < 1e-12);
+        let p = z.pan(&v2, q, DVec2::new(30.0, -12.0));
+        let v3 = View::with_lens(&p, W, H, lens);
+        assert!((screen(&v3, q) - (before + DVec2::new(30.0, -12.0))).length() < 1e-6);
+    }
+}
+
+#[test]
+fn standard_views_look_the_right_way_and_top_can_be_orbited_out_of() {
+    let lo = DVec3::new(-1.0, -1.0, 0.0);
+    let hi = DVec3::new(1.0, 1.0, 2.0);
+    let top = Camera::looking(standard_view("top").unwrap(), lo, hi, W / H);
+    let v = View::new(&top, W, H);
+    assert!(v.f.z < -0.999_999 && (v.r - DVec3::X).length() < 1e-6);
+    assert!((v.u - DVec3::Y).length() < 1e-6, "north is up");
+    let front = View::new(
+        &Camera::looking(standard_view("front").unwrap(), lo, hi, W / H),
+        W,
+        H,
+    );
+    assert!((front.f - DVec3::Y).length() < 1e-12 && (front.r - DVec3::X).length() < 1e-12);
+    // Orbiting from Top tips the view toward the horizon.
+    let o = top.orbit(top.target, 0.0, -0.05);
+    assert!(o.forward().z > top.forward().z, "{:?}", o.forward());
+    // A field of view narrows the picture's reach.
+    let narrow = View::with_lens(
+        &top,
+        W,
+        H,
+        Lens {
+            fov: 10.0,
+            ..Lens::default()
+        },
+    );
+    assert!(narrow.foc > v.foc);
+}
+
+#[test]
+fn look_around_turns_about_the_eye_and_walk_keeps_the_height() {
+    let cam = home(1.0);
+    let l = cam.look_around(0.3, 0.1);
+    assert_eq!(l.eye, cam.eye);
+    assert!((l.distance() - cam.distance()).abs() < 1e-9);
+    let w = cam.walk(2.0, 0.0);
+    assert!(
+        (w.eye.z - cam.eye.z).abs() < 1e-12,
+        "the eye's height is kept"
+    );
+    let flat = DVec3::new(cam.forward().x, cam.forward().y, 0.0).normalize();
+    assert!(((w.eye - cam.eye) - flat * 2.0).length() < 1e-9);
+}
+
+#[test]
+fn a_parallel_projection_puts_points_where_the_view_does() {
+    let cam = home(1.0);
+    let view = View::with_lens(&cam, W, H, parallel());
+    // A box round the eye: a parallel view draws what is behind it too.
+    let boxes = [(DVec3::new(-12.0, -12.0, -1.0), DVec3::new(12.0, 12.0, 8.0))];
+    let (near, far) = prism_render::gpu::fit_depth(&view, &boxes);
+    let m = prism_render::gpu::lens_view_proj(&view, near, far);
+    for p in [
+        DVec3::ZERO,
+        DVec3::new(3.0, -2.0, 1.0),
+        cam.eye - cam.forward() * 0.5,
+    ] {
+        let c = m * (p - view.eye).extend(1.0);
+        let ndc = c.truncate() / c.w;
+        let s = DVec2::new((ndc.x * 0.5 + 0.5) * W, (0.5 - ndc.y * 0.5) * H);
+        assert!((s - screen(&view, p)).length() < 1e-6);
+        assert!((0.0..=1.0).contains(&ndc.z), "inside the depth range");
+    }
+}

@@ -84,6 +84,12 @@ const MAX_ENTRY: u64 = 1 << 32;
 pub struct CameraData {
     pub eye: [f64; 3],
     pub target: [f64; 3],
+    /// Parallel projection, and the field of view in degrees (optional:
+    /// files before Everyday Commands part 2 have neither).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub parallel: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fov: Option<f64>,
 }
 
 /// What a file holds besides the geometry.

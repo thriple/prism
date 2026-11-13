@@ -1271,3 +1271,39 @@ fn a_loft_draws_smoothly_and_with_zebra_stripes() {
     }
     assert!(flips >= 3, "{flips} changes of band");
 }
+
+/// Everyday Commands part 2: a parallel front view of a box shows only its
+/// front face, a square, with the box's far edges hidden behind it.
+#[test]
+fn a_parallel_front_view_shows_a_square() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    g.lens = prism_render::camera::Lens {
+        parallel: true,
+        ..Default::default()
+    };
+    let style = Style::default();
+    let m = golden::cube(1.0);
+    let (lo, hi) = m.bbox().expect("a cube");
+    let cam = Camera::looking(DVec3::Y, lo, hi, 1.0);
+    let img = g.shot(&m, cam, 300, 300, 1.0, &style, &Highlight::default());
+    img.save("parallel-front");
+    // The front face's colour (at the middle) spans as many pixels across
+    // as down.
+    let face = img.at(150, 150);
+    let near = |p: [u8; 4]| (0..3).all(|i| (i32::from(p[i]) - i32::from(face[i])).abs() < 4);
+    let row: Vec<u32> = (0..300).filter(|x| near(img.at(*x, 150))).collect();
+    let col: Vec<u32> = (0..300).filter(|y| near(img.at(150, *y))).collect();
+    let (x0, x1) = (row[0], row[row.len() - 1]);
+    let (y0, y1) = (col[0], col[col.len() - 1]);
+    assert!(x1 > x0 + 50, "the face is drawn");
+    let (w, h) = (x1 - x0, y1 - y0);
+    assert!(w.abs_diff(h) <= 3, "a square, not a trapezoid ({w} by {h})");
+    // The view looks straight along the face: no side face shows.
+    assert_eq!(back_pixels(&img), 0);
+    // From the iso direction, in parallel, no back face shows either.
+    let iso = prism_render::camera::standard_view("iso").expect("iso");
+    let cam = Camera::looking(iso, lo, hi, 1.0);
+    let img = g.shot(&m, cam, 300, 300, 1.0, &tell_tale(), &Highlight::default());
+    img.save("parallel-iso");
+    assert_eq!(back_pixels(&img), 0);
+}

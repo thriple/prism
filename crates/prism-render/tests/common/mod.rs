@@ -11,6 +11,8 @@ pub struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub renderer: Renderer,
+    /// The lens every shot uses (perspective unless a test sets it).
+    pub lens: prism_render::camera::Lens,
 }
 
 impl Gpu {
@@ -44,6 +46,7 @@ impl Gpu {
                 device,
                 queue,
                 renderer,
+                lens: Default::default(),
             })
         })
     }
@@ -86,6 +89,7 @@ impl Gpu {
             &mut enc,
             &Frame {
                 camera,
+                lens: self.lens,
                 ppp,
                 style,
                 shadow: true,

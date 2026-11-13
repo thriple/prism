@@ -877,6 +877,13 @@ pub fn infer(
                             o + dir * view.eye.distance(start)
                         }
                     }
+                    // A parallel view: at the depth of the model's middle.
+                    None if view.parallel.is_some() => {
+                        let c = scene
+                            .bounds
+                            .map_or(DVec3::ZERO, |(lo, hi)| lo.lerp(hi, 0.5));
+                        o + dir * (c - o).dot(dir)
+                    }
                     None => o + dir * extent.min(view.eye.length().max(tol)),
                 };
                 Inference {

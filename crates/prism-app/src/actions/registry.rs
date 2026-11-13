@@ -173,6 +173,9 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "exp.gltf"
         || id == "isect.model"
         || id == "isect.sel"
+        // Everyday Commands part 2 (brief 33): the Camera menu.
+        || id.starts_with("cam.v.")
+        || matches!(id, "cam.persp" | "cam.parallel" | "cam.fov" | "cam.zoomsel")
         // Everyday Commands part 1 (brief 33).
         || id == "isect.ctx"
         || matches!(

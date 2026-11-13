@@ -39,6 +39,8 @@ fn contents(model: Model) -> Contents {
                 decimals: 2,
             },
             camera: Some(CameraData {
+                parallel: true,
+                fov: Some(50.0),
                 eye: [1.0 / 7.0, -8.0, 9.0],
                 target: [0.0, 0.1, 0.2],
             }),

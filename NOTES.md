@@ -3265,3 +3265,33 @@ Brief 33, part 1, built 2026-11-13.
 - **Left over:** a component holding groups is pasted as a new
   definition even in its own document (the reuse test compares nested
   definitions by id); the system clipboard; dragging between windows.
+
+## Everyday Commands (part 2): the camera
+Brief 33, part 2, built 2026-11-13.
+- **Lens** (`prism_view::Lens`: parallel or not, the field of view): the
+  session holds it (`Session::lens`, `set_lens`); the file saves it in
+  the camera (`CameraData.parallel`, `fov`, optional, no schema change);
+  MCP's model read gives the camera, projection and field of view.
+- **Parallel Projection** shows what perspective shows at the target's
+  distance, at the same size; zooming shrinks the view about the cursor
+  (`Camera::zoom_parallel`). A parallel `View` stands its eye far back
+  along the view (`PARALLEL_RAY_BACK` camera distances), so picking,
+  occlusion tests and inference see what is behind the camera too; the
+  renderer draws relative to the camera's own eye, with depth falling
+  linearly over the fitted range (`lens_view_proj`) and no near clip on
+  lines. The shader takes the view direction from `Globals.look` for
+  profile lines and zebra stripes; outlines of curved faces are found
+  from a point far back.
+- **Standard views** (Camera > Standard Views): look that way at the whole
+  model, fitted. Top and Bottom are tipped a hair so they keep +X to the
+  right and can be orbited out of.
+- **Field of View**: picks the Zoom tool, whose measurement box shows and
+  takes the angle in degrees (1 to 120).
+- **Zoom Selection** fits the selection and selected groups. **Zoom
+  Window** (a tool): drag a box, the view comes that much closer to its
+  middle; a click zooms in two times. **Look Around** turns the view about
+  the eye; **Walk** moves along the ground (the height kept) and turns.
+  All three are camera tools: Esc returns to the tool before.
+- **Left over:** Walk with arrow keys, eye height typed, and collision;
+  the menu's check mark on Perspective / Parallel; the measurement box
+  showing the eye height in Walk.

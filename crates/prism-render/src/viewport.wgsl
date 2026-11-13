@@ -34,7 +34,17 @@ struct Globals {
     light_vp: mat4x4<f32>,
     // on (1 or 0), depth bias, one texel, zebra stripes on (1 or 0)
     shadow_map: vec4<f32>,
+    // the view direction xyz; w: 1 for a parallel projection
+    look: vec4<f32>,
 };
+
+// The direction from a point (relative to the eye) toward the viewer.
+fn toward_viewer(rel_pos: vec3<f32>) -> vec3<f32> {
+    if (g.look.w > 0.5) {
+        return -g.look.xyz;
+    }
+    return -rel_pos;
+}
 
 // Per draw: a colour and how to use it.
 struct Draw {
@@ -204,7 +214,7 @@ fn face_fs(in: FaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4
     // Zebra stripes: bands of a striped room mirrored in the face. They
     // run smoothly over a smooth surface and break at a crease.
     if (g.shadow_map.w > 0.5) {
-        let mirrored = reflect(normalize(in.r), n);
+        let mirrored = reflect(-normalize(toward_viewer(in.r)), n);
         let band = mirrored.z * 7.0;
         let edge = fwidth(band);
         let k = abs(fract(band) - 0.5) * 2.0;
@@ -413,7 +423,7 @@ fn line_vs(@builtin(vertex_index) vi: u32, l: LineIn) -> LineOut {
     // Profile lines: edges between a face turned toward the eye and one
     // turned away, or edges with one face.
     if ((l.flags & MODEL_EDGE) != 0u && g.params.y > 0.0) {
-        let to_eye = -(ra + rb) * 0.5;
+        let to_eye = toward_viewer((ra + rb) * 0.5);
         let h1 = (l.flags & HAS_N1) != 0u;
         let h2 = (l.flags & HAS_N2) != 0u;
         let s1 = dot(l.n1, to_eye) > 0.0;

@@ -15,7 +15,7 @@ pub mod style;
 pub mod tess;
 pub mod view_style;
 
-pub use camera::{Camera, Motion, View};
+pub use camera::{Camera, Lens, Motion, View};
 pub use pick::{Hit, Picked};
 pub use scene::{Scene, SceneTexture};
 pub use style::Style;

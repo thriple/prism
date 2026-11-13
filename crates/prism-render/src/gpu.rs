@@ -64,6 +64,8 @@ struct Globals {
     light_vp: [[f32; 4]; 4],
     /// On (1 or 0), depth bias, one texel in the map, unused.
     shadow_map: [f32; 4],
+    /// The view direction; w is 1 for a parallel projection.
+    look: [f32; 4],
 }
 
 /// The sun's shadow map, in texels each way.
@@ -262,6 +264,9 @@ impl LineInstance {
 /// Near and far planes that just contain the visible things (the model,
 /// the ground grid and the axes).
 pub fn fit_depth(view: &View, boxes: &[(DVec3, DVec3)]) -> (f64, f64) {
+    if view.parallel.is_some() {
+        return fit_parallel(view, boxes);
+    }
     let mut far: f64 = 0.0;
     let mut near = f64::MAX;
     for (lo, hi) in boxes {
@@ -281,6 +286,57 @@ pub fn fit_depth(view: &View, boxes: &[(DVec3, DVec3)]) -> (f64, f64) {
     }
     let far = far * 1.05;
     (near.mul_add(0.5, 0.0).max(far * 1e-7), far)
+}
+
+/// A parallel view's depth range along the view: from the nearest to the
+/// farthest corner, which may be behind the eye (the eye of a parallel view
+/// is only a place to measure from).
+fn fit_parallel(view: &View, boxes: &[(DVec3, DVec3)]) -> (f64, f64) {
+    let (mut near, mut far) = (f64::MAX, f64::MIN);
+    for (lo, hi) in boxes {
+        for i in 0..8 {
+            let c = DVec3::new(
+                if i & 1 == 0 { lo.x } else { hi.x },
+                if i & 2 == 0 { lo.y } else { hi.y },
+                if i & 4 == 0 { lo.z } else { hi.z },
+            );
+            let z = (c - view.eye).dot(view.f);
+            near = near.min(z);
+            far = far.max(z);
+        }
+    }
+    if near > far {
+        return (0.0, 1.0);
+    }
+    let pad = (far - near).max(f64::MIN_POSITIVE) * 0.05;
+    (near - pad, far + pad)
+}
+
+/// The view and projection for a lens: reversed-Z perspective with far at
+/// infinity, or parallel with depth falling linearly from 1 at `near` to 0
+/// at `far` (both along the view, from the eye).
+pub fn lens_view_proj(view: &View, near: f64, far: f64) -> glam::DMat4 {
+    use glam::{DMat4, DVec4};
+    let Some(k) = view.parallel else {
+        return view_proj(view, near);
+    };
+    let sx = 2.0 / (view.w * k);
+    let sy = 2.0 / (view.h * k);
+    let span = (far - near).max(f64::MIN_POSITIVE);
+    // Camera space looks down -z: depth = (far - dist) / span, dist = -z.
+    let proj = DMat4::from_cols(
+        DVec4::new(sx, 0.0, 0.0, 0.0),
+        DVec4::new(0.0, sy, 0.0, 0.0),
+        DVec4::new(0.0, 0.0, 1.0 / span, 0.0),
+        DVec4::new(0.0, 0.0, far / span, 1.0),
+    );
+    let look = DMat4::from_cols(
+        DVec4::new(view.r.x, view.u.x, -view.f.x, 0.0),
+        DVec4::new(view.r.y, view.u.y, -view.f.y, 0.0),
+        DVec4::new(view.r.z, view.u.z, -view.f.z, 0.0),
+        DVec4::W,
+    );
+    proj * look
 }
 
 /// The view and reversed-Z projection, for positions relative to the eye:
@@ -498,6 +554,8 @@ const PREVIEW: usize = 5;
 /// Everything one frame needs.
 pub struct Frame<'a> {
     pub camera: Camera,
+    /// Perspective or parallel, and the field of view.
+    pub lens: crate::camera::Lens,
     /// Pixels per point.
     pub ppp: f32,
     pub style: &'a Style,
@@ -1584,8 +1642,14 @@ impl Renderer {
         }
         let s = f.style;
         let width = s.edge_width.max(s.profile_width);
+        // A parallel view sees outlines as from very far back.
+        let viewpoint = if f.lens.parallel {
+            f.camera.eye - f.camera.forward() * (f.camera.distance() * 1e6)
+        } else {
+            f.camera.eye
+        };
         let key = (
-            f.camera.eye.as_vec3().to_array(),
+            viewpoint.as_vec3().to_array(),
             s.edge.0,
             width,
             s.faded_alpha,
@@ -1596,7 +1660,7 @@ impl Renderer {
         self.outline_key = Some(key);
         let lines: Vec<LineInstance> = self
             .outline_src
-            .lines(f.camera.eye)
+            .lines(viewpoint)
             .iter()
             .map(|l| {
                 let color = if l.faded {
@@ -1709,15 +1773,21 @@ impl Renderer {
         };
         let [w, h] = target.size;
         let ppp = f.ppp.max(0.1);
-        let view = View::new(
+        let mut view = View::with_lens(
             &f.camera,
             f64::from(w) / f64::from(ppp),
             f64::from(h) / f64::from(ppp),
+            f.lens,
         );
+        // Drawn relative to the camera's own eye (a parallel view's stands
+        // far back for picking), so positions keep their precision.
+        view.eye = f.camera.eye;
         let mut boxes = Self::ground_boxes(f.style).to_vec();
         boxes.extend(f.bounds);
-        let (near, _far) = fit_depth(&view, &boxes);
-        let vp = view_proj(&view, near).as_mat4();
+        let (near, far) = fit_depth(&view, &boxes);
+        let vp = lens_view_proj(&view, near, far).as_mat4();
+        // A parallel view clips no line at a near plane (clip w is 1).
+        let near_clip = if view.parallel.is_some() { 0.0 } else { near };
         let (eye_hi, eye_lo) = split(view.eye);
         let s = f.style;
         let c = |c: Rgba| c.to_f32();
@@ -1731,7 +1801,7 @@ impl Renderer {
         let globals = Globals {
             view_proj: vp.to_cols_array_2d(),
             eye_hi: [eye_hi[0], eye_hi[1], eye_hi[2], 0.0],
-            eye_lo: [eye_lo[0], eye_lo[1], eye_lo[2], near as f32],
+            eye_lo: [eye_lo[0], eye_lo[1], eye_lo[2], near_clip as f32],
             viewport: [
                 w as f32,
                 h as f32,
@@ -1763,6 +1833,12 @@ impl Renderer {
                 SHADOW_BIAS,
                 1.0 / SHADOW_SIZE as f32,
                 if s.zebra { 1.0 } else { 0.0 },
+            ],
+            look: [
+                view.f.x as f32,
+                view.f.y as f32,
+                view.f.z as f32,
+                if view.parallel.is_some() { 1.0 } else { 0.0 },
             ],
         };
         queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));

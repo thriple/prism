@@ -40,6 +40,7 @@ mod round;
 mod scalebox;
 mod shapes;
 mod texpos;
+mod views;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use cage::PICK_FIRST;
@@ -56,6 +57,7 @@ pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
+pub use views::{LOOK, WALK, WINDOW};
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -67,7 +69,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 26] = [
+pub const TOOLS: [&str; 29] = [
     SELECT,
     LINE,
     RECT,
@@ -98,10 +100,17 @@ pub const TOOLS: [&str; 26] = [
     texpos::TEXTURE,
     // Freeform NURBS part 1.
     curve::CURVE,
+    // Everyday Commands part 2: camera tools.
+    views::WALK,
+    views::LOOK,
+    views::WINDOW,
 ];
 
 fn is_nav(t: &str) -> bool {
-    matches!(t, ORBIT | PAN | ZOOM)
+    matches!(
+        t,
+        ORBIT | PAN | ZOOM | views::WALK | views::LOOK | views::WINDOW
+    )
 }
 
 /// A box drag shorter than this (points) is a click.
@@ -265,6 +274,9 @@ enum Drag {
     Orbit { pivot: DVec3 },
     Pan { grab: DVec3 },
     Zoom { toward: DVec3 },
+    Walk,
+    Look,
+    Window,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -469,6 +481,10 @@ pub struct Session {
     clipboard: Option<std::sync::Arc<prism_doc::Assembly>>,
     pasting: Option<clip::Pasting>,
     notice: Option<&'static str>,
+    /// Perspective or parallel, and the field of view (part 2); the Zoom
+    /// Window box being dragged.
+    lens: prism_view::Lens,
+    zoom_box: Option<(DVec2, DVec2)>,
 }
 
 impl Session {
@@ -516,6 +532,8 @@ impl Session {
             clipboard: None,
             pasting: None,
             notice: None,
+            lens: prism_view::Lens::default(),
+            zoom_box: None,
             doc,
             version: 1,
             scene,
@@ -658,7 +676,7 @@ impl Session {
         &self.timings
     }
     pub fn view(&self) -> View {
-        View::new(&self.camera(), self.size.0, self.size.1)
+        View::with_lens(&self.camera(), self.size.0, self.size.1, self.lens)
     }
     pub fn is_recording(&self) -> bool {
         self.recording.is_some()
@@ -717,7 +735,8 @@ impl Session {
         }
         let editable = self.in_operation() && self.boxing.is_none()
             || self.last_op.is_some() && self.typing_tool()
-            || self.tool == FILLET;
+            || self.tool == FILLET
+            || self.tool == ZOOM;
         editable && (c.is_ascii_digit() || c == '.' || c == '-' || c == self.number.decimal)
     }
 
@@ -735,7 +754,9 @@ impl Session {
     /// The measurement box: its label, value, and whether it shows typing.
     pub fn measurement(&self) -> (String, String, bool) {
         let nf = &self.number;
-        let (label, value) = if let Some((l, v)) = self.edit_measurement() {
+        let (label, value) = if let Some((l, v)) = self.fov_measurement() {
+            (l, v)
+        } else if let Some((l, v)) = self.edit_measurement() {
             (l, v)
         } else if let Some((l, v)) = self.shape_measurement() {
             (l, v)
@@ -776,6 +797,9 @@ impl Session {
             return h;
         }
         if let Some(h) = self.paste_hint() {
+            return h;
+        }
+        if let Some(h) = self.camera_hint() {
             return h;
         }
         if let Some(h) = self.cage_hint() {
@@ -937,7 +961,9 @@ impl Session {
                 self.settle_goal();
                 let view = self.view();
                 let q = self.surface(&view, s);
-                let goal = self.camera.wheel(q, *notches, self.min_distance());
+                let goal = self
+                    .camera
+                    .wheel_lens(q, *notches, self.min_distance(), self.lens);
                 self.ease_to(goal, EASE_WHEEL);
                 self.refresh();
             }
@@ -953,7 +979,9 @@ impl Session {
                 self.settle();
                 let view = self.view();
                 let q = self.surface(&view, DVec2::new(*x, *y));
-                self.camera = self.camera.pinch(q, *factor, self.min_distance());
+                self.camera = self
+                    .camera
+                    .pinch_lens(q, *factor, self.min_distance(), self.lens);
                 self.dirty = true;
                 self.refresh();
             }
@@ -1360,6 +1388,9 @@ impl Session {
     }
 
     fn action(&mut self, id: &str) {
+        if self.camera_action(id) {
+            return;
+        }
         match id {
             "cam.extents" => {
                 if let Some((lo, hi)) = self.scene.bounds {
@@ -1645,7 +1676,14 @@ impl Session {
             let c = match drag {
                 Drag::Orbit { pivot } => self.camera.orbit_drag(pivot, d.x, d.y),
                 Drag::Pan { grab } => self.camera.pan(&self.view(), grab, d),
-                Drag::Zoom { toward } => self.camera.zoom_toward(toward, -d.y * ZOOM_PER_DRAG_PX),
+                Drag::Zoom { toward } => {
+                    self.camera
+                        .zoom_lens(toward, -d.y * ZOOM_PER_DRAG_PX, self.lens)
+                }
+                other => match self.camera_drag(other, s, d) {
+                    Some(c) => c,
+                    None => return,
+                },
             };
             self.camera = c;
             self.dirty = true;
@@ -1688,6 +1726,10 @@ impl Session {
             }
             Button::Left if is_nav(&self.tool) => {
                 self.settle();
+                if let Some(d) = self.camera_press(s) {
+                    self.drag = Some(d);
+                    return;
+                }
                 let view = self.view();
                 let q = self.surface(&view, s);
                 self.drag = Some(match self.tool.as_str() {
@@ -1803,6 +1845,10 @@ impl Session {
                     self.edit_release(c);
                 }
                 self.refresh();
+            }
+            Button::Left if matches!(self.drag, Some(Drag::Window)) => {
+                self.drag = None;
+                self.window_release();
             }
             _ => self.drag = None,
         }
@@ -2036,6 +2082,9 @@ impl Session {
         }
         let text = std::mem::take(&mut self.typed);
         self.overlay_dirty = true;
+        if self.fov_enter(&text) {
+            return;
+        }
         if text.is_empty()
             && self.edit.is_none()
             && self.tool == SELECT
@@ -2167,6 +2216,7 @@ impl Session {
             self.edit_overlay(&mut o);
         }
         self.paste_overlay(&mut o);
+        self.window_overlay(&mut o);
         if !self.wants_inference() {
             return o;
         }

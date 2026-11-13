@@ -123,6 +123,13 @@ impl AppHost<'_> {
             "groups_and_components": groups,
             "selection": self.counts(),
             "view_style": s.view_style().name,
+            "camera": {
+                "eye": point(s.camera().eye),
+                "target": point(s.camera().target),
+                "projection": if s.lens().parallel { "parallel" } else { "perspective" },
+                "field_of_view_degrees": s.lens().fov,
+                "note": "Change it with run_action: cam.v.top (and front, back, left, right, bottom, iso), cam.persp, cam.parallel, cam.zoomsel, cam.extents.",
+            },
             "materials": s.material_rows().into_iter().map(|r| json!({
                 "id": r.id.0,
                 "name": r.name,

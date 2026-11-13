@@ -572,6 +572,7 @@ impl App {
             redraw,
             frame: prism_render::gpu::Frame {
                 camera: s.camera(),
+                lens: s.lens(),
                 ppp: output.pixels_per_point,
                 style,
                 shadow,

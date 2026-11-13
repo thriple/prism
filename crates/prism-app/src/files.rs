@@ -94,10 +94,22 @@ fn contents(s: &Session, extra: &Map<String, Value>) -> Contents {
             camera: Some(CameraData {
                 eye: c.eye.to_array(),
                 target: c.target.to_array(),
+                parallel: s.lens().parallel,
+                fov: Some(s.lens().fov),
             }),
             extra,
         },
     }
+}
+
+/// The projection saved in a file (perspective at the default field of
+/// view when none is).
+fn lens_of(c: Option<&CameraData>) -> prism_view::Lens {
+    let d = prism_view::Lens::default();
+    c.map_or(d, |c| prism_view::Lens {
+        parallel: c.parallel,
+        fov: c.fov.unwrap_or(d.fov),
+    })
 }
 
 /// The view style saved in a file, or Default.
@@ -307,6 +319,7 @@ impl Files {
             eye: prism_math::DVec3::from_array(c.eye),
             target: prism_math::DVec3::from_array(c.target),
         });
+        s.set_lens(lens_of(c.settings.camera.as_ref()));
         s.open_document(Document::with_assembly(c.assembly), camera);
         s.set_units(c.settings.units);
         self.extra = c.settings.extra;
@@ -573,6 +586,7 @@ impl Files {
             eye: prism_math::DVec3::from_array(c.eye),
             target: prism_math::DVec3::from_array(c.target),
         });
+        s.set_lens(lens_of(c.settings.camera.as_ref()));
         let doc = j.restore(c.assembly);
         s.open_document(doc, camera);
         s.set_units(c.settings.units);

@@ -38,9 +38,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   kernel is in `prism-kernel` (arris, pinned).
 - **The order changed on 2026-11-13** (owner request, PLAN 6.0 "Order"):
   **Everyday Commands** is being built (brief 33, 4 parts). Part 1 is
-  done (clipboard, Lock, With Context; NOTES "Everyday Commands (part
-  1)"). **Next: part 2, Camera** (standard views, parallel projection,
-  Field of View, Zoom Selection and Window, Walk, Look Around). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
+  done (clipboard, Lock, With Context) and part 2 (the camera; NOTES
+  "Everyday Commands (part 1)" and "(part 2)"). **Next: part 3, Drawing
+  and windows** (Rotated Rectangle, Freehand, Preferences, About, the
+  tool hint panel). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
   defaults until the owner answers; start at step A, the kernel bridge),
   then Solids & CAD, which was moved up to follow it.
 - **Disk:** `target/debug` grows past the session's allowance after many

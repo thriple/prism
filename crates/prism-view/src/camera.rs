@@ -26,6 +26,59 @@ pub const ZOOM_PER_DRAG_PX: f64 = 0.005;
 /// The most one zoom step may move toward the point (never reaches it).
 pub const MAX_ZOOM_STEP: f64 = 0.5;
 
+/// The narrowest and widest field of view that can be typed (degrees).
+pub const FOV_MIN_DEG: f64 = 1.0;
+pub const FOV_MAX_DEG: f64 = 120.0;
+/// How far back a parallel view's eye stands, in camera distances: the
+/// picture does not change, and rays from it, occlusion tests toward it and
+/// depths from it then cover what is behind the camera too.
+pub const PARALLEL_RAY_BACK: f64 = 1e4;
+
+/// How the camera projects (Everyday Commands part 2): perspective with a
+/// vertical field of view, or parallel. A parallel view shows what a
+/// perspective one shows at the target's distance, at the same size.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Lens {
+    #[serde(default)]
+    pub parallel: bool,
+    /// Vertical field of view, degrees.
+    #[serde(default = "default_fov")]
+    pub fov: f64,
+}
+
+fn default_fov() -> f64 {
+    FOV_Y_DEG
+}
+
+impl Default for Lens {
+    fn default() -> Self {
+        Lens {
+            parallel: false,
+            fov: FOV_Y_DEG,
+        }
+    }
+}
+
+/// The standard views (Camera > Standard Views): the direction looked in.
+pub fn standard_view(name: &str) -> Option<DVec3> {
+    // Straight up and down are tipped a hair so the view has a right
+    // direction (+X) and can still be orbited.
+    let tip = 1e-9;
+    Some(
+        match name {
+            "top" => DVec3::new(0.0, tip, -1.0),
+            "bottom" => DVec3::new(0.0, tip, 1.0),
+            "front" => DVec3::Y,
+            "back" => -DVec3::Y,
+            "left" => DVec3::X,
+            "right" => -DVec3::X,
+            "iso" => DVec3::new(-1.0, 1.0, -0.8),
+            _ => return None,
+        }
+        .normalize(),
+    )
+}
+
 /// Where the camera is and what it looks at. Up is always +Z (gravity).
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Camera {
@@ -69,6 +122,91 @@ impl Camera {
         }
     }
 
+    /// Zoom a parallel view toward `q` by the fraction `k`: the view
+    /// shrinks about `q`, which stays where it is on screen.
+    pub fn zoom_parallel(&self, q: DVec3, k: f64) -> Camera {
+        let k = k.min(MAX_ZOOM_STEP);
+        let f = self.forward();
+        let d = self.distance();
+        let rel = q - self.eye;
+        let across = rel - f * rel.dot(f);
+        let eye = self.eye + across * k + f * (d * k);
+        Camera {
+            eye,
+            target: eye + f * (d * (1.0 - k)),
+        }
+    }
+
+    /// Zoom by `k` toward `q`, as the lens does it.
+    pub fn zoom_lens(&self, q: DVec3, k: f64, lens: Lens) -> Camera {
+        if lens.parallel {
+            self.zoom_parallel(q, k)
+        } else {
+            self.zoom_toward(q, k)
+        }
+    }
+
+    /// The wheel, as the lens zooms: a parallel view stops at the same
+    /// smallest size as a perspective one stops at its distance.
+    pub fn wheel_lens(&self, q: DVec3, notches: f64, min_distance: f64, lens: Lens) -> Camera {
+        if !lens.parallel {
+            return self.wheel(q, notches, min_distance);
+        }
+        let k = notches.clamp(-MAX_NOTCHES, MAX_NOTCHES) * ZOOM_PER_NOTCH;
+        if k > 0.0 && self.distance() * (1.0 - k) < min_distance {
+            return *self;
+        }
+        self.zoom_parallel(q, k)
+    }
+
+    /// A pinch, as the lens zooms.
+    pub fn pinch_lens(&self, q: DVec3, factor: f64, min_distance: f64, lens: Lens) -> Camera {
+        if !lens.parallel {
+            return self.pinch(q, factor, min_distance);
+        }
+        if factor <= 0.0 || (factor > 1.0 && self.distance() / factor < min_distance) {
+            return *self;
+        }
+        self.zoom_parallel(q, 1.0 - 1.0 / factor)
+    }
+
+    /// Look in direction `dir` at the box `lo`..`hi`, fitted to the view.
+    pub fn looking(dir: DVec3, lo: DVec3, hi: DVec3, aspect: f64) -> Camera {
+        let c = lo.lerp(hi, 0.5);
+        Camera {
+            eye: c - dir.normalize(),
+            target: c,
+        }
+        .extents(lo, hi, aspect)
+    }
+
+    /// Look Around: turn the view about the eye (`yaw` about the vertical,
+    /// `pitch` up and down), never straight up or down.
+    pub fn look_around(&self, yaw: f64, pitch: f64) -> Camera {
+        let d = self.distance();
+        let f = DQuat::from_axis_angle(DVec3::Z, yaw) * self.forward();
+        let r = right_of(f);
+        let f2 = DQuat::from_axis_angle(r, pitch) * f;
+        let f = if f2.z.abs() < MAX_LOOK_Z { f2 } else { f };
+        Camera {
+            eye: self.eye,
+            target: self.eye + f * d,
+        }
+    }
+
+    /// Walk: `ahead` forward along the ground (the eye's height kept), and
+    /// a turn of `yaw` about the vertical.
+    pub fn walk(&self, ahead: f64, yaw: f64) -> Camera {
+        let turned = self.look_around(yaw, 0.0);
+        let f = turned.forward();
+        let flat = DVec3::new(f.x, f.y, 0.0).normalize_or(DVec3::Y);
+        let mv = flat * ahead;
+        Camera {
+            eye: turned.eye + mv,
+            target: turned.target + mv,
+        }
+    }
+
     /// Zoom from wheel notches (positive zooms in). Zooming in stops once
     /// the eye would come closer than `min_distance` to `q`.
     pub fn wheel(&self, q: DVec3, notches: f64, min_distance: f64) -> Camera {
@@ -104,7 +242,11 @@ impl Camera {
         let above = e2.z > 0.0 || e2.z >= eye.z;
         // Not tipped over the top or the bottom (which would turn the view upside down).
         let same_way = f2.x * f.x + f2.y * f.y > 0.0;
-        if f2.z.abs() < MAX_LOOK_Z && above && same_way {
+        // From a view straight down or up (Top, Bottom), moving toward the
+        // horizon is allowed.
+        let leaving_pole = f.z.abs() >= MAX_LOOK_Z && f2.z.abs() < f.z.abs();
+        let same_way = same_way || leaving_pole;
+        if (f2.z.abs() < MAX_LOOK_Z || leaving_pole) && above && same_way {
             Camera {
                 eye: e2,
                 target: t2,
@@ -122,7 +264,7 @@ impl Camera {
     /// Pan so that the grabbed point `p` follows the mouse by `d` pixels.
     pub fn pan(&self, view: &View, p: DVec3, d: DVec2) -> Camera {
         let depth = (p - view.eye).dot(view.f).max(f64::MIN_POSITIVE);
-        let k = depth / view.foc;
+        let k = view.units_per_px(depth);
         let mv = view.r * (-d.x * k) + view.u * (d.y * k);
         Camera {
             eye: self.eye + mv,
@@ -177,20 +319,34 @@ pub struct View {
     pub foc: f64,
     pub w: f64,
     pub h: f64,
+    /// A parallel projection's world units per pixel (None: perspective).
+    pub parallel: Option<f64>,
 }
 
 impl View {
     pub fn new(cam: &Camera, w: f64, h: f64) -> View {
+        View::with_lens(cam, w, h, Lens::default())
+    }
+
+    /// A camera seen through a lens.
+    pub fn with_lens(cam: &Camera, w: f64, h: f64, lens: Lens) -> View {
         let f = cam.forward();
         let r = right_of(f);
+        let fov = lens.fov.clamp(FOV_MIN_DEG, FOV_MAX_DEG);
+        let foc = (h * 0.5) / (fov.to_radians() * 0.5).tan();
+        let parallel = lens.parallel.then(|| cam.distance() / foc);
         View {
-            eye: cam.eye,
+            eye: match parallel {
+                Some(_) => cam.target - f * (cam.distance() * PARALLEL_RAY_BACK),
+                None => cam.eye,
+            },
             f,
             r,
             u: r.cross(f),
-            foc: (h * 0.5) / (FOV_Y_DEG.to_radians() * 0.5).tan(),
+            foc,
             w,
             h,
+            parallel,
         }
     }
 
@@ -203,6 +359,16 @@ impl View {
     pub fn to_screen(&self, p: DVec3) -> Option<(DVec2, f64)> {
         let d = p - self.eye;
         let z = d.dot(self.f);
+        // A parallel view shows what is behind the eye too.
+        if let Some(k) = self.parallel {
+            return Some((
+                DVec2::new(
+                    self.w * 0.5 + d.dot(self.r) / k,
+                    self.h * 0.5 - d.dot(self.u) / k,
+                ),
+                z,
+            ));
+        }
         if z <= 0.0 {
             return None;
         }
@@ -217,6 +383,11 @@ impl View {
 
     /// The ray through a screen position: origin and unit direction.
     pub fn ray(&self, s: DVec2) -> (DVec3, DVec3) {
+        if let Some(k) = self.parallel {
+            // Parallel rays, starting well behind the view.
+            let across = self.r * ((s.x - self.w * 0.5) * k) - self.u * ((s.y - self.h * 0.5) * k);
+            return (self.eye + across, self.f);
+        }
         let d = self.f
             + self.r * ((s.x - self.w * 0.5) / self.foc)
             + self.u * (-(s.y - self.h * 0.5) / self.foc);
@@ -225,12 +396,23 @@ impl View {
 
     /// Where the horizon is on screen (pixels from the top); can be off screen.
     pub fn horizon_y(&self) -> f64 {
+        if self.parallel.is_some() {
+            // The horizon is at infinity: off the top looking down, off the
+            // bottom looking up.
+            if self.f.z.abs() < 1e-12 {
+                return self.h * 0.5;
+            }
+            return self.h * 0.5 + self.f.z.signum() * self.h * 1e3;
+        }
         let pitch = self.f.z.clamp(-1.0, 1.0).asin();
         self.h * 0.5 + self.foc * pitch.tan()
     }
 
     /// World units per pixel at a given depth.
     pub fn units_per_px(&self, depth: f64) -> f64 {
+        if let Some(k) = self.parallel {
+            return k;
+        }
         depth / self.foc
     }
 }

@@ -4472,3 +4472,119 @@ fn with_context_adds_edges_inside_the_open_group_only() {
     assert!(prism_ops::check::problems(inside).is_empty());
     assert_eq!(d.s.model().to_json(), outside, "outside unchanged");
 }
+
+// ---------- Everyday Commands part 2 (brief 33): the camera ----------
+
+fn drag_px(d: &mut Driver, a: DVec2, b: DVec2) {
+    d.send(Input::Move { x: a.x, y: a.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: a.x,
+        y: a.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    for k in 1..=4 {
+        let p = a.lerp(b, f64::from(k) / 4.0);
+        d.send(Input::Move { x: p.x, y: p.y });
+    }
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.t += 0.5;
+}
+
+#[test]
+fn standard_views_and_parallel_projection_and_drawing_in_them() {
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    act(&mut d, "cam.v.front");
+    let f = d.s.camera().forward();
+    assert!((f - DVec3::Y).length() < 1e-9, "{f:?}");
+    act(&mut d, "cam.parallel");
+    assert!(d.s.lens().parallel);
+    assert!(d.s.view().parallel.is_some());
+    // Seen from the front in parallel, the box's front face is a square on
+    // screen: its corners are level and plumb.
+    let a = d.screen(DVec3::new(0.0, 0.0, 0.0));
+    let b = d.screen(DVec3::new(2.0, 0.0, 2.0));
+    let c = d.screen(DVec3::new(2.0, 2.0, 2.0));
+    assert!(((b.x - a.x) - (a.y - b.y)).abs() < 1e-6, "square");
+    assert!((b - c).length() < 1e-6, "depth does not shrink anything");
+    // A line drawn over the box's front face lands on it (picking and
+    // inference work in a parallel view).
+    d.tool(LINE);
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(0.5, 0.0, 0.7));
+    d.click(DVec3::new(1.5, 0.0, 1.3));
+    key(&mut d, Key::Escape);
+    let m = d.s.model();
+    assert_eq!(m.edge_count(), 1);
+    let (lo, hi) = m.bbox().expect("a line");
+    assert!(lo.distance(DVec3::new(0.5, 0.0, 0.7)) < 1e-6, "{lo:?}");
+    assert!(hi.distance(DVec3::new(1.5, 0.0, 1.3)) < 1e-6, "{hi:?}");
+    act(&mut d, "cam.persp");
+    assert!(!d.s.lens().parallel);
+    act(&mut d, "cam.v.top");
+    assert!(d.s.camera().forward().z < -0.999);
+}
+
+#[test]
+fn field_of_view_is_typed_with_the_zoom_tool() {
+    let mut d = Driver::empty();
+    act(&mut d, "cam.fov");
+    assert_eq!(d.s.tool(), prism_tools::session::ZOOM);
+    assert_eq!(d.s.measurement().0, "Field of View");
+    assert!(d.s.accepts_char('5'));
+    d.typed("50");
+    assert!((d.s.lens().fov - 50.0).abs() < 1e-12);
+    d.typed("500deg");
+    assert_eq!(
+        d.s.lens().fov,
+        prism_view::camera::FOV_MAX_DEG,
+        "kept in range"
+    );
+}
+
+#[test]
+fn zoom_selection_and_zoom_window_fit_what_is_asked() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 0.5, 0.5);
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    let far = d.s.camera().distance();
+    act(&mut d, "cam.zoomsel");
+    let cam = d.s.camera();
+    assert!(cam.distance() < far, "closer to the small square");
+    assert!(cam.target.distance(DVec3::new(0.25, 0.25, 0.0)) < 1e-9);
+    // Zoom Window: a box a quarter of the view wide brings the view four
+    // times closer to the box's middle, and Esc goes back to Select.
+    act(&mut d, "edit.desel");
+    d.tool(prism_tools::session::WINDOW);
+    let before = d.s.camera().distance();
+    drag_px(&mut d, DVec2::new(400.0, 300.0), DVec2::new(650.0, 400.0));
+    let after = d.s.camera().distance();
+    assert!((after / before - 0.25).abs() < 1e-6, "{}", after / before);
+    key(&mut d, Key::Escape);
+    assert_eq!(d.s.tool(), SELECT);
+}
+
+#[test]
+fn look_around_and_walk_by_dragging() {
+    let mut d = Driver::empty();
+    let start = d.s.camera();
+    d.tool(prism_tools::session::LOOK);
+    drag_px(&mut d, DVec2::new(500.0, 350.0), DVec2::new(560.0, 350.0));
+    let looked = d.s.camera();
+    assert_eq!(looked.eye, start.eye, "it turns about the eye");
+    assert!((looked.forward() - start.forward()).length() > 1e-3);
+    d.tool(prism_tools::session::WALK);
+    drag_px(&mut d, DVec2::new(500.0, 400.0), DVec2::new(500.0, 300.0));
+    let walked = d.s.camera();
+    assert!(
+        (walked.eye.z - looked.eye.z).abs() < 1e-9,
+        "the height is kept"
+    );
+    assert!(walked.eye.distance(looked.eye) > 1e-3, "it went forward");
+}
