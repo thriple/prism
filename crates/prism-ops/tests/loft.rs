@@ -295,3 +295,20 @@ fn a_curve_turned_about_a_line_makes_a_vase() {
     let all = all_edges(&m);
     assert_eq!(loft::revolve(&mut m, &all).err(), Some(loft::TOUCHES_AXIS));
 }
+
+/// Three arcs round a box's corner (the owner's test, 2026-11-13) are a
+/// boundary: Loft says so and points to Patch instead of a pinch.
+#[test]
+fn a_ring_of_curves_is_not_lofted_and_says_why() {
+    use std::f64::consts::FRAC_PI_2;
+    let mut m = Model::new();
+    add_arc(&mut m, DVec3::ZERO, DVec3::Z, 1.0, DVec3::X, FRAC_PI_2);
+    add_arc(&mut m, DVec3::ZERO, DVec3::X, 1.0, DVec3::Y, FRAC_PI_2);
+    add_arc(&mut m, DVec3::ZERO, DVec3::Y, 1.0, DVec3::Z, FRAC_PI_2);
+    for f in m.faces().map(|(id, _)| id).collect::<Vec<_>>() {
+        m.remove_face(f);
+    }
+    let was = m.clone();
+    assert_eq!(loft_all(&mut m).err(), Some(loft::RING));
+    assert_eq!(m, was);
+}

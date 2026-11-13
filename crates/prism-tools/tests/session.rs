@@ -4754,3 +4754,38 @@ fn freehand_on_a_wall_stays_flat_on_it() {
     );
     valid(&d);
 }
+
+/// The owner's arc (2026-11-13): started on a box's top edge and ended at a
+/// bottom corner, the arc lies on the side face that holds both, not on
+/// the top face the first click was over.
+#[test]
+fn a_two_point_arc_turns_to_the_face_holding_both_ends() {
+    use prism_tools::session::ARC;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.hover(DVec3::new(2.0, 2.0, 0.5));
+    d.typed("4");
+    for start in [DVec3::new(0.0, 0.0, 4.0), DVec3::new(2.0, 0.0, 4.0)] {
+        d.tool(ARC);
+        d.click(start);
+        d.click(DVec3::new(4.0, 0.0, 0.0));
+        // The bulge, on the front face (y = 0).
+        d.click(DVec3::new(3.2, 0.0, 3.0));
+        let m = d.s.model();
+        let arc = m
+            .edges()
+            .find_map(|(_, e)| match e.curve {
+                prism_geom::Curve::Arc { centre, axis, .. } => Some((centre, axis)),
+                _ => None,
+            })
+            .expect("an arc");
+        assert!(arc.1.y.abs() > 0.999, "{start} {arc:?}");
+        assert!(arc.0.y.abs() < 1e-9, "{start} {arc:?}");
+        assert!(prism_ops::vertex_at(m, start).is_some());
+        assert!(prism_ops::vertex_at(m, DVec3::new(4.0, 0.0, 0.0)).is_some());
+        valid(&d);
+        undo(&mut d);
+    }
+}

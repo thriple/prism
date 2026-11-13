@@ -20,6 +20,7 @@ pub const TWO_CURVES: &str = "Select two or more curves (or lines or arcs) to lo
 pub const MIXED: &str =
     "Refused: open and closed curves cannot be lofted together. Select all open or all closed.";
 pub const NOT_ALIKE: &str = "Refused: closed curves need the same number of control points to be lofted (or use circles for all of them).";
+pub const RING: &str = "These curves join end to end in a ring: that is a boundary to fill, not sections to loft through. Use Draw > Surface > Patch (four sides for now).";
 pub const DEGENERATE: &str =
     "Refused: the curves touch or cross, so the surface would pinch to a point.";
 
@@ -398,6 +399,28 @@ pub fn lay(
     Ok(faces)
 }
 
+/// Whether three or more open curves join end to end in one ring (every
+/// end meets the end of exactly one other curve): a boundary, not sections.
+fn is_ring(list: &[Section], tol: f64) -> bool {
+    if list.len() < 3 || list.iter().any(|s| s.curve.is_closed()) {
+        return false;
+    }
+    let ends: Vec<DVec3> = list
+        .iter()
+        .flat_map(|s| {
+            let (a, b) = s.curve.domain();
+            [s.curve.eval(a), s.curve.eval(b)]
+        })
+        .collect();
+    ends.iter().enumerate().all(|(i, p)| {
+        ends.iter()
+            .enumerate()
+            .filter(|(j, q)| j / 2 != i / 2 && p.distance(**q) <= tol)
+            .count()
+            == 1
+    })
+}
+
 /// The model with a surface lofted through the curves the edges are on,
 /// and its faces; or why not.
 pub fn lofted(
@@ -407,6 +430,9 @@ pub fn lofted(
     let list = sections(model, edges);
     if list.len() < 2 {
         return Err(TWO_CURVES);
+    }
+    if is_ring(&list, model.tol().dist * 10.0) {
+        return Err(RING);
     }
     let list = arranged(list);
     let closed = list[0].curve.is_closed();

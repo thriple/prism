@@ -3296,7 +3296,25 @@ Brief 33, part 2, built 2026-11-13.
   the menu's check mark on Perspective / Parallel; the measurement box
   showing the eye height in Walk.
 
-## Everyday Commands (part 3): drawing and windows
+## Owner test, 2026-11-13: an arc's plane, Loft on a ring, Patch with arcs
+From the owner's recording (a box with a corner cut off, three arcs round
+it, Loft refused).
+- **Arc plane (bug, fixed):** a 2- or 3-point arc kept the plane of its
+  first click, so an arc started on a top edge and ended at a bottom
+  corner was flattened onto the top face. Now the second click goes where
+  it snaps, and the plane turns to hold both clicks: the flat face that
+  holds them (the one under the cursor, else the one most facing the
+  view), else the first plane turned to the chord. An arrow's plane is
+  kept. Test `a_two_point_arc_turns_to_the_face_holding_both_ends` (fails
+  without the fix).
+- **Loft on a ring:** curves joined end to end in a ring are a boundary,
+  not sections; Loft now says so and points to Patch (`loft::RING`)
+  instead of "would pinch".
+- **Patch takes arcs:** the Coons patch is blended in homogeneous
+  coordinates, so weighted curves (arcs) are sides exactly.
+- **Still missing for the owner's case:** a three-sided patch (a rounded
+  box corner). Freeform faces are four-sided; see the Loft tool request.
+
 Brief 33, part 3, built 2026-11-13 (`session/draw.rs`, `guides.rs`,
 `prefs.rs`, `chrome/prefs.rs`, `chrome/hints.rs`).
 - **Rotated Rectangle:** click a corner, click the next (the first side,

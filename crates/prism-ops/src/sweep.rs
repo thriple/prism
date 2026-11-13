@@ -24,8 +24,6 @@ pub const TWO_FOR_SWEEP: &str =
 pub const BOTH_CLOSED: &str =
     "Refused: two closed curves cannot be swept. One must be open (the path).";
 pub const FOUR_FOR_PATCH: &str = "Select four curves joined end to end in a ring to patch (three-sided patches are not built yet).";
-pub const PATCH_ARCS: &str =
-    "Refused: Patch works with lines and freeform curves, not arcs, for now.";
 
 /// The values of a curve's parameter where the edges on it have vertices,
 /// with its two ends, in order.
@@ -200,15 +198,28 @@ fn coons(bottom: &Nurbs, right: &Nurbs, top: &Nurbs, left: &Nurbs) -> Option<Nur
     let (b, t, l, r) = (&bt[0], &bt[1], &lr[0], &lr[1]);
     let (gu, gv) = (greville(b), greville(l));
     let (nu, nv) = (gu.len(), gv.len());
-    let (p00, p10) = (b.points()[0], b.points()[nu - 1]);
-    let (p01, p11) = (t.points()[0], t.points()[nu - 1]);
+    // Blended in homogeneous coordinates (each point times its weight), so
+    // arcs and other weighted curves are kept exactly along all four sides.
+    let h = |c: &Nurbs, i: usize| {
+        let w = c.weights()[i];
+        (c.points()[i] * w, w)
+    };
+    let lerp = |a: (DVec3, f64), b: (DVec3, f64), t: f64| (a.0.lerp(b.0, t), a.1 + (b.1 - a.1) * t);
+    let (p00, p10) = (h(b, 0), h(b, nu - 1));
+    let (p01, p11) = (h(t, 0), h(t, nu - 1));
     let mut points = Vec::with_capacity(nu * nv);
+    let mut weights = Vec::with_capacity(nu * nv);
     for (i, x) in gu.iter().enumerate() {
         for (j, y) in gv.iter().enumerate() {
-            let across = b.points()[i].lerp(t.points()[i], *y);
-            let along = l.points()[j].lerp(r.points()[j], *x);
-            let flat = p00.lerp(p10, *x).lerp(p01.lerp(p11, *x), *y);
-            points.push(across + along - flat);
+            let across = lerp(h(b, i), h(t, i), *y);
+            let along = lerp(h(l, j), h(r, j), *x);
+            let flat = lerp(lerp(p00, p10, *x), lerp(p01, p11, *x), *y);
+            let w = across.1 + along.1 - flat.1;
+            if w.is_nan() || w <= 1e-9 {
+                return None;
+            }
+            points.push((across.0 + along.0 - flat.0) / w);
+            weights.push(w);
         }
     }
     NurbsSurface::new(
@@ -216,7 +227,7 @@ fn coons(bottom: &Nurbs, right: &Nurbs, top: &Nurbs, left: &Nurbs) -> Option<Nur
         [b.knots().to_vec(), l.knots().to_vec()],
         [nu, nv],
         points,
-        vec![1.0; nu * nv],
+        weights,
         [false, false],
     )
 }
@@ -230,12 +241,6 @@ pub fn patched(
     let mut list = sections(model, edges);
     if list.len() != 4 || list.iter().any(|s| s.curve.is_closed()) {
         return Err(FOUR_FOR_PATCH);
-    }
-    if list
-        .iter()
-        .any(|s| s.curve.weights().iter().any(|w| (*w - 1.0).abs() > 1e-12))
-    {
-        return Err(PATCH_ARCS);
     }
     let tol = model.tol().dist * 10.0;
     // Round the ring: each next curve starts where the last one ended.

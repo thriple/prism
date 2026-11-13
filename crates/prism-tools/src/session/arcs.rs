@@ -1,11 +1,15 @@
 //! The Arc tools (brief 24, step 3a): 2-point, 3-point, centre and pie.
 //! The plane comes from the first click, as for Rectangle and Circle; later
-//! clicks and the cursor are put on it.
+//! clicks and the cursor are put on it. A 2- or 3-point arc's second click
+//! may snap off that plane: the plane then turns to hold both (the face
+//! that holds them, else the first plane turned to the chord), unless an
+//! arrow picked the plane.
 
 use std::f64::consts::{PI, TAU};
 
 use prism_doc::Command;
 use prism_geom::{ArcSpec, Curve, arc_bulge, arc_through, bulge_for_radius};
+use prism_infer::Kind;
 use prism_math::{DVec2, DVec3};
 use prism_view::View;
 use prism_view::overlay::{Label, Line, Overlay};
@@ -81,6 +85,14 @@ impl Session {
                     return;
                 }
                 op.pts.push(op.at);
+                // The first two clicks of a 2- or 3-point arc fix its plane.
+                // (An arrow's plane is kept.)
+                if op.pts.len() == 2
+                    && !by_centre(&self.tool)
+                    && self.lock == prism_infer::Lock::None
+                {
+                    op.normal = self.chord_plane(op.pts[0], op.pts[1], op.normal);
+                }
                 if op.pts.len() == 3 {
                     if let Some(c) = self.arc_command(&op) {
                         self.commit_arc(c);
@@ -103,6 +115,15 @@ impl Session {
             return;
         };
         op.at = plane_point(&self.scene, view, s, i, op.pts[0], op.normal);
+        // The end of a 2-point arc, and the 3-point arc's later points, go
+        // where they snap even off the first plane: the plane then turns to
+        // hold them (`chord_plane`).
+        let snapped = !matches!(i.kind, Kind::OnFace | Kind::OnGround | Kind::Free);
+        let locked = self.lock != prism_infer::Lock::None;
+        if snapped && !locked && !by_centre(&self.tool) && (op.pts.len() == 1 || self.tool == ARC3)
+        {
+            op.at = i.point;
+        }
         if by_centre(&self.tool) && op.pts.len() == 2 {
             let (c, a) = (op.pts[0], op.pts[1]);
             let u = (a - c).normalize_or_zero();
@@ -192,6 +213,54 @@ impl Session {
                 })
             }
         }
+    }
+
+    /// A plane holding the chord `a`–`b`: `normal`'s, if both lie on it;
+    /// else a flat face that holds both (the one under the cursor first,
+    /// then the one most facing the view); else `normal` turned square to
+    /// the chord.
+    fn chord_plane(&self, a: DVec3, b: DVec3, normal: DVec3) -> DVec3 {
+        let tol = self.scene.tol.dist * 10.0;
+        let on = |p: DVec3, o: DVec3, n: DVec3| (p - o).dot(n).abs() <= tol;
+        if on(b, a, normal) {
+            return normal;
+        }
+        let near = |p: DVec3, f: &prism_view::scene::SceneFace| {
+            p.cmpge(f.lo - DVec3::splat(tol)).all() && p.cmple(f.hi + DVec3::splat(tol)).all()
+        };
+        let view = self.view();
+        let under = self
+            .cursor
+            .and_then(|c| {
+                let (o, d) = view.ray(c);
+                self.scene.ray_face(o, d)
+            })
+            .map(|(f, _)| f);
+        let holds = self
+            .scene
+            .faces
+            .iter()
+            .filter(|f| f.curved.is_none())
+            .filter(|f| on(a, f.origin, f.normal) && on(b, f.origin, f.normal))
+            .filter(|f| near(a, f) && near(b, f))
+            .max_by(|f, g| {
+                let score = |f: &prism_view::scene::SceneFace| {
+                    (Some(f.id) == under, f.normal.dot(view.f).abs())
+                };
+                let (x, y) = (score(f), score(g));
+                x.0.cmp(&y.0).then(x.1.total_cmp(&y.1))
+            });
+        if let Some(f) = holds {
+            return f.normal;
+        }
+        let s = (b - a).normalize_or_zero();
+        for c in [normal, view.f, DVec3::Z, DVec3::X] {
+            let q = c - s * c.dot(s);
+            if q.length() > 1e-6 {
+                return q.normalize();
+            }
+        }
+        normal
     }
 
     /// Round `corner` with `radius`, else the last typed radius, else a

@@ -145,7 +145,8 @@ fn a_ring_of_four_curves_is_patched_exactly_along_all_four() {
             assert!(near < 1e-9, "{near}");
         }
     }
-    // Three curves, or an arc among them, are refused.
+    // Three curves are refused; an arc as the fourth side is patched,
+    // exactly along the arc.
     let mut m = Model::new();
     for c in &sides {
         add_spline(&mut m, c);
@@ -164,5 +165,20 @@ fn a_ring_of_four_curves_is_patched_exactly_along_all_four() {
         std::f64::consts::PI,
     );
     let edges = all(&m);
-    assert_eq!(sweep::patch(&mut m, &edges).err(), Some(sweep::PATCH_ARCS));
+    let faces = sweep::patch(&mut m, &edges).expect("an arc is a side");
+    clean(&m);
+    for i in 0..=10 {
+        let a = std::f64::consts::PI * f64::from(i) / 10.0;
+        // The half circle from (0, 3, 0) about X through (0, 1.5, ±1.5).
+        let q = DVec3::new(0.0, 1.5 + 1.5 * a.cos(), 1.5 * a.sin());
+        let q2 = DVec3::new(0.0, 1.5 + 1.5 * a.cos(), -1.5 * a.sin());
+        let near = faces
+            .iter()
+            .map(|f| {
+                let s = surface(&m, *f);
+                s.distance(q).abs().min(s.distance(q2).abs())
+            })
+            .fold(f64::INFINITY, f64::min);
+        assert!(near < 1e-9, "{near}");
+    }
 }
