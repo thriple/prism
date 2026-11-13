@@ -5,6 +5,7 @@
 mod components;
 mod fillet;
 mod hints;
+mod loft;
 mod materials;
 mod panels;
 pub use materials::image_loaded;
@@ -286,7 +287,12 @@ impl Chrome {
     /// Whether the Outliner, Entity Info or Tags is open (their data is
     /// only gathered then).
     pub fn panels_open(&self) -> bool {
-        self.panels.any_open() || self.fillet_shown()
+        self.panels.any_open() || self.fillet_shown() || self.loft_shown()
+    }
+
+    /// Whether the Loft window shows: open, and only with its tool.
+    pub(crate) fn loft_shown(&self) -> bool {
+        self.panels.loft && self.active_tool == prism_tools::session::LOFT
     }
 
     /// Whether the Fillet window shows: open, and only with its tool
@@ -400,6 +406,11 @@ impl Chrome {
                     self.panels.fillet = true;
                     self.panels.folded.remove("Fillet");
                 }
+                // So does the Loft tool (brief 34).
+                if id == prism_tools::session::LOFT {
+                    self.panels.loft = true;
+                    self.panels.folded.remove("Loft");
+                }
             }
             Run::Event => {
                 if a.check == Check::Toggle && !self.toggles.remove(id) {
@@ -473,7 +484,10 @@ impl Chrome {
     /// Whether a window is docked in the side column. These windows do
     /// not take the keyboard or dim the viewport.
     pub(crate) fn side_open(&self) -> bool {
-        self.components.is_some() || self.panels.any_open() || self.fillet_shown()
+        self.components.is_some()
+            || self.panels.any_open()
+            || self.fillet_shown()
+            || self.loft_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -793,5 +807,16 @@ mod tests {
         assert!(!c.fillet_shown() && !c.side_open(), "not with another tool");
         c.run("tool.fillet", Source::Key);
         assert!(c.fillet_shown());
+    }
+
+    /// The Loft tool brings its window the same way (brief 34).
+    #[test]
+    fn the_loft_tool_opens_its_window_only_while_active() {
+        let mut c = chrome();
+        assert!(!c.loft_shown() && !c.side_open());
+        c.run("tool.loft", Source::Key);
+        assert!(c.loft_shown() && c.side_open() && c.panels_open());
+        c.run("tool.select", Source::Key);
+        assert!(!c.loft_shown() && !c.side_open());
     }
 }

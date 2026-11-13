@@ -89,6 +89,12 @@ pub enum Command {
     Patch {
         edges: std::collections::BTreeSet<prism_topo::EdgeId>,
     },
+    /// The Loft tool's surface: sides picked by hand (each a run of edges,
+    /// in the order picked) filled as a ring or lofted through (brief 34).
+    LoftSides {
+        sides: Vec<Vec<prism_topo::EdgeId>>,
+        preset: prism_ops::sides::Preset,
+    },
     /// Round the corner at `corner` with an arc of `radius` (the Arc tools'
     /// double-click).
     Fillet {
@@ -445,6 +451,7 @@ impl Command {
             Command::Revolve { .. } => "Revolve",
             Command::Sweep { .. } => "Sweep",
             Command::Patch { .. } => "Patch",
+            Command::LoftSides { .. } => "Loft",
             Command::AddCagePoints { .. } => "Add Control Points",
             Command::Polygon { .. } => "Polygon",
             Command::Arc { pie: true, .. } => "Pie",
@@ -868,6 +875,9 @@ impl Command {
             Command::Revolve { edges } => prism_ops::loft::revolved(m, edges).err(),
             Command::Sweep { edges } => prism_ops::sweep::swept(m, edges).err(),
             Command::Patch { edges } => prism_ops::sweep::patched(m, edges).err(),
+            Command::LoftSides { sides, preset } => {
+                prism_ops::sides::made_from(m, sides, *preset).err()
+            }
             Command::PushPull { face, distance, .. } => {
                 prism_ops::pushpull::refusal(m, *face, *distance)
             }
@@ -949,6 +959,9 @@ impl Command {
             }
             Command::Patch { edges } => {
                 let _ = prism_ops::sweep::patch(m, edges);
+            }
+            Command::LoftSides { sides, preset } => {
+                let _ = prism_ops::sides::make(m, sides, *preset);
             }
             Command::Fillet { corner, radius } => {
                 prism_ops::fillet::fillet(m, *corner, *radius);

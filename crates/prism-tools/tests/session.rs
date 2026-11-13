@@ -4995,3 +4995,245 @@ fn over_the_time_budget_spacing_goes_then_everything_until_the_next_move() {
     d.click(DVec3::new(11.0, 0.0, 0.0));
     assert_eq!(d.s.smart_level(), Some(Level::Full));
 }
+
+// ---------- The Loft tool (brief 34) ----------
+
+/// The owner's test (2026-11-13): a 4 m box with three quarter circles
+/// drawn round its corner at (4, 0, 4), one on each face, seen from that
+/// side.
+fn arcs_round_a_corner() -> Driver {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.hover(DVec3::new(2.0, 2.0, 0.5));
+    d.typed("4");
+    let mut m = d.s.model().clone();
+    let half = std::f64::consts::FRAC_PI_2;
+    for (centre, axis, start) in [
+        // On the top: from (3, 0, 4) to (4, 1, 4).
+        ([3.0, 1.0, 4.0], [0.0, 0.0, 1.0], [3.0, 0.0, 4.0]),
+        // On the side x = 4: from (4, 1, 4) to (4, 0, 3).
+        ([4.0, 1.0, 3.0], [1.0, 0.0, 0.0], [4.0, 1.0, 4.0]),
+        // On the front: from (4, 0, 3) to (3, 0, 4).
+        ([3.0, 0.0, 3.0], [0.0, -1.0, 0.0], [4.0, 0.0, 3.0]),
+    ] {
+        let (c, n, s) = (
+            DVec3::from_array(centre),
+            DVec3::from_array(axis),
+            DVec3::from_array(start),
+        );
+        prism_ops::add_arc(&mut m, c, n, 1.0, s, half);
+    }
+    // The corner cut away inside the arcs: its three edges go, and the
+    // faces between them.
+    let corner = prism_ops::vertex_at(&m, DVec3::new(4.0, 0.0, 4.0)).expect("the corner");
+    let sel = prism_ops::Selection {
+        edges: m
+            .edges()
+            .filter(|(_, e)| e.has(corner))
+            .map(|(id, _)| id)
+            .collect(),
+        ..Default::default()
+    };
+    prism_ops::remove(&mut m, &sel);
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(9.0, -5.0, 8.0),
+        target: DVec3::new(3.5, 0.5, 3.5),
+    });
+    d
+}
+
+/// The middle of the quarter circle about `centre` from `a` to `b`.
+fn arc_middle(centre: [f64; 3], a: [f64; 3], b: [f64; 3]) -> DVec3 {
+    let c = DVec3::from_array(centre);
+    let m = (DVec3::from_array(a) + DVec3::from_array(b)) / 2.0;
+    c + (m - c).normalize()
+}
+
+const TOP_ARC: ([f64; 3], [f64; 3], [f64; 3]) = ([3.0, 1.0, 4.0], [3.0, 0.0, 4.0], [4.0, 1.0, 4.0]);
+const SIDE_ARC: ([f64; 3], [f64; 3], [f64; 3]) =
+    ([4.0, 1.0, 3.0], [4.0, 1.0, 4.0], [4.0, 0.0, 3.0]);
+const FRONT_ARC: ([f64; 3], [f64; 3], [f64; 3]) =
+    ([3.0, 0.0, 3.0], [4.0, 0.0, 3.0], [3.0, 0.0, 4.0]);
+
+fn pick(d: &mut Driver, arc: ([f64; 3], [f64; 3], [f64; 3])) {
+    d.click(arc_middle(arc.0, arc.1, arc.2));
+}
+
+#[test]
+fn three_arcs_round_a_corner_fill_by_clicks_with_three_faces() {
+    use prism_tools::session::LOFT;
+    let mut d = arcs_round_a_corner();
+    let before = d.faces();
+    d.tool(LOFT);
+    pick(&mut d, TOP_ARC);
+    assert_eq!(d.s.loft_sides(), vec![d.s.loft_sides()[0].clone()]);
+    assert_eq!(
+        d.s.loft_sides()[0].len(),
+        1,
+        "the arc alone, not the box's edges"
+    );
+    key(&mut d, Key::Enter);
+    pick(&mut d, SIDE_ARC);
+    key(&mut d, Key::Enter);
+    assert!(
+        !d.s.loft_previewing(),
+        "two sides that touch make nothing yet"
+    );
+    pick(&mut d, FRONT_ARC);
+    assert_eq!(
+        d.s.loft_sides().len(),
+        3,
+        "the closing arc is taken as a side"
+    );
+    assert!(d.s.loft_previewing(), "the ring closes: a preview");
+    assert!(!d.s.overlay().lines.is_empty());
+    assert_eq!(d.faces(), before, "only a preview so far");
+    key(&mut d, Key::Enter);
+    assert_eq!(d.faces(), before + 3);
+    valid(&d);
+    // Three new faces meet at one point in the middle, near the sphere
+    // round the corner.
+    let m = d.s.model();
+    let freeform: Vec<_> = m
+        .faces()
+        .filter(|(_, f)| f.surface.patch().is_some())
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(freeform.len(), 3);
+    let centre = m
+        .vertices()
+        .find(|(v, _)| freeform.iter().all(|f| m.face(*f).unwrap().uses_vertex(*v)))
+        .map(|(_, p)| p)
+        .expect("a shared centre");
+    assert!(
+        centre.x > 3.3 && centre.z > 3.3 && centre.y < 0.7,
+        "{centre}"
+    );
+    // One undo takes it all away.
+    undo(&mut d);
+    assert_eq!(d.faces(), before);
+    valid(&d);
+}
+
+#[test]
+fn a_square_ring_is_one_patch_and_two_curves_loft() {
+    use prism_tools::session::LOFT;
+    let mut m = prism_topo::Model::new();
+    let sq = [
+        DVec3::ZERO,
+        DVec3::new(3.0, 0.0, 0.5),
+        DVec3::new(3.0, 3.0, 0.0),
+        DVec3::new(0.0, 3.0, 0.5),
+    ];
+    for i in 0..4 {
+        prism_ops::add_segment(&mut m, sq[i], sq[(i + 1) % 4]);
+    }
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(1.5, -6.0, 7.0),
+        target: DVec3::new(1.5, 1.5, 0.0),
+    });
+    d.tool(LOFT);
+    for i in 0..3 {
+        d.click(sq[i].lerp(sq[(i + 1) % 4], 0.5));
+        key(&mut d, Key::Enter);
+    }
+    // The last side closes the ring: the click takes it as a side.
+    d.click(sq[3].lerp(sq[0], 0.5));
+    let p = d.s.loft_panel().unwrap();
+    assert_eq!(p.sides, vec![1, 1, 1, 1]);
+    assert_eq!(p.makes.as_deref(), Some("Fill a ring of 4 sides"));
+    d.s.loft_input(prism_tools::session::LoftOp::Make);
+    assert_eq!(d.faces(), 1);
+    valid(&d);
+
+    // Two curves apart: a loft through them, straight with the preset,
+    // and the preset changes the last loft in place (one undo step).
+    let curve = |pts: &[[f64; 3]]| {
+        let pts: Vec<DVec3> = pts.iter().map(|p| DVec3::from_array(*p)).collect();
+        prism_geom::Nurbs::open(&pts, 3).unwrap()
+    };
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_spline(
+        &mut m,
+        &curve(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 0.0, -0.5],
+            [3.0, 0.0, 0.0],
+        ]),
+    );
+    prism_ops::add_spline(
+        &mut m,
+        &curve(&[
+            [0.0, 3.0, 0.5],
+            [1.0, 3.0, 1.5],
+            [2.0, 3.0, 0.5],
+            [3.0, 3.0, 0.5],
+        ]),
+    );
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(1.5, -6.0, 7.0),
+        target: DVec3::new(1.5, 1.5, 0.0),
+    });
+    d.tool(LOFT);
+    let on = |d: &Driver, y: f64| {
+        let m = d.s.model();
+        let (_, e) = m
+            .edges()
+            .find(|(_, e)| (m.vertex(e.a).y - y).abs() < 1e-9)
+            .unwrap();
+        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.4)
+    };
+    let p0 = on(&d, 0.0);
+    d.click(p0);
+    key(&mut d, Key::Enter);
+    let p1 = on(&d, 3.0);
+    d.click(p1);
+    assert_eq!(
+        d.s.loft_panel().unwrap().makes.as_deref(),
+        Some("Loft through 2 sections")
+    );
+    key(&mut d, Key::Enter);
+    key(&mut d, Key::Enter);
+    assert_eq!(d.faces(), 1);
+    d.s.loft_input(prism_tools::session::LoftOp::Rows(3));
+    assert_eq!(d.faces(), 3, "three rows, in place of the one");
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 0, "one undo step");
+}
+
+#[test]
+fn an_open_ring_shows_where_and_a_click_closes_it_and_esc_steps_back() {
+    use prism_tools::session::{LOFT, SELECT};
+    let mut d = arcs_round_a_corner();
+    let before = d.faces();
+    d.tool(LOFT);
+    pick(&mut d, TOP_ARC);
+    key(&mut d, Key::Enter);
+    pick(&mut d, SIDE_ARC);
+    key(&mut d, Key::Enter);
+    assert!(d.s.hint().contains("open"), "{}", d.s.hint());
+    let closing = d.s.loft_closing_edges().to_vec();
+    assert_eq!(closing.len(), 1, "the front arc closes it");
+    // Clicking the highlighted arc takes it as the third side.
+    pick(&mut d, FRONT_ARC);
+    assert_eq!(d.s.loft_sides().len(), 3);
+    assert!(d.s.loft_previewing());
+    // Esc steps back one side at a time, then leaves the tool.
+    key(&mut d, Key::Escape);
+    assert_eq!(d.s.loft_sides().len(), 2);
+    assert!(!d.s.loft_previewing());
+    key(&mut d, Key::Escape);
+    key(&mut d, Key::Escape);
+    assert!(d.s.loft_sides().is_empty());
+    assert_eq!(d.s.tool(), LOFT);
+    key(&mut d, Key::Escape);
+    assert_eq!(d.s.tool(), SELECT);
+    assert_eq!(d.faces(), before);
+}

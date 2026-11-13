@@ -768,6 +768,18 @@ mod tests {
         );
     }
 
+    /// Brief 34: the Loft tool is built, in Draw > Surface and on the dock.
+    #[test]
+    fn the_loft_tool_is_active() {
+        let reg = Registry::new();
+        let ctx = Context::default();
+        let a = reg.get("tool.loft").expect("tool.loft");
+        assert!(a.built() && reg.enabled("tool.loft", &ctx));
+        assert_eq!(a.run, Run::Tool);
+        assert!(a.menu_path.contains(&"Surface"), "{:?}", a.menu_path);
+        assert!(reg.dock().iter().any(|(_, ids)| ids.contains(&"tool.loft")));
+    }
+
     #[test]
     fn greyed_actions_cannot_run_and_say_why() {
         let reg = Registry::new();

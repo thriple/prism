@@ -740,6 +740,13 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "tool.loft",
+        name: "Loft Tool",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "surf.loft",
         name: "Loft",
         key: "",
@@ -1759,6 +1766,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Sub(
                 "Surface",
                 &[
+                    Item::Action("tool.loft"),
                     Item::Action("surf.loft"),
                     Item::Action("surf.revolve"),
                     Item::Action("surf.sweep"),
@@ -1996,6 +2004,7 @@ pub const DOCK: &[(&str, &[&str])] = &[
         &[
             "tool.prim",
             "surf.revolve",
+            "tool.loft",
             "surf.loft",
             "surf.sweep",
             "tool.shell",
@@ -2185,6 +2194,10 @@ pub const ICONS: &[(&str, &str)] = &[
     (
         "surf.revolve",
         "<path d=\"M12 3v18\" stroke-dasharray=\"2 2\"/><path d=\"M12 5c6 1 6 13 0 14\"/>",
+    ),
+    (
+        "tool.loft",
+        "<path d=\"M4 18c3-9 13-9 16 0\"/><path d=\"M4 18c4-3 12-3 16 0\" stroke-dasharray=\"2 2\"/><path d=\"M12 6v3\"/><circle cx=\"4\" cy=\"18\" r=\"1.4\"/><circle cx=\"20\" cy=\"18\" r=\"1.4\"/>",
     ),
     (
         "surf.loft",

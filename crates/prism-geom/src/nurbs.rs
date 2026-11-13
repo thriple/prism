@@ -653,6 +653,181 @@ impl Nurbs {
         Some(out)
     }
 
+    /// The part of an open curve from `t0` to `t1` (`t0` below `t1`, both
+    /// in the domain) as a curve of its own, exactly. None for a periodic
+    /// curve or an empty range.
+    pub fn between(&self, t0: f64, t1: f64) -> Option<Nurbs> {
+        let (lo, hi) = self.domain();
+        if self.periodic || t0.is_nan() || t1.is_nan() || t0 < lo || t1 > hi || t1 <= t0 {
+            return None;
+        }
+        let p = self.degree;
+        let mut c = self.clone();
+        for t in [t0, t1] {
+            if t > lo && t < hi {
+                for _ in c.multiplicity(t)..p {
+                    c = c.insert_knot(t)?;
+                }
+            }
+        }
+        // With `p` knots at a value, the curve passes through one control
+        // point there: at `t0` the one before the run's last `p` knots, at
+        // `t1` the one before the run's first.
+        let last0 = c.knots.iter().rposition(|k| *k == t0)?;
+        let first1 = c.knots.iter().position(|k| *k == t1)?;
+        let a = last0 + 1 - p;
+        let (i0, i1) = (a - 1, first1 - 1);
+        if i1 <= i0 {
+            return None;
+        }
+        let mut knots = vec![t0; p + 1];
+        knots.extend(c.knots[last0 + 1..first1].iter().copied());
+        knots.extend(std::iter::repeat_n(t1, p + 1));
+        Nurbs::new(
+            p,
+            knots,
+            c.points[i0..=i1].to_vec(),
+            c.weights[i0..=i1].to_vec(),
+            false,
+        )
+    }
+
+    /// The same open curve with weight 1 at both ends (so curves that
+    /// share an end agree there in homogeneous coordinates, as a Coons
+    /// patch needs). Exact: all weights are scaled, then the last span is
+    /// made a Bézier piece and reparametrised.
+    pub fn unit_ends(&self) -> Option<Nurbs> {
+        if self.periodic {
+            return None;
+        }
+        let mut c = self.clone();
+        let w0 = c.weights[0];
+        for w in &mut c.weights {
+            *w /= w0;
+        }
+        let p = c.degree;
+        let wl = c.weights[c.weights.len() - 1];
+        if (wl - 1.0).abs() <= 1e-15 {
+            return Some(c);
+        }
+        if let Some(t) = c.breaks().last().copied() {
+            for _ in c.multiplicity(t)..p {
+                c = c.insert_knot(t)?;
+            }
+        }
+        let wl = c.weights[c.weights.len() - 1];
+        let rho = (1.0 / wl).powf(1.0 / p as f64);
+        let n = c.weights.len();
+        for k in 0..=p {
+            c.weights[n - 1 - p + k] *= rho.powi(k as i32);
+        }
+        c.weights[n - 1] = 1.0;
+        Some(c)
+    }
+
+    /// The same open curve with weight `w` at its end, the rest of it
+    /// untouched: the last span is made a Bézier piece of its own (split
+    /// first if it is the only one) and reparametrised. Exact.
+    pub fn reweighted_end(&self, w: f64) -> Option<Nurbs> {
+        if self.periodic || w.is_nan() || w <= 0.0 {
+            return None;
+        }
+        let mut c = self.clone();
+        let p = c.degree;
+        if c.breaks().is_empty() {
+            let (lo, hi) = c.domain();
+            c = c.insert_knot((lo + hi) / 2.0)?;
+        }
+        if let Some(t) = c.breaks().last().copied() {
+            for _ in c.multiplicity(t)..p {
+                c = c.insert_knot(t)?;
+            }
+        }
+        let n = c.weights.len();
+        let rho = (w / c.weights[n - 1]).powf(1.0 / p as f64);
+        for k in 0..=p {
+            c.weights[n - 1 - p + k] *= rho.powi(k as i32);
+        }
+        c.weights[n - 1] = w;
+        Some(c)
+    }
+
+    /// The same curve with every weight times `k` (the same shape).
+    pub fn scaled_weights(&self, k: f64) -> Nurbs {
+        let mut c = self.clone();
+        for w in &mut c.weights {
+            *w *= k;
+        }
+        c
+    }
+
+    /// Open curves joined end to end (each starts where the one before
+    /// ends) as one curve, exactly: raised to one degree, with a corner
+    /// allowed at each join. Each takes a share of the parameter by the
+    /// length of its control polygon. None if they do not meet end to end.
+    pub fn joined(curves: &[Nurbs]) -> Option<Nurbs> {
+        let first = curves.first()?;
+        if curves.len() == 1 {
+            return Some(first.normalized());
+        }
+        if curves.iter().any(|c| c.periodic) {
+            return None;
+        }
+        let degree = curves.iter().map(|c| c.degree).max()?;
+        let mut parts = Vec::with_capacity(curves.len());
+        for c in curves {
+            let mut c = c.normalized();
+            while c.degree < degree {
+                c = c.elevated()?;
+            }
+            parts.push(c);
+        }
+        let size = |c: &Nurbs| {
+            c.points
+                .windows(2)
+                .map(|w| w[0].distance(w[1]))
+                .sum::<f64>()
+                .max(1e-300)
+        };
+        let total: f64 = parts.iter().map(size).sum();
+        let scale = parts
+            .iter()
+            .map(|c| {
+                c.points
+                    .iter()
+                    .fold(0.0f64, |m, p| m.max(p.abs().max_element()))
+            })
+            .fold(1.0f64, f64::max);
+        let mut knots = vec![0.0; degree + 1];
+        let mut points = parts[0].points.clone();
+        let mut weights = parts[0].weights.clone();
+        let mut at = 0.0;
+        for (k, c) in parts.iter().enumerate() {
+            let len = size(c) / total;
+            if k > 0 {
+                let (prev, start) = (points[points.len() - 1], c.points[0]);
+                if prev.distance(start) > scale * 1e-7 {
+                    return None;
+                }
+                // The same weight at the shared point (a rational curve's
+                // shape does not change when all its weights are scaled).
+                let f = weights[weights.len() - 1] / c.weights[0];
+                points.extend(c.points[1..].iter().copied());
+                weights.extend(c.weights[1..].iter().map(|w| w * f));
+                knots.extend(std::iter::repeat_n(at, degree));
+            }
+            let n = c.knots.len();
+            knots.extend(
+                c.knots[degree + 1..n - degree - 1]
+                    .iter()
+                    .map(|t| at + t * len),
+            );
+            at += len;
+        }
+        knots.extend(std::iter::repeat_n(1.0, degree + 1));
+        Nurbs::new(degree, knots, points, weights, false)
+    }
+
     /// The number of knot spans of non-zero length in the domain.
     pub fn spans(&self) -> usize {
         let (p, n) = (self.degree, self.points.len());
@@ -879,6 +1054,92 @@ mod tests {
         }
         assert_eq!(c.eval(0.0), DVec3::X);
         assert_eq!(c.eval(1.0), DVec3::Y);
+    }
+
+    #[test]
+    fn a_part_of_a_curve_is_the_same_shape_and_parts_join_back() {
+        let pts = [
+            DVec3::ZERO,
+            DVec3::new(1.0, 2.0, 0.0),
+            DVec3::new(3.0, -1.0, 1.0),
+            DVec3::new(4.0, 0.5, 0.0),
+            DVec3::new(6.0, 0.0, 2.0),
+        ];
+        let arc = Nurbs::arc(DVec3::ZERO, DVec3::Z, DVec3::X, 4.0).unwrap();
+        for c in [Nurbs::open(&pts, 3).unwrap(), quarter(), arc] {
+            let (lo, hi) = c.domain();
+            let m = lo + (hi - lo) * 0.41;
+            let a = c.between(lo, m).unwrap();
+            let b = c.between(m, hi).unwrap();
+            let mid = c
+                .between(lo + (hi - lo) * 0.2, lo + (hi - lo) * 0.7)
+                .unwrap();
+            for i in 0..=40 {
+                let s = i as f64 / 40.0;
+                assert!(
+                    a.eval(lo + (m - lo) * s)
+                        .distance(c.eval(lo + (m - lo) * s))
+                        < 1e-12
+                );
+                assert!(b.eval(m + (hi - m) * s).distance(c.eval(m + (hi - m) * s)) < 1e-12);
+                let t = lo + (hi - lo) * (0.2 + 0.5 * s);
+                assert!(mid.eval(t).distance(c.eval(t)) < 1e-12);
+            }
+            // Joined back: every point of the whole is on the join.
+            let j = Nurbs::joined(&[a, b]).unwrap();
+            assert!(j.eval(0.0).distance(c.eval(lo)) < 1e-12);
+            assert!(j.eval(1.0).distance(c.eval(hi)) < 1e-12);
+            for i in 0..=40 {
+                let p = c.eval(lo + (hi - lo) * i as f64 / 40.0);
+                let t = j.closest(p, 0.0, 1.0);
+                assert!(j.eval(t).distance(p) < 1e-9);
+            }
+        }
+        assert!(quarter().between(0.5, 0.5).is_none());
+        // Weight 1 at both ends, the same shape.
+        let half = quarter().between(0.0, 0.3).unwrap();
+        assert!(half.weights()[half.weights().len() - 1] != 1.0);
+        let u = half.unit_ends().unwrap();
+        assert_eq!(
+            (u.weights()[0], u.weights()[u.weights().len() - 1]),
+            (1.0, 1.0)
+        );
+        let r = half.reweighted_end(1.0).unwrap();
+        assert_eq!(r.weights()[r.weights().len() - 1], 1.0);
+        for i in 0..=20 {
+            let t = i as f64 / 20.0 * 0.3;
+            let p = r.eval(t);
+            assert!((p.length() - 1.0).abs() < 1e-14);
+            if t < 0.15 {
+                assert!(
+                    p.distance(half.eval(t)) < 1e-14,
+                    "the first span is untouched"
+                );
+            }
+        }
+        for i in 0..=20 {
+            let p = u.eval(i as f64 / 20.0 * 0.3);
+            assert!((p.length() - 1.0).abs() < 1e-14);
+            assert!(half.eval(half.closest(p, 0.0, 0.3)).distance(p) < 1e-12);
+        }
+    }
+
+    #[test]
+    fn a_line_and_an_arc_join_with_a_corner() {
+        let line = Nurbs::line(DVec3::new(-2.0, 1.0, 0.0), DVec3::Y).unwrap();
+        let arc = Nurbs::arc(DVec3::ZERO, DVec3::Z, DVec3::Y, 1.0).unwrap();
+        let j = Nurbs::joined(&[line.clone(), arc.clone()]).unwrap();
+        assert_eq!(j.degree(), 2);
+        assert!(j.eval(0.0).distance(line.eval(0.0)) < 1e-12);
+        assert!(j.eval(1.0).distance(arc.eval(1.0)) < 1e-12);
+        // Each part keeps its own parameter, scaled.
+        let k = j.knots()[3];
+        for i in 0..=20 {
+            let s = i as f64 / 20.0;
+            assert!(j.eval(k + (1.0 - k) * s).distance(arc.eval(s)) < 1e-12);
+            assert!(j.eval(k * s).distance(line.eval(s)) < 1e-12);
+        }
+        assert!(Nurbs::joined(&[arc, line]).is_none(), "they do not meet");
     }
 
     #[test]

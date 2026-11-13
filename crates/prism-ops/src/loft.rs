@@ -276,7 +276,48 @@ pub fn lay(
     if closed && us.len() == 2 {
         us.insert(1, (u0 + u1) / 2.0);
     }
-    let (nu, nv) = (us.len(), rows.len());
+    let vs: Vec<f64> = rows.iter().map(|r| r.0).collect();
+    grid_faces(model, s, row_curves, &us, &vs, closed, flipped, &tol)
+}
+
+/// Lay `surface` (not closed) into the model as freeform faces cut along
+/// at each of `us` and across at each of `vs` (both rising, ends
+/// included), as [`lay`] does.
+pub(crate) fn lay_at(
+    model: &mut Model,
+    surface: NurbsSurface,
+    us: Vec<f64>,
+    vs: &[f64],
+    flipped: bool,
+) -> Result<Vec<FaceId>, &'static str> {
+    let s = Arc::new(surface);
+    let mut corners: Vec<DVec3> = s.points().to_vec();
+    corners.extend(model.vertices().map(|(_, p)| p));
+    let tol = tol_with(model, &corners);
+    let row_curves: Vec<Arc<Nurbs>> = vs
+        .iter()
+        .map(|v| s.iso(0, *v).map(Arc::new))
+        .collect::<Option<_>>()
+        .ok_or(DEGENERATE)?;
+    grid_faces(model, s, row_curves, &us, vs, false, flipped, &tol)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn grid_faces(
+    model: &mut Model,
+    s: Arc<NurbsSurface>,
+    row_curves: Vec<Arc<Nurbs>>,
+    us: &[f64],
+    vs: &[f64],
+    closed: bool,
+    flipped: bool,
+    tol: &Tol,
+) -> Result<Vec<FaceId>, &'static str> {
+    if us.len() < 2 || vs.len() < 2 {
+        return Err(DEGENERATE);
+    }
+    let tol = *tol;
+    let (nu, nv) = (us.len(), vs.len());
     // The grid's vertices.
     let mut grid: Vec<Vec<VertexId>> = Vec::with_capacity(nu);
     for (i, u) in us.iter().enumerate() {
@@ -285,9 +326,9 @@ pub fn lay(
             grid.push(first);
             continue;
         }
-        let col = rows
+        let col = vs
             .iter()
-            .map(|(v, _)| insert_point(model, s.eval(*u, *v), &tol))
+            .map(|v| insert_point(model, s.eval(*u, *v), &tol))
             .collect();
         grid.push(col);
     }
@@ -340,8 +381,8 @@ pub fn lay(
         for j in 0..nv - 1 {
             let side = Spline {
                 curve: c.clone(),
-                t0: rows[j].0,
-                t1: rows[j + 1].0,
+                t0: vs[j],
+                t1: vs[j + 1],
             };
             col.push(edge(model, grid[i][j], grid[i][j + 1], side, inside)?);
         }
@@ -350,7 +391,7 @@ pub fn lay(
     let mut faces = Vec::new();
     for i in 0..nu - 1 {
         for j in 0..nv - 1 {
-            let v = (rows[j].0, rows[j + 1].0);
+            let v = (vs[j], vs[j + 1]);
             let (patch, outer, edges) = if flipped {
                 (
                     Patch {

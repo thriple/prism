@@ -32,6 +32,8 @@ pub enum PanelOp {
     /// The Fillet window: its kind, or its size as typed.
     Round(prism_tools::session::RoundOp),
     RoundSize(String),
+    /// The Loft window.
+    Loft(prism_tools::session::LoftOp),
 }
 
 /// The panels' data, set by the app each frame.
@@ -52,6 +54,8 @@ pub struct PanelData {
     pub default_colour: [u8; 4],
     /// The Fillet window (while its tool is active).
     pub round: Option<prism_tools::session::RoundPanel>,
+    /// The Loft window (while its tool is active).
+    pub loft: Option<prism_tools::session::LoftPanel>,
 }
 
 /// Which panels are open, and text being edited.
@@ -80,6 +84,8 @@ pub struct Panels {
     /// while it is being typed in.
     pub fillet: bool,
     pub fillet_size: Option<String>,
+    /// The Loft window (shown only with its tool).
+    pub loft: bool,
     /// Model Health's problems not drawn in the model (its switch off).
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
@@ -124,6 +130,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     ui.set_width(rect.width());
                     if chrome.active_tool == prism_tools::session::FILLET {
                         super::fillet::card(ui, &mut p, &data, &mut ops);
+                    }
+                    if chrome.active_tool == prism_tools::session::LOFT {
+                        super::loft::card(ui, &mut p, &data, &mut ops);
                     }
                     super::hints::card(chrome, ui, &mut p);
                     info(ui, &mut p, &data, &mut ops);

@@ -51,7 +51,17 @@ impl Outlines {
             let idx = &m.indices[f.tris.start as usize..f.tris.end as usize];
             for t in idx.as_chunks::<3>().0 {
                 let p = [0, 1, 2].map(|k| m.positions[t[k] as usize]);
-                let n = p.map(|q| c.surface.normal_at(q));
+                // The mesh's own normals (the surface's, from tessellation);
+                // finding each point on the surface again was slow on
+                // detailed freeform faces (the Loft tool's fills).
+                let n = [0, 1, 2].map(|k| {
+                    let n = m.normals[t[k] as usize];
+                    if n.length_squared() > 0.0 {
+                        n.normalize()
+                    } else {
+                        c.surface.normal_at(p[k])
+                    }
+                });
                 if n.iter().all(|x| x.is_finite()) {
                     tris.push(Tri {
                         p,

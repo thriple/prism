@@ -69,5 +69,5 @@ are exact along every side; across the inner seams the normals agree
 within a small angle (no crease); the model check stays clean.
 
 ## Acceptance
-- [ ] The owner's rounded box corner filled with the tool, by clicks.
-- [ ] Tests green, NOTES updated, pushed.
+- [x] The owner's rounded box corner filled with the tool, by clicks.
+- [x] Tests green, NOTES updated, pushed.

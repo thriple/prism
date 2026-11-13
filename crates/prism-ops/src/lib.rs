@@ -29,6 +29,7 @@ pub mod round;
 pub mod select;
 pub mod settle;
 mod shell;
+pub mod sides;
 pub mod solid;
 pub mod sticky;
 pub mod sweep;

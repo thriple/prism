@@ -43,12 +43,14 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   **Everyday Commands is done** (brief 33, 4 parts, released): clipboard,
   Lock and With Context; the camera; the Rotated Rectangle, Freehand,
   Preferences, About and the Tool Hint Panel; Smart Guides (NOTES
-  "Everyday Commands (part 1)" to "(part 4)"). **Next: the Loft Tool**
-  (brief 34, owner
-  request: Curviloft-style; rings of 3 or 5+ sides filled from a centre
-  point; `docs/research/loft-corners.md`). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
-  defaults until the owner answers; start at step A, the kernel bridge),
-  then Solids & CAD, which was moved up to follow it.
+  "Everyday Commands (part 1)" to "(part 4)"). **The Loft Tool is done**
+  (brief 34, released; NOTES "Loft Tool (brief 34)"). NOTES "Known gaps
+  after the Loft Tool" lists what is left over across the program, for
+  the owner to order. **Next: Fillet Joins** (brief 32 is written;
+  DECISIONS #37 to #39's defaults until the owner answers; start at step
+  A, the kernel bridge), then Solids & CAD, which was moved up to follow
+  it. The owner also floated a chat window in Prism (NOTES "Owner idea
+  for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no
   debug info: a full build and test run then takes about 3 GB, not 20);

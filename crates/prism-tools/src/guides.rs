@@ -171,6 +171,15 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Click an edge between two faces.",
             ],
         ),
+        s::LOFT => g(
+            "Fill a ring of sides, or loft through separate ones.",
+            &[
+                "Click an edge: the side runs on through gentle turns (Shift adds or removes one edge).",
+                "Enter or Next Side finishes a side; pick the next.",
+                "Sides that close a ring fill it; sides apart are lofted through, in order.",
+                "Enter or Loft makes it. Esc steps back one side.",
+            ],
+        ),
         s::FOLLOW => g(
             "Sweep a face along a path.",
             &[

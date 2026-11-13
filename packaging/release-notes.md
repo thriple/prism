@@ -1,11 +1,11 @@
-**New in this build: Everyday Commands.**
-- **Cut, Copy and Paste** (Ctrl+X, C, V) work on loose geometry, groups and components, across open tabs; the paste follows the cursor and snaps like Move. **Paste in Place** (Ctrl+Shift+V) puts it back where it was. **Lock** and **Unlock** (Edit > Hide & Lock) keep a group from being changed. **Intersect Faces > With Context** works inside an open group.
-- **Smart Guides** (View > Smart Guides, Ctrl+U): while you move or paste a group, a component or a whole body, it lines up with its neighbours (teal lines) and snaps to gaps equal to theirs (orange arrows with the gap, `d: 1.000 m`). A snapped point still wins.
-- **Camera:** standard views (Top, Front, Iso and the rest), Parallel Projection, Field of View (type the degrees), Zoom Selection, Zoom Window, Walk and Look Around.
-- **Drawing:** the **Rotated Rectangle** (three clicks, any plane) and **Freehand** (drag; it becomes one smooth curve, flat on the face you draw on).
-- **Windows:** Edit > **Preferences** (units for new documents, the snap feel, Smart Guides, the keyboard preset), Help > **About**, and Help > **Tool Hints** (the steps of the tool you are using).
+**New in this build: the Loft Tool** (Draw > Surface > Loft Tool, and on the dock).
+- **Pick sides by clicking:** a click on an edge takes the whole side (the edges that run on from it without a sharp turn; the threshold is in the Loft window). Shift adds or removes one edge. Enter (or Next Side) finishes a side; each side shows in its own colour with its number.
+- **Fill a ring:** sides joined end to end are filled. Four sides make one face; three, five or more are filled from a centre point with four-sided faces that meet smoothly, so a rounded box corner (three arcs) fills cleanly.
+- **Loft through sections:** sides that stand apart are lofted through, in the order you picked them.
+- **Help along the way:** if the ring is almost closed, the status bar says so and the edges that would close it light up orange; a click takes them. The surface shows as a live preview before you make it.
+- **Make it:** Enter or Loft. One undo removes it. Esc steps back one side. Right after, Smooth or Straight and Rows in the window change the result in place.
 
-**Also since the last notes:** textures and the Position Texture tool, materials in OBJ, glTF and 3MF; freeform NURBS curves and surfaces (the Curve tool, cage editing, Loft, Revolve, Sweep, Patch, zebra stripes and curvature combs); an arc's plane now follows its second click, and Patch takes arcs as sides.
+**Also:** curved faces with many details draw their outlines much faster.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

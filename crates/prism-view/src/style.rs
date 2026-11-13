@@ -173,6 +173,12 @@ pub struct Feedback {
     /// magenta, which SketchUp users read as parallel.
     pub smart_align: Rgba,
     pub smart_space: Rgba,
+    /// The Loft tool: each side picked in its own colour, the side being
+    /// picked, the edges that would close the ring, and the preview.
+    pub loft_sides: [Rgba; 6],
+    pub loft_current: Rgba,
+    pub loft_close: Rgba,
+    pub loft_preview: Rgba,
 }
 
 impl Default for Feedback {
@@ -212,6 +218,17 @@ impl Default for Feedback {
             protractor: Rgba::rgb(0x1c, 0x1e, 0x22),
             smart_align: Rgba::rgb(0x00, 0xa3, 0xc4),
             smart_space: Rgba::rgb(0xe8, 0x74, 0x2a),
+            loft_sides: [
+                Rgba::rgb(0xe0, 0x4f, 0x3a),
+                Rgba::rgb(0x2b, 0x8a, 0xe0),
+                Rgba::rgb(0x2e, 0xa8, 0x5a),
+                Rgba::rgb(0xc2, 0x5b, 0xd6),
+                Rgba::rgb(0xe8, 0xa1, 0x1f),
+                Rgba::rgb(0x14, 0xa8, 0xa0),
+            ],
+            loft_current: Rgba::rgb(0x1f, 0x5f, 0xe0),
+            loft_close: Rgba::rgb(0xe8, 0x74, 0x2a),
+            loft_preview: Rgba::rgb(0x1f, 0x5f, 0xe0).with_alpha(alpha(0.7)),
         }
     }
 }

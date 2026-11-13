@@ -35,6 +35,7 @@ mod edit;
 mod follow;
 mod groups;
 mod health;
+mod lofting;
 mod materials;
 mod paint;
 mod round;
@@ -55,6 +56,7 @@ use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
+pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
@@ -73,7 +75,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 31] = [
+pub const TOOLS: [&str; 32] = [
     SELECT,
     LINE,
     RECT,
@@ -98,6 +100,8 @@ pub const TOOLS: [&str; 31] = [
     arcs::PIE,
     round::FILLET,
     follow::FOLLOW,
+    // The Loft tool (brief 34).
+    lofting::LOFT,
     // Basic Materials 1b.
     paint::PAINT,
     // Basic Materials part 3: Texture > Position.
@@ -205,6 +209,10 @@ pub enum Input {
     /// A change from the Fillet window.
     Round {
         op: RoundOp,
+    },
+    /// A change from the Loft window.
+    Loft {
+        op: LoftOp,
     },
     Tool {
         id: String,
@@ -400,6 +408,14 @@ pub struct Session {
     round_at: Option<DVec2>,
     round_shown: Option<(round::Target, bool, Option<f64>)>,
     round_refused: Option<&'static str>,
+    /// The Loft tool: the sides being picked, the threshold (degrees), the
+    /// presets, the sides of the last loft (presets change it), and why it
+    /// last refused.
+    lofting: lofting::Lofting,
+    loft_turn: f64,
+    loft_preset: prism_ops::sides::Preset,
+    loft_last: Option<Vec<Vec<prism_topo::EdgeId>>>,
+    loft_notice: Option<&'static str>,
     follow_notice: Option<&'static str>,
     /// Follow Me follows the selected face's edge (Alt).
     follow_perimeter: bool,
@@ -587,6 +603,11 @@ impl Session {
             round_at: None,
             round_shown: None,
             round_refused: None,
+            lofting: lofting::Lofting::default(),
+            loft_turn: prism_ops::sides::TURN_DEG,
+            loft_preset: prism_ops::sides::Preset::default(),
+            loft_last: None,
+            loft_notice: None,
             follow_notice: None,
             follow_perimeter: false,
             scale_grip: None,
@@ -1042,6 +1063,7 @@ impl Session {
                 self.round_preview();
             }
             Input::Round { op } => self.round_set(*op),
+            Input::Loft { op } => self.loft_set(*op),
             Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {
                 self.shift_held = false;
@@ -1123,6 +1145,7 @@ impl Session {
         self.round_last = None;
         self.round_notice = None;
         self.round_clear();
+        self.loft_clear();
         self.follow_notice = None;
         self.follow_perimeter = false;
         self.texpos_cancel();
@@ -1146,6 +1169,7 @@ impl Session {
                     let back = self.before_nav.clone();
                     self.set_tool(&back);
                     resp.tool = Some(back);
+                } else if self.loft_escape(resp) {
                 } else if self.in_operation() {
                     self.cancel();
                     self.refresh();
@@ -1264,6 +1288,9 @@ impl Session {
         let t0 = self.measure.map(|f| f());
         self.build_scene();
         self.cage_check();
+        if self.tool == lofting::LOFT {
+            self.loft_update();
+        }
         // The face being positioned went (undo, another edit).
         if let Some(f) = self.texpos.as_ref().map(|t| t.face())
             && self.work_model().face(f).is_none()
@@ -2151,6 +2178,7 @@ impl Session {
             || self.shape_enter(&text)
             || self.arc_enter(&text)
             || self.round_enter(&text)
+            || (text.is_empty() && self.loft_enter())
             || self.curve_enter()
             || self.cage_enter(&text)
         {
@@ -2266,6 +2294,7 @@ impl Session {
         }
         self.paste_overlay(&mut o);
         self.smart_overlay(&mut o);
+        self.loft_overlay(&mut o);
         self.window_overlay(&mut o);
         if !self.wants_inference() {
             return o;

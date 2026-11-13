@@ -16,6 +16,7 @@ use prism_view::style::alpha;
 
 use super::construct::{OFFSET, PROTRACTOR, TAPE};
 use super::follow::FOLLOW;
+use super::lofting::LOFT;
 use super::paint::PAINT;
 use super::round::FILLET;
 use super::texpos::TEXTURE;
@@ -142,6 +143,7 @@ pub(super) fn is_edit(t: &str) -> bool {
             | TAPE
             | PROTRACTOR
             | FILLET
+            | LOFT
             | FOLLOW
             | PAINT
             | TEXTURE
@@ -272,6 +274,7 @@ impl Session {
             PAINT => self.paint_hover(s, view),
             TEXTURE => self.texpos_hover(s, view),
             FILLET => self.round_hover(s, view),
+            LOFT => self.loft_hover(s, view),
             FOLLOW => self.follow_hover(s, view),
             PUSH => {
                 if let Some(EditOp::Push { .. }) = &self.edit {
@@ -794,6 +797,7 @@ impl Session {
             PAINT => self.paint_press(shift, ctrl),
             TEXTURE => self.texpos_press(s),
             FILLET => self.round_press(s, ctrl),
+            LOFT => self.loft_press(shift),
             FOLLOW => self.follow_press(s),
             PUSH => self.push_press(s, n_clicks),
             ERASE => {
@@ -1381,6 +1385,7 @@ impl Session {
                 "Drag a grip: corners scale evenly, edges two ways, faces one way · Alt toggles scaling about the centre · click something to pick it"
             }
             (FILLET, _) => self.round_hint(),
+            (LOFT, _) => self.loft_hint(),
             (PAINT, _) => self.paint_hint(),
             (FOLLOW, _) => self.follow_hint(),
             (ERASE, _) => {

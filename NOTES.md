@@ -3395,3 +3395,83 @@ Brief 33, part 4, built 2026-11-13 (`prism-tools/src/smart.rs`, the sums;
   settings are not yet in View Settings or the Inspector (PLAN 5.1 puts
   them there too); a copy made with Move+Ctrl does not count the
   original as a neighbour.
+
+## Loft Tool (brief 34)
+Built 2026-11-13 (`prism-ops/src/sides.rs`, the sides and surfaces;
+`prism-tools/src/session/lofting.rs`, the tool; `prism-app/src/chrome/loft.rs`,
+its window). Draw > Surface > Loft Tool, and on the dock's Shapes group.
+- **Picking sides:** a click on an edge takes the whole side
+  (`sides::chain`): the edges that run on from it, end to end, while the
+  turn at each vertex is under the window's threshold (30° by default).
+  Where three or more edges meet, only the same curve runs on (arcs of
+  one circle, one spline, edges drawn as one curve), so an arc drawn on a
+  box face does not run into the box's edge it touches. Shift adds or
+  removes one edge. Enter or Next Side finishes the side; each side is
+  drawn in its own colour and numbered.
+- **What the sides make** (`sides::shape`): joined end to end in a ring,
+  a fill; standing apart, a loft through them in the order picked (not
+  guessed, unlike Draw > Surface > Loft); a chain that does not close
+  says so in the status bar and highlights the run of edges that would
+  close it (orange, dashed): a click takes it as the next side.
+- **The fill:** four sides are one Coons patch. Three, five or more are
+  split from a centre point: a cubic from the centre to the middle of
+  each side, and a four-sided patch in each corner (exact along the
+  ring, no pole, no trimming). The centre sits where a circular arc
+  leaving each side's middle along the surface would level off, so three
+  arcs on a sphere fill close to the sphere. Smooth across the inner
+  curves: the control rows either side of each are made mirror images in
+  homogeneous coordinates (C1 there), with the curves cut in half
+  exactly (`Nurbs::between`) and reweighted at the corners so the halves
+  stay mirror images at the middle (`Nurbs::reweighted_end`). Next to the
+  centre the patches can only meet smoothly on average; extra rows there
+  keep that area small (largest angle across a seam about 0.15°, tests
+  allow 2°). Inner edges are soft. Faces turn to match a face already on
+  the first side.
+- **Preview and making it:** a live preview (lines across the surface, in
+  the overlay) while the sides are valid; Enter or Loft makes it, one
+  command (`Command::LoftSides`), one undo. Esc steps back one side, and
+  with none leaves the tool.
+- **Presets:** Smooth or Straight between sections, and Rows (1 to 8,
+  extra rows of faces, soft). Right after a loft, a preset changes it in
+  place, as a new fillet size does.
+- **Sides of any kind:** lines, arcs, splines and chains of them become
+  one exact curve (`Nurbs::joined`, `Nurbs::between`).
+- **Found on the way (fixed):** the outline lines of curved faces looked
+  up every triangle corner on its surface; on a detailed fill that made
+  the app crawl. They now use the mesh's normals.
+- Seen by eye in the app under Xvfb: the box with its corner cut and
+  three arcs round it, filled by three clicks and Enter; the result is
+  shaded smooth and faces out of the box.
+- **Left over:** cage handles on a fill move one patch only, so a cage
+  edit can open a crease at its seams; the closing-edge hint finds one
+  run of edges, not a chain of several; sides that meet at a cusp (the
+  owner's arcs, tangent where they meet) make thin corners in the
+  patches, fine to look at but worth a check when Solids & CAD offsets
+  them; two sides that close a ring are refused (split one first); no
+  side picking by box select.
+
+## Owner idea for later (2026-11-13): a chat window in Prism
+A floating chat window, through the MCP server, to talk to Claude from
+inside Prism: Claude hands over a list of props to model (dimensions, a
+short description, reference pictures); the owner models one and says
+done; Claude pulls the model out of Prism into whatever project it is
+for. Not scheduled: the owner decides when.
+
+## Known gaps after the Loft Tool (2026-11-13)
+Collected from the "Left over" lines above, for the owner to order.
+- **Freeform faces cannot be cut:** no lines drawn on them, no overlap
+  split, no booleans (needs the kernel's surface intersection, Solids &
+  CAD). Push/Pull does not move a freeform face; Offset refuses faces
+  with spline edges; Follow Me refuses splines.
+- **Curves:** a curve that crosses itself is not cut at the crossing; no
+  midpoint snap on a spline; circles lofted from different start points
+  twist; an open profile in Sweep does not turn with its path.
+- **Cage editing:** no box select of control points; Rotate and Scale
+  have no protractor or grips there.
+- **Camera:** Walk has no arrow keys, typed eye height or collision; the
+  Perspective / Parallel check mark in the menu.
+- **Clipboard:** not the system clipboard; a component holding groups
+  pastes as a new definition.
+- **Freehand:** no Shift for a 3D stroke.
+- **Smart Guides:** equal sizes; Rotate and Scale do not use them.
+- **Preferences:** no reset for units; no colour or autosave settings.
