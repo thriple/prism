@@ -36,12 +36,22 @@ Its place in PLAN 6.0 is the owner's to choose.
 ## What has to be built underneath
 - **Side chains:** follow edges from a picked one while the turn at each
   vertex is under the threshold, or while they share one curve.
-- **N-sided fills (3, 5, 6 … sides):** freeform faces are four-sided
-  today. Fill with four-sided faces anyway: a point in the middle, each
-  side split at its midpoint, and one Coons patch per corner (a 3-sided
-  ring makes 3 faces, a 5-sided one 5). The faces meet smoothly across
-  the inner lines (matched cross-boundary tangents), so zebra stripes run
-  on. 4-sided rings keep today's single patch.
+- **Three sides: a pole.** A three-sided ring is a four-sided surface
+  with one side shrunk to a point, as Curviloft does it (owner,
+  2026-11-13). Prism's surface is exact NURBS, not a mesh: the Coons patch
+  is built with one side a single repeated point. What has to change is
+  the face. Freeform faces are four-sided rectangles of their surface
+  today, so a **three-sided freeform face** (one side a pole) is needed.
+  Tessellation fans the last row into plain triangles at the pole (the
+  owner's "single triangle at the corner"), with the normal there taken
+  from the rows beside it, so it shades cleanly. Picking, the model check,
+  cage editing (the pole's control points move as one) and the file
+  format accept it. The same face unlocks Revolve of a curve touching its
+  axis, and lofting to a point.
+- **Five or more sides: down to four.** Neighbouring sides are joined
+  until there are four, at the flattest corners (where the turn is
+  least), as Curviloft does. The joined sides become one side of the
+  patch.
 - **Loft through sides** reuses `loft::lofted`, with the sides in the
   order picked, not guessed.
 - **Preview:** the surface tessellated into the overlay (as Paste's edges
@@ -54,12 +64,13 @@ threshold, the list of sides (each removable), Next Side, Loft, and the
 presets.
 
 ## Tests
-Session: the owner's recording (three arcs round a corner) fills in
-three faces; a square ring stays one patch; two separate curves loft;
+Session: the owner's recording (three arcs round a corner) fills with
+one three-sided face; a square ring stays one patch; two separate curves loft;
 an open ring shows the tip and highlights the closing edge; Esc steps
-back; one undo removes the result. Ops: n-sided fills are exact along
-every side and smooth across the inner lines (normals agree within a
-small angle).
+back; one undo removes the result. Ops: three-, four- and five-sided fills
+are exact along every side; the pole shades without a crease (normals
+near it agree within a small angle); a curve touching Revolve's axis
+turns into a closed dome.
 
 ## Acceptance
 - [ ] The owner's rounded box corner filled with the tool, by clicks.
