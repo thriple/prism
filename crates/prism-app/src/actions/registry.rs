@@ -95,7 +95,11 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 24] = [
+const COMMANDS: [&str; 27] = [
+    // Everyday Commands part 3 (brief 33).
+    "win.prefs",
+    "help.about",
+    "help.hints",
     // MCP Server (brief 21).
     "help.mcp",
     // Updates (brief 20).

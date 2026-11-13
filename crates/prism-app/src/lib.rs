@@ -17,6 +17,7 @@ mod instance;
 mod mesh_files;
 mod overlay;
 pub mod platform;
+pub mod prefs;
 mod recovery;
 pub mod settings;
 mod storage;

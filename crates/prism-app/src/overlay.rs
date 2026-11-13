@@ -149,27 +149,15 @@ fn viewport_controls(ui: &mut egui::Ui, v: &mut Viewport) {
             t.pick_ms, t.infer_ms, t.scene_ms
         ),
     );
-    let mut ap = s.settings.aperture as f32;
-    if ui
-        .add(SoftSlider::new(&mut ap, 0.5..=2.5, "Pick aperture").suffix("x"))
-        .changed()
-    {
-        s.settings.aperture = f64::from(ap);
-    }
-    let mut rel = s.settings.release as f32;
-    if ui
-        .add(SoftSlider::new(&mut rel, 1.0..=3.0, "Snap release").suffix("x"))
-        .changed()
-    {
-        s.settings.release = f64::from(rel);
-    }
-    let mut wake = (s.settings.wake * 1000.0) as f32;
-    if ui
-        .add(SoftSlider::new(&mut wake, 50.0..=800.0, "Hover wake").suffix(" ms"))
-        .changed()
-    {
-        s.settings.wake = f64::from(wake) / 1000.0;
-    }
+    mono(
+        ui,
+        format!(
+            "aperture {:.2}x   release {:.2}x   wake {:.0} ms   (Edit > Preferences)",
+            s.settings.aperture,
+            s.settings.release,
+            s.settings.wake * 1000.0
+        ),
+    );
     ui.add(SoftToggle::new(&mut s.ease, "Ease zoom"));
 }
 

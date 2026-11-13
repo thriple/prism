@@ -3295,3 +3295,40 @@ Brief 33, part 2, built 2026-11-13.
 - **Left over:** Walk with arrow keys, eye height typed, and collision;
   the menu's check mark on Perspective / Parallel; the measurement box
   showing the eye height in Walk.
+
+## Everyday Commands (part 3): drawing and windows
+Brief 33, part 3, built 2026-11-13 (`session/draw.rs`, `guides.rs`,
+`prefs.rs`, `chrome/prefs.rs`, `chrome/hints.rs`).
+- **Rotated Rectangle:** click a corner, click the next (the first side,
+  any way in 3D, with inference and arrow locks like the Line), then the
+  width. The width is square to the first side, on the plane the first
+  click started on, turned to contain that side; a snapped point (an
+  endpoint, an edge) tilts the rectangle to reach it, and an arrow picks
+  the width's plane instead. Typed: the side's length, then `width` or
+  `width,angle` (degrees of tilt from that plane, so `1,90` stands it up).
+  It is one `Loop` command, one undo.
+- **Freehand:** press and drag. Points are kept every 3 pixels on the
+  plane under the press (a flat face's, the ground, or the view's axis
+  plane, as the Rectangle picks), so a stroke on a wall stays on it. On
+  release the stroke is thinned (Douglas–Peucker, 1.5 pixels) and a cubic
+  NURBS is put through what is left (`freehand_curve`, at most 200
+  points). Ending within 10 pixels of the start closes it into a face. A
+  stroke that thins to two points is a straight edge.
+- **Preferences** (Window > Preferences): units for new documents (a
+  new tab starts with them), the open model's tolerance (read only, in
+  mm), the inference engine's aperture, release and wake (for every
+  tab; the debug panel now only shows them), and the keymap preset with
+  a button to Keyboard Shortcuts. Saved in `prefs.json` next to the
+  keymap; values out of range are brought back on load.
+- **About** (Help > About Prism): version, licence, where the libraries
+  are listed.
+- **Tool Hint Panel** (Help): a side window like the Outliner. It shows
+  the active tool's name, what it does, its steps, and the live hint.
+  The text is `prism_tools::guides`; a test fails if a tool has no guide.
+- Seen by eye in the app under Xvfb (hint panel, Preferences, About).
+- **Left over:** Freehand while a group is open draws in world space
+  like the other tools (fine), but there is no Shift for a 3D stroke
+  (SketchUp's "polyline" mode); Preferences has no reset for units, and
+  shows no section for colours or autosave timing (none are settable
+  yet); the hint panel has no pictures (SketchUp's Instructor animates
+  each step).

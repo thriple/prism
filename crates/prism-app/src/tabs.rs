@@ -20,6 +20,8 @@ pub struct Tabs {
     /// Every tab is closed: the app quits.
     pub exit: bool,
     next_slot: u32,
+    /// The units a new document starts with (Preferences).
+    pub new_units: prism_math::DisplayUnits,
 }
 
 impl Tabs {
@@ -31,6 +33,7 @@ impl Tabs {
             closing_all: false,
             exit: false,
             next_slot: slot + 1,
+            new_units: prism_math::DisplayUnits::default(),
         }
     }
 
@@ -85,7 +88,8 @@ impl Tabs {
     /// A new tab with `doc`, made active.
     fn push(&mut self, doc: Document, vp: &mut Viewport, f: &mut Files) {
         let slot = self.slot();
-        let nv = Viewport::with_document(doc);
+        let mut nv = Viewport::with_document(doc);
+        nv.session.set_units(self.new_units);
         let nf = Files::new(&nv.session, slot);
         f.flush(&vp.session);
         let old_v = swap_in(vp, nv);
@@ -329,6 +333,21 @@ mod tests {
         t.after_frame(&mut vp, &mut f, &mut c);
         assert!(f.modal(), "Save changes? is showing");
         assert_eq!(t.len(), 1);
+    }
+
+    #[test]
+    fn a_new_tab_starts_with_the_preferred_units_and_is_unchanged() {
+        let (mut t, mut vp, mut f, mut c) = setup();
+        let mm = prism_math::DisplayUnits {
+            length: prism_math::LengthUnit::Millimetres,
+            decimals: 1,
+        };
+        t.new_units = mm;
+        edit(&mut vp);
+        f.requests.push(Request::NewTab);
+        t.handle(&mut vp, &mut f, &mut c);
+        assert_eq!(vp.session.number.units, mm);
+        assert!(f.pristine(&vp.session), "nothing to save yet");
     }
 
     #[test]

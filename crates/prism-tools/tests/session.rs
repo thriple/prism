@@ -4588,3 +4588,169 @@ fn look_around_and_walk_by_dragging() {
     );
     assert!(walked.eye.distance(looked.eye) > 1e-3, "it went forward");
 }
+
+// ---------- Everyday Commands part 3: Rotated Rectangle and Freehand ----------
+
+#[test]
+fn a_rotated_rectangle_from_three_clicks_on_a_slant() {
+    use prism_tools::session::RRECT;
+    let mut d = Driver::empty();
+    d.tool(RRECT);
+    d.click(DVec3::ZERO);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    assert!(d.s.in_operation());
+    assert_eq!(d.s.measurement().0, "Width");
+    // The width is measured square to the first side.
+    d.click(DVec3::new(0.0, 2.0, 0.0));
+    assert_eq!(d.faces(), 1);
+    assert!(!d.s.in_operation());
+    for p in [(2.0, 2.0), (1.0, 3.0), (-1.0, 1.0)] {
+        assert!(has_point(&d, p.0, p.1), "{p:?}");
+    }
+    valid(&d);
+    // One undo removes it.
+    undo(&mut d);
+    assert_eq!(d.s.model().edge_count(), 0);
+}
+
+#[test]
+fn a_rotated_rectangle_typed_with_a_length_then_width_and_tilt() {
+    use prism_tools::session::RRECT;
+    let mut d = Driver::empty();
+    d.tool(RRECT);
+    d.click(DVec3::new(5.0, 0.0, 0.0));
+    d.hover(DVec3::new(6.0, 0.3, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.typed("3");
+    assert_eq!(d.s.measurement().0, "Width");
+    // Tilted 90 degrees up from the ground: a wall.
+    d.hover(DVec3::new(6.0, 1.0, 0.0));
+    d.typed("1,90");
+    assert_eq!(d.faces(), 1);
+    let m = d.s.model();
+    for p in [
+        DVec3::new(8.0, 0.0, 0.0),
+        DVec3::new(8.0, 0.0, 1.0),
+        DVec3::new(5.0, 0.0, 1.0),
+    ] {
+        assert!(prism_ops::vertex_at(m, p).is_some(), "{p}");
+    }
+    valid(&d);
+}
+
+#[test]
+fn esc_cancels_a_rotated_rectangle() {
+    use prism_tools::session::RRECT;
+    let mut d = Driver::empty();
+    d.tool(RRECT);
+    d.click(DVec3::ZERO);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.send(Input::Key { key: Key::Escape });
+    assert!(!d.s.in_operation());
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    assert_eq!(d.faces(), 0);
+}
+
+/// A freehand stroke through world points (each one a mouse move).
+fn stroke(d: &mut Driver, pts: &[DVec3]) {
+    let a = d.screen(pts[0]);
+    d.send(Input::Move { x: a.x, y: a.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: a.x,
+        y: a.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    for p in &pts[1..] {
+        let s = d.screen(*p);
+        d.send(Input::Move { x: s.x, y: s.y });
+    }
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.t += 0.5;
+}
+
+#[test]
+fn a_freehand_stroke_becomes_one_smooth_curve_on_the_ground() {
+    use prism_tools::session::FREEHAND;
+    let mut d = Driver::empty();
+    d.tool(FREEHAND);
+    let arc: Vec<DVec3> = (0..=60)
+        .map(|k| {
+            let t = f64::from(k) / 60.0 * std::f64::consts::PI;
+            DVec3::new(3.0 + 2.0 * t.cos(), 2.0 * t.sin(), 0.0)
+        })
+        .collect();
+    stroke(&mut d, &arc);
+    assert!(!d.s.in_operation());
+    assert_eq!(d.s.model().edge_count(), 1);
+    assert_eq!(spline_edges(&d), 1);
+    let m = d.s.model();
+    let (_, e) = m.edges().next().unwrap();
+    let c = &e.curve.spline().unwrap().curve;
+    // Flat on the ground, close to the stroke, with far fewer points.
+    assert!(c.cage().len() < 30, "{}", c.cage().len());
+    let (t0, t1) = c.domain();
+    for k in 0..=20 {
+        let p = c.eval(t0 + (t1 - t0) * f64::from(k) / 20.0);
+        assert!(p.z.abs() < 1e-9, "{p}");
+        let r = (p - DVec3::new(3.0, 0.0, 0.0)).length();
+        assert!((r - 2.0).abs() < 0.05, "{p} {r}");
+    }
+    valid(&d);
+}
+
+#[test]
+fn a_closed_freehand_stroke_makes_a_face() {
+    use prism_tools::session::FREEHAND;
+    let mut d = Driver::empty();
+    d.tool(FREEHAND);
+    let ring: Vec<DVec3> = (0..=80)
+        .map(|k| {
+            let t = f64::from(k) / 80.0 * std::f64::consts::TAU;
+            DVec3::new(3.0 + 1.5 * t.cos(), 2.0 + 1.5 * t.sin(), 0.0)
+        })
+        .collect();
+    stroke(&mut d, &ring);
+    assert_eq!(d.faces(), 1);
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.s.model().edge_count(), 0);
+}
+
+#[test]
+fn freehand_on_a_wall_stays_flat_on_it() {
+    use prism_tools::session::FREEHAND;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.hover(DVec3::new(2.0, 2.0, 0.5));
+    d.typed("1");
+    assert_eq!(d.faces(), 6);
+    d.tool(FREEHAND);
+    // A ring on the front wall (y = 0).
+    let ring: Vec<DVec3> = (0..=80)
+        .map(|k| {
+            let t = f64::from(k) / 80.0 * std::f64::consts::TAU;
+            DVec3::new(2.0 + 0.4 * t.cos(), 0.0, 0.5 + 0.4 * t.sin())
+        })
+        .collect();
+    stroke(&mut d, &ring);
+    assert_eq!(d.faces(), 7);
+    let m = d.s.model();
+    let (_, e) = m.edges().find(|(_, e)| e.curve.is_spline()).unwrap();
+    assert!(
+        e.curve
+            .spline()
+            .unwrap()
+            .curve
+            .cage()
+            .iter()
+            .all(|p| p.y.abs() < 1e-9)
+    );
+    valid(&d);
+}

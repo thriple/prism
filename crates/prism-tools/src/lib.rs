@@ -2,6 +2,7 @@
 //! measurement box's units, the test scenes, and the viewport session that
 //! drives them from a stream of input events. Pure: no window, GPU or clock.
 
+pub mod guides;
 pub mod scenes;
 pub mod select;
 pub mod session;

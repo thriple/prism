@@ -304,6 +304,7 @@ impl App {
     /// active document changed (then the GPU gets the new one).
     fn tab_work(&mut self) -> bool {
         let (vp, f, chrome) = (&mut self.viewport, &mut self.files, &mut self.chrome);
+        self.tabs.new_units = chrome.prefs.units;
         let mut changed = self.tabs.handle(vp, f, chrome);
         match chrome.doc_event.take() {
             Some(crate::chrome::DocEvent::Switch(i)) => changed |= self.tabs.switch(i, vp, f),
@@ -483,6 +484,9 @@ impl App {
                     Err(e) => chrome.status_note(format!("Could not load the image: {e}")),
                 }
             }
+            // Preferences reach every tab: the active one each frame.
+            viewport.session.settings = chrome.prefs.inference;
+            chrome.tolerance = crate::prefs::tolerance_text(viewport.session.scene().tol.dist);
             let status = viewport.status();
             chrome.set_hint(status.hint);
             chrome.measure = status.measure;

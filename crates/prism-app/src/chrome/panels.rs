@@ -58,6 +58,8 @@ pub struct PanelData {
 #[derive(Clone, Debug, Default)]
 pub struct Panels {
     pub outliner: bool,
+    /// Help > Tool Hint Panel.
+    pub hints: bool,
     pub info: bool,
     pub tags: bool,
     pub health: bool,
@@ -90,7 +92,13 @@ pub struct Panels {
 
 impl Panels {
     pub fn any_open(&self) -> bool {
-        self.outliner || self.info || self.tags || self.health || self.view || self.materials
+        self.outliner
+            || self.hints
+            || self.info
+            || self.tags
+            || self.health
+            || self.view
+            || self.materials
     }
 }
 
@@ -117,6 +125,7 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     if chrome.active_tool == prism_tools::session::FILLET {
                         super::fillet::card(ui, &mut p, &data, &mut ops);
                     }
+                    super::hints::card(chrome, ui, &mut p);
                     info(ui, &mut p, &data, &mut ops);
                     super::materials::card(ui, &mut p, &data, &mut ops);
                     outliner(ui, &mut p, &data, &mut ops);

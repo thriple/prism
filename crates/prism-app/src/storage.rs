@@ -29,6 +29,19 @@ pub fn save_mcp(json: &str) {
     }
 }
 
+const PREFS: &str = "prefs.json";
+
+/// Edit > Preferences (brief 33), if saved.
+pub fn load_prefs() -> Option<String> {
+    imp::read(PREFS)
+}
+
+pub fn save_prefs(json: &str) {
+    if let Err(e) = imp::write(PREFS, json) {
+        log::warn!("could not save the preferences: {e}");
+    }
+}
+
 const TOOLBARS: &str = "toolbars.json";
 
 /// Where the toolbars were left (brief 19), if saved.

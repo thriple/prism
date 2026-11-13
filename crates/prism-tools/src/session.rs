@@ -30,6 +30,7 @@ mod cage;
 mod clip;
 mod construct;
 mod curve;
+mod draw;
 mod edit;
 mod follow;
 mod groups;
@@ -47,6 +48,7 @@ pub use cage::PICK_FIRST;
 pub use clip::LOCKED;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use curve::{CURVE, curve_for};
+pub use draw::{FREEHAND, RRECT, freehand_curve, rrect_corners, simplify};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
@@ -69,7 +71,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 29] = [
+pub const TOOLS: [&str; 31] = [
     SELECT,
     LINE,
     RECT,
@@ -104,6 +106,9 @@ pub const TOOLS: [&str; 29] = [
     views::WALK,
     views::LOOK,
     views::WINDOW,
+    // Everyday Commands part 3.
+    draw::RRECT,
+    draw::FREEHAND,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -485,6 +490,9 @@ pub struct Session {
     /// Window box being dragged.
     lens: prism_view::Lens,
     zoom_box: Option<(DVec2, DVec2)>,
+    /// The Rotated Rectangle and Freehand tools in progress (part 3).
+    rrect: Option<draw::RRect>,
+    freehand: Option<draw::Freehand>,
 }
 
 impl Session {
@@ -498,6 +506,8 @@ impl Session {
             rot_lock: None,
             shift_held: false,
             curve: None,
+            rrect: None,
+            freehand: None,
             cage: None,
             cage_notice: None,
             curve_through: false,
@@ -688,6 +698,8 @@ impl Session {
             || self.shape.is_some()
             || self.arc.is_some()
             || self.curve.is_some()
+            || self.rrect.is_some()
+            || self.freehand.is_some()
             || self.cage_start().is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
@@ -743,6 +755,7 @@ impl Session {
     fn typing_tool(&self) -> bool {
         self.tool == LINE
             || self.tool == RECT
+            || self.tool == RRECT
             || shapes::is_shape(&self.tool)
             || arcs::is_arc(&self.tool)
             || matches!(
@@ -757,6 +770,8 @@ impl Session {
         let (label, value) = if let Some((l, v)) = self.fov_measurement() {
             (l, v)
         } else if let Some((l, v)) = self.edit_measurement() {
+            (l, v)
+        } else if let Some((l, v)) = self.rrect_measurement() {
             (l, v)
         } else if let Some((l, v)) = self.shape_measurement() {
             (l, v)
@@ -821,6 +836,9 @@ impl Session {
             return h;
         }
         if let Some(h) = self.curve_hint() {
+            return h;
+        }
+        if let Some(h) = self.rrect_hint().or_else(|| self.freehand_hint()) {
             return h;
         }
         match self.tool.as_str() {
@@ -1088,6 +1106,8 @@ impl Session {
         self.shape = None;
         self.arc = None;
         self.curve = None;
+        self.rrect = None;
+        self.freehand = None;
         self.cage_cancel();
         self.last_fillet = None;
         self.round_last = None;
@@ -1519,6 +1539,8 @@ impl Session {
             || shapes::is_shape(&self.tool)
             || arcs::is_arc(&self.tool)
             || self.tool == CURVE
+            || self.tool == RRECT
+            || self.tool == FREEHAND
             || self.cage_wants_inference()
             || self.edit_wants_inference()
             || self.pasting()
@@ -1556,6 +1578,12 @@ impl Session {
             },
             CURVE => Context {
                 start: self.curve.as_ref().and_then(|c| c.pts.last().copied()),
+                ..Default::default()
+            },
+            // The first side locks like a line; then the arrows pick the plane.
+            RRECT => Context {
+                start: self.rrect.map(|r| r.b.unwrap_or(r.a)),
+                no_lock: self.rrect.is_some_and(|r| r.b.is_some()),
                 ..Default::default()
             },
             MOVE => match &self.edit {
@@ -1648,6 +1676,7 @@ impl Session {
                 self.dirty = true;
             }
             self.shape_hover(s, &view);
+            self.rrect_hover(s, &view);
             self.arc_hover(s, &view);
             self.cage_hover();
             if is_edit(&self.tool) {
@@ -1687,6 +1716,9 @@ impl Session {
             };
             self.camera = c;
             self.dirty = true;
+            return;
+        }
+        if self.freehand_drag(s) {
             return;
         }
         if let Some(b) = &mut self.boxing {
@@ -1755,6 +1787,8 @@ impl Session {
                     let n = self.clicks.press(self.time, s);
                     self.curve_press(s, n);
                 }
+                RRECT => self.rrect_press(s),
+                FREEHAND => self.freehand_press(s),
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
                     self.update_hover(s);
@@ -1794,6 +1828,9 @@ impl Session {
     }
 
     fn release(&mut self, button: Button) {
+        if button == Button::Left && self.freehand_release() {
+            return;
+        }
         match button {
             Button::Left if self.boxing.is_some() => {
                 let b = self.boxing.take().expect("box");
@@ -2099,7 +2136,8 @@ impl Session {
             self.edit_enter(&text);
             return;
         }
-        if self.shape_enter(&text)
+        if self.rrect_enter(&text)
+            || self.shape_enter(&text)
             || self.arc_enter(&text)
             || self.round_enter(&text)
             || self.curve_enter()
@@ -2328,6 +2366,8 @@ impl Session {
         self.shape_overlay(&mut o);
         self.arc_overlay(&mut o);
         self.curve_overlay(&mut o);
+        self.rrect_overlay(&mut o);
+        self.freehand_overlay(&mut o);
         self.cage_overlay(&mut o);
         // The snap: its target, glyph and label.
         let glyph_color = match i.kind {

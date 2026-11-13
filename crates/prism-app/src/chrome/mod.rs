@@ -4,6 +4,7 @@
 
 mod components;
 mod fillet;
+mod hints;
 mod materials;
 mod panels;
 pub use materials::image_loaded;
@@ -15,6 +16,7 @@ mod hotkeys;
 mod mcp_window;
 mod menus;
 mod palette;
+mod prefs;
 mod toolbar_list;
 mod updates;
 
@@ -153,6 +155,13 @@ pub struct Chrome {
     pub measure: (String, String, bool),
     /// A message that replaces the tool hint until the tool changes.
     pub(crate) note: Option<(String, &'static str)>,
+    /// Edit > Preferences (brief 33): the settings and whether the window
+    /// is open; the open model's tolerance, shown there (set each frame).
+    pub prefs: crate::prefs::Prefs,
+    pub(crate) prefs_open: bool,
+    pub tolerance: String,
+    /// Help > About.
+    pub(crate) about_open: bool,
 }
 
 impl Chrome {
@@ -173,6 +182,9 @@ impl Chrome {
                 s
             });
         c.mcp = crate::mcp::Mcp::new(mcp);
+        if let Some(t) = storage::load_prefs() {
+            c.prefs = crate::prefs::Prefs::from_json(&t);
+        }
         let names = dock::names(&c);
         if let Some(l) = storage::load_toolbars()
             .and_then(|text| crate::toolbars::Layout::from_json(&text, &names))
@@ -237,6 +249,10 @@ impl Chrome {
             lock_chip: None,
             measure: (String::new(), String::new(), false),
             note: None,
+            prefs: Default::default(),
+            prefs_open: false,
+            tolerance: String::new(),
+            about_open: false,
         }
     }
 
@@ -405,6 +421,9 @@ impl Chrome {
                     "view.edittoolbars" => self.toolbars.editing = true,
                     "view.toolbars" => self.toolbars.window = true,
                     "help.mcp" => self.mcp_open = true,
+                    "win.prefs" => self.prefs_open = true,
+                    "help.about" => self.about_open = true,
+                    "help.hints" => self.panels.hints = true,
                     "help.update" => {
                         self.updates_open = true;
                         self.updater.check();
@@ -441,6 +460,8 @@ impl Chrome {
             || self.toolbars.window
             || self.updates_open
             || self.mcp_open
+            || self.prefs_open
+            || self.about_open
     }
 
     /// Whether a window is docked in the side column. These windows do
@@ -461,6 +482,10 @@ impl Chrome {
             self.updates_open = false;
         } else if self.mcp_open {
             self.mcp_open = false;
+        } else if self.prefs_open {
+            self.prefs_open = false;
+        } else if self.about_open {
+            self.about_open = false;
         } else if self.palette.is_some() {
             self.palette = None;
         } else if let Some(h) = &mut self.hotkeys {
@@ -557,6 +582,8 @@ impl Chrome {
         toolbar_list::show(self, ctx);
         updates::show(self, ctx);
         mcp_window::show(self, ctx);
+        prefs::show(self, ctx);
+        prefs::about(self, ctx);
         layout
     }
 }
@@ -689,6 +716,30 @@ mod tests {
         assert_eq!(c.updater.status(), crate::update::Status::Local);
         assert!(c.key(&press("Escape"), false));
         assert!(!c.updates_open);
+    }
+
+    #[test]
+    fn preferences_about_and_tool_hints_open_and_close() {
+        let mut c = chrome();
+        for id in ["win.prefs", "help.about"] {
+            assert!(c.enabled(id), "{id}");
+            c.run(id, Source::Menu);
+            assert!(c.ui_open(), "{id}");
+            assert!(c.key(&press("Escape"), false));
+            assert!(!c.ui_open(), "{id}");
+        }
+        // The hint panel docks in the side column, like the Outliner.
+        c.run("help.hints", Source::Menu);
+        assert!(c.panels.hints && c.side_open() && !c.ui_open());
+    }
+
+    #[test]
+    fn preferences_are_kept_in_range() {
+        let mut c = chrome();
+        let mut p = c.prefs;
+        p.inference.aperture = 50.0;
+        prefs::set(&mut c, p);
+        assert_eq!(c.prefs.inference.aperture, crate::prefs::APERTURE.1);
     }
 
     #[test]

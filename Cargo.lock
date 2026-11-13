@@ -2344,6 +2344,7 @@ dependencies = [
  "prism-doc",
  "prism-file",
  "prism-geom",
+ "prism-infer",
  "prism-math",
  "prism-ops",
  "prism-render",

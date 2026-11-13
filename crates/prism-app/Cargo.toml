@@ -22,6 +22,7 @@ prism-ops.workspace = true
 prism-doc.workspace = true
 prism-render.workspace = true
 prism-view.workspace = true
+prism-infer.workspace = true
 prism-tools.workspace = true
 prism-file.workspace = true
 web-time = "1.1.0"
