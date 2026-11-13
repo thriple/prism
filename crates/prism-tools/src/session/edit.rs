@@ -38,7 +38,7 @@ const SOFT_STEP: f64 = std::f64::consts::PI / 12.0;
 const SOFT_REACH: f64 = 0.045;
 const SHIFT_STEP: f64 = std::f64::consts::PI / 4.0;
 /// Protractor radius on screen, in points.
-const PROTRACTOR_RADIUS: f64 = 80.0;
+pub(super) const PROTRACTOR_RADIUS: f64 = 80.0;
 /// A press that moves less than this before release is a click.
 pub(super) const DRAG_MIN: f64 = 6.0;
 
@@ -341,7 +341,11 @@ impl Session {
             PROTRACTOR => self.transform_drag(s, view),
             SCALE => {
                 // What a click would pick shows while nothing is selected.
-                if self.edit.is_none() && self.selection.is_empty() && self.groups.is_empty() {
+                if self.edit.is_none()
+                    && self.selection.is_empty()
+                    && self.groups.is_empty()
+                    && !self.cage_active()
+                {
                     let h = pick::pick(&self.scene, view, s, self.settings.aperture);
                     self.set_hover_pick(h);
                 } else if self.hover.is_some() {
@@ -772,6 +776,9 @@ impl Session {
                     angle: *angle,
                 };
                 self.with_groups(geometry, change, *copy)
+            }
+            EditOp::Scale { anchor, k, .. } if self.cage_active() => {
+                self.cage_command(prism_ops::transform::scaling(*anchor, *k))
             }
             EditOp::Scale {
                 anchor, k, verts, ..
@@ -1508,8 +1515,8 @@ impl Session {
             }
         }
         self.construct_overlay(o);
-        // The protractor.
-        if self.tool == ROTATE || self.tool == PROTRACTOR {
+        // The protractor (Edit Cage draws its own).
+        if (self.tool == ROTATE && !self.cage_active()) || self.tool == PROTRACTOR {
             let (c, n, u0, u1, angle, copy) = match &self.edit {
                 Some(EditOp::Rotate {
                     centre,

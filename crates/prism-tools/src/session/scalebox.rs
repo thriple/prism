@@ -106,13 +106,21 @@ impl Session {
     /// groups. None with nothing selected.
     pub(super) fn scale_boxes(&self) -> Option<Boxes> {
         let m = self.work_model();
-        let pts: Vec<DVec3> = self
-            .selection
-            .all_vertices(m)
-            .iter()
-            .map(|v| m.vertex(*v))
-            .chain(self.groups_corners())
-            .collect();
+        let pts: Vec<DVec3> = if self.cage_active() {
+            // Edit Cage: the picked control points.
+            let all = self.cage_points();
+            self.cage_picked()
+                .iter()
+                .filter_map(|k| all.get(*k).copied())
+                .collect()
+        } else {
+            self.selection
+                .all_vertices(m)
+                .iter()
+                .map(|v| m.vertex(*v))
+                .chain(self.groups_corners())
+                .collect()
+        };
         if pts.is_empty() {
             return None;
         }
@@ -180,6 +188,14 @@ impl Session {
         }
         let view = self.view();
         let Some(grip) = self.grip_at(&view, s) else {
+            if self.cage_active() {
+                // Edit Cage: the box is round the picked points only.
+                if self.cage_picked().is_empty() {
+                    self.cage_notice = Some(super::cage::PICK_FIRST);
+                    self.overlay_dirty = true;
+                }
+                return;
+            }
             // Not on a grip: pick what is under the cursor (with what is
             // connected to it), so its box shows.
             if self.selection.is_empty() && self.groups.is_empty() {

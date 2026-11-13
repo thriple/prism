@@ -6,8 +6,9 @@
 //!   axis locks and a typed distance;
 //! - Rotate turns them about their middle, from one click round to the
 //!   next (about the locked axis, or blue), or by typed degrees;
-//! - Scale sizes them about their middle, by how far the second click is
-//!   compared with the first, or by a typed factor.
+//! - Scale sizes them with its box and grips, drawn round the picked
+//!   points (as for any selection), or by a typed factor;
+//! - a Select drag boxes control points (Shift toggles, Ctrl adds).
 //!
 //! Esc ends a step, then leaves the cage.
 
@@ -28,6 +29,8 @@ pub(super) struct CageEdit {
     pub picked: BTreeSet<usize>,
     /// A step's first click.
     pub from: Option<DVec3>,
+    /// The picks before the press that may start a box.
+    pub pre: BTreeSet<usize>,
 }
 
 impl Session {
@@ -80,6 +83,7 @@ impl Session {
                     cage: c,
                     picked: BTreeSet::new(),
                     from: None,
+                    pre: BTreeSet::new(),
                 });
                 self.highlight_dirty = true;
             }
@@ -160,8 +164,10 @@ impl Session {
     }
 
     /// Whether the cage takes the click instead of the tool.
+    /// (Scale works through its own box and grips, round the picked
+    /// points.)
     pub(super) fn cage_takes(&self) -> bool {
-        self.cage.is_some() && matches!(self.tool.as_str(), SELECT | MOVE | ROTATE | SCALE)
+        self.cage.is_some() && matches!(self.tool.as_str(), SELECT | MOVE | ROTATE)
     }
 
     pub(super) fn cage_wants_inference(&self) -> bool {
@@ -225,17 +231,11 @@ impl Session {
                 let angle = a.cross(b).dot(n).atan2(a.dot(b));
                 Some(prism_ops::transform::turn(c, n, angle))
             }
-            SCALE => {
-                let c = self.cage_middle()?;
-                let (a, b) = (from.distance(c), to.distance(c));
-                (a > tiny && b > tiny)
-                    .then(|| prism_ops::transform::scaling(c, DVec3::splat(b / a)))
-            }
             _ => None,
         }
     }
 
-    fn cage_command(&self, m: DAffine3) -> Option<Command> {
+    pub(super) fn cage_command(&self, m: DAffine3) -> Option<Command> {
         let c = self.cage.as_ref()?;
         (!c.picked.is_empty()).then(|| Command::MoveCage {
             cage: c.cage,
@@ -276,6 +276,7 @@ impl Session {
         let tool = self.tool.clone();
         if tool == SELECT {
             if let Some(c) = &mut self.cage {
+                c.pre = c.picked.clone();
                 match (hit, shift || ctrl) {
                     (Some(k), true) => {
                         if !c.picked.remove(&k) {
@@ -287,6 +288,16 @@ impl Session {
                     (None, true) => {}
                 }
             }
+            // A drag from here is a box.
+            self.boxing = Some(super::BoxOp {
+                down: s,
+                now: s,
+                pre: self.saved.len(),
+                shift,
+                ctrl,
+                empty: false,
+                groups: self.groups.clone(),
+            });
             self.overlay_dirty = true;
             self.dirty = true;
             return;
@@ -328,6 +339,43 @@ impl Session {
         self.refresh();
     }
 
+    /// A Select box let go while the cage is open: the control points
+    /// inside it are picked (Shift toggles them, Ctrl adds them). A press
+    /// that did not drag keeps what the click picked.
+    pub(super) fn cage_box(&mut self, down: DVec2, now: DVec2, shift: bool, ctrl: bool) {
+        if (now - down).abs().max_element() < super::BOX_MIN {
+            return;
+        }
+        let (lo, hi) = (down.min(now), down.max(now));
+        let view = self.view();
+        let inside: Vec<usize> = self
+            .cage_points()
+            .iter()
+            .enumerate()
+            .filter_map(|(k, p)| {
+                let (q, _) = view.to_screen(*p)?;
+                (q.cmpge(lo).all() && q.cmple(hi).all()).then_some(k)
+            })
+            .collect();
+        if let Some(c) = &mut self.cage {
+            let mut picked = if shift || ctrl {
+                c.pre.clone()
+            } else {
+                BTreeSet::new()
+            };
+            for k in inside {
+                if shift && picked.contains(&k) {
+                    picked.remove(&k);
+                } else {
+                    picked.insert(k);
+                }
+            }
+            c.picked = picked;
+        }
+        self.overlay_dirty = true;
+        self.dirty = true;
+    }
+
     /// The cursor moved: show what the step would make.
     pub(super) fn cage_hover(&mut self) {
         if self.cage.as_ref().is_none_or(|c| c.from.is_none()) {
@@ -364,14 +412,6 @@ impl Session {
                 .ok()
                 .zip(self.cage_middle())
                 .map(|(deg, c)| prism_ops::transform::turn(c, self.cage_axis(), deg.to_radians())),
-            SCALE => text
-                .trim()
-                .trim_end_matches(['x', '×'])
-                .parse::<f64>()
-                .ok()
-                .filter(|k| *k > 0.0)
-                .zip(self.cage_middle())
-                .map(|(k, c)| prism_ops::transform::scaling(c, DVec3::splat(k))),
             _ => None,
         };
         if let Some(m) = m {
@@ -400,7 +440,7 @@ impl Session {
         let c = self.cage.as_ref()?;
         Some(match (self.tool.as_str(), c.from.is_some()) {
             (SELECT, _) => {
-                "Cage: click a control point to pick it (Shift adds) · then Move, Rotate or Scale · Esc leaves"
+                "Cage: click or drag a box round control points to pick them (Shift toggles, Ctrl adds) · then Move, Rotate or Scale · Esc leaves"
             }
             (MOVE, false) => {
                 "Cage: click a control point to move it, or a start point to move the picked ones"
@@ -410,10 +450,12 @@ impl Session {
                 "Cage: click a start point to turn the picked points about their middle"
             }
             (ROTATE, true) => "Click how far round · type degrees + Enter · arrows pick the axis",
-            (SCALE, false) => {
-                "Cage: click a start point to size the picked points about their middle"
+            (SCALE, _) if self.edit.is_some() => {
+                "Click where the grip goes · type a factor + Enter · Alt: about the middle"
             }
-            (SCALE, true) => "Click nearer or further from the middle · type a factor + Enter",
+            (SCALE, _) => {
+                "Cage: click a grip of the box round the picked points to size them (corners evenly)"
+            }
             _ => "Cage: pick Select, Move, Rotate or Scale · Esc leaves",
         })
     }
@@ -491,10 +533,15 @@ impl Session {
         let Some(c) = &self.cage else { return };
         let fb = &self.style.feedback;
         // During a step the cage is drawn where it would go.
-        let moved = c
-            .from
-            .zip(self.inference.as_ref().map(|i| i.point))
-            .and_then(|(_, to)| self.cage_motion(to));
+        let moved = match &self.edit {
+            Some(super::edit::EditOp::Scale { anchor, k, .. }) => {
+                Some(prism_ops::transform::scaling(*anchor, *k))
+            }
+            _ => c
+                .from
+                .zip(self.inference.as_ref().map(|i| i.point))
+                .and_then(|(_, to)| self.cage_motion(to)),
+        };
         let pts: Vec<DVec3> = self
             .cage_points()
             .into_iter()
@@ -513,6 +560,9 @@ impl Session {
                 dash: [4.0, 3.0],
             });
         }
+        if self.tool == ROTATE {
+            self.cage_protractor(o);
+        }
         for (k, p) in pts.iter().enumerate() {
             let picked = c.picked.contains(&k);
             o.marks.push(Mark {
@@ -526,6 +576,70 @@ impl Session {
                 },
             });
         }
+    }
+}
+
+impl Session {
+    /// Rotate's protractor about the picked points' middle: the turn's
+    /// plane, the line to the start and to where it is now, and the angle.
+    fn cage_protractor(&self, o: &mut Overlay) {
+        let Some(c) = self.cage_middle() else { return };
+        let fb = &self.style.feedback;
+        let view = self.view();
+        let Some((_, depth)) = view.to_screen(c) else {
+            return;
+        };
+        let r = view.units_per_px(depth) * super::edit::PROTRACTOR_RADIUS;
+        let n = self.cage_axis();
+        let (a, b) = super::rect_basis(n);
+        let pt = |t: f64| c + (a * t.cos() + b * t.sin()) * r;
+        let seg = 72;
+        for k in 0..seg {
+            let t = |k: i32| f64::from(k) / f64::from(seg) * std::f64::consts::TAU;
+            o.lines.push(Line {
+                a: pt(t(k)),
+                b: pt(t(k + 1)),
+                color: fb.protractor,
+                width: 1.2,
+                dash: [0.0, 0.0],
+            });
+        }
+        o.marks.push(Mark {
+            at: c,
+            shape: Shape::Circle,
+            color: self.style.selected,
+            size: 4.5,
+        });
+        let flat = |p: DVec3| {
+            let d = p - c;
+            (d - n * d.dot(n)).try_normalize()
+        };
+        let Some(s0) = self.cage_start().and_then(flat) else {
+            return;
+        };
+        o.lines.push(Line {
+            a: c,
+            b: c + s0 * r,
+            color: fb.rubber_band,
+            width: 1.6,
+            dash: [0.0, 0.0],
+        });
+        let to = self.inference.as_ref().map(|i| i.point);
+        let Some(s1) = to.and_then(flat) else { return };
+        let angle = s0.cross(s1).dot(n).atan2(s0.dot(s1));
+        o.lines.push(Line {
+            a: c,
+            b: c + s1 * r,
+            color: self.style.selected,
+            width: 2.0,
+            dash: [0.0, 0.0],
+        });
+        o.labels.push(prism_view::overlay::Label {
+            at: c + s1 * r,
+            offset: [12.0, -14.0],
+            text: format!("{:.1}°", angle.to_degrees()),
+            color: fb.pill,
+        });
     }
 }
 

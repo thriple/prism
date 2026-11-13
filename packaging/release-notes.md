@@ -1,8 +1,7 @@
-**New in this build: curves fixed up.**
-- **A curve that crosses itself is cut at the crossing.** Draw a loop or a figure eight with the Curve tool: the crossing becomes a corner you can snap to, and a flat loop fills with a face (a figure eight makes two).
-- **Midpoint snap on curves:** hover the middle of a curve to snap halfway along it.
-- **Lofts no longer twist:** circles and other closed curves drawn from different start points now loft straight, in both the Loft command and the Loft Tool.
-- **Fixed:** a line drawn across a curve that doubles back close to itself could miss a crossing and make overlapping faces.
+**New in this build: easier cage editing** (Edit Cage, on a selected freeform curve or face).
+- **Box select control points:** drag a box with Select. Shift toggles the points inside, Ctrl adds them.
+- **Scale has its box and grips:** the box is drawn round the picked control points. Drag a corner to scale evenly, an edge or face grip to scale along its axes; Alt scales about the middle, and you can type a factor.
+- **Rotate shows its protractor** about the picked points' middle, with the angle as you turn.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

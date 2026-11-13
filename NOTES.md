@@ -3466,8 +3466,7 @@ Collected from the "Left over" lines above, for the owner to order.
 - **Curves:** an open profile in Sweep does not turn with its path.
   (Self-crossings, the midpoint snap and twisting circles are done: see
   "Closing gaps: curves".)
-- **Cage editing:** no box select of control points; Rotate and Scale
-  have no protractor or grips there.
+- **Cage editing:** done (see "Closing gaps: cage editing").
 - **Camera:** Walk has no arrow keys, typed eye height or collision; the
   Perspective / Parallel check mark in the menu.
 - **Clipboard:** not the system clipboard; a component holding groups
@@ -3507,3 +3506,21 @@ Collected from the "Left over" lines above, for the owner to order.
   restarted exactly there (`Nurbs::restarted`). The seam gets a vertex.
 - Left over: a smooth (periodic) closed curve can still twist by up to
   half a control-point step, as its seam can only sit on a control point.
+
+## Closing gaps: cage editing (2026-11-13)
+- **Box select of control points:** with Edit Cage on, a Select drag
+  boxes control points (any direction; a point is in or out). Shift
+  toggles them, Ctrl adds them, a plain box replaces the picks. It uses
+  the session's own box, so it draws and labels as any other box.
+- **Scale has its box and grips** on the cage: the box is drawn round
+  the picked control points, with the usual grips (corners evenly, edge
+  and face middles along their axes, Alt about the middle, a typed
+  factor). The step is one cage move (`MoveCage`), previewed and undone
+  as before. The old way (a start click, then nearer or further from the
+  middle) is gone; grips replace it.
+- **Rotate shows its protractor** on the cage: a ring about the picked
+  points' middle in the turn's plane (blue, or the locked axis), the line
+  to the start click, the line to where it is now, and the angle.
+- Tests: the cage rotate-and-scale test now scales by a grip with Alt;
+  a new test boxes points (plain, then Shift) and checks the protractor's
+  pivot and angle label.

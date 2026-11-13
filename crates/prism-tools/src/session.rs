@@ -1870,6 +1870,10 @@ impl Session {
             return;
         }
         match button {
+            Button::Left if self.boxing.is_some() && self.cage_active() => {
+                let b = self.boxing.take().expect("box");
+                self.cage_box(b.down, b.now, b.shift, b.ctrl);
+            }
             Button::Left if self.boxing.is_some() => {
                 let b = self.boxing.take().expect("box");
                 let pre = self.saved.pop().unwrap_or_default();

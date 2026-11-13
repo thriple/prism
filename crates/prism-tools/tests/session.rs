@@ -4091,9 +4091,19 @@ fn rotate_scale_and_add_work_on_the_cage_and_refusals_say_why() {
         "{:?}",
         pts[2]
     );
-    // Scaled to twice the size about the same middle.
+    // Scaled to twice the size about the same middle: Scale's box is round
+    // the picked points (flat across, so its grips are only at the ends,
+    // standing off 5%); Alt scales about the middle.
     d.tool(SCALE);
-    d.click(DVec3::new(2.0, 3.0, 0.0));
+    assert!(
+        d.s.overlay()
+            .marks
+            .iter()
+            .any(|m| m.at.distance(DVec3::new(2.0, 3.1, 0.0)) < 1e-9),
+        "a grip above the top point"
+    );
+    d.send(Input::AltTap);
+    d.click(DVec3::new(2.0, 3.1, 0.0));
     d.typed("2");
     let pts = d.s.cage_points();
     assert!(
@@ -4107,6 +4117,73 @@ fn rotate_scale_and_add_work_on_the_cage_and_refusals_say_why() {
     action(&mut d, "cage.add");
     assert_eq!(d.s.cage_points().len(), 5);
     valid(&d);
+}
+
+#[test]
+fn control_points_are_boxed_and_rotate_shows_its_protractor() {
+    let mut d = drawn_curve();
+    d.tool(SELECT);
+    let on = {
+        let m = d.s.model();
+        let (_, e) = m.edges().next().unwrap();
+        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.3)
+    };
+    d.click(on);
+    action(&mut d, "cage.edit");
+    assert!(d.s.cage_active());
+    // A box round the two top points (1, 2) and (3, 2) picks them.
+    let (a, b) = (
+        d.screen(DVec3::new(0.5, 2.6, 0.0)),
+        d.screen(DVec3::new(3.5, 1.4, 0.0)),
+    );
+    drag_px(&mut d, a, b);
+    assert_eq!(d.s.cage_picked(), vec![1, 2]);
+    assert!(d.s.cage_active(), "the box does not leave the cage");
+    // With Shift, a box round the right two toggles them.
+    let (a, b) = (
+        d.screen(DVec3::new(2.5, 2.6, 0.0)),
+        d.screen(DVec3::new(4.5, -0.5, 0.0)),
+    );
+    d.send(Input::Move { x: a.x, y: a.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: a.x,
+        y: a.y,
+        shift: true,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Move { x: b.x, y: b.y });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(d.s.cage_picked(), vec![1, 3]);
+    // Rotate: the protractor sits on the picked points' middle (2, 2),
+    // and shows the angle once turning.
+    d.s.cage_pick(&[1, 2]);
+    d.tool(ROTATE);
+    d.hover(DVec3::new(3.0, 2.0, 0.0));
+    let ring = |d: &Driver| {
+        d.s.overlay()
+            .marks
+            .iter()
+            .any(|m| m.at.distance(DVec3::new(2.0, 2.0, 0.0)) < 1e-9)
+    };
+    assert!(ring(&d), "the pivot shows before the first click");
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    d.hover(DVec3::new(2.0, 3.0, 0.0));
+    assert!(
+        d.s.overlay()
+            .labels
+            .iter()
+            .any(|l| l.text.starts_with("90.0")),
+        "{:?}",
+        d.s.overlay()
+            .labels
+            .iter()
+            .map(|l| &l.text)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
