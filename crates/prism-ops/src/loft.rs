@@ -28,6 +28,8 @@ pub const DEGENERATE: &str =
 pub(crate) struct Section {
     pub curve: Nurbs,
     pub edges: Vec<EdgeId>,
+    /// A whole circle's centre, axis and radius: it can start anywhere.
+    pub circle: Option<(DVec3, DVec3, f64)>,
 }
 
 fn same_curve(a: &Arc<Nurbs>, b: &Arc<Nurbs>) -> bool {
@@ -53,6 +55,7 @@ pub(crate) fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> 
                     out.push(Section {
                         curve: c,
                         edges: vec![*id],
+                        circle: None,
                     });
                 }
             }
@@ -70,6 +73,7 @@ pub(crate) fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> 
                 out.push(Section {
                     curve: (*s.curve).clone(),
                     edges: on,
+                    circle: None,
                 });
             }
             Curve::Arc {
@@ -112,10 +116,12 @@ pub(crate) fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> 
                     .find(|p| !parts.iter().any(|q| tol.same_point(q.2, p.1)))
                     .or(parts.first())
                     .map(|p| p.1);
+                let whole = (total - std::f64::consts::TAU).abs() < 1e-9;
                 if let Some(c) = start.and_then(|s| Nurbs::arc(*centre, *axis, s, total)) {
                     out.push(Section {
                         curve: c,
                         edges: parts.iter().map(|p| p.0).collect(),
+                        circle: whole.then_some((*centre, *axis, *radius)),
                     });
                 }
             }
@@ -186,27 +192,38 @@ fn arranged(mut list: Vec<Section>) -> Vec<Section> {
     }
     for j in 1..out.len() {
         let prev = out[j - 1].curve.clone();
-        let c = &mut out[j].curve;
         let ends = |x: &Nurbs| {
             let (a, b) = x.domain();
             (x.eval(a), x.eval(b))
         };
+        let circle = out[j].circle;
+        let c = &mut out[j].curve;
         if c.is_closed() && prev.is_closed() {
             if newell(c.cage()).dot(newell(prev.cage())) < 0.0 {
                 *c = c.reversed();
             }
-            if c.is_periodic() {
-                let start = ends(&prev).0;
-                let n = c.cage().len();
-                let best = (0..n)
-                    .min_by(|a, b| {
-                        ends(&c.started_at(*a))
-                            .0
-                            .distance(start)
-                            .total_cmp(&ends(&c.started_at(*b)).0.distance(start))
-                    })
-                    .unwrap_or(0);
-                *c = c.started_at(best);
+            if let Some((centre, axis, radius)) = circle {
+                // A whole circle starts beside the last section's start,
+                // turning the same way, so the loft does not twist.
+                let to = ends(&prev).0 - centre;
+                let flat = to - axis * axis.dot(to);
+                let axis = if newell(prev.cage()).dot(axis) < 0.0 {
+                    -axis
+                } else {
+                    axis
+                };
+                if flat.length() > radius * 1e-9
+                    && let Some(turned) = Nurbs::arc(
+                        centre,
+                        axis,
+                        centre + flat.normalize() * radius,
+                        std::f64::consts::TAU,
+                    )
+                {
+                    *c = turned;
+                }
+            } else {
+                *c = beside(&prev, c);
             }
         } else {
             let ((a0, a1), (b0, b1)) = (ends(&prev), ends(c));
@@ -216,6 +233,29 @@ fn arranged(mut list: Vec<Section>) -> Vec<Section> {
         }
     }
     out
+}
+
+/// A closed curve started beside where `prev` starts (its closest point
+/// to that start), so a loft between them does not twist. The same shape:
+/// a smooth closed curve moves its seam to the nearest control point, any
+/// other closed curve exactly to that point.
+pub(crate) fn beside(prev: &Nurbs, c: &Nurbs) -> Nurbs {
+    let start = prev.eval(prev.domain().0);
+    if c.is_periodic() {
+        let n = c.cage().len();
+        let first = |x: &Nurbs| x.eval(x.domain().0);
+        let best = (0..n)
+            .min_by(|a, b| {
+                first(&c.started_at(*a))
+                    .distance(start)
+                    .total_cmp(&first(&c.started_at(*b)).distance(start))
+            })
+            .unwrap_or(0);
+        return c.started_at(best);
+    }
+    let (lo, hi) = c.domain();
+    c.restarted(c.closest(start, lo, hi))
+        .unwrap_or_else(|| c.clone())
 }
 
 /// The edge joining `a` and `b` that passes through `mid`.

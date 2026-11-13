@@ -155,7 +155,7 @@ fn the_model_survives_json() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(48))]
+    #![proptest_config(ProptestConfig::with_cases(96))]
     #[test]
     fn random_curves_and_lines_keep_the_model_clean(
         pts in prop::collection::vec((0.0f64..6.0, 0.0f64..6.0), 4..7),
@@ -165,15 +165,6 @@ proptest! {
         let pts: Vec<DVec3> = pts.iter().map(|(x, y)| DVec3::new(*x, *y, 0.0)).collect();
         let curve = if closed { Nurbs::closed(&pts, 3) } else { Nurbs::open(&pts, 3) };
         let Some(curve) = curve else { return Ok(()) };
-        // A curve that crosses itself is not cut there yet: leave those out.
-        let poly: Vec<DVec3> = (0..=64).map(|i| curve.eval(i as f64 / 64.0)).collect();
-        let crosses = (0..poly.len() - 1).any(|i| (i + 2..poly.len() - 1).any(|j| {
-            if closed && i == 0 && j == poly.len() - 2 { return false; }
-            let (a, b, c, d) = (poly[i], poly[i + 1], poly[j], poly[j + 1]);
-            let o = |p: DVec3, q: DVec3, r: DVec3| (q - p).cross(r - p).z;
-            o(a, b, c) * o(a, b, d) <= 0.0 && o(c, d, a) * o(c, d, b) <= 0.0
-        }));
-        prop_assume!(!crosses);
         let mut m = Model::new();
         add_spline(&mut m, &curve);
         for ((x0, y0), (x1, y1)) in lines {
@@ -252,4 +243,155 @@ fn a_freeform_face_is_not_pushed_or_pulled() {
         prism_ops::pushpull::refusal(&m, wall, 0.5),
         Some(prism_ops::radius::FREEFORM)
     );
+}
+
+/// An open curve that loops over itself, like a written "e".
+fn loop_curve() -> Nurbs {
+    Nurbs::open(
+        &[
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(4.0, 0.0, 0.0),
+            DVec3::new(4.0, 3.0, 0.0),
+            DVec3::new(2.0, 3.0, 0.0),
+            DVec3::new(2.0, -1.0, 0.0),
+            DVec3::new(5.0, -1.0, 0.0),
+        ],
+        3,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_curve_that_crosses_itself_is_cut_there_and_its_loop_is_a_face() {
+    let mut m = Model::new();
+    let added = add_spline(&mut m, &loop_curve());
+    assert_eq!(
+        added.edges.len(),
+        4,
+        "lead in, the loop in two halves, lead out"
+    );
+    assert_eq!(m.face_count(), 1, "the loop closes a face");
+    clean(&m);
+    // One vertex where it crosses, with four edge ends.
+    let crossing = m
+        .vertices()
+        .find(|(v, _)| m.edges().filter(|(_, e)| e.has(*v)).count() == 4)
+        .map(|(_, p)| p);
+    assert!(crossing.is_some(), "the crossing joins four edges");
+}
+
+#[test]
+fn a_figure_eight_is_two_faces() {
+    let mut m = Model::new();
+    let eight = Nurbs::closed(
+        &[
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(2.0, 2.0, 0.0),
+            DVec3::new(4.0, 0.0, 0.0),
+            DVec3::new(2.0, -2.0, 0.0),
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(-2.0, 2.0, 0.0),
+            DVec3::new(-4.0, 0.0, 0.0),
+            DVec3::new(-2.0, -2.0, 0.0),
+        ],
+        3,
+    )
+    .unwrap();
+    add_spline(&mut m, &eight);
+    assert_eq!(m.face_count(), 2);
+    clean(&m);
+    let areas: Vec<f64> = m.faces().map(|(f, _)| m.face_area(f)).collect();
+    assert!((areas[0] - areas[1]).abs() < 1e-3 * areas[0], "{areas:?}");
+}
+
+#[test]
+fn a_curve_that_doubles_back_is_not_cut_at_its_tip() {
+    // Found by the property test: a sharp turn back gave false crossings.
+    let pts: Vec<DVec3> = [
+        (5.641681983196217, 4.258456509234495),
+        (5.267743374674798, 1.8535312219342872),
+        (5.090840079789922, 3.8417318288890674),
+        (5.424635215974237, 0.3492715404018569),
+        (0.0, 0.0),
+    ]
+    .iter()
+    .map(|(x, y)| DVec3::new(*x, *y, 0.0))
+    .collect();
+    let mut m = Model::new();
+    add_spline(&mut m, &Nurbs::closed(&pts, 3).unwrap());
+    clean(&m);
+}
+
+#[test]
+fn a_sharp_turn_back_on_a_closed_curve_is_not_a_crossing() {
+    // Found by the property test: the strands at the turn run almost on
+    // top of each other.
+    let pts: Vec<DVec3> = [
+        (3.392148257792721, 5.539123292483001),
+        (3.932910641202735, 3.099152644216482),
+        (0.4217332197798381, 5.53300821673034),
+        (4.3164393451727525, 0.10829164701344554),
+    ]
+    .iter()
+    .map(|(x, y)| DVec3::new(*x, *y, 0.0))
+    .collect();
+    let mut m = Model::new();
+    add_spline(&mut m, &Nurbs::closed(&pts, 3).unwrap());
+    clean(&m);
+}
+
+#[test]
+fn a_line_across_a_hook_meets_it_every_time() {
+    // Found by the property test: the curve comes back close to itself,
+    // and the line's third crossing was put on the wrong strand and lost,
+    // leaving two faces that overlapped.
+    let pts: Vec<DVec3> = [
+        (0.0, 0.0),
+        (0.7450582569539217, 1.823509793294491),
+        (4.37404391589213, 3.1550472947039374),
+        (0.5433801233376531, 2.7731089001236833),
+        (5.826578634349477, 2.9409573947427026),
+    ]
+    .iter()
+    .map(|(x, y)| DVec3::new(*x, *y, 0.0))
+    .collect();
+    let mut m = Model::new();
+    add_spline(&mut m, &Nurbs::open(&pts, 3).unwrap());
+    let added = add_segment(
+        &mut m,
+        DVec3::new(3.794457242205567, 0.0, 0.0),
+        DVec3::new(1.0784649099617725, 5.474750455019208, 0.0),
+    );
+    assert_eq!(added.edges.len(), 4, "three crossings cut the line in four");
+    add_segment(
+        &mut m,
+        DVec3::new(0.0, 4.392495139090876, 0.0),
+        DVec3::new(4.344417584688826, 1.9257203142311268, 0.0),
+    );
+    clean(&m);
+}
+
+#[test]
+fn a_shallow_crossing_near_a_tip_is_still_cut() {
+    // Found by the property test: a thin leaf whose strands cross at about
+    // one degree near its tip. Left uncut, a line across the tip made two
+    // faces that overlapped.
+    let pts: Vec<DVec3> = [
+        (3.10773848195406, 1.6282056731001124),
+        (1.335075253210589, 4.765843326131168),
+        (0.0, 4.614389251866482),
+        (1.7030284650494323, 4.148455401783976),
+    ]
+    .iter()
+    .map(|(x, y)| DVec3::new(*x, *y, 0.0))
+    .collect();
+    let mut m = Model::new();
+    add_spline(&mut m, &Nurbs::closed(&pts, 3).unwrap());
+    assert_eq!(m.face_count(), 2, "the leaf and the small loop at its tip");
+    add_segment(
+        &mut m,
+        DVec3::new(0.0, 2.8738185762044717, 0.0),
+        DVec3::new(5.72154296034267, 2.28137092736813, 0.0),
+    );
+    clean(&m);
 }

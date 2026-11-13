@@ -3923,10 +3923,13 @@ fn a_line_snaps_onto_a_curve_and_splits_it() {
     let on = {
         let m = d.s.model();
         let (_, e) = m.edges().next().unwrap();
-        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.5)
+        e.curve.point(m.vertex(e.a), m.vertex(e.b), 0.35)
     };
     d.tool(LINE);
     d.click(DVec3::new(1.3, -1.0, 0.0));
+    // Its middle (halfway along it) is a Midpoint.
+    d.hover(DVec3::new(2.0, 1.5, 0.0));
+    assert_eq!(d.s.inference().expect("a snap").label, "Midpoint");
     d.hover(on + DVec3::new(0.02, 0.02, 0.0));
     let i = d.s.inference().expect("a snap");
     assert_eq!(i.label, "On Curve");

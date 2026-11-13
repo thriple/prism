@@ -72,12 +72,32 @@ pub fn curves_meet(
         return Vec::new();
     }
     let mut out: Vec<DVec3> = Vec::new();
-    for w in p.windows(2) {
+    // A spline's stretch around step `k` of `n`: the meeting is refined
+    // there, so a curve that comes back near itself does not slide onto
+    // its other strand (lines and arcs have one closest point anyway).
+    let local = |c: &Curve, a: DVec3, b: DVec3, k: usize, n: usize| match c {
+        Curve::Spline(s) => {
+            let (u0, u1) = (
+                k.saturating_sub(1) as f64 / n as f64,
+                (k + 2).min(n) as f64 / n as f64,
+            );
+            let part = crate::Spline {
+                curve: s.curve.clone(),
+                t0: s.at(u0),
+                t1: s.at(u1),
+            };
+            let ends = (part.point(0.0), part.point(1.0));
+            (Curve::Spline(part), ends.0, ends.1)
+        }
+        _ => (c.clone(), a, b),
+    };
+    let (n1, n2) = (p.len() - 1, q.len() - 1);
+    for (i, w) in p.windows(2).enumerate() {
         let (wlo, whi) = (w[0].min(w[1]), w[0].max(w[1]));
         if (wlo - pad).cmpgt(hi2).any() || (lo2 - pad).cmpgt(whi).any() {
             continue;
         }
-        for z in q.windows(2) {
+        for (j, z) in q.windows(2).enumerate() {
             let (x, y) = segment_closest(w[0], w[1], z[0], z[1]);
             let near = eps + 0.05 * (w[0].distance(w[1]) + z[0].distance(z[1]));
             if x.distance(y) > near {
@@ -86,6 +106,8 @@ pub fn curves_meet(
             // Where the two curves' tangent lines come closest, put back
             // on the curves, until the two points agree (Newton's method
             // in effect: it closes fast even on a shallow crossing).
+            let ((c1, a1, b1), (c2, a2, b2)) = (local(c1, a1, b1, i, n1), local(c2, a2, b2, j, n2));
+            let (c1, c2) = (&c1, &c2);
             let mut x = c1.closest_point(a1, b1, x.midpoint(y));
             let mut y = c2.closest_point(a2, b2, x);
             for _ in 0..60 {

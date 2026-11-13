@@ -466,7 +466,7 @@ fn add_arc_from(
         })
         .collect();
     on.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-    on.dedup_by_key(|x| x.1);
+    on.dedup();
     // The same arc drawn again is the one already there.
     let same = |m: &Model, x: VertexId, y: VertexId| {
         let want = if x < y { arc.clone() } else { arc.reversed() };
@@ -648,11 +648,91 @@ pub fn vertex_at(model: &Model, p: DVec3) -> Option<VertexId> {
         .map(|(id, _)| id)
 }
 
+/// The places where a curve crosses itself, as pairs of parameters
+/// `s < t`. The curve is cut into parts that turn less than half a turn
+/// (such a part cannot cross itself), and each pair of parts is met; the
+/// joint two neighbouring parts share is not a crossing.
+fn self_crossings(curve: &prism_geom::Nurbs, tol: &Tol) -> Vec<(f64, f64)> {
+    let (d0, d1) = curve.domain();
+    let mut cuts = vec![d0, d1];
+    let mut i = 0;
+    while i + 1 < cuts.len() {
+        let (t0, t1) = (cuts[i], cuts[i + 1]);
+        if curve.turning(t0, t1) > 2.5 && cuts.len() < 256 {
+            cuts.insert(i + 1, (t0 + t1) / 2.0);
+        } else {
+            i += 1;
+        }
+    }
+    let n = cuts.len() - 1;
+    if n < 2 {
+        return Vec::new();
+    }
+    let closed = curve.is_closed();
+    let piece = |k: usize| {
+        let (t0, t1) = (cuts[k], cuts[k + 1]);
+        let c = Curve::Spline(prism_geom::Spline {
+            curve: std::sync::Arc::new(curve.clone()),
+            t0,
+            t1,
+        });
+        (c, curve.eval(t0), curve.eval(t1))
+    };
+    let pieces: Vec<_> = (0..n).map(piece).collect();
+    let mut out: Vec<(f64, f64)> = Vec::new();
+    for i in 0..n {
+        for j in i + 1..n {
+            let (ci, ai, bi) = &pieces[i];
+            let (cj, aj, bj) = &pieces[j];
+            // Joints the two parts share.
+            let mut joints = Vec::new();
+            if j == i + 1 {
+                joints.push(*bi);
+            }
+            if closed && i == 0 && j == n - 1 {
+                joints.push(*ai);
+            }
+            for x in prism_geom::curves_meet((ci, *ai, *bi), (cj, *aj, *bj), tol.dist) {
+                if joints.iter().any(|q| tol.same_point(*q, x)) {
+                    continue;
+                }
+                let s = curve.closest(x, cuts[i], cuts[i + 1]);
+                let t = curve.closest(x, cuts[j], cuts[j + 1]);
+                let p = curve.eval(s);
+                if out.iter().any(|&(s0, _)| tol.same_point(curve.eval(s0), p)) {
+                    continue;
+                }
+                // Strands that only come within tolerance (the tip of a
+                // curve that doubles back, two strands brushing past) are
+                // not a crossing: the strands must truly meet, at an angle,
+                // and the loop between must go somewhere.
+                let (ds, dt) = (curve.eval_d(s).1, curve.eval_d(t).1);
+                let sin = ds
+                    .normalize_or_zero()
+                    .cross(dt.normalize_or_zero())
+                    .length();
+                let away = (1..16)
+                    .map(|k| curve.eval(s + (t - s) * k as f64 / 16.0).distance(p))
+                    .fold(0.0, f64::max);
+                if p.distance(curve.eval(t)) > 1e-3 * tol.dist
+                    || sin < 1e-3
+                    || away < 10.0 * tol.dist
+                {
+                    continue;
+                }
+                out.push((s, t));
+            }
+        }
+    }
+    out
+}
+
 /// Add a NURBS curve (Freeform NURBS part 1). Like a segment or an arc, it
 /// cuts and is cut by what it crosses, takes in the vertices it passes
 /// through, and closes faces when it lies in a plane. Its pieces share the
 /// curve and one new curve id. A closed curve is two pieces at least, as a
-/// circle is. (A curve that crosses itself is not cut there yet.)
+/// circle is. A curve that crosses itself is cut at the crossing, and the
+/// loop it makes closes a face when it lies in a plane.
 pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
     let (d0, d1) = curve.domain();
     let closed = curve.is_closed();
@@ -706,6 +786,11 @@ pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
     for x in crossings {
         insert_point(model, x, &tol);
     }
+    // Where the curve crosses itself: one vertex, met at two places.
+    let selfs: Vec<(f64, f64, VertexId)> = self_crossings(curve, &tol)
+        .into_iter()
+        .map(|(s, t)| (s, t, insert_point(model, curve.eval(s), &tol)))
+        .collect();
     // Every vertex on the curve, in order along it.
     let mut on: Vec<(f64, VertexId)> = model
         .vertices()
@@ -717,14 +802,28 @@ pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
             (curve.eval(t).distance(x) < tol.dist).then_some((t, id))
         })
         .collect();
+    for &(s, t, v) in &selfs {
+        on.retain(|x| x.1 != v);
+        on.extend([(s, v), (t, v)]);
+    }
     on.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-    on.dedup_by_key(|x| x.1);
+    on.dedup();
     if closed {
         on.push((d1, a));
     } else if let Some(last) = on.iter_mut().find(|x| x.1 == b) {
         last.0 = d1;
     }
     on.sort_by(|x, y| x.0.total_cmp(&y.0));
+    // A loop from a crossing back to it is two pieces, as a circle is.
+    let mut k = 0;
+    while k + 1 < on.len() {
+        let ((t0, x), (t1, y)) = (on[k], on[k + 1]);
+        if x == y && t1 > t0 {
+            let t = (t0 + t1) / 2.0;
+            on.insert(k + 1, (t, insert_point(model, curve.eval(t), &tol)));
+        }
+        k += 1;
+    }
     // The same piece drawn again is the one already there.
     let same = |m: &Model, x: VertexId, y: VertexId, mid: DVec3| {
         m.edges().any(|(_, e)| {

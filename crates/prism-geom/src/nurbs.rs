@@ -527,6 +527,21 @@ impl Nurbs {
         }
     }
 
+    /// A closed curve with clamped ends (not periodic) started at `t`
+    /// instead: the same shape, exactly, its seam moved there. None when
+    /// it is not closed or is periodic (see [`Nurbs::started_at`]).
+    pub fn restarted(&self, t: f64) -> Option<Nurbs> {
+        let (lo, hi) = self.domain();
+        if self.periodic || !self.is_closed() || t.is_nan() || t < lo || t > hi {
+            return None;
+        }
+        let span = (hi - lo) * 1e-9;
+        if t - lo <= span || hi - t <= span {
+            return Some(self.clone());
+        }
+        Nurbs::joined(&[self.between(t, hi)?, self.between(lo, t)?])
+    }
+
     /// How many times `t` is a knot.
     fn multiplicity(&self, t: f64) -> usize {
         self.knots.iter().filter(|k| **k == t).count()
@@ -825,6 +840,11 @@ impl Nurbs {
             at += len;
         }
         knots.extend(std::iter::repeat_n(1.0, degree + 1));
+        // Parts that come back to the start close the curve exactly.
+        let n = points.len();
+        if points[0].distance(points[n - 1]) <= scale * 1e-7 {
+            points[n - 1] = points[0];
+        }
         Nurbs::new(degree, knots, points, weights, false)
     }
 
@@ -837,37 +857,48 @@ impl Nurbs {
     }
 
     /// The parameter in `lo..=hi` whose point is closest to `p`. The range
-    /// may run past the end of a closed curve.
+    /// may run past the end of a closed curve. Each sampled dip in distance
+    /// is refined, so a curve that comes back near itself still gives the
+    /// strand that is truly closest.
     pub fn closest(&self, p: DVec3, lo: f64, hi: f64) -> f64 {
         let (d0, d1) = self.domain();
         let n = ((self.spans() * 8) as f64 * ((hi - lo) / (d1 - d0)).abs().max(0.05)).ceil()
             as usize
             + 8;
         let at = |i: usize| lo + (hi - lo) * i as f64 / n as f64;
-        let mut best = (f64::INFINITY, 0);
-        for i in 0..=n {
-            let d = self.eval(at(i)).distance_squared(p);
-            if d < best.0 {
-                best = (d, i);
-            }
-        }
-        let (a, b) = (at(best.1.saturating_sub(1)), at((best.1 + 1).min(n)));
-        let mut t = at(best.1);
-        for _ in 0..24 {
-            let (c, d) = self.eval_d(t);
-            let dd = d.length_squared();
-            if dd == 0.0 {
-                break;
-            }
-            let step = (p - c).dot(d) / dd;
-            let next = (t + step).clamp(a.min(b), a.max(b));
-            if (next - t).abs() <= 1e-15 * (d1 - d0) {
+        let dist: Vec<f64> = (0..=n)
+            .map(|i| self.eval(at(i)).distance_squared(p))
+            .collect();
+        let refine = |i: usize| {
+            let (a, b) = (at(i.saturating_sub(1)), at((i + 1).min(n)));
+            let mut t = at(i);
+            for _ in 0..24 {
+                let (c, d) = self.eval_d(t);
+                let dd = d.length_squared();
+                if dd == 0.0 {
+                    break;
+                }
+                let step = (p - c).dot(d) / dd;
+                let next = (t + step).clamp(a.min(b), a.max(b));
+                if (next - t).abs() <= 1e-15 * (d1 - d0) {
+                    t = next;
+                    break;
+                }
                 t = next;
-                break;
             }
-            t = next;
-        }
-        t
+            t
+        };
+        // Every sample no further than both neighbours, nearest first.
+        let mut dips: Vec<usize> = (0..=n)
+            .filter(|&i| (i == 0 || dist[i] <= dist[i - 1]) && (i == n || dist[i] <= dist[i + 1]))
+            .collect();
+        dips.sort_by(|x, y| dist[*x].total_cmp(&dist[*y]).then(x.cmp(y)));
+        dips.truncate(6);
+        dips.into_iter()
+            .map(refine)
+            .map(|t| (self.eval(t).distance_squared(p), t))
+            .min_by(|x, y| x.0.total_cmp(&y.0).then(x.1.total_cmp(&y.1)))
+            .map_or(lo, |x| x.1)
     }
 
     /// How far the direction of travel turns between `t0` and `t1`, in
@@ -992,6 +1023,26 @@ impl Spline {
     pub fn inner_points(&self) -> Vec<DVec3> {
         let n = self.curve.steps(self.t0, self.t1);
         (1..n).map(|i| self.point(i as f64 / n as f64)).collect()
+    }
+
+    /// The fraction of the way that is halfway along its length (the
+    /// midpoint people mean, which the parameter's middle is not).
+    pub fn halfway(&self) -> f64 {
+        let n = self.curve.steps(self.t0, self.t1) * 8;
+        let pts: Vec<DVec3> = (0..=n).map(|i| self.point(i as f64 / n as f64)).collect();
+        let mut run = vec![0.0];
+        for w in pts.windows(2) {
+            run.push(run.last().copied().unwrap_or(0.0) + w[0].distance(w[1]));
+        }
+        let half = run[n] / 2.0;
+        let i = run.partition_point(|&r| r < half).clamp(1, n);
+        let span = run[i] - run[i - 1];
+        let k = if span > 0.0 {
+            (half - run[i - 1]) / span
+        } else {
+            0.0
+        };
+        (i as f64 - 1.0 + k) / n as f64
     }
 
     pub fn length(&self) -> f64 {
@@ -1121,6 +1172,31 @@ mod tests {
             let p = u.eval(i as f64 / 20.0 * 0.3);
             assert!((p.length() - 1.0).abs() < 1e-14);
             assert!(half.eval(half.closest(p, 0.0, 0.3)).distance(p) < 1e-12);
+        }
+    }
+
+    #[test]
+    fn a_closed_curve_restarts_anywhere_with_the_same_shape() {
+        let tau = std::f64::consts::TAU;
+        let halves = [
+            Nurbs::arc(DVec3::ZERO, DVec3::Z, DVec3::X, tau / 2.0).unwrap(),
+            Nurbs::arc(DVec3::ZERO, DVec3::Z, -DVec3::X, tau / 2.0).unwrap(),
+        ];
+        for c in [
+            Nurbs::arc(DVec3::ZERO, DVec3::Z, DVec3::X, tau).unwrap(),
+            Nurbs::joined(&halves).unwrap(),
+        ] {
+            let (lo, hi) = c.domain();
+            let t = c.closest(DVec3::Y * 5.0, lo, hi);
+            let r = c.restarted(t).expect("restarts");
+            let (a, b) = r.domain();
+            assert!(r.eval(a).distance(DVec3::Y) < 1e-12, "{}", r.eval(a));
+            assert!(r.eval(b).distance(DVec3::Y) < 1e-12);
+            for k in 0..=32 {
+                let p = r.eval(a + (b - a) * k as f64 / 32.0);
+                assert!((p.length() - 1.0).abs() < 1e-12, "still the circle: {p}");
+            }
+            assert!(r.is_closed());
         }
     }
 

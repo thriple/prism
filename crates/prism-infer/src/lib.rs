@@ -544,7 +544,17 @@ pub fn infer(
             }
             continue;
         }
-        if e.curve.is_spline() {
+        if let Some(sp) = e.curve.spline() {
+            // Its midpoint: halfway along it.
+            let mut c = blank(Kind::Midpoint, Key::Mid(e.id));
+            c.edge = Some(e.id);
+            push(
+                Kind::Midpoint,
+                sp.point(sp.halfway()),
+                Key::Mid(e.id),
+                true,
+                c,
+            );
             // On the curve: the closest drawn piece, then exactly onto it.
             let near = e
                 .segments()

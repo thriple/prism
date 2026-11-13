@@ -3160,8 +3160,8 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
   touching the axis.
 - An arc or circle used as a section becomes a NURBS edge of the same
   shape (it is then a side of a freeform face); lines stay lines.
-- **Left over:** circles are not started beside each other (a loft of
-  circles drawn from different start points twists); no picking of the
+- **Left over:** ~~circles are not started beside each other~~ (done
+  2026-11-13, see "Closing gaps: curves"); no picking of the
   order by hand; no caps (draw or keep the flat faces yourself); surfaces
   that come to a point (a pole) wait for three-sided faces.
 
@@ -3463,9 +3463,9 @@ Collected from the "Left over" lines above, for the owner to order.
   split, no booleans (needs the kernel's surface intersection, Solids &
   CAD). Push/Pull does not move a freeform face; Offset refuses faces
   with spline edges; Follow Me refuses splines.
-- **Curves:** a curve that crosses itself is not cut at the crossing; no
-  midpoint snap on a spline; circles lofted from different start points
-  twist; an open profile in Sweep does not turn with its path.
+- **Curves:** an open profile in Sweep does not turn with its path.
+  (Self-crossings, the midpoint snap and twisting circles are done: see
+  "Closing gaps: curves".)
 - **Cage editing:** no box select of control points; Rotate and Scale
   have no protractor or grips there.
 - **Camera:** Walk has no arrow keys, typed eye height or collision; the
@@ -3475,3 +3475,35 @@ Collected from the "Left over" lines above, for the owner to order.
 - **Freehand:** no Shift for a 3D stroke.
 - **Smart Guides:** equal sizes; Rotate and Scale do not use them.
 - **Preferences:** no reset for units; no colour or autosave settings.
+
+## Closing gaps: curves (2026-11-13)
+- **A curve that crosses itself is cut there.** `add_spline` finds where
+  the curve meets itself (`self_crossings`: the curve is cut into parts
+  that turn less than half a turn, which cannot cross themselves, and each
+  pair is met). The crossing is one vertex the curve passes twice; the
+  loop it makes is two pieces, as a circle is, and closes a face when the
+  curve is flat. A figure eight is two faces.
+- Only true crossings count: the two strands must meet exactly (not just
+  within tolerance), at more than about 0.06 degrees, and the loop
+  between must reach ten tolerances away. This keeps out the tip of a
+  curve that doubles back and strands that brush past.
+- **Bugs found on the way** by letting the property test draw curves that
+  cross themselves (it used to skip them), each with a test:
+  - `Nurbs::closest` refined only its nearest sample, so on a curve that
+    comes back near itself it could land on the wrong strand. A line
+    across such a hook lost a crossing, and two faces overlapped. It now
+    refines every dip in distance and keeps the nearest.
+  - `curves_meet` refined each meeting over the whole curve; it now
+    works on the stretch where the meeting was found.
+  - `Nurbs::joined` left a ring's last point a hair off its first, so a
+    ring of joined parts did not count as closed. It now closes exactly.
+  - The property test runs 96 cases in CI; 20,000 passed once here.
+- **Midpoint snap on curves:** halfway along the curve's length
+  (`Spline::halfway`), not the middle of its parameter.
+- **Lofted closed curves start beside each other,** in the Loft command
+  and the Loft Tool: a whole circle is redrawn from the point beside the
+  last section's start, a smooth closed curve moves its seam to the
+  nearest control point (as before), and any other closed curve is
+  restarted exactly there (`Nurbs::restarted`). The seam gets a vertex.
+- Left over: a smooth (periodic) closed curve can still twist by up to
+  half a control-point step, as its seam can only sit on a control point.

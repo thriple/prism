@@ -206,3 +206,61 @@ fn a_tangent_guide_runs_from_an_arc_end() {
         );
     }
 }
+
+#[test]
+fn a_curve_has_a_midpoint_halfway_along_it() {
+    // An open curve whose parameter runs unevenly: its control points
+    // bunch up at the start, so the middle of the parameter is not the
+    // middle of its length.
+    for k in SCALES {
+        let curve = prism_geom::Nurbs::open(
+            &[
+                DVec3::new(0.0, 0.0, 0.0) * k,
+                DVec3::new(0.2, 0.3, 0.0) * k,
+                DVec3::new(0.4, 0.5, 0.0) * k,
+                DVec3::new(3.0, 1.0, 0.0) * k,
+                DVec3::new(4.0, 0.0, 0.0) * k,
+            ],
+            3,
+        )
+        .unwrap();
+        let mut m = Model::new();
+        prism_ops::add_spline(&mut m, &curve);
+        let sp = prism_geom::Spline::whole(curve.clone());
+        let mid = sp.point(sp.halfway());
+        let cam = Camera {
+            eye: DVec3::new(2.0, -2.0, 6.0) * k,
+            target: DVec3::new(2.0, 0.5, 0.0) * k,
+        };
+        let t = Setup {
+            scene: Scene::build(&m),
+            view: View::new(&cam, 900.0, 600.0),
+            k: 1.0,
+        };
+        let i = t.at(
+            t.screen(mid) + DVec2::new(2.0, 2.0),
+            &Context::default(),
+            &Memory::default(),
+        );
+        assert_eq!(i.kind, Kind::Midpoint, "at {k}");
+        assert!(i.point.distance(mid) < 1e-9 * k, "at {k}");
+        // Halfway by length: the two parts are the same length.
+        let h = sp.halfway();
+        let part = |t0: f64, t1: f64| {
+            prism_geom::Spline {
+                curve: sp.curve.clone(),
+                t0,
+                t1,
+            }
+            .length()
+        };
+        let (d0, d1) = curve.domain();
+        let split = d0 + (d1 - d0) * h;
+        let (a, b) = (part(d0, split), part(split, d1));
+        assert!((a - b).abs() < 1e-4 * (a + b), "at {k}: {a} vs {b}");
+        assert!(
+            (h - 0.5).abs() > 0.05,
+            "the parameter's middle is elsewhere"
+        );
+    }
+}

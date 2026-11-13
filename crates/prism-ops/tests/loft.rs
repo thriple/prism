@@ -312,3 +312,43 @@ fn a_ring_of_curves_is_not_lofted_and_says_why() {
     assert_eq!(loft_all(&mut m).err(), Some(loft::RING));
     assert_eq!(m, was);
 }
+
+#[test]
+fn circles_drawn_from_different_starts_loft_without_a_twist() {
+    let mut m = Model::new();
+    let tau = std::f64::consts::TAU;
+    // The same circle twice, one above the other, started a quarter turn
+    // apart (and the top one drawn the other way round).
+    add_arc(&mut m, DVec3::ZERO, DVec3::Z, 1.0, DVec3::X, tau);
+    add_arc(
+        &mut m,
+        DVec3::new(0.0, 0.0, 3.0),
+        -DVec3::Z,
+        1.0,
+        DVec3::new(0.0, 1.0, 3.0),
+        tau,
+    );
+    let flats: Vec<_> = m.faces().map(|(id, _)| id).collect();
+    for f in flats {
+        m.remove_face(f);
+    }
+    let faces = loft_all(&mut m).unwrap();
+    clean(&m);
+    // A straight tube: every line across runs straight up.
+    let g = m.face(faces[0]).unwrap().surface.patch().unwrap().clone();
+    let [(u0, u1), (v0, v1)] = g.surface.domain();
+    for k in 0..8 {
+        let u = u0 + (u1 - u0) * k as f64 / 8.0;
+        let (a, b) = (g.surface.eval(u, v0), g.surface.eval(u, v1));
+        assert!(
+            a.truncate().distance(b.truncate()) < 1e-9,
+            "at {k}: {a} below {b}"
+        );
+    }
+    for f in &faces {
+        let g = m.face(*f).unwrap();
+        let p = m.vertex(g.outer[0]);
+        let n = g.surface.normal_at(p);
+        assert!(n.dot(DVec3::new(p.x, p.y, 0.0)) > 0.0, "{n} at {p}");
+    }
+}

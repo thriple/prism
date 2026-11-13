@@ -616,7 +616,8 @@ fn loft_surface(sides: &[Side], preset: Preset) -> Result<(NurbsSurface, Vec<f64
     if curves.iter().any(|c| c.is_closed() != closed) {
         return Err(crate::loft::MIXED);
     }
-    // Each turned to run the same way as the one before.
+    // Each turned to run the same way as the one before and, where they
+    // are closed, started beside it.
     for j in 1..curves.len() {
         let prev = curves[j - 1].clone();
         let c = &mut curves[j];
@@ -624,6 +625,7 @@ fn loft_surface(sides: &[Side], preset: Preset) -> Result<(NurbsSurface, Vec<f64
             if newell(c.cage()).dot(newell(prev.cage())) < 0.0 {
                 *c = c.reversed();
             }
+            *c = crate::loft::beside(&prev, c);
         } else {
             let ends = |x: &Nurbs| {
                 let (a, b) = x.domain();
@@ -1103,6 +1105,37 @@ mod tests {
             })
             .count();
         assert_eq!(hard_inside, 1);
+    }
+
+    #[test]
+    fn circles_started_at_different_places_loft_without_a_twist() {
+        let mut m = Model::new();
+        let tau = std::f64::consts::TAU;
+        let a = crate::add_arc(&mut m, DVec3::ZERO, DVec3::Z, 1.0, DVec3::X, tau).edges;
+        let b = crate::add_arc(
+            &mut m,
+            DVec3::new(0.0, 0.0, 2.0),
+            DVec3::Z,
+            1.0,
+            DVec3::new(0.0, 1.0, 2.0),
+            tau,
+        )
+        .edges;
+        let sides = vec![side(&m, &a).unwrap(), side(&m, &b).unwrap()];
+        assert_eq!(shape(&sides, 1e-6), Shape::Sections);
+        let s = &surfaces(&m, &sides, Preset::default()).unwrap()[0];
+        let [(u0, u1), (v0, v1)] = s.domain();
+        for k in 0..8 {
+            let u = u0 + (u1 - u0) * k as f64 / 8.0;
+            let (p, q) = (s.eval(u, v0), s.eval(u, v1));
+            assert!(
+                p.truncate().distance(q.truncate()) < 1e-9,
+                "at {k}: {p} below {q}"
+            );
+        }
+        let (w, faces) = made(&m, &sides, Preset::default()).unwrap();
+        assert!(!faces.is_empty());
+        assert!(crate::check::problems(&w).is_empty());
     }
 
     #[test]
