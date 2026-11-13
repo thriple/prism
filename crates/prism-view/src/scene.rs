@@ -574,13 +574,12 @@ impl Scene {
             return;
         }
         let mut sum: BTreeMap<usize, DVec3> = BTreeMap::new();
-        for i in 0..parent.len() {
-            let r = root(&mut parent, i);
-            *sum.entry(r).or_default() += self.mesh.normals[i];
+        let roots: Vec<usize> = (0..parent.len()).map(|i| root(&mut parent, i)).collect();
+        for (r, n) in roots.iter().zip(&self.mesh.normals) {
+            *sum.entry(*r).or_default() += *n;
         }
-        for i in 0..parent.len() {
-            let r = root(&mut parent, i);
-            self.mesh.normals[i] = sum[&r].normalize_or_zero();
+        for (r, n) in roots.iter().zip(&mut self.mesh.normals) {
+            *n = sum[r].normalize_or_zero();
         }
     }
 

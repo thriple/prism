@@ -41,6 +41,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no
   debug info: a full build and test run then takes about 3 GB, not 20);
   if space runs out, delete `target/debug` and rebuild.
+- **Keep Rust current:** CI uses the newest stable Rust, and its linter
+  gains rules. Run `rustup update stable` at the start of a session, or a
+  commit that is clean here can fail CI's clippy (it did, 2026-11-12:
+  parts 4 to 6 of Freeform NURBS).
 - **Fillet Joins** (fillet many edges, clean corners, a face's edges at
   once, whole lines): owner request, moved after Freeform NURBS by the
   owner. NOTES: "Fillet on many edges".

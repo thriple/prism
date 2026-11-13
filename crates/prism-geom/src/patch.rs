@@ -372,8 +372,12 @@ impl NurbsSurface {
         let mut cuts = vec![a];
         let turns = if self.periodic[d] { 1 } else { 0 };
         for turn in 0..=turns {
-            for k in self.degree[d]..=self.count[d] {
-                let t = self.knots[d][k] + period * turn as f64;
+            let inside = self.knots[d]
+                .iter()
+                .take(self.count[d] + 1)
+                .skip(self.degree[d]);
+            for knot in inside {
+                let t = knot + period * turn as f64;
                 if t > a && t < b && cuts.last().is_none_or(|l| t > *l) {
                     cuts.push(t);
                 }
