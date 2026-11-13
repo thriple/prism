@@ -486,6 +486,11 @@ impl App {
             }
             // Preferences reach every tab: the active one each frame.
             viewport.session.settings = chrome.prefs.inference;
+            viewport.session.set_smart_guides(chrome.prefs.smart_guides);
+            viewport
+                .session
+                .set_smart_budget(chrome.prefs.smart_budget_ms);
+            chrome.set_on("view.smart", chrome.prefs.smart_guides);
             chrome.tolerance = crate::prefs::tolerance_text(viewport.session.scene().tol.dist);
             let status = viewport.status();
             chrome.set_hint(status.hint);

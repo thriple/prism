@@ -77,7 +77,7 @@ Session: copy, paste by clicks with inference, Esc, paste in place, lock
 and the refused move, With Context. Files: locks survive a save.
 
 ## Acceptance
-- [ ] Every part: tests green, NOTES updated, pushed.
+- [x] Every part: tests green, NOTES updated, pushed (part 4 on 2026-11-13).
 - [ ] A part copied and pasted in place, seen from the front in parallel
   projection.
 - [ ] PLAN 6.0 updated.

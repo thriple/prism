@@ -20,6 +20,9 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   NOTES "Face style buttons"), sliders smooth instead of only their ends
   (NOTES "Sliders only gave their ends"), Planned Features' behaviours
   list brought up to date. CI was green for all of them.
+- **Release notes:** `packaging/release-notes.md` is the text every
+  release shows; rewrite its top for each `[release]` (it was stale from
+  the Fillet window until 2026-11-13).
 - **Planned Features window:** actions tick themselves when built; the
   "Behaviours and feel" list is ticked by hand in `BUILT_BEHAVIOURS`
   (`registry.rs`). Owner: keep it up to date with each step.
@@ -37,12 +40,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   for later"). `Curve`, `Surface` and `Edge` are no longer `Copy`. The
   kernel is in `prism-kernel` (arris, pinned).
 - **The order changed on 2026-11-13** (owner request, PLAN 6.0 "Order"):
-  **Everyday Commands** is being built (brief 33, 4 parts). Parts 1 to 3
-  are done: clipboard, Lock and With Context; the camera; and the Rotated
-  Rectangle, Freehand, Preferences, About and the Tool Hint Panel (NOTES
-  "Everyday Commands (part 1)", "(part 2)" and "(part 3)"). **Next: part
-  4, Smart Guides** (PLAN 5.1; the prototype's `smartInit(`,
-  `smartSnap(`, `smartDraw(`). Then the **Loft Tool** (brief 34, owner
+  **Everyday Commands is done** (brief 33, 4 parts, released): clipboard,
+  Lock and With Context; the camera; the Rotated Rectangle, Freehand,
+  Preferences, About and the Tool Hint Panel; Smart Guides (NOTES
+  "Everyday Commands (part 1)" to "(part 4)"). **Next: the Loft Tool**
+  (brief 34, owner
   request: Curviloft-style; rings of 3 or 5+ sides filled from a centre
   point; `docs/research/loft-corners.md`). Then Fillet Joins (brief 32 is written; DECISIONS #37 to #39's
   defaults until the owner answers; start at step A, the kernel bridge),

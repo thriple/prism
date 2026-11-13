@@ -169,6 +169,10 @@ pub struct Feedback {
     pub protractor: Rgba,
     /// Guide lines and points stored in the model (Tape Measure, Protractor).
     pub guide: Rgba,
+    /// Smart Guides (PLAN 5.1): alignment lines, and equal-gap arrows. Not
+    /// magenta, which SketchUp users read as parallel.
+    pub smart_align: Rgba,
+    pub smart_space: Rgba,
 }
 
 impl Default for Feedback {
@@ -206,6 +210,8 @@ impl Default for Feedback {
             erase: Rgba::rgb(0xff, 0x3b, 0x4d),
             guide: Rgba::rgb(0x3a, 0x40, 0x4c).with_alpha(alpha(0.85)),
             protractor: Rgba::rgb(0x1c, 0x1e, 0x22),
+            smart_align: Rgba::rgb(0x00, 0xa3, 0xc4),
+            smart_space: Rgba::rgb(0xe8, 0x74, 0x2a),
         }
     }
 }

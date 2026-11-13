@@ -1,6 +1,11 @@
-**New in this build: the Fillet window.** Picking Fillet / Chamfer opens a window on the right: choose Fillet or Chamfer and a size (empty fits each edge), and the edge under the cursor shows the result before you click. Right after a round, a new kind or size changes it. Ctrl swaps the kind while held.
+**New in this build: Everyday Commands.**
+- **Cut, Copy and Paste** (Ctrl+X, C, V) work on loose geometry, groups and components, across open tabs; the paste follows the cursor and snaps like Move. **Paste in Place** (Ctrl+Shift+V) puts it back where it was. **Lock** and **Unlock** (Edit > Hide & Lock) keep a group from being changed. **Intersect Faces > With Context** works inside an open group.
+- **Smart Guides** (View > Smart Guides, Ctrl+U): while you move or paste a group, a component or a whole body, it lines up with its neighbours (teal lines) and snaps to gaps equal to theirs (orange arrows with the gap, `d: 1.000 m`). A snapped point still wins.
+- **Camera:** standard views (Top, Front, Iso and the rest), Parallel Projection, Field of View (type the degrees), Zoom Selection, Zoom Window, Walk and Look Around.
+- **Drawing:** the **Rotated Rectangle** (three clicks, any plane) and **Freehand** (drag; it becomes one smooth curve, flat on the face you draw on).
+- **Windows:** Edit > **Preferences** (units for new documents, the snap feel, Smart Guides, the keyboard preset), Help > **About**, and Help > **Tool Hints** (the steps of the tool you are using).
 
-**Also: colours (Basic Materials, part 1).** Window > Materials holds the model's materials and 16 plain colours: click one to paint with it, and edit its name and colour there. The Paint Bucket (B) paints the side of the face you click (a curved side as a whole, a group as a whole); Ctrl fills joined faces of the same material, Shift replaces it everywhere, Ctrl+Shift in the open group, Alt samples. Hovering shows the paint before you click. Entity Info names the materials, right-click > Select > All with the Same Material picks them, and Model Health purges unused ones. Exact Curves' circles, arcs, cylinders, cones, spheres and tori are in too.
+**Also since the last notes:** textures and the Position Texture tool, materials in OBJ, glTF and 3MF; freeform NURBS curves and surfaces (the Curve tool, cage editing, Loft, Revolve, Sweep, Patch, zebra stripes and curvature combs); an arc's plane now follows its second click, and Patch takes arcs as sides.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

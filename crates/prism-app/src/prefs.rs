@@ -13,14 +13,30 @@ pub const APERTURE: (f64, f64) = (0.5, 2.5);
 pub const RELEASE: (f64, f64) = (1.0, 3.0);
 /// How long a hover wakes a point (seconds).
 pub const WAKE: (f64, f64) = (0.05, 0.8);
+/// Smart Guides' time budget per cursor move (milliseconds).
+pub const SMART_BUDGET: (f64, f64) = (0.5, 10.0);
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
     /// The units a new document starts with.
     pub units: DisplayUnits,
     /// The inference engine's feel, for every document.
     pub inference: Settings,
+    /// View > Smart Guides (Ctrl+U), and its time budget (PLAN 5.1).
+    pub smart_guides: bool,
+    pub smart_budget_ms: f64,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            units: DisplayUnits::default(),
+            inference: Settings::default(),
+            smart_guides: true,
+            smart_budget_ms: prism_tools::session::SMART_BUDGET_MS,
+        }
+    }
 }
 
 impl Prefs {
@@ -46,6 +62,11 @@ impl Prefs {
         i.aperture = fit(i.aperture, APERTURE, d.aperture);
         i.release = fit(i.release, RELEASE, d.release);
         i.wake = fit(i.wake, WAKE, d.wake);
+        self.smart_budget_ms = fit(
+            self.smart_budget_ms,
+            SMART_BUDGET,
+            prism_tools::session::SMART_BUDGET_MS,
+        );
         self.units.decimals = self.units.decimals.min(prism_math::units::MAX_DECIMALS);
     }
 }

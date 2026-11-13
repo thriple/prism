@@ -3315,6 +3315,7 @@ it, Loft refused).
 - **Still missing for the owner's case:** a three-sided patch (a rounded
   box corner). Freeform faces are four-sided; see the Loft tool request.
 
+## Everyday Commands (part 3): drawing and windows
 Brief 33, part 3, built 2026-11-13 (`session/draw.rs`, `guides.rs`,
 `prefs.rs`, `chrome/prefs.rs`, `chrome/hints.rs`).
 - **Rotated Rectangle:** click a corner, click the next (the first side,
@@ -3350,3 +3351,47 @@ Brief 33, part 3, built 2026-11-13 (`session/draw.rs`, `guides.rs`,
   shows no section for colours or autosave timing (none are settable
   yet); the hint panel has no pictures (SketchUp's Instructor animates
   each step).
+
+## Everyday Commands (part 4): Smart Guides
+Brief 33, part 4, built 2026-11-13 (`prism-tools/src/smart.rs`, the sums;
+`session/smart.rs`, Move and Paste). **Everyday Commands is done.**
+- **What it does:** while a group, a component or a whole loose body
+  (every edge joined to it) is moved or pasted, its box lines up with
+  its neighbours' boxes (low side, centre or high side, per axis: a
+  dashed teal line with a dot at each end and an "Align X" label), and
+  snaps to a gap equal to the gap between two neighbours in the same row
+  (orange arrows on both gaps, `d: 1.000 m`): after the pair, before it,
+  or in the middle of a wider gap. It follows the prototype
+  (`smartSnap(`): an 8-point pull (times the aperture), guides only on
+  the axes it is moving along, a centre match drawn only once it is
+  really lined up, the guide joining the two nearest points of the boxes.
+- **What wins over it:** a snapped point (endpoint, midpoint, crossing,
+  centre, guide point): the guides step aside, so grabbing a corner onto
+  a corner stays exact. An arrow lock leaves only that axis. Typing a
+  distance wins too. Part of a body (an edge, one face of a box) gets no
+  guides: it would line up nonsense.
+- **Neighbours:** the shown groups and components in the open group,
+  and its loose bodies, as boxes in the world, built once when the move
+  starts (hidden groups are left out, so they cost nothing). Alignment
+  looks values up in a per-axis sorted index (a binary search), never
+  every box; equal spacing looks at the 200 nearest (PLAN 5.1).
+- **Time budget:** the app's clock (the session's `measure`, the same
+  one the inference timings use; tests give it a fake one) times each
+  adjustment. Three over the budget in a row lower it one step: equal
+  spacing off, then only objects within three sizes of the moving one,
+  then paused, each said in the status bar. The next move starts in
+  full again. Default 2 ms, set in Preferences (0.5 to 10).
+- **Controls:** View > Smart Guides and Ctrl+U (checked when on), and a
+  toggle and the budget in Preferences; both are saved with the
+  preferences (`prefs.json`), for every tab. The colours are in the
+  viewport style (`smart_align`, `smart_space`), not magenta.
+- Seen by eye in the app under Xvfb: a third box slid towards a row of
+  two snapped to the equal gap with both arrows and labels, and lined up
+  with the second box in X.
+- **Left over:** equal sizes (PLAN 5.1 "later"); chains of more than two
+  neighbours; Rotate and Scale do not use the guides; the guides are not
+  hidden by faces in front (they are drawn on top, like the prototype);
+  an "Align" label can sit under a `d:` label when both show; the guide
+  settings are not yet in View Settings or the Inspector (PLAN 5.1 puts
+  them there too); a copy made with Move+Ctrl does not count the
+  original as a neighbour.

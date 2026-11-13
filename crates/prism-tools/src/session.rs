@@ -40,6 +40,7 @@ mod paint;
 mod round;
 mod scalebox;
 mod shapes;
+mod smart;
 mod texpos;
 mod views;
 use crate::units::NumberFormat;
@@ -58,6 +59,7 @@ pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
+pub use smart::BUDGET_MS as SMART_BUDGET_MS;
 pub use texpos::{NOT_TEXTURED, TEXTURE};
 pub use views::{LOOK, WALK, WINDOW};
 
@@ -485,6 +487,11 @@ pub struct Session {
     /// the cursor, and why the last edit was refused (a locked group).
     clipboard: Option<std::sync::Arc<prism_doc::Assembly>>,
     pasting: Option<clip::Pasting>,
+    /// Smart Guides: on or off (View > Smart Guides), the time budget in
+    /// milliseconds, and the guides of the move in progress.
+    smart_on: bool,
+    smart_budget: f64,
+    smart: Option<smart::SmartOp>,
     notice: Option<&'static str>,
     /// Perspective or parallel, and the field of view (part 2); the Zoom
     /// Window box being dragged.
@@ -541,6 +548,9 @@ impl Session {
             to_world: prism_math::DAffine3::IDENTITY,
             clipboard: None,
             pasting: None,
+            smart_on: true,
+            smart_budget: smart::BUDGET_MS,
+            smart: None,
             notice: None,
             lens: prism_view::Lens::default(),
             zoom_box: None,
@@ -1679,6 +1689,7 @@ impl Session {
             self.rrect_hover(s, &view);
             self.arc_hover(s, &view);
             self.cage_hover();
+            self.paste_hover(&view);
             if is_edit(&self.tool) {
                 self.edit_hover(s, &view);
             }
@@ -2254,6 +2265,7 @@ impl Session {
             self.edit_overlay(&mut o);
         }
         self.paste_overlay(&mut o);
+        self.smart_overlay(&mut o);
         self.window_overlay(&mut o);
         if !self.wants_inference() {
             return o;

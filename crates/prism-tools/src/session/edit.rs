@@ -516,10 +516,17 @@ impl Session {
             return;
         };
         let shift = self.shift_held;
-        match &mut self.edit {
-            Some(EditOp::Move { from, delta, .. }) => {
-                *delta = i.point - *from;
+        // Move: Smart Guides adjust where the cursor puts it.
+        if let Some(EditOp::Move { from, .. }) = &self.edit {
+            let raw = i.point - *from;
+            let d = self.smart_adjust(raw, view);
+            if let Some(EditOp::Move { delta, .. }) = &mut self.edit {
+                *delta = d;
             }
+            self.update_preview();
+            return;
+        }
+        match &mut self.edit {
             Some(
                 EditOp::Rotate {
                     centre,
@@ -968,6 +975,7 @@ impl Session {
             return;
         };
         let verts = selection.all_vertices(self.work_model());
+        self.smart_begin_move(&verts);
         self.edit = Some(EditOp::Move {
             from: i.point,
             selection,
@@ -1060,6 +1068,7 @@ impl Session {
         let Some(e) = self.edit.take() else {
             return;
         };
+        self.smart_end();
         self.set_preview(None);
         self.typed.clear();
         self.lock = prism_infer::Lock::None;
@@ -1095,6 +1104,7 @@ impl Session {
 
     /// Esc during an edit step.
     pub(super) fn cancel_edit(&mut self) {
+        self.smart_end();
         if self.edit.take().is_some() {
             self.set_preview(None);
         }

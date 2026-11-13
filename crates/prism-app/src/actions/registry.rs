@@ -95,7 +95,9 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 27] = [
+const COMMANDS: [&str; 28] = [
+    // Everyday Commands part 4 (brief 33): kept in the preferences.
+    "view.smart",
     // Everyday Commands part 3 (brief 33).
     "win.prefs",
     "help.about",
@@ -141,7 +143,8 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 19] = [
+const TOGGLES: [&str; 20] = [
+    "view.smart",
     "view.hidden",
     "view.wireframe",
     "view.basecolour",
@@ -229,8 +232,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
     } else if EVENTS.contains(&proto_run) {
         Run::Event
     } else {
-        // Includes Smart Guides (built with Inference & Drawing, NOTES.md) and
-        // the prototype's own Feel Panel.
+        // Includes the prototype's own Feel Panel.
         Run::NotBuilt
     }
 }
@@ -554,7 +556,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 21] = [
+const BUILT_BEHAVIOURS: [&str; 22] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -572,6 +574,8 @@ const BUILT_BEHAVIOURS: [&str; 21] = [
     "Push/Pull: stretch, extrude, Alt new loop",
     "Live ghost previews",
     "Tool memory: double-click or Enter repeats the last value",
+    // Everyday Commands part 4 (brief 33).
+    "Smart Guides: align and equal spacing between objects, time budget, Ctrl+U (Move tool, whole islands)",
     // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.
     "Exact circles, arcs and NURBS",
     "Model Health: reversed faces, holes, interior faces, nesting counts",
@@ -770,10 +774,6 @@ mod tests {
         let ctx = Context::default();
         assert!(!reg.enabled("solid.union", &ctx));
         assert_eq!(reg.why_disabled("solid.union", &ctx), Some("Not built yet"));
-        assert!(
-            !reg.enabled("view.smart", &ctx),
-            "Smart Guides wait for Inference & Drawing"
-        );
         assert!(!reg.enabled("edit.undo", &ctx));
         assert_eq!(reg.why_disabled("edit.undo", &ctx), Some("Nothing to undo"));
         let ctx = Context {

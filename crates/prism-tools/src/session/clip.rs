@@ -32,6 +32,9 @@ pub(super) struct Pasting {
     clip: Arc<Assembly>,
     grab: DVec3,
     lines: Vec<(DVec3, DVec3)>,
+    /// From where it was copied to where it is now (Smart Guides adjust
+    /// the cursor's point).
+    delta: Option<DVec3>,
 }
 
 impl Session {
@@ -95,7 +98,7 @@ impl Session {
         };
         self.cancel();
         let flat = clip.flattened();
-        let Some((lo, _)) = flat.bbox() else {
+        let Some((lo, hi)) = flat.bbox() else {
             return;
         };
         let scene = prism_view::Scene::build(&flat);
@@ -115,7 +118,9 @@ impl Session {
             clip,
             grab: lo,
             lines,
+            delta: None,
         });
+        self.smart_begin_paste(crate::smart::Bounds::new(lo, hi));
         self.overlay_dirty = true;
         self.dirty = true;
         self.refresh();
@@ -129,7 +134,21 @@ impl Session {
         let Some(p) = self.pasting.take() else {
             return;
         };
-        self.paste_at(p.clip, DAffine3::from_translation(to - p.grab));
+        self.smart_end();
+        let d = p.delta.unwrap_or(to - p.grab);
+        self.paste_at(p.clip, DAffine3::from_translation(d));
+    }
+
+    /// The cursor moved while pasting: where the copy would go.
+    pub(super) fn paste_hover(&mut self, view: &prism_view::View) {
+        let (Some(p), Some(i)) = (&self.pasting, &self.inference) else {
+            return;
+        };
+        let raw = i.point - p.grab;
+        let d = self.smart_adjust(raw, view);
+        if let Some(p) = &mut self.pasting {
+            p.delta = Some(d);
+        }
     }
 
     /// Edit > Paste in Place: where it was copied from.
@@ -172,6 +191,7 @@ impl Session {
 
     pub(super) fn paste_cancel(&mut self) {
         if self.pasting.take().is_some() {
+            self.smart_end();
             self.overlay_dirty = true;
             self.dirty = true;
         }
@@ -188,7 +208,7 @@ impl Session {
         let (Some(p), Some(i)) = (&self.pasting, &self.inference) else {
             return;
         };
-        let d = i.point - p.grab;
+        let d = p.delta.unwrap_or(i.point - p.grab);
         let fb = &self.style.feedback;
         for (a, b) in &p.lines {
             o.lines.push(Line {

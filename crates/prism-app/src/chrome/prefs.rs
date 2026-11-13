@@ -3,11 +3,11 @@
 use egui::{Context, RichText};
 use prism_math::LengthUnit;
 use prism_ui::theme::{self, color, size};
-use prism_ui::widgets::{SoftButton, SoftDialog, SoftSelect, SoftSlider};
+use prism_ui::widgets::{SoftButton, SoftDialog, SoftSelect, SoftSlider, SoftToggle};
 
 use super::{Chrome, Source, storage};
 use crate::actions::keymap::{Keymap, Preset};
-use crate::prefs::{APERTURE, Prefs, RELEASE, WAKE};
+use crate::prefs::{APERTURE, Prefs, RELEASE, SMART_BUDGET, WAKE};
 
 fn heading(ui: &mut egui::Ui, t: &str) {
     ui.add_space(size::MENU_PAD);
@@ -135,6 +135,20 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     if ui.add(SoftButton::new("Reset Inference").small()).clicked() {
                         p.inference = prism_infer::Settings::default();
                     }
+
+                    heading(ui, "Smart Guides");
+                    ui.add(SoftToggle::new(
+                        &mut p.smart_guides,
+                        "Line up and space objects",
+                    ));
+                    let ms = &mut p.smart_budget_ms;
+                    slider(ui, ms, SMART_BUDGET, 1.0, "Time budget", " ms");
+                    note(
+                        ui,
+                        "While a group or body is moved or pasted, it lines up with its \
+                 neighbours and snaps to equal gaps. Over the budget, spacing pauses \
+                 first. View > Smart Guides or Ctrl+U turns it off.",
+                    );
 
                     heading(ui, "Keyboard");
                     ui.add(SoftSelect::new(&mut preset, &presets, "Preset"));

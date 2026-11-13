@@ -6,6 +6,7 @@ pub mod guides;
 pub mod scenes;
 pub mod select;
 pub mod session;
+pub mod smart;
 pub mod units;
 
 pub use session::{

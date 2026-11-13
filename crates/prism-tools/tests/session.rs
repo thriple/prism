@@ -4789,3 +4789,209 @@ fn a_two_point_arc_turns_to_the_face_holding_both_ends() {
         undo(&mut d);
     }
 }
+
+// ---------- Everyday Commands part 4 (brief 33): Smart Guides ----------
+
+/// Groups in a row along x, 2 m cubes on the ground at 0, 3 and `last`,
+/// seen from far enough to show them all.
+fn row_of_groups(last: f64) -> (Driver, prism_doc::InstanceId) {
+    let mut d = Driver::empty();
+    d.look(Camera {
+        eye: DVec3::new(6.0, -12.0, 12.0),
+        target: DVec3::new(6.0, 1.0, 0.0),
+    });
+    // The pushed box goes down from the ground: copy it, and paste the
+    // copies on the ground.
+    grouped_box(&mut d);
+    act(&mut d, "edit.copy");
+    act(&mut d, "edit.delete");
+    for x in [0.0, 3.0, last] {
+        act(&mut d, "edit.paste");
+        d.click(DVec3::new(x, 0.0, 0.0));
+    }
+    let asm = d.s.document().assembly();
+    let last_group = *asm
+        .root()
+        .instances
+        .iter()
+        .find(|(_, i)| (i.transform.translation.x - last).abs() < 1e-9)
+        .expect("the last copy")
+        .0;
+    act(&mut d, "edit.desel");
+    (d, last_group)
+}
+
+fn placed(d: &Driver, g: prism_doc::InstanceId) -> DVec3 {
+    d.s.document()
+        .assembly()
+        .world_of(&[g])
+        .expect("placed")
+        .translation
+}
+
+fn is_one(gap: Option<f64>) -> bool {
+    gap.is_some_and(|g| (g - 1.0).abs() < 1e-9)
+}
+
+fn spacing(d: &Driver) -> Option<f64> {
+    d.s.smart_shown().iter().find_map(|g| match g {
+        prism_tools::smart::Guide::Space { gap, .. } => Some(*gap),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_moved_group_snaps_to_the_gap_its_neighbours_leave() {
+    let (mut d, c) = row_of_groups(10.0);
+    d.tool(MOVE);
+    // Grab the third box by its bottom edge's midpoint, and slide it to
+    // just past a gap of 1 after the second box (4.02 rather than 4).
+    d.click(DVec3::new(11.0, 0.0, 0.0));
+    assert_eq!(
+        d.s.selected_groups().iter().copied().collect::<Vec<_>>(),
+        [c]
+    );
+    d.hover(DVec3::new(7.02, -1.0, 0.0));
+    assert!(is_one(spacing(&d)), "{:?}", d.s.smart_shown());
+    let o = d.s.overlay();
+    assert!(
+        o.labels.iter().any(|l| l.text.starts_with("d: ")),
+        "the d: label"
+    );
+    assert!(
+        o.lines
+            .iter()
+            .any(|l| l.color == d.s.style.feedback.smart_space),
+        "the arrows"
+    );
+    d.click(DVec3::new(7.02, -1.0, 0.0));
+    let w = placed(&d, c);
+    assert!((w - DVec3::new(6.0, -1.0, 0.0)).length() < 1e-9, "{w:?}");
+    assert!(d.s.smart_shown().is_empty(), "the guides go with the move");
+}
+
+#[test]
+fn a_moved_group_lines_up_with_a_neighbour_and_ctrl_u_turns_it_off() {
+    let (mut d, c) = row_of_groups(10.0);
+    // Slide the third box towards y = -3 and x = 3.03: its low side meets
+    // the second box's low side in x (y is far from anything).
+    d.tool(MOVE);
+    d.click(DVec3::new(11.0, 0.0, 0.0));
+    d.hover(DVec3::new(4.03, -3.0, 0.0));
+    let aligned = d.s.smart_shown().iter().any(|g| {
+        matches!(g, prism_tools::smart::Guide::Align { axis: 0, at, .. } if (*at - 3.0).abs() < 1e-9)
+    });
+    assert!(aligned, "{:?}", d.s.smart_shown());
+    assert!(d.s.overlay().labels.iter().any(|l| l.text == "Align X"));
+    d.click(DVec3::new(4.03, -3.0, 0.0));
+    assert!((placed(&d, c).x - 3.0).abs() < 1e-9);
+    undo(&mut d);
+
+    // Off (View > Smart Guides): the cursor's point is kept.
+    d.s.set_smart_guides(false);
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    d.tool(MOVE);
+    d.click(DVec3::new(11.0, 0.0, 0.0));
+    d.hover(DVec3::new(4.03, -3.0, 0.0));
+    assert!(d.s.smart_shown().is_empty() && d.s.smart_level().is_none());
+    d.click(DVec3::new(4.03, -3.0, 0.0));
+    assert!((placed(&d, c).x - 3.03).abs() < 1e-6, "{}", placed(&d, c).x);
+}
+
+#[test]
+fn a_paste_lines_up_and_spaces_like_a_move() {
+    let (mut d, _) = row_of_groups(10.0);
+    act(&mut d, "edit.copy");
+    assert!(d.s.selected_groups().is_empty());
+    // Copy the first box again, and paste it just short of a gap of 1
+    // before the first box (low corner at -3.03, the gap ends at -1).
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    act(&mut d, "edit.copy");
+    act(&mut d, "edit.paste");
+    d.hover(DVec3::new(-3.02, -1.0, 0.0));
+    assert!(is_one(spacing(&d)), "{:?}", d.s.smart_shown());
+    d.click(DVec3::new(-3.02, -1.0, 0.0));
+    let asm = d.s.document().assembly();
+    let xs: Vec<f64> = asm
+        .root()
+        .instances
+        .values()
+        .map(|i| i.transform.translation.x)
+        .collect();
+    assert!(xs.iter().any(|x| (x + 3.0).abs() < 1e-9), "{xs:?}");
+}
+
+#[test]
+fn a_snapped_point_wins_over_the_guides() {
+    let (mut d, c) = row_of_groups(10.0);
+    d.tool(MOVE);
+    d.click(DVec3::new(10.0, 0.0, 0.0));
+    // The grabbed corner onto the second box's far bottom corner (5, 0, 0):
+    // an endpoint, kept exactly though a gap guide is near.
+    d.hover(DVec3::new(5.0, 0.0, 0.0));
+    assert!(d.s.smart_shown().is_empty());
+    d.click(DVec3::new(5.0, 0.0, 0.0));
+    assert!((placed(&d, c) - DVec3::new(5.0, 0.0, 0.0)).length() < 1e-9);
+}
+
+#[test]
+fn a_loose_body_gets_guides_but_part_of_one_does_not() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    rect_on_ground(&mut d, 3.0, 0.0, 5.0, 2.0);
+    rect_on_ground(&mut d, 8.0, 0.0, 10.0, 2.0);
+    // The whole third square (a double-click takes it and its edges).
+    d.tool(SELECT);
+    double_click(&mut d, DVec3::new(9.0, 1.0, 0.0));
+    assert_eq!(d.s.selection().edges.len(), 4);
+    d.tool(MOVE);
+    d.click(DVec3::new(9.0, 2.0, 0.0));
+    d.hover(DVec3::new(7.02, 1.0, 0.0));
+    assert!(is_one(spacing(&d)), "{:?}", d.s.smart_shown());
+    key(&mut d, Key::Escape);
+    // One edge of it: no guides.
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(9.0, 0.0, 0.0));
+    assert_eq!(d.s.selection().edges.len(), 1);
+    d.tool(MOVE);
+    d.click(DVec3::new(9.0, 0.0, 0.0));
+    d.hover(DVec3::new(7.02, 0.5, 0.0));
+    assert!(d.s.smart_level().is_none());
+}
+
+static FAKE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A clock that moves 10 ms every time it is read: everything is slow.
+fn slow_clock() -> f64 {
+    FAKE_MS.fetch_add(10, std::sync::atomic::Ordering::SeqCst) as f64 / 1e3
+}
+
+#[test]
+fn over_the_time_budget_spacing_goes_then_everything_until_the_next_move() {
+    use prism_tools::smart::Level;
+    let (mut d, _) = row_of_groups(10.0);
+    d.s.measure = Some(slow_clock);
+    d.tool(MOVE);
+    d.click(DVec3::new(11.0, 0.0, 0.0));
+    let mut levels = Vec::new();
+    for i in 0..12 {
+        d.hover(DVec3::new(7.02 - f64::from(i) * 0.001, -1.0, 0.0));
+        levels.push(d.s.smart_level().expect("working"));
+    }
+    // One step down for every three slow adjustments, in order.
+    assert!(levels.windows(2).all(|w| w[0] <= w[1]), "{levels:?}");
+    for l in [Level::AlignOnly, Level::Near, Level::Paused] {
+        assert!(levels.contains(&l), "{levels:?}");
+    }
+    assert!(d.s.hint().contains("Smart Guides paused"), "{}", d.s.hint());
+    assert!(d.s.smart_shown().is_empty());
+    key(&mut d, Key::Escape);
+    // The next move starts at the full level again (the clock taken away
+    // so that the press itself is not slow).
+    d.s.measure = None;
+    d.click(DVec3::new(11.0, 0.0, 0.0));
+    assert_eq!(d.s.smart_level(), Some(Level::Full));
+}

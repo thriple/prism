@@ -424,6 +424,12 @@ impl Chrome {
                     "win.prefs" => self.prefs_open = true,
                     "help.about" => self.about_open = true,
                     "help.hints" => self.panels.hints = true,
+                    "view.smart" => {
+                        let mut p = self.prefs;
+                        p.smart_guides = !p.smart_guides;
+                        prefs::set(self, p);
+                        self.set_on(id, p.smart_guides);
+                    }
                     "help.update" => {
                         self.updates_open = true;
                         self.updater.check();
@@ -634,11 +640,21 @@ mod tests {
         c.run("solid.union", Source::Menu);
         c.run("edit.undo", Source::Menu); // nothing to undo
         assert!(c.events.is_empty());
-        // Smart Guides' Ctrl+U is bound but greyed until Inference & Drawing.
+    }
+
+    /// Everyday Commands part 4: Ctrl+U turns Smart Guides off and on, and
+    /// the preference keeps it.
+    #[test]
+    fn ctrl_u_switches_smart_guides() {
+        let mut c = chrome();
+        assert!(c.prefs.smart_guides, "on by default");
         let mut ctrl_u = press("KeyU");
         ctrl_u.ctrl = true;
         assert!(c.key(&ctrl_u, false));
-        assert!(c.events.is_empty());
+        assert!(!c.prefs.smart_guides && !c.checked("view.smart"));
+        assert_eq!(c.events.last().map(|e| e.id), Some("view.smart"));
+        c.run("view.smart", Source::Menu);
+        assert!(c.prefs.smart_guides && c.checked("view.smart"));
     }
 
     #[test]
