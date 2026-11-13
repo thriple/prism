@@ -3189,8 +3189,8 @@ Brief 31. The whole chunk was asked for in one go (owner, 2026-11-12).
   Draw > Surface.
 - **Changed from the brief:** Sweep is its own action, not Follow Me;
   Patch takes four sides only.
-- **Left over:** an open profile does not turn with its path (it keeps
-  its direction); two- and three-sided patches (they come to a point);
+- **Left over:** ~~an open profile does not turn with its path~~ (done
+  2026-11-13: "Closing gaps: smaller items"); two- and three-sided patches (they come to a point);
   arcs as patch sides; the pipe has no caps.
 
 ## Freeform NURBS (part 6): curvature display; the chunk is done
@@ -3463,17 +3463,17 @@ Collected from the "Left over" lines above, for the owner to order.
   split, no booleans (needs the kernel's surface intersection, Solids &
   CAD). Push/Pull does not move a freeform face; Offset refuses faces
   with spline edges; Follow Me refuses splines.
-- **Curves:** an open profile in Sweep does not turn with its path.
-  (Self-crossings, the midpoint snap and twisting circles are done: see
-  "Closing gaps: curves".)
+- **Curves:** done (see "Closing gaps: curves" and "... smaller
+  items").
 - **Cage editing:** done (see "Closing gaps: cage editing").
-- **Camera:** Walk has no collision. (The rest is done: see "Closing
-  gaps: camera and clipboard".)
-- **Clipboard:** not the system clipboard on the web; a component holding
-  groups pastes as a new definition.
-- **Freehand:** no Shift for a 3D stroke.
+- **Camera:** done. Walk collision is not needed for now (owner,
+  2026-11-13).
+- **Clipboard:** a component holding groups pastes as a new definition.
+  The web's clipboard is not needed for now (owner, 2026-11-13).
+- **Freehand:** done (Shift draws in 3D; see "Closing gaps: smaller
+  items").
 - **Smart Guides:** equal sizes; Rotate and Scale do not use them.
-- **Preferences:** no reset for units; no colour or autosave settings.
+- **Preferences:** units reset done; no colour or autosave settings.
 
 ## Closing gaps: curves (2026-11-13)
 - **A curve that crosses itself is cut there.** `add_spline` finds where
@@ -3546,6 +3546,29 @@ Collected from the "Left over" lines above, for the owner to order.
   Checked here: a round trip under X11 (an ignored test, run by hand) and
   clippy for Windows and macOS. **The owner should try copy in one window
   and paste in another on Windows and macOS.**
-- Left over: Walk collision; the web's clipboard (asynchronous, asks for
-  permission); pasting Prism geometry into other programs (they would
-  see the text).
+- Not needed for now (owner, 2026-11-13): Walk collision; the web's
+  clipboard. Left over: pasting into other programs (they see the text).
+
+## Closing gaps: smaller items (2026-11-13)
+- **Preferences > Reset Units:** new documents start in metres with the
+  usual decimals again (`Prefs::reset_units`); the rest is kept.
+- **Freehand with Shift draws in 3D:** held as the stroke starts, each
+  point is the inference engine's point under the cursor (faces, edges,
+  points), not the start plane's, so a stroke runs from the ground up
+  onto a box. The curve is not flat, so it closes no face. The hint and
+  the Tool Hint Panel say so.
+- **Sweep turns an open profile with its path:** the open profile is
+  carried along a curved path with the pipe's frames (turning with the
+  path, never twisting about it) and skinned through the copies (fitted
+  between them, as the pipe is). Along a straight path it is the exact
+  slide, as before.
+- **Which curve is the profile:** the one the path starts on (the path's
+  nearer end is the closer to it). When they meet end to end, the flat
+  curve whose plane the other leaves most squarely (a line has no plane
+  of its own), then the shorter. **Changed:** before, two open curves
+  always slid (exact, the same whichever was the profile); along a
+  curved path the result is now fitted, not exact.
+- Left over: nothing from the gaps list but cutting and pushing freeform
+  faces (Solids & CAD), Smart Guides' equal sizes and their use in Rotate
+  and Scale, a component holding groups pasting as a new definition, and
+  Preferences for colours and autosave (none are settable yet).

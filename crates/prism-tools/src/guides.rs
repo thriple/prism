@@ -44,6 +44,7 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Press and drag over a face, the ground or a plane.",
                 "Release to finish: the stroke is fitted to a smooth curve.",
                 "End where you began to close it into a face.",
+                "Hold Shift as you press to draw over anything in 3D, not on one plane.",
             ],
         ),
         s::RECT => g(

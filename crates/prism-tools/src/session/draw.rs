@@ -52,6 +52,9 @@ pub(super) struct Freehand {
     pub pts: Vec<DVec3>,
     pub normal: DVec3,
     pub px: f64,
+    /// Started with Shift: the stroke follows what is under the cursor in
+    /// 3D (faces, edges, points) instead of staying on one plane.
+    pub free: bool,
 }
 
 /// The rectangle's four corners from its first side `a`–`b` and a point
@@ -338,7 +341,7 @@ impl Session {
 
     // ---------- Freehand ----------
 
-    pub(super) fn freehand_press(&mut self, s: DVec2) {
+    pub(super) fn freehand_press(&mut self, s: DVec2, shift: bool) {
         self.update_hover(s);
         let Some(i) = self.inference.clone() else {
             return;
@@ -350,6 +353,7 @@ impl Session {
             pts: vec![i.point],
             normal,
             px: view.units_per_px(depth).max(f64::MIN_POSITIVE),
+            free: shift,
         });
         self.last_op = None;
         self.overlay_dirty = true;
@@ -360,18 +364,27 @@ impl Session {
         let Some(f) = &self.freehand else {
             return false;
         };
-        let view = self.view();
-        let (o, d) = view.ray(s);
-        let start = f.pts[0];
-        let den = f.normal.dot(d);
-        if den.abs() < 1e-6 {
-            return true;
-        }
-        let t = f.normal.dot(start - o) / den;
-        if t <= 0.0 {
-            return true;
-        }
-        let p = o + d * t;
+        let p = if f.free {
+            // In 3D: the point the inference engine finds under the cursor.
+            self.update_hover(s);
+            let Some(i) = &self.inference else {
+                return true;
+            };
+            i.point
+        } else {
+            let view = self.view();
+            let (o, d) = view.ray(s);
+            let start = f.pts[0];
+            let den = f.normal.dot(d);
+            if den.abs() < 1e-6 {
+                return true;
+            }
+            let t = f.normal.dot(start - o) / den;
+            if t <= 0.0 {
+                return true;
+            }
+            o + d * t
+        };
         let f = self.freehand.as_mut().expect("stroke");
         if f.pts
             .last()
@@ -426,7 +439,7 @@ impl Session {
         (self.tool == FREEHAND).then_some(if self.freehand.is_some() {
             "Drag to draw · release to finish · end at the start to close · Esc cancels"
         } else {
-            "Press and drag to draw a smooth curve on the face or plane under the cursor"
+            "Press and drag to draw a smooth curve on the face or plane under the cursor · hold Shift as you press to draw over anything in 3D"
         })
     }
 

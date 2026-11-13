@@ -69,6 +69,12 @@ impl Prefs {
         );
         self.units.decimals = self.units.decimals.min(prism_math::units::MAX_DECIMALS);
     }
+
+    /// Preferences > Reset Units: new documents start in metres again,
+    /// with the usual decimals.
+    pub fn reset_units(&mut self) {
+        self.units = DisplayUnits::default();
+    }
 }
 
 /// A tolerance in millimetres, to three significant figures
@@ -113,6 +119,17 @@ mod tests {
         let old = Prefs::from_json(r#"{"units":{"length":"Millimetres","decimals":1}}"#);
         assert_eq!(old.units, p.units);
         assert_eq!(old.inference, Settings::default());
+    }
+
+    #[test]
+    fn reset_units_goes_back_to_the_defaults_and_keeps_the_rest() {
+        let mut p = Prefs::default();
+        p.units.length = LengthUnit::Inches;
+        p.units.decimals = 0;
+        p.inference.aperture = 2.0;
+        p.reset_units();
+        assert_eq!(p.units, DisplayUnits::default());
+        assert_eq!(p.inference.aperture, 2.0, "only the units");
     }
 
     #[test]

@@ -47,10 +47,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   (brief 34, released; NOTES "Loft Tool (brief 34)"). NOTES "Known gaps
   after the Loft Tool" lists what is left over across the program. The
   owner asked for those gaps to be closed before Fillet Joins, in this
-  order: curves, cage editing, camera and clipboard (all done: NOTES
-  "Closing gaps: curves", "... cage editing", "... camera and
-  clipboard"), then smaller items (Freehand in 3D, Sweep turning an open
-  profile, a units reset). **Then: Fillet Joins** (brief 32 is written;
+  order: curves, cage editing, camera and clipboard, smaller items. **All
+  done** (NOTES "Closing gaps: curves", "... cage editing", "... camera
+  and clipboard", "... smaller items"); Walk collision and the web
+  clipboard are not needed for now (owner). **Next: Fillet Joins** (brief 32 is written;
   DECISIONS #37 to #39's defaults until the owner answers; start at step
   A, the kernel bridge), then Solids & CAD, which was moved up to follow
   it. The owner also floated a chat window in Prism (NOTES "Owner idea

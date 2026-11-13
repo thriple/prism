@@ -1,8 +1,8 @@
 //! Sweep and Patch (Freeform NURBS part 5).
 //!
-//! - **Sweep** of two open curves: one slid along the other, keeping its
-//!   direction. That surface is exact, and the same whichever curve is
-//!   called the profile.
+//! - **Sweep** of two open curves: the profile (the curve the path starts
+//!   on) is carried along the path, turning with it as a pipe's circle
+//!   does. Along a straight path that is a slide, and exact.
 //! - **Sweep** of a closed curve along an open one (a pipe): the closed
 //!   curve is carried along the path, turning with it and never twisting
 //!   about it (rotation-minimising frames), and the kernel skins a surface
@@ -126,6 +126,78 @@ fn carried(profile: &Nurbs, path: &Nurbs) -> Option<(Vec<Nurbs>, Vec<f64>)> {
     Some((copies, params))
 }
 
+/// Of two open curves, which is the profile and which the path (turned
+/// to start at the profile): the path starts on the profile (its nearer
+/// end is the closer to it). When both touch the other (they meet end to
+/// end), the profile is the flat curve whose plane the other leaves most
+/// squarely (a line has no plane of its own), then the shorter.
+fn profile_and_path<'a>(a: &'a Section, b: &'a Section) -> (&'a Section, Nurbs) {
+    let gap = |profile: &Nurbs, path: &Nurbs| {
+        let (lo, hi) = profile.domain();
+        let (p0, p1) = ends(path);
+        let d0 = profile.eval(profile.closest(p0, lo, hi)).distance(p0);
+        let d1 = profile.eval(profile.closest(p1, lo, hi)).distance(p1);
+        (d0.min(d1), d1 < d0)
+    };
+    let size = |c: &Nurbs| {
+        c.points()
+            .windows(2)
+            .map(|w| w[0].distance(w[1]))
+            .sum::<f64>()
+    };
+    let (ga, flip_b) = gap(&a.curve, &b.curve);
+    let (gb, flip_a) = gap(&b.curve, &a.curve);
+    let scale = size(&a.curve).max(size(&b.curve)).max(1e-300);
+    // How squarely `other` leaves `profile`'s plane where it starts.
+    let square = |profile: &Nurbs, other: &Nurbs| {
+        let Some(plane) = profile.plane(scale * 1e-9) else {
+            return 0.0;
+        };
+        if straight(profile) {
+            return 0.0;
+        }
+        let (lo, hi) = other.domain();
+        let (p0, p1) = ends(other);
+        let (plo, phi) = profile.domain();
+        let near = |p: DVec3| profile.eval(profile.closest(p, plo, phi)).distance(p);
+        let t = if near(p1) < near(p0) { hi } else { lo };
+        other
+            .eval_d(t)
+            .1
+            .normalize_or_zero()
+            .dot(plane.normal)
+            .abs()
+    };
+    let a_is_profile = if (ga - gb).abs() <= scale * 1e-9 {
+        let (sa, sb) = (square(&a.curve, &b.curve), square(&b.curve, &a.curve));
+        if (sa - sb).abs() > 1e-9 {
+            sa > sb
+        } else {
+            size(&a.curve) <= size(&b.curve)
+        }
+    } else {
+        ga < gb
+    };
+    let turned = |c: &Nurbs, flip: bool| if flip { c.reversed() } else { c.clone() };
+    if a_is_profile {
+        (a, turned(&b.curve, flip_b))
+    } else {
+        (b, turned(&a.curve, flip_a))
+    }
+}
+
+/// Whether a curve is a straight line (all its control points on one).
+fn straight(c: &Nurbs) -> bool {
+    let pts = c.points();
+    let (p0, p1) = (pts[0], pts[pts.len() - 1]);
+    let d = p1 - p0;
+    let len = d.length();
+    len > 0.0
+        && pts
+            .iter()
+            .all(|p| (*p - p0).cross(d).length() <= len * len * 1e-12)
+}
+
 /// The model with the two selected curves swept, and the faces made; or
 /// why not.
 pub fn swept(
@@ -140,22 +212,29 @@ pub fn swept(
     let faces = match (a.curve.is_closed(), b.curve.is_closed()) {
         (true, true) => return Err(BOTH_CLOSED),
         (false, false) => {
-            // The path starts at its end nearest the profile.
-            let (a0, a1) = ends(&a.curve);
-            let (b0, b1) = ends(&b.curve);
-            let near = |p: DVec3| p.distance(a0).min(p.distance(a1));
-            let path = if near(b1) < near(b0) {
-                b.curve.reversed()
+            let (profile, path) = profile_and_path(a, b);
+            if straight(&path) {
+                // Along a straight path, sliding is turning: exact.
+                let surface = slid(&profile.curve, &path).ok_or(DEGENERATE)?;
+                let path_edges = if std::ptr::eq(profile, a) {
+                    &b.edges
+                } else {
+                    &a.edges
+                };
+                let mut rows: Vec<(f64, Vec<EdgeId>)> = cuts(model, &path, path_edges)
+                    .into_iter()
+                    .map(|v| (v, Vec::new()))
+                    .collect();
+                rows[0].1 = profile.edges.clone();
+                lay(&mut w, surface, &rows, false)?
             } else {
-                b.curve.clone()
-            };
-            let surface = slid(&a.curve, &path).ok_or(DEGENERATE)?;
-            let mut rows: Vec<(f64, Vec<EdgeId>)> = cuts(model, &path, &b.edges)
-                .into_iter()
-                .map(|v| (v, Vec::new()))
-                .collect();
-            rows[0].1 = a.edges.clone();
-            lay(&mut w, surface, &rows, false)?
+                // Along a curved path the profile turns with it, as a
+                // pipe's circle does.
+                let (copies, params) = carried(&profile.curve, &path).ok_or(DEGENERATE)?;
+                let surface = prism_kernel::kernel().skin(&copies, &params)?;
+                let rows = vec![(0.0, profile.edges.clone()), (1.0, Vec::new())];
+                lay(&mut w, surface, &rows, false)?
+            }
         }
         (pa, _) => {
             let (profile, path): (&Section, &Section) = if pa { (a, b) } else { (b, a) };

@@ -28,7 +28,59 @@ fn surface(m: &Model, f: FaceId) -> prism_geom::Patch {
 }
 
 #[test]
-fn two_open_curves_sweep_exactly_and_both_are_sides() {
+fn an_open_profile_turns_with_a_curved_path() {
+    let mut m = Model::new();
+    // A bump drawn across the path's start, square to it.
+    let profile = open(&[
+        [-2.0, 0.0, 0.0],
+        [-1.0, 0.0, 1.5],
+        [1.0, 0.0, 1.5],
+        [2.0, 0.0, 0.0],
+    ]);
+    // A path from the bump's middle, curving round a quarter turn.
+    let path = open(&[
+        [0.0, 0.0, 0.0],
+        [0.0, 3.0, 0.0],
+        [1.0, 5.0, 0.0],
+        [4.0, 6.0, 0.0],
+    ]);
+    add_spline(&mut m, &profile);
+    add_spline(&mut m, &path);
+    let edges = all(&m);
+    let faces = sweep::sweep(&mut m, &edges).unwrap();
+    clean(&m);
+    let p = surface(&m, faces[0]);
+    let [(u0, u1), (v0, v1)] = p.surface.domain();
+    // It starts as the profile itself.
+    for i in 0..=8 {
+        let u = u0 + (u1 - u0) * i as f64 / 8.0;
+        let q = p.surface.eval(u, v0);
+        let on = profile.eval(profile.closest(q, 0.0, 1.0));
+        assert!(q.distance(on) < 1e-9, "{q}");
+    }
+    // At the far end it has turned with the path: square to it there.
+    let (a, b) = (p.surface.eval(u0, v1), p.surface.eval(u1, v1));
+    let end_dir = path.eval_d(1.0).1.normalize();
+    let chord = (b - a).normalize();
+    assert!(chord.dot(end_dir).abs() < 0.02, "{}", chord.dot(end_dir));
+    assert!((a.distance(b) - 4.0).abs() < 0.02, "the same width");
+    // The bump's top stays straight above the path all the way.
+    for j in 0..=20 {
+        let v = v0 + (v1 - v0) * j as f64 / 20.0;
+        let q = p.surface.eval((u0 + u1) / 2.0, v);
+        let on = path.eval(path.closest(q, 0.0, 1.0));
+        assert!((q.distance(on) - 1.125).abs() < 0.01, "{}", q.distance(on));
+        assert!((q.z - 1.125).abs() < 0.01, "{q}");
+    }
+    assert_eq!(
+        m.edge_count(),
+        5,
+        "the two curves, the profile's copy at the end, and the two sides"
+    );
+}
+
+#[test]
+fn along_a_straight_path_an_open_profile_slides_exactly() {
     let mut m = Model::new();
     let profile = open(&[
         [0.0, 0.0, 0.0],
@@ -36,14 +88,8 @@ fn two_open_curves_sweep_exactly_and_both_are_sides() {
         [3.0, 0.0, -1.0],
         [4.0, 0.0, 0.0],
     ]);
-    let path = open(&[
-        [0.0, 0.0, 0.0],
-        [0.0, 2.0, 1.0],
-        [1.0, 4.0, 0.0],
-        [0.0, 6.0, 0.0],
-    ]);
     add_spline(&mut m, &profile);
-    add_spline(&mut m, &path);
+    add_segment(&mut m, DVec3::new(4.0, 0.0, 0.0), DVec3::new(4.0, 5.0, 1.0));
     let edges = all(&m);
     let faces = sweep::sweep(&mut m, &edges).unwrap();
     clean(&m);
@@ -51,14 +97,19 @@ fn two_open_curves_sweep_exactly_and_both_are_sides() {
     assert_eq!(
         m.edge_count(),
         4,
-        "the two curves, and their copies at the far ends"
+        "the two, and their copies at the far ends"
     );
     let p = surface(&m, faces[0]);
+    let [(u0, u1), (v0, v1)] = p.surface.domain();
     for i in 0..=6 {
         for j in 0..=6 {
-            let (u, v) = (i as f64 / 6.0, j as f64 / 6.0);
-            let want = profile.eval(u) + path.eval(v);
-            assert!(p.surface.eval(u, v).distance(want) < 1e-12);
+            let u = u0 + (u1 - u0) * i as f64 / 6.0;
+            let v = v0 + (v1 - v0) * j as f64 / 6.0;
+            let q = p.surface.eval(u, v);
+            // On the profile moved some way along the path.
+            let back = q - DVec3::new(0.0, 5.0, 1.0) * ((q.y) / 5.0);
+            let on = profile.eval(profile.closest(back, 0.0, 1.0));
+            assert!(back.distance(on) < 1e-9, "{q}");
         }
     }
 }

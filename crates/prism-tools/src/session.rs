@@ -1828,7 +1828,7 @@ impl Session {
                     self.curve_press(s, n);
                 }
                 RRECT => self.rrect_press(s),
-                FREEHAND => self.freehand_press(s),
+                FREEHAND => self.freehand_press(s, shift),
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
                     self.update_hover(s);

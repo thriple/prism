@@ -113,6 +113,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                         ui,
                         "The open document keeps its own units: File > Document Settings.",
                     );
+                    if ui.add(SoftButton::new("Reset Units").small()).clicked() {
+                        p.reset_units();
+                    }
 
                     heading(ui, "Tolerance");
                     ui.label(RichText::new(&tolerance).color(color::INK));

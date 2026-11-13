@@ -1,7 +1,7 @@
-**New in this build: camera and clipboard.**
-- **Copy and paste between windows:** Copy (or Cut) in one Prism window, then Paste in another. The copy goes through the system clipboard.
-- **Walk with the arrow keys:** up and down step forward and back, left and right turn. **Type an eye height** and press Enter to stand at that height.
-- **The Camera menu ticks** Perspective or Parallel Projection, whichever is in use.
+**New in this build: the last of the smaller gaps.**
+- **Sweep turns an open profile with its path:** sweep a profile along a curved path and it turns with the path, as a pipe's circle does (along a straight path it slides, as before).
+- **Freehand in 3D:** hold Shift as you start a Freehand stroke to draw over faces at any height, not just on one plane.
+- **Preferences > Reset Units** puts new documents back to metres.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

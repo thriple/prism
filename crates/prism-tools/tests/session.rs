@@ -4761,13 +4761,17 @@ fn esc_cancels_a_rotated_rectangle() {
 
 /// A freehand stroke through world points (each one a mouse move).
 fn stroke(d: &mut Driver, pts: &[DVec3]) {
+    stroke_with(d, pts, false);
+}
+
+fn stroke_with(d: &mut Driver, pts: &[DVec3], shift: bool) {
     let a = d.screen(pts[0]);
     d.send(Input::Move { x: a.x, y: a.y });
     d.send(Input::Press {
         button: Button::Left,
         x: a.x,
         y: a.y,
-        shift: false,
+        shift,
         ctrl: false,
         alt: false,
     });
@@ -4809,6 +4813,52 @@ fn a_freehand_stroke_becomes_one_smooth_curve_on_the_ground() {
         assert!((r - 2.0).abs() < 0.05, "{p} {r}");
     }
     valid(&d);
+}
+
+#[test]
+fn a_freehand_stroke_with_shift_runs_over_faces_in_3d() {
+    use prism_tools::session::FREEHAND;
+    // A 2 m box; the stroke starts on the ground beside it and runs onto
+    // its top.
+    let path: Vec<DVec3> = (0..=40)
+        .map(|k| {
+            let t = f64::from(k) / 40.0;
+            let x = 5.0 - 4.0 * t;
+            let y = 1.0 + 0.4 * (t * 6.0).sin();
+            let z = if x < 2.0 { 2.0 } else { 0.0 };
+            DVec3::new(x, y, z)
+        })
+        .collect();
+    let heights = |shift: bool| {
+        let mut d = Driver::empty();
+        rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+        d.tool(PUSH);
+        d.click(DVec3::new(1.0, 1.0, 0.0));
+        d.hover(DVec3::new(1.0, 1.0, 0.5));
+        d.typed("2");
+        d.tool(FREEHAND);
+        stroke_with(&mut d, &path, shift);
+        valid(&d);
+        let m = d.s.model();
+        let c = m
+            .edges()
+            .find_map(|(_, e)| e.curve.spline().map(|s| s.curve.clone()))
+            .expect("a curve");
+        let (t0, t1) = c.domain();
+        let zs: Vec<f64> = (0..=40)
+            .map(|k| c.eval(t0 + (t1 - t0) * f64::from(k) / 40.0).z)
+            .collect();
+        (
+            zs.iter().copied().fold(f64::MAX, f64::min),
+            zs.iter().copied().fold(f64::MIN, f64::max),
+        )
+    };
+    // Without Shift it stays on the ground plane it started on.
+    let (lo, hi) = heights(false);
+    assert!(lo.abs() < 1e-9 && hi.abs() < 1e-9, "{lo} {hi}");
+    // With Shift it climbs onto the top.
+    let (lo, hi) = heights(true);
+    assert!(lo < 0.1 && hi > 1.9, "{lo} {hi}");
 }
 
 #[test]
