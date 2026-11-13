@@ -36,22 +36,19 @@ Its place in PLAN 6.0 is the owner's to choose.
 ## What has to be built underneath
 - **Side chains:** follow edges from a picked one while the turn at each
   vertex is under the threshold, or while they share one curve.
-- **Three sides: a pole.** A three-sided ring is a four-sided surface
-  with one side shrunk to a point, as Curviloft does it (owner,
-  2026-11-13). Prism's surface is exact NURBS, not a mesh: the Coons patch
-  is built with one side a single repeated point. What has to change is
-  the face. Freeform faces are four-sided rectangles of their surface
-  today, so a **three-sided freeform face** (one side a pole) is needed.
-  Tessellation fans the last row into plain triangles at the pole (the
-  owner's "single triangle at the corner"), with the normal there taken
-  from the rows beside it, so it shades cleanly. Picking, the model check,
-  cage editing (the pole's control points move as one) and the file
-  format accept it. The same face unlocks Revolve of a curve touching its
-  axis, and lofting to a point.
-- **Five or more sides: down to four.** Neighbouring sides are joined
-  until there are four, at the flattest corners (where the turn is
-  least), as Curviloft does. The joined sides become one side of the
-  patch.
+- **Three, five or more sides: split from a centre point** (owner,
+  2026-11-13: "whatever creates the cleanest faces"; the methods compared
+  in `docs/research/loft-corners.md`). A centre point is joined to the
+  midpoint of each side, and each corner is filled with a four-sided
+  Coons patch: three sides give three faces, five give five. Every face is
+  exact along the boundary, has no point (singularity) to trouble offset,
+  shell or booleans later, and needs no trimming. The inner seams are
+  made smooth: the centre point and the inner curves are placed so the
+  patches share tangent planes across them (G1), checked with zebra
+  stripes. Four-sided rings stay one patch.
+- Not used: a pole (one side shrunk to a point: simple, but singular, the
+  thing Fusion and Rhino users work around), and a trimmed four-sided
+  surface (needs trimmed faces; can be added after Solids & CAD).
 - **Loft through sides** reuses `loft::lofted`, with the sides in the
   order picked, not guessed.
 - **Preview:** the surface tessellated into the overlay (as Paste's edges
@@ -65,12 +62,11 @@ presets.
 
 ## Tests
 Session: the owner's recording (three arcs round a corner) fills with
-one three-sided face; a square ring stays one patch; two separate curves loft;
+three four-sided faces meeting at a centre point; a square ring stays one patch; two separate curves loft;
 an open ring shows the tip and highlights the closing edge; Esc steps
 back; one undo removes the result. Ops: three-, four- and five-sided fills
-are exact along every side; the pole shades without a crease (normals
-near it agree within a small angle); a curve touching Revolve's axis
-turns into a closed dome.
+are exact along every side; across the inner seams the normals agree
+within a small angle (no crease); the model check stays clean.
 
 ## Acceptance
 - [ ] The owner's rounded box corner filled with the tool, by clicks.
