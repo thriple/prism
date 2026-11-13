@@ -69,6 +69,8 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             // Schema 10 adds NURBS curves and patches (geometry layout 9,
             // which reads layout 8 with none).
             9 => raw,
+            // Schema 11 adds locked groups (an optional field).
+            10 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

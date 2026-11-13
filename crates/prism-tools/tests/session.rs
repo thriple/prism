@@ -4342,3 +4342,133 @@ fn zebra_and_combs_are_view_toggles_and_combs_follow_the_bend() {
     action(&mut d, "view.zebra");
     assert!(!d.s.view_style().zebra);
 }
+
+// ---------- Everyday Commands part 1 (brief 33): clipboard and lock ----------
+
+#[test]
+fn copy_then_paste_follows_the_cursor_and_a_click_places_it() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.copy");
+    act(&mut d, "edit.paste");
+    assert!(d.s.in_operation(), "the copy follows the cursor");
+    assert!(d.s.hint().contains("place the copy"));
+    // Held at the low corner of its box: a click on the ground at (5, 0)
+    // puts that corner there, snapped like Move.
+    d.click(DVec3::new(5.0, 0.0, 0.0));
+    assert!(!d.s.in_operation());
+    let asm = d.s.document().assembly();
+    let groups: Vec<_> = asm.root().instances.keys().copied().collect();
+    assert_eq!(groups.len(), 2);
+    let new = *groups.iter().find(|i| **i != g).expect("pasted");
+    let w = asm.world_of(&[new]).expect("placed").translation;
+    assert!((w - DVec3::new(5.0, 0.0, 0.0)).length() < 1e-6, "{w:?}");
+    // The pasted group is selected; one undo removes it.
+    assert_eq!(
+        d.s.selected_groups().iter().copied().collect::<Vec<_>>(),
+        [new]
+    );
+    undo(&mut d);
+    assert_eq!(d.s.document().assembly().root().instances.len(), 1);
+}
+
+#[test]
+fn esc_cancels_a_paste_and_paste_in_place_puts_it_back() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "edit.cut");
+    assert_eq!(d.faces(), 0, "cut deletes");
+    act(&mut d, "edit.paste");
+    d.hover(DVec3::new(4.0, 4.0, 0.0));
+    key(&mut d, Key::Escape);
+    assert!(!d.s.in_operation());
+    assert_eq!(d.faces(), 0, "nothing pasted");
+    act(&mut d, "edit.pasteip");
+    assert_eq!(d.faces(), 1, "back where it was");
+    let (lo, hi) = d.s.model().bbox().expect("box");
+    assert!(lo.length() < 1e-9 && (hi - DVec3::new(2.0, 2.0, 0.0)).length() < 1e-9);
+    assert_eq!(
+        d.s.selection().faces.len(),
+        1,
+        "what was pasted is selected"
+    );
+}
+
+#[test]
+fn the_clipboard_goes_to_another_document() {
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    act(&mut d, "edit.copy");
+    let clip = d.s.clipboard().expect("copied");
+    let mut e = Driver::empty();
+    e.s.set_clipboard(Some(clip));
+    act(&mut e, "edit.pasteip");
+    assert_eq!(e.s.document().assembly().root().instances.len(), 1);
+}
+
+#[test]
+fn a_locked_group_cannot_be_moved_erased_or_opened() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.lock");
+    assert!(d.s.document().assembly().is_locked(g));
+    // Move does not start, and says why.
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    assert!(!d.s.in_operation());
+    assert_eq!(d.s.hint(), prism_tools::session::LOCKED);
+    // Delete and Explode are refused; a double-click does not open it.
+    d.tool(SELECT);
+    act(&mut d, "edit.delete");
+    act(&mut d, "edit.explode");
+    assert_eq!(d.s.document().assembly().root().instances.len(), 1);
+    act(&mut d, "edit.desel");
+    double_click(&mut d, DVec3::new(1.0, 0.0, 1.0));
+    assert!(d.s.open_path().is_empty());
+    // Copy works, and the copy is not locked.
+    act(&mut d, "edit.selall");
+    act(&mut d, "edit.copy");
+    act(&mut d, "edit.pasteip");
+    let asm = d.s.document().assembly();
+    let copy = asm.root().instances.keys().find(|i| **i != g).copied();
+    assert!(copy.is_some_and(|c| !asm.is_locked(c)));
+    // Unlock: it moves again.
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    act(&mut d, "edit.unlock");
+    assert!(!d.s.document().assembly().is_locked(g));
+}
+
+#[test]
+fn with_context_adds_edges_inside_the_open_group_only() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    // A wall standing through the box, at the root.
+    d.s.handle(&Event {
+        t: 0.0,
+        input: Input::Action { id: "noop".into() },
+    });
+    let mut doc = d.s.document().clone();
+    doc.run(prism_doc::Command::Loop {
+        points: vec![
+            DVec3::new(1.0, -1.0, -1.0),
+            DVec3::new(1.0, 3.0, -1.0),
+            DVec3::new(1.0, 3.0, 3.0),
+            DVec3::new(1.0, -1.0, 3.0),
+        ],
+    });
+    d.s.open_document(doc, Some(d.s.camera()));
+    let outside = d.s.model().to_json();
+    d.s.open_group(g);
+    act(&mut d, "isect.ctx");
+    let def = d.s.document().assembly().context_def(&[g]).unwrap();
+    let inside = &d.s.document().assembly().def(def).unwrap().model;
+    assert!(
+        inside.face_count() > 6,
+        "the box is cut where the wall crosses"
+    );
+    assert!(prism_ops::check::problems(inside).is_empty());
+    assert_eq!(d.s.model().to_json(), outside, "outside unchanged");
+}

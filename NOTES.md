@@ -3231,3 +3231,37 @@ Brief 31, six parts, all built on 2026-11-12. For whoever builds next:
 - Not built from PLAN's M5 list: "Smooth" (a flat region into a patch),
   insert edge loop as a tool (Add Control Points adds a row in the widest
   gap), the Freehand tool, SubD.
+
+## Everyday Commands (part 1): clipboard and lock
+Brief 33, part 1, built 2026-11-13.
+- **Copy / Cut / Paste / Paste in Place** (Edit menu, Ctrl+C, X, V,
+  Shift+V). A clip is an `Assembly` of its own (`Assembly::clip`) in world
+  coordinates: the selected loose geometry at its root, copies of the
+  selected groups, and the materials, images and tags they use. Paste is
+  `Command::Paste { clip, at }`; Cut is `Command::Cut` (one undo step).
+- Paste holds the copy at the low corner of its box; it follows the
+  inference point (drawn as its edges) until a click; Esc cancels. What
+  is pasted is selected. Loose geometry joins by the same rule as Explode
+  (two boxes pasted wall to wall become one solid: the shared wall goes).
+- Pasting into another document: a material is reused when one with the
+  same name and value is there, a tag by name, a component when its
+  definition is the same; a different component of the same name is
+  renamed (`Crate#2`). The clipboard moves with the viewport between tabs
+  (`tabs.rs`, `swap_in`). It is not the system clipboard.
+- **Lock / Unlock** (Edit > Hide & Lock, context menu). `Assembly` keeps
+  the locked set; files save it (schema 11, `locked` in `groups.json`).
+  `Command::locked_in` says when a command would change a locked group
+  (move, erase, explode, paint, regroup, Make Unique, or anything inside
+  it); the document does nothing then, and the session says why in the
+  status bar (`session::LOCKED`). Move, Rotate and Scale do not start on
+  one; it does not open. Copying, hiding, tagging and naming are allowed;
+  copies are not locked. A selected locked group's box is red
+  (`Style::locked`); Entity Info says "(locked)"; MCP's model and
+  selection give `locked`.
+- **Intersect Faces > With Context**: with a group open, its faces are
+  cut where they cross the shown geometry outside it
+  (`prism_ops::intersect::intersect_with`, `Command::IntersectWith`); a
+  closed loop of crossings fills, as Intersect Faces does.
+- **Left over:** a component holding groups is pasted as a new
+  definition even in its own document (the reuse test compares nested
+  definitions by id); the system clipboard; dragging between windows.

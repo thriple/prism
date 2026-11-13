@@ -229,6 +229,13 @@ pub fn crossings(a: &Flat, b: &Flat, tol: &Tol) -> Vec<(DVec3, DVec3)> {
 
 /// Every crossing in the model, or only those involving `only`.
 pub fn all_crossings(m: &Model, only: Option<&BTreeSet<FaceId>>) -> Vec<(DVec3, DVec3)> {
+    crossings_where(m, |a, b| {
+        only.is_none_or(|s| s.contains(&a) || s.contains(&b))
+    })
+}
+
+/// The crossings of the face pairs `keep` accepts.
+fn crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) -> Vec<(DVec3, DVec3)> {
     let tol = m.tol();
     // Faces with arcs are clipped by their drawn outline, and the ends
     // then put exactly on the arcs (Exact Curves 6b).
@@ -246,10 +253,7 @@ pub fn all_crossings(m: &Model, only: Option<&BTreeSet<FaceId>>) -> Vec<(DVec3, 
     let mut out = Vec::new();
     for i in 0..faces.len() {
         for j in i + 1..faces.len() {
-            if let Some(s) = only
-                && !s.contains(&faces[i].0)
-                && !s.contains(&faces[j].0)
-            {
+            if !keep(faces[i].0, faces[j].0) {
                 continue;
             }
             let segs = crossings(&faces[i].1, &faces[j].1, &tol);
@@ -324,6 +328,33 @@ fn onto_arcs(m: &Model, faces: &[FaceId], a: DVec3, b: DVec3, tol: &Tol) -> (DVe
 pub fn intersect_faces(m: &mut Model, only: Option<&BTreeSet<FaceId>>) -> usize {
     let segs = all_crossings(m, only);
     let pieces = crate::crossing::curved_crossings(m, only);
+    let curved: BTreeSet<FaceId> = m
+        .faces()
+        .filter(|(_, f)| f.is_curved())
+        .map(|(id, _)| id)
+        .collect();
+    for (a, b) in &segs {
+        crate::add_segment(m, *a, *b);
+    }
+    for p in &pieces {
+        crate::crossing::add_piece(m, p);
+    }
+    if !pieces.is_empty() {
+        crate::cut::split_curved(m, Some(&curved));
+    }
+    segs.len() + pieces.len()
+}
+
+/// Intersect Faces > With Context: where `m`'s faces cross `others`'
+/// (the geometry outside an open group, in its coordinates), edges are
+/// added to `m` and its faces split; `others` is not changed. Returns how
+/// many crossings were added.
+pub fn intersect_with(m: &mut Model, others: &Model) -> usize {
+    let mut both = m.clone();
+    let theirs: BTreeSet<FaceId> = both.append(others).into_iter().collect();
+    let keep = |a: FaceId, b: FaceId| theirs.contains(&a) != theirs.contains(&b);
+    let segs = crossings_where(&both, keep);
+    let pieces = crate::crossing::curved_crossings_where(&both, keep);
     let curved: BTreeSet<FaceId> = m
         .faces()
         .filter(|(_, f)| f.is_curved())

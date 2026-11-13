@@ -108,12 +108,16 @@ pub struct Assembly {
     /// Instances painted as a whole: drawn on their Default faces.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     painted: BTreeMap<InstanceId, MaterialId>,
+    /// Instances locked against edits (Everyday Commands part 1).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    locked: BTreeSet<InstanceId>,
 }
 
 /// An instance's name, tag and whether it is hidden (for files).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Attributes {
     pub hidden: bool,
+    pub locked: bool,
     pub name: Option<String>,
     pub tag: Option<TagId>,
 }
@@ -148,6 +152,7 @@ impl Assembly {
             images: BTreeMap::new(),
             next_material: 0,
             painted: BTreeMap::new(),
+            locked: BTreeSet::new(),
         }
     }
 
@@ -219,6 +224,7 @@ impl Assembly {
             images: BTreeMap::new(),
             next_material: 0,
             painted: BTreeMap::new(),
+            locked: BTreeSet::new(),
         })
     }
 
@@ -236,6 +242,9 @@ impl Assembly {
             if a.hidden {
                 self.hidden.insert(i);
             }
+            if a.locked {
+                self.locked.insert(i);
+            }
             if let Some(n) = a.name {
                 self.names.insert(i, n);
             }
@@ -252,6 +261,9 @@ impl Assembly {
         let mut out: BTreeMap<InstanceId, Attributes> = BTreeMap::new();
         for i in &self.hidden {
             out.entry(*i).or_default().hidden = true;
+        }
+        for i in &self.locked {
+            out.entry(*i).or_default().locked = true;
         }
         for (i, n) in &self.names {
             out.entry(*i).or_default().name = Some(n.clone());
@@ -308,6 +320,32 @@ impl Assembly {
     }
 
     /// Name an instance (an empty name clears it).
+    /// Whether an instance is locked against edits.
+    pub fn is_locked(&self, i: InstanceId) -> bool {
+        self.locked.contains(&i)
+    }
+
+    /// Whether a path of instances (an open group) goes through a locked one.
+    pub fn path_locked(&self, path: &[InstanceId]) -> bool {
+        path.iter().any(|i| self.is_locked(*i))
+    }
+
+    /// Lock or unlock instances (anywhere: instance ids are unique).
+    pub fn set_locked(&mut self, instances: &BTreeSet<InstanceId>, locked: bool) {
+        let alive: BTreeSet<InstanceId> = self
+            .defs
+            .values()
+            .flat_map(|d| d.instances.keys().copied())
+            .collect();
+        for i in instances.iter().filter(|i| alive.contains(i)) {
+            if locked {
+                self.locked.insert(*i);
+            } else {
+                self.locked.remove(i);
+            }
+        }
+    }
+
     pub fn set_name(&mut self, i: InstanceId, name: &str) {
         let name = name.trim();
         if name.is_empty() {
@@ -683,6 +721,7 @@ impl Assembly {
         self.names.retain(|i, _| alive.contains(i));
         self.on_tag.retain(|i, _| alive.contains(i));
         self.painted.retain(|i, _| alive.contains(i));
+        self.locked.retain(|i| alive.contains(i));
     }
 
     /// Make Group: the selection (and the selected groups) in `ctx` move
@@ -759,27 +798,7 @@ impl Assembly {
         let Some(parent) = self.def_mut(ctx) else {
             return false;
         };
-        let before: BTreeSet<VertexId> = parent.model.vertices().map(|(v, _)| v).collect();
-        parent.model.append(&geo);
-        let new: BTreeSet<VertexId> = parent
-            .model
-            .vertices()
-            .map(|(v, _)| v)
-            .filter(|v| !before.contains(v))
-            .collect();
-        let at: Vec<DVec3> = new.iter().map(|v| parent.model.vertex(*v)).collect();
-        // Join: points on points weld, then faces on one plane are rebuilt
-        // as one set of regions (#30) and repeated faces become one.
-        let tol = parent.model.tol();
-        transform::weld_new(&mut parent.model, &new, &tol);
-        let touched: BTreeSet<VertexId> = parent
-            .model
-            .vertices()
-            .filter(|(_, p)| at.iter().any(|q| tol.same_point(*p, *q)))
-            .map(|(v, _)| v)
-            .collect();
-        prism_ops::settle::settle(&mut parent.model, &touched);
-        prism_ops::settle::dedupe_faces(&mut parent.model);
+        join(&mut parent.model, &geo);
         parent.instances.remove(&id);
         for (cid, ci) in child.instances {
             parent.instances.insert(
@@ -792,6 +811,193 @@ impl Assembly {
         }
         self.prune();
         true
+    }
+
+    // ---------- the clipboard (Everyday Commands part 1) ----------
+
+    /// Copy: a selection in `ctx` as an assembly of its own, in world
+    /// coordinates (`to_world` maps `ctx` there). Its root holds the loose
+    /// geometry (`geo`, already in world coordinates) and the instances,
+    /// with everything they use: definitions, materials, images, tags.
+    /// Copies are not locked.
+    pub fn clip(
+        &self,
+        ctx: DefId,
+        to_world: &DAffine3,
+        geo: Model,
+        instances: &BTreeSet<InstanceId>,
+    ) -> Assembly {
+        let placed: BTreeMap<InstanceId, Instance> = self
+            .def(ctx)
+            .map(|d| {
+                instances
+                    .iter()
+                    .filter_map(|i| {
+                        d.instances.get(i).map(|x| {
+                            (
+                                *i,
+                                Instance {
+                                    def: x.def,
+                                    transform: *to_world * x.transform,
+                                },
+                            )
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut out = self.clone();
+        out.defs.insert(
+            ROOT,
+            Arc::new(Definition {
+                model: geo,
+                instances: placed,
+                name: None,
+            }),
+        );
+        out.prune();
+        out.purge_materials();
+        let used: BTreeSet<TagId> = out.on_tag.values().copied().collect();
+        out.tags.retain(|t, _| used.contains(t));
+        out.locked.clear();
+        out
+    }
+
+    /// Whether a clip holds nothing.
+    pub fn is_empty(&self) -> bool {
+        let r = self.root();
+        r.instances.is_empty() && r.model.vertices().next().is_none()
+    }
+
+    /// Paste: a clip's contents into `ctx`, moved by `at` (from the clip's
+    /// coordinates to `ctx`'s). Loose geometry joins `ctx`'s by the overlap
+    /// rules; groups stay groups. A material, image or tag that is already
+    /// here (the same name and value) is reused, as is a component whose
+    /// definition is the same; a different component with a name in use
+    /// gets a new name.
+    pub fn paste(&mut self, ctx: DefId, clip: &Assembly, at: &DAffine3) -> bool {
+        if self.def(ctx).is_none() || clip.is_empty() {
+            return false;
+        }
+        let mut map = Remap::default();
+        for img in clip.images.values() {
+            self.add_image(img.clone());
+        }
+        for (id, m) in &clip.materials {
+            let here = self
+                .materials
+                .iter()
+                .find(|(_, x)| *x == m)
+                .map(|(k, _)| *k);
+            let to = here.unwrap_or_else(|| self.add_material(m.clone()));
+            map.materials.insert(*id, to);
+        }
+        for (id, t) in &clip.tags {
+            let here = self
+                .tags
+                .iter()
+                .find(|(_, x)| x.name == t.name)
+                .map(|(k, _)| *k);
+            let to = here.unwrap_or_else(|| self.add_tag(&t.name));
+            map.tags.insert(*id, to);
+        }
+        let root = clip.root().clone();
+        for (ci, inst) in &root.instances {
+            let Some(def) = self.bring(clip, inst.def, &mut map) else {
+                continue;
+            };
+            let id = self.new_instance();
+            if let Some(d) = self.def_mut(ctx) {
+                d.instances.insert(
+                    id,
+                    Instance {
+                        def,
+                        transform: *at * inst.transform,
+                    },
+                );
+            }
+            self.copy_attributes(clip, *ci, id, &map);
+        }
+        let mut geo = root.model;
+        crate::material::remap(&mut geo, &map.materials);
+        transform::affine(&mut geo, at);
+        if geo.vertices().next().is_some()
+            && let Some(d) = self.def_mut(ctx)
+        {
+            join(&mut d.model, &geo);
+        }
+        self.prune();
+        true
+    }
+
+    /// A clip's definition brought into this assembly (its own instances
+    /// first). Returns its id here.
+    fn bring(&mut self, clip: &Assembly, d: DefId, map: &mut Remap) -> Option<DefId> {
+        if let Some(x) = map.defs.get(&d) {
+            return Some(*x);
+        }
+        let src = clip.def(d)?.clone();
+        let mut model = src.model.clone();
+        crate::material::remap(&mut model, &map.materials);
+        let mut instances = BTreeMap::new();
+        let mut inner = Vec::new();
+        for (ci, inst) in &src.instances {
+            let def = self.bring(clip, inst.def, map)?;
+            inner.push((*ci, def, inst.transform));
+        }
+        // A component already here, the same, is reused.
+        if src.is_component() {
+            let same = self.defs.iter().find(|(k, x)| {
+                **k != ROOT
+                    && x.name == src.name
+                    && x.model == model
+                    && x.instances.len() == inner.len()
+                    && x.instances
+                        .values()
+                        .zip(&inner)
+                        .all(|(a, (_, def, t))| a.def == *def && a.transform == *t)
+            });
+            if let Some((k, _)) = same {
+                let k = *k;
+                map.defs.insert(d, k);
+                return Some(k);
+            }
+        }
+        for (ci, def, transform) in inner {
+            let id = self.new_instance();
+            instances.insert(id, Instance { def, transform });
+            self.copy_attributes(clip, ci, id, map);
+        }
+        let name = src.name.as_deref().map(|n| {
+            if self.defs().any(|(_, x)| x.name.as_deref() == Some(n)) {
+                self.free_name(n)
+            } else {
+                n.to_owned()
+            }
+        });
+        let k = self.new_def(Definition {
+            model,
+            instances,
+            name,
+        });
+        map.defs.insert(d, k);
+        Some(k)
+    }
+
+    /// A clip instance's name, tag, paint and hidden flag, onto `to`.
+    fn copy_attributes(&mut self, clip: &Assembly, from: InstanceId, to: InstanceId, map: &Remap) {
+        if let Some(n) = clip.names.get(&from) {
+            self.names.insert(to, n.clone());
+        }
+        if let Some(t) = clip.on_tag.get(&from).and_then(|t| map.tags.get(t)) {
+            self.on_tag.insert(to, *t);
+        }
+        if let Some(m) = clip.painted.get(&from).and_then(|m| map.materials.get(m)) {
+            self.painted.insert(to, *m);
+        }
+        if clip.hidden.contains(&from) {
+            self.hidden.insert(to);
+        }
     }
 
     /// Change the placement of instances in `ctx` by `m` (in `ctx`'s
@@ -1102,4 +1308,35 @@ impl Assembly {
             }
         }
     }
+}
+
+/// How a clip's ids map to an assembly's, while pasting.
+#[derive(Default)]
+struct Remap {
+    materials: BTreeMap<MaterialId, MaterialId>,
+    tags: BTreeMap<TagId, TagId>,
+    defs: BTreeMap<DefId, DefId>,
+}
+
+/// Join `geo` to `model`: points on points weld, then faces on one plane
+/// are rebuilt as one set of regions (#30) and repeated faces become one
+/// (Explode, Paste).
+fn join(model: &mut Model, geo: &Model) {
+    let before: BTreeSet<VertexId> = model.vertices().map(|(v, _)| v).collect();
+    model.append(geo);
+    let new: BTreeSet<VertexId> = model
+        .vertices()
+        .map(|(v, _)| v)
+        .filter(|v| !before.contains(v))
+        .collect();
+    let at: Vec<DVec3> = new.iter().map(|v| model.vertex(*v)).collect();
+    let tol = model.tol();
+    transform::weld_new(model, &new, &tol);
+    let touched: BTreeSet<VertexId> = model
+        .vertices()
+        .filter(|(_, p)| at.iter().any(|q| tol.same_point(*p, *q)))
+        .map(|(v, _)| v)
+        .collect();
+    prism_ops::settle::settle(model, &touched);
+    prism_ops::settle::dedupe_faces(model);
 }

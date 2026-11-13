@@ -192,6 +192,22 @@ pub fn connected_same(m: &Model, start: FaceId, side: FaceSide) -> BTreeSet<(Fac
     seen.into_iter().map(|f| (f, side)).collect()
 }
 
+/// Change the materials a model's faces name (pasting into another
+/// document); a material not in `map` is kept.
+pub fn remap(m: &mut Model, map: &BTreeMap<MaterialId, MaterialId>) {
+    if map.iter().all(|(a, b)| a == b) {
+        return;
+    }
+    let faces: Vec<FaceId> = m.faces().map(|(id, _)| id).collect();
+    let to = |x: Option<MaterialId>| x.map(|k| map.get(&k).copied().unwrap_or(k));
+    for f in faces {
+        m.edit_face(f, |x| {
+            x.paint.front = to(x.paint.front);
+            x.paint.back = to(x.paint.back);
+        });
+    }
+}
+
 /// The materials a model's faces use.
 pub fn used_in(m: &Model) -> BTreeSet<MaterialId> {
     m.faces()

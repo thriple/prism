@@ -280,6 +280,12 @@ impl Session {
 
     /// Open a group inside the open one (double-click, Enter).
     pub fn open_group(&mut self, id: InstanceId) {
+        if self.doc.assembly().is_locked(id) {
+            self.notice = Some(super::LOCKED);
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
         self.cancel();
         self.ctx.push(id);
         self.groups.clear();
@@ -409,6 +415,7 @@ impl Session {
                     depth: path.len() - 1,
                     shown: path.iter().all(|i| asm.is_shown(*i)),
                     hidden: asm.is_hidden(*last),
+                    locked: asm.is_locked(*last),
                     selected: path.len() == self.ctx.len() + 1
                         && path.starts_with(&self.ctx)
                         && self.groups.contains(last),
@@ -473,6 +480,7 @@ impl Session {
                     .map_or("Group".to_owned(), |n| format!("Component \"{n}\"")),
                 tag: asm.tag_of(id),
                 hidden: asm.is_hidden(id),
+                locked: asm.is_locked(id),
                 material: self.material_name(asm.painted_with(id)),
             };
         }
@@ -588,6 +596,11 @@ impl Session {
     /// The shown groups in the open one (Select All).
     pub(super) fn all_groups(&self) -> BTreeSet<InstanceId> {
         self.groups_here(true)
+    }
+
+    /// Every group in the open one, shown or not.
+    pub(super) fn groups_in_open(&self) -> BTreeSet<InstanceId> {
+        self.groups_here(false)
     }
 
     /// The groups in the open one: all, or only the shown ones.
@@ -795,9 +808,14 @@ impl Session {
             .unwrap_or(prism_math::DAffine3::IDENTITY);
         for g in &self.groups {
             if let Some(c) = self.group_box(*g) {
+                let locked = self.doc.assembly().is_locked(*g);
                 o.tested.extend(box_lines(
                     c.map(|p| step.transform_point3(p)),
-                    self.style.selected,
+                    if locked {
+                        self.style.locked
+                    } else {
+                        self.style.selected
+                    },
                     self.style.highlight_width,
                     [0.0, 0.0],
                 ));
@@ -871,6 +889,8 @@ pub struct OutlineRow {
     pub shown: bool,
     /// Hidden on purpose (its eye is closed).
     pub hidden: bool,
+    /// Locked against edits (brief 33).
+    pub locked: bool,
     pub selected: bool,
     /// It is the open group.
     pub open: bool,
@@ -885,6 +905,7 @@ pub enum EntityInfo {
         kind: String,
         tag: Option<prism_doc::TagId>,
         hidden: bool,
+        locked: bool,
         /// Painted as a whole with it ("Default": not painted).
         material: String,
     },

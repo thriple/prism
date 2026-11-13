@@ -45,8 +45,9 @@ pub use migrate::{Raw, migrate};
 /// edges (geometry layout 6, DECISIONS #32). Schema 8: materials
 /// (`materials.json`) and painted faces (geometry layout 7). Schema 9:
 /// texture images (`images/`) and texture placement on faces (geometry
-/// layout 8). Schema 10: NURBS curves and patches (geometry layout 9).
-pub const SCHEMA: u32 = 10;
+/// layout 8). Schema 10: NURBS curves and patches (geometry layout 9). Schema 11:
+/// locked groups (`groups.json`).
+pub const SCHEMA: u32 = 11;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -171,6 +172,8 @@ struct InstanceV1 {
     tag: Option<u32>,
     #[serde(default, skip_serializing_if = "is_false")]
     hidden: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    locked: bool,
 }
 
 /// Why a file could not be opened.
@@ -291,6 +294,7 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                                 name: a.name,
                                 tag: a.tag.map(|t| t.0),
                                 hidden: a.hidden,
+                                locked: a.locked,
                             }
                         })
                         .collect(),
@@ -418,6 +422,7 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
                 InstanceId(i.id),
                 prism_doc::Attributes {
                     hidden: i.hidden,
+                    locked: i.locked,
                     name: i.name.clone(),
                     tag: i.tag.map(prism_doc::TagId),
                 },

@@ -68,7 +68,7 @@ impl Tabs {
             return false;
         };
         f.flush(&vp.session);
-        let old_v = std::mem::replace(vp, nv);
+        let old_v = swap_in(vp, nv);
         let old_f = std::mem::replace(f, nf);
         self.parked[self.active] = Some((old_v, old_f));
         self.active = i;
@@ -88,7 +88,7 @@ impl Tabs {
         let nv = Viewport::with_document(doc);
         let nf = Files::new(&nv.session, slot);
         f.flush(&vp.session);
-        let old_v = std::mem::replace(vp, nv);
+        let old_v = swap_in(vp, nv);
         let old_f = std::mem::replace(f, nf);
         self.parked[self.active] = Some((old_v, old_f));
         self.parked.insert(self.active + 1, None);
@@ -201,7 +201,7 @@ impl Tabs {
                 }
                 // The last tab closed: one empty tab stays.
                 let slot = self.slot();
-                *vp = Viewport::with_document(Document::new());
+                swap_in(vp, Viewport::with_document(Document::new()));
                 *f = Files::new(&vp.session, slot);
                 self.parked.push(None);
                 self.active = 0;
@@ -209,7 +209,7 @@ impl Tabs {
             }
             self.active = self.active.min(self.parked.len() - 1);
             let (nv, nf) = self.parked[self.active].take().expect("a parked tab");
-            *vp = nv;
+            swap_in(vp, nv);
             *f = nf;
             if self.closing_all {
                 f.close_requested(&mut vp.session, chrome);
@@ -217,6 +217,13 @@ impl Tabs {
         }
         changed
     }
+}
+
+/// Put another document in the viewport. The clipboard goes with the
+/// viewport, so every open document shares it (brief 33).
+fn swap_in(vp: &mut Viewport, mut nv: Viewport) -> Viewport {
+    nv.session.set_clipboard(vp.session.clipboard());
+    std::mem::replace(vp, nv)
 }
 
 #[cfg(test)]

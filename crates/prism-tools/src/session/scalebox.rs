@@ -192,6 +192,9 @@ impl Session {
             }
             return;
         };
+        if self.locked_selected() {
+            return;
+        }
         let Some(b) = self.scale_boxes() else { return };
         let verts = self.selection.all_vertices(self.work_model());
         self.edit = Some(EditOp::Scale {

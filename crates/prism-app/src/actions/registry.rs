@@ -173,6 +173,12 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "exp.gltf"
         || id == "isect.model"
         || id == "isect.sel"
+        // Everyday Commands part 1 (brief 33).
+        || id == "isect.ctx"
+        || matches!(
+            id,
+            "edit.copy" | "edit.cut" | "edit.paste" | "edit.pasteip" | "edit.lock" | "edit.unlock"
+        )
         // Groups & Components part 1: handled by the session.
         || id == "edit.group"
         || id == "edit.explode"
@@ -279,6 +285,8 @@ impl Registry {
                         None if matches!(
                             r.id,
                             "isect.sel"
+                                | "edit.copy"
+                                | "edit.cut"
                                 | "edit.group"
                                 | "edit.comp"
                                 | "edit.revface"
@@ -290,6 +298,8 @@ impl Registry {
                         None if r.id == "edit.explode"
                             || r.id == "edit.unique"
                             || r.id == "edit.hide"
+                            || r.id == "edit.lock"
+                            || r.id == "edit.unlock"
                             || r.id == "edit.isolate"
                             || r.id.starts_with("flip.") =>
                         {

@@ -27,6 +27,7 @@ use crate::select::box_select;
 
 mod arcs;
 mod cage;
+mod clip;
 mod construct;
 mod curve;
 mod edit;
@@ -42,6 +43,7 @@ mod texpos;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use cage::PICK_FIRST;
+pub use clip::LOCKED;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use curve::{CURVE, curve_for};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
@@ -462,6 +464,11 @@ pub struct Session {
     /// The open group's model in world coordinates (None at the root).
     work: Option<Model>,
     to_world: prism_math::DAffine3,
+    /// The clipboard (shared by the app's documents), a paste following
+    /// the cursor, and why the last edit was refused (a locked group).
+    clipboard: Option<std::sync::Arc<prism_doc::Assembly>>,
+    pasting: Option<clip::Pasting>,
+    notice: Option<&'static str>,
 }
 
 impl Session {
@@ -506,6 +513,9 @@ impl Session {
             pieces: Vec::new(),
             work: None,
             to_world: prism_math::DAffine3::IDENTITY,
+            clipboard: None,
+            pasting: None,
+            notice: None,
             doc,
             version: 1,
             scene,
@@ -664,6 +674,7 @@ impl Session {
             || self.boxing.is_some()
             || self.edit.is_some()
             || self.texpos_active()
+            || self.pasting()
     }
     pub fn take_dirty(&mut self) -> bool {
         std::mem::take(&mut self.dirty)
@@ -761,6 +772,12 @@ impl Session {
 
     /// The status bar's hint for the tool's next step (feel test `hintText(`).
     pub fn hint(&self) -> &'static str {
+        if let Some(h) = self.notice {
+            return h;
+        }
+        if let Some(h) = self.paste_hint() {
+            return h;
+        }
         if let Some(h) = self.cage_hint() {
             return h;
         }
@@ -998,6 +1015,7 @@ impl Session {
             return;
         }
         self.cage_notice = None;
+        self.notice = None;
         if is_nav(id) && !is_nav(&self.tool) {
             self.before_nav = self.tool.clone();
         }
@@ -1036,6 +1054,7 @@ impl Session {
     /// Cancel the step in progress; the tool stays.
     fn cancel(&mut self) {
         self.cancel_edit();
+        self.paste_cancel();
         self.line_start = None;
         self.rect = None;
         self.shape = None;
@@ -1162,6 +1181,13 @@ impl Session {
     // ---------- the model ----------
 
     fn run(&mut self, c: Command) -> bool {
+        // Nothing changes a locked group: say so instead.
+        if c.locked_in(self.doc.assembly()) {
+            self.notice = Some(LOCKED);
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return false;
+        }
         if self.run_here(c) {
             self.model_changed();
             true
@@ -1357,6 +1383,16 @@ impl Session {
                 self.set_groups(BTreeSet::new());
             }
             "edit.delete" => self.delete(),
+            // Everyday Commands part 1 (brief 33).
+            "edit.copy" => {
+                self.copy();
+            }
+            "edit.cut" => self.cut(),
+            "edit.paste" => self.paste_start(),
+            "edit.pasteip" => self.paste_in_place(),
+            "edit.lock" => self.set_locked(true),
+            "edit.unlock" => self.set_locked(false),
+            "isect.ctx" => self.intersect_with_context(),
             "edit.selmat" => self.select_same_material(),
             "tex.reset" => self.texture_reset(),
             "cage.edit" => self.cage_toggle(),
@@ -1454,9 +1490,13 @@ impl Session {
             || self.tool == CURVE
             || self.cage_wants_inference()
             || self.edit_wants_inference()
+            || self.pasting()
     }
 
     fn context(&self) -> Context {
+        if self.pasting() {
+            return Context::default();
+        }
         if self.cage_takes() {
             return Context {
                 start: self.cage_start(),
@@ -1622,7 +1662,14 @@ impl Session {
 
     fn press(&mut self, button: Button, s: DVec2, shift: bool, ctrl: bool, resp: &mut Response) {
         self.cursor = Some(s);
+        if self.notice.take().is_some() {
+            self.overlay_dirty = true;
+        }
         match button {
+            Button::Left if self.pasting() => {
+                self.update_hover(s);
+                self.paste_press();
+            }
             Button::Middle => {
                 self.settle();
                 let view = self.view();
@@ -2119,6 +2166,7 @@ impl Session {
         if is_edit(&self.tool) {
             self.edit_overlay(&mut o);
         }
+        self.paste_overlay(&mut o);
         if !self.wants_inference() {
             return o;
         }

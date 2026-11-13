@@ -224,7 +224,7 @@ mod fuzz {
 }
 
 #[test]
-fn names_tags_and_hidden_flags_round_trip() {
+fn names_tags_hidden_and_locked_flags_round_trip() {
     use prism_doc::{Command, Document};
     let mut d = Document::new();
     d.run(Command::Rect {
@@ -264,6 +264,12 @@ fn names_tags_and_hidden_flags_round_trip() {
         instances: [g].into(),
         hidden: true,
     });
+    // Locks too (schema 11).
+    d.run(Command::SetLocked {
+        instances: [g].into(),
+        locked: true,
+    });
+    assert!(d.assembly().is_locked(g));
     let c = Contents {
         assembly: d.assembly().clone(),
         settings: Default::default(),

@@ -957,6 +957,9 @@ impl Session {
             return;
         }
         let groups = self.groups_for_tool(s);
+        if self.locked_selected() {
+            return;
+        }
         let selection = self.working_selection(s, false);
         if selection.is_empty() && !groups {
             return;
@@ -982,6 +985,9 @@ impl Session {
                 // the cursor alone, as in SketchUp (DECISIONS #26): a
                 // hovered face twists, and the faces attached to it fold.
                 let groups = self.groups_for_tool(s);
+                if self.locked_selected() {
+                    return;
+                }
                 let selection = self.working_selection(s, false);
                 if selection.is_empty() && !groups {
                     return;

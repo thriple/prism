@@ -73,6 +73,8 @@ pub struct Style {
     /// The box around the open group: colour, width and dash (points).
     pub open_box: Rgba,
     pub open_box_dash: [f32; 2],
+    /// A locked group's box when selected.
+    pub locked: Rgba,
     /// Model Health in the model: open edges, edges with 3 or more faces,
     /// stray edges, the tint on reversed faces, and the outline of interior
     /// and crossing faces.
@@ -267,6 +269,7 @@ impl Default for Style {
             faded_alpha: 70,
             open_box: Rgba::rgb(0x55, 0x5b, 0x66),
             open_box_dash: [5.0, 4.0],
+            locked: Rgba::rgb(0xd8, 0x3b, 0x3b),
             health_open: Rgba::rgb(0xe0, 0x2f, 0x2f),
             health_many: Rgba::rgb(0xf0, 0x8c, 0x1a),
             health_stray: Rgba::rgb(0x8a, 0x8f, 0x99),

@@ -777,6 +777,14 @@ pub fn crossings_with(m: &Model, a: FaceId, b: FaceId) -> Vec<Piece> {
 /// Every crossing that involves a curved face (or only those with a face
 /// in `only`).
 pub fn curved_crossings(m: &Model, only: Option<&BTreeSet<FaceId>>) -> Vec<Piece> {
+    curved_crossings_where(m, |a, b| {
+        only.is_none_or(|s| s.contains(&a) || s.contains(&b))
+    })
+}
+
+/// The crossings of curved faces with other faces, for the pairs `keep`
+/// accepts.
+pub fn curved_crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) -> Vec<Piece> {
     let curved: Vec<FaceId> = m
         .faces()
         .filter(|(_, f)| f.is_curved())
@@ -791,10 +799,7 @@ pub fn curved_crossings(m: &Model, only: Option<&BTreeSet<FaceId>>) -> Vec<Piece
             if b == a || (b_curved && b < a) {
                 continue;
             }
-            if let Some(s) = only
-                && !s.contains(&a)
-                && !s.contains(&b)
-            {
+            if !keep(a, b) {
                 continue;
             }
             out.extend(crossings_with(m, a, b));

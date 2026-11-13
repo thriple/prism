@@ -218,8 +218,14 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     kind,
                     tag,
                     hidden,
+                    locked,
                     material,
                 }) => {
+                    let kind = if *locked {
+                        format!("{kind} (locked)")
+                    } else {
+                        kind.clone()
+                    };
                     ui.label(RichText::new(kind).color(color::MUTED));
                     ui.add_space(size::MENU_PAD);
                     ui.horizontal_wrapped(|ui| {

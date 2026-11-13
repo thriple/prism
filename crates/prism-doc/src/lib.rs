@@ -253,6 +253,29 @@ pub enum Command {
     EraseInstances {
         instances: BTreeSet<InstanceId>,
     },
+    /// Cut: erase a selection and groups (after they were copied).
+    Cut {
+        selection: Selection,
+        #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+        instances: BTreeSet<InstanceId>,
+    },
+    /// Paste a clip (an assembly of its own, made by `Assembly::clip`),
+    /// moved by `at` from the clip's coordinates.
+    Paste {
+        clip: Box<Assembly>,
+        at: DAffine3,
+    },
+    /// Lock or unlock groups (anywhere: instance ids are unique).
+    SetLocked {
+        instances: BTreeSet<InstanceId>,
+        locked: bool,
+    },
+    /// Intersect Faces > With Context: where the open group's faces cross
+    /// `others` (the geometry outside it, in its coordinates), edges are
+    /// added to the open group.
+    IntersectWith {
+        others: Model,
+    },
     /// Round a solid's edge (`fillet`, a radius) or cut it off (a chamfer,
     /// how far into each face).
     RoundEdge {
@@ -482,6 +505,11 @@ impl Command {
             Command::CopyInstances { count, .. } if *count > 1 => "Array",
             Command::CopyInstances { .. } => "Copy",
             Command::EraseInstances { .. } => "Erase",
+            Command::Cut { .. } => "Cut",
+            Command::Paste { .. } => "Paste",
+            Command::SetLocked { locked: true, .. } => "Lock",
+            Command::SetLocked { .. } => "Unlock",
+            Command::IntersectWith { .. } => "Intersect Faces",
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
             Command::FollowMe { .. } => "Follow Me",
@@ -678,18 +706,44 @@ impl Command {
                 faces: faces.clone(),
                 map: map.map(|m| m.transformed(to_local)),
             },
+            Command::Paste { clip, at } => Command::Paste {
+                clip: clip.clone(),
+                at: *to_local * *at,
+            },
+            Command::IntersectWith { others } => {
+                let mut others = others.clone();
+                transform::affine(&mut others, to_local);
+                Command::IntersectWith { others }
+            }
             other => other.clone(),
         }
     }
 
     /// Run the command inside definition `ctx` of an assembly.
     pub fn apply_in(&self, asm: &mut Assembly, ctx: DefId) {
+        // Nothing changes a locked group (Everyday Commands part 1).
+        if self.locked_in(asm) {
+            return;
+        }
         match self {
             Command::In { context, command } => {
                 if let Some(def) = asm.context_def(context) {
                     command.apply_in(asm, def);
                 }
             }
+            Command::Cut {
+                selection,
+                instances,
+            } => {
+                if let Some(d) = asm.def_mut(ctx) {
+                    prism_ops::remove(&mut d.model, selection);
+                }
+                asm.erase(ctx, instances);
+            }
+            Command::Paste { clip, at } => {
+                asm.paste(ctx, clip, at);
+            }
+            Command::SetLocked { instances, locked } => asm.set_locked(instances, *locked),
             Command::Batch { commands } => {
                 for c in commands {
                     c.apply_in(asm, ctx);
@@ -771,6 +825,26 @@ impl Command {
                     geometry.apply(&mut d.model);
                 }
             }
+        }
+    }
+
+    /// Whether this command would change a locked group (and so does
+    /// nothing): it moves, erases, explodes, paints or regroups one, or it
+    /// runs inside one. Copying, hiding, tagging and naming are allowed.
+    pub fn locked_in(&self, asm: &Assembly) -> bool {
+        let any = |s: &BTreeSet<InstanceId>| s.iter().any(|i| asm.is_locked(*i));
+        match self {
+            Command::In { context, command } => asm.path_locked(context) || command.locked_in(asm),
+            Command::Batch { commands } => commands.iter().any(|c| c.locked_in(asm)),
+            Command::Place { instances, .. }
+            | Command::EraseInstances { instances }
+            | Command::Cut { instances, .. }
+            | Command::MakeUnique { instances }
+            | Command::PaintInstances { instances, .. }
+            | Command::MakeGroup { instances, .. }
+            | Command::MakeComponent { instances, .. } => any(instances),
+            Command::Explode { instance } => asm.is_locked(*instance),
+            _ => false,
         }
     }
 
@@ -965,6 +1039,9 @@ impl Command {
             Command::IntersectFaces { faces } => {
                 prism_ops::intersect::intersect_faces(m, faces.as_ref());
             }
+            Command::IntersectWith { others } => {
+                prism_ops::intersect::intersect_with(m, others);
+            }
             Command::OrientFaces { faces } => {
                 prism_ops::health::orient(m, faces.as_ref());
             }
@@ -1000,6 +1077,9 @@ impl Command {
             | Command::Place { .. }
             | Command::CopyInstances { .. }
             | Command::EraseInstances { .. }
+            | Command::Cut { .. }
+            | Command::Paste { .. }
+            | Command::SetLocked { .. }
             | Command::AddMaterial { .. }
             | Command::EditMaterial { .. }
             | Command::RemoveMaterial { .. }

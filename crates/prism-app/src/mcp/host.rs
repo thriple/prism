@@ -88,6 +88,7 @@ impl AppHost<'_> {
                     "depth": r.depth,
                     "shown": r.shown,
                     "hidden": r.hidden,
+                    "locked": r.locked,
                     "selected": r.selected,
                     "open": r.open,
                 })
@@ -150,6 +151,7 @@ impl AppHost<'_> {
                 kind,
                 tag,
                 hidden,
+                locked,
                 material,
                 ..
             } => json!({
@@ -157,6 +159,7 @@ impl AppHost<'_> {
                 "name": name,
                 "tag": tag.map(|t| t.0),
                 "hidden": hidden,
+                "locked": locked,
                 "material": material,
             }),
             EntityInfo::Geometry {
