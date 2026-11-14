@@ -112,6 +112,10 @@ fn cases() -> Vec<(&'static str, Contents)> {
             Contents::with_model(freeform(), Settings::default()),
         ),
         (
+            "rounded.prism",
+            Contents::with_model(rounded(), Settings::default()),
+        ),
+        (
             "painted.prism",
             Contents {
                 assembly: painted().assembly().clone(),
@@ -288,6 +292,33 @@ fn freeform() -> prism_topo::Model {
     prism_ops::add_spline(&mut m, &Nurbs::closed(&ring, 3).expect("a closed curve"));
     let face = m.faces().next().expect("a face").0;
     prism_ops::push_pull(&mut m, face, 2.0, false);
+    m
+}
+
+/// Fillet Joins (brief 32): a box with its top edges rounded (mitred
+/// corners, exact ellipses as NURBS edges), one with all twelve rounded
+/// (ball corners) and one with its top edges chamfered.
+fn rounded() -> prism_topo::Model {
+    use prism_math::DVec3;
+    use std::collections::BTreeSet;
+    let mut m = prism_topo::Model::new();
+    for (x, all, fillet) in [(0.0, false, true), (3.0, true, true), (6.0, false, false)] {
+        let before: BTreeSet<_> = m.edges().map(|(id, _)| id).collect();
+        prism_ops::add_rect(&mut m, x, 0.0, x + 2.0, 2.0, 0.0);
+        let f = prism_ops::face_at(&m, DVec3::new(x + 1.0, 1.0, 0.0)).expect("a face");
+        let up = m.face(f).unwrap().plane().unwrap().normal.z;
+        prism_ops::push_pull(&mut m, f, 2.0 * up, false);
+        let edges: BTreeSet<_> = if all {
+            m.edges()
+                .map(|(id, _)| id)
+                .filter(|e| !before.contains(e))
+                .collect()
+        } else {
+            let top = prism_ops::face_at(&m, DVec3::new(x + 1.0, 1.0, 2.0)).expect("the top");
+            m.face(top).unwrap().edge_ids().collect()
+        };
+        prism_ops::rounds::round_edges(&mut m, &edges, 0.3, fillet).expect("rounded");
+    }
     m
 }
 

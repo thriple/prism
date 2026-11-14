@@ -392,9 +392,23 @@ impl AppHost<'_> {
                 j
             })
             .collect();
+        // Rounds (Fillet Joins): curved faces with a soft, smooth line
+        // to a neighbour, as a fillet makes them.
+        let ef = m.edge_faces();
+        let rounds = m
+            .faces()
+            .filter(|(id, f)| {
+                f.is_curved()
+                    && f.edge_ids().any(|e| {
+                        m.edge(e).is_some_and(|x| x.soft && x.smooth)
+                            && ef.get(&e).is_some_and(|fs| fs.contains(id))
+                    })
+            })
+            .count();
         json!({
             "faces_total": m.face_count(),
             "edges_total": m.edge_count(),
+            "rounds": rounds,
             "faces": faces,
             "edges": edges,
             "note": "World coordinates in metres, for the open group's model (the whole model when no group is open). Areas are in square metres.",
@@ -491,7 +505,38 @@ impl AppHost<'_> {
         let mut clicks = Vec::new();
         for (i, step) in steps.iter().enumerate() {
             let at = |key: &str| step.get(key).map(parse_point);
-            if let Some(p) = at("click").or_else(|| at("move")) {
+            if let Some(p) = at("double_click") {
+                // Two clicks at the same moment: a double-click (the
+                // Fillet tool rounds all of a face's edges).
+                let p =
+                    p.ok_or_else(|| format!("Step {}: a point is [x, y, z] in metres.", i + 1))?;
+                let view = self.viewport.session.view();
+                let s = view
+                    .to_screen(p)
+                    .map(|(s, _)| s)
+                    .filter(|s| s.x >= 0.0 && s.y >= 0.0 && s.x <= view.w && s.y <= view.h)
+                    .ok_or_else(|| {
+                        format!(
+                            "Step {}: the point {p} is outside the view, so nothing more was done.",
+                            i + 1
+                        )
+                    })?;
+                self.viewport.drive(Input::Move { x: s.x, y: s.y });
+                for _ in 0..2 {
+                    self.viewport.drive(Input::Press {
+                        button: Button::Left,
+                        x: s.x,
+                        y: s.y,
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                    });
+                    self.viewport.drive(Input::Release {
+                        button: Button::Left,
+                    });
+                }
+                clicks.push(json!({"asked": point(p), "double": true}));
+            } else if let Some(p) = at("click").or_else(|| at("move")) {
                 let p =
                     p.ok_or_else(|| format!("Step {}: a point is [x, y, z] in metres.", i + 1))?;
                 let view = self.viewport.session.view();
@@ -558,7 +603,7 @@ impl AppHost<'_> {
                 self.viewport.drive(Input::Key { key });
             } else {
                 return Err(format!(
-                    "Step {}: use click, move, type, key or lock.",
+                    "Step {}: use click, double_click, move, type, key or lock.",
                     i + 1
                 ));
             }
@@ -711,6 +756,42 @@ mod tests {
         // Undo takes the push back.
         value(h.call("run_action", &json!({"id": "edit.undo"})));
         assert_eq!(value(h.call("get_model", &json!({})))["model"]["faces"], 1);
+    }
+
+    #[test]
+    fn use_tool_rounds_a_boxs_top_with_a_double_click() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.rect", "steps": [{"click": [0, 0, 0]}, {"click": [2, 2, 0]}]}),
+        ));
+        value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.push", "steps": [{"click": [1, 1, 0]}, {"move": [1, 1, 0.3]}, {"type": "2"}]}),
+        ));
+        let r = value(h.call(
+            "use_tool",
+            &json!({"tool": "tool.fillet", "steps": [{"type": "0.2"}, {"double_click": [1, 1, 2]}]}),
+        ));
+        assert_eq!(r["model"]["faces"], 10, "{r}");
+        let g = value(h.call("get_geometry", &json!({})));
+        assert_eq!(g["rounds"], 4, "the four top edges");
+        assert!(
+            g["edges"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|e| e.get("approx").is_none()),
+            "the mitres are exact"
+        );
     }
 
     #[test]

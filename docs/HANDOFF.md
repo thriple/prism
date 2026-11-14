@@ -52,13 +52,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   and clipboard", "... smaller items"); Walk collision and the web
   clipboard are not needed for now (owner). Smart Guides in Scale (equal
   sizes) and Rotate (matching angles) followed (NOTES "Closing gaps:
-  Smart Guides in Scale and Rotate"). **Fillet Joins is under way**
-  (brief 32; DECISIONS #37 to #39's defaults until the owner answers):
-  steps A (the kernel bridge), B (`RoundEdges`) and C (picking) are
-  built (NOTES "Fillet Joins step A", "step B", "step C"). **Next: step
-  D**, the finish (rounds in an open group, MCP, golden file `rounded.prism`,
-  the release); then Solids & CAD, which was moved up to follow
-  it. The owner also floated a chat window in Prism (NOTES "Owner idea
+  Smart Guides in Scale and Rotate"). **Fillet Joins is done** (brief 32,
+  four steps; NOTES "Fillet Joins step A" to "step D"; DECISIONS #37 to
+  #39's defaults in use until the owner answers). **Next: Solids & CAD**, which was moved up to follow
+  it (it reuses the kernel bridge, `prism-ops/src/bridge.rs`). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no

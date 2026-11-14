@@ -3755,3 +3755,32 @@ Built 2026-11-14 (`prism-tools/src/session/round.rs`;
 - Seen by eye in the app under Xvfb (`docs/screenshots/fillet-joins.png`):
   a box with its top edges rounded (mitred corners), one with all twelve
   (ball corners) and one chamfered, all shaded smooth.
+
+## Fillet Joins step D: finish (brief 32). Fillet Joins is done
+Built 2026-11-14.
+- **Open groups:** rounding works on the open group's own geometry (a
+  test double-clicks the top of an opened group's box; nothing outside
+  changes; one undo).
+- **MCP:** `use_tool` takes a `double_click` step (and shift-clicks via
+  `keys`, then the key Enter); `get_geometry` gives `rounds`, the number
+  of curved faces joined to a neighbour by a soft, smooth line (the
+  rounds a fillet made), beside its `approx` flags (none on mitres). A
+  test rounds a box's top through MCP.
+- **Golden file:** `docs/acceptance/files/rounded.prism` (a box with its
+  top rounded, one with all twelve edges rounded, one chamfered).
+- **Planned Features:** the row for rounding many edges is built (step C).
+- **Left over, sorted (DECISIONS #33):**
+  - A piece of a straight line picked by hand still rounds the whole
+    line: the kernel carries a round on along edges that continue
+    smoothly (step C). Owner's call whether that matters.
+  - The Fillet window's "fits" is the smallest of each straight edge's
+    own suggestion (a tenth of the narrower face), not the largest size
+    that truly fits the set. A true largest fit needs a search through
+    the kernel: Inspector & Features, with editable fillets.
+  - Rounds beside freeform (NURBS) faces, variable radius and corner
+    styles stay out of scope (brief 32); NURBS faces cannot go to the
+    kernel yet: Solids & CAD (cutting freeform faces) adds them.
+  - Model Health's volume of a curved face bounded by NURBS edges is
+    worked from the drawn curve (within 0.1%); the kernel's is exact.
+  - The owner's check by hand (a box's top double-clicked, then all
+    twelve edges, then a chamfer) is waiting for the next release.

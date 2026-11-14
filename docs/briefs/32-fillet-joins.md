@@ -117,9 +117,9 @@ faces; dragging to set the size (PLAN 1.4) and editing a fillet afterwards
   version change shows.
 
 ## Acceptance
-- [ ] Every step: tests and CI green (Rust updated first, see HANDOFF),
+- [x] Every step: tests and CI green (Rust updated first, see HANDOFF),
   NOTES updated, pushed.
 - [ ] In a build made by hand: a box's top face double-clicked with the
   Fillet tool, its four edges rounded with clean corners; then all twelve
   edges; a chamfer of the same.
-- [ ] PLAN 6.0 and DECISIONS updated.
+- [x] PLAN 6.0 and DECISIONS updated.

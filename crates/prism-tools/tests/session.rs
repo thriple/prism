@@ -5631,3 +5631,28 @@ fn a_line_in_pieces_is_rounded_as_a_whole() {
     assert_eq!(cylinders(&d), 2);
     valid(&d);
 }
+
+#[test]
+fn a_face_is_rounded_inside_an_open_group() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.desel");
+    d.s.open_group(g);
+    d.tool(FILLET);
+    d.typed("0.2");
+    double_click(&mut d, DVec3::new(1.0, 1.0, 2.0));
+    let rounds =
+        d.s.work_model()
+            .faces()
+            .filter(|(_, f)| matches!(f.surface, prism_geom::Surface::Cylinder(_)))
+            .count();
+    assert_eq!(rounds, 4, "the group's own top edges");
+    assert_eq!(
+        prism_ops::check::problems(d.s.work_model()),
+        Vec::<String>::new()
+    );
+    assert_eq!(d.s.model().face_count(), 0, "nothing outside the group");
+    undo(&mut d);
+    assert_eq!(d.s.work_model().face_count(), 6);
+}
