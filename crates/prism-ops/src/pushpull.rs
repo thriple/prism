@@ -44,10 +44,27 @@ pub const CURVED_PULL: &str = "This pull would bend a curved face, or a face bes
 /// be pulled when the curved face runs along the pull (the cap of a
 /// cylinder), so it only stretches.
 pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static str> {
+    refusal_with(model, face, distance, false)
+}
+
+/// [`refusal`], with Alt's new loop on or off. With a new loop the faces
+/// beside the pulled one stay where they are, so none of them bends. A
+/// NURBS face beside it never bends either: it does not run along the
+/// pull, so the pull leaves it and makes a new side (owner's recorded
+/// test, 2026-11-14: the back of a lofted shape would not pull out).
+pub fn refusal_with(
+    model: &Model,
+    face: FaceId,
+    distance: f64,
+    new_loop: bool,
+) -> Option<&'static str> {
     let f = model.face(face)?;
     let Some(plane) = f.plane() else {
         return crate::radius::refusal(model, face, distance);
     };
+    if new_loop {
+        return None;
+    }
     let tol = model.tol();
     let bends = model.faces().any(|(g, x)| {
         g != face
@@ -56,7 +73,7 @@ pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static st
                     !tol.parallel(c.axis, plane.normal)
                         && x.loops().flatten().any(|v| f.uses_vertex(*v))
                 }
-                Surface::Plane(_) => false,
+                Surface::Plane(_) | Surface::Nurbs(_) => false,
                 // Cones, spheres and tori bend under any pull beside them.
                 _ => x.loops().flatten().any(|v| f.uses_vertex(*v)),
             }
@@ -80,7 +97,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
             Pulled::Nothing
         };
     }
-    if refusal(model, face, distance).is_some() {
+    if refusal_with(model, face, distance, new_loop).is_some() {
         return Pulled::Nothing;
     }
     let Some(&plane) = f.plane() else {

@@ -878,9 +878,11 @@ impl Command {
             Command::LoftSides { sides, preset } => {
                 prism_ops::sides::made_from(m, sides, *preset).err()
             }
-            Command::PushPull { face, distance, .. } => {
-                prism_ops::pushpull::refusal(m, *face, *distance)
-            }
+            Command::PushPull {
+                face,
+                distance,
+                new_loop,
+            } => prism_ops::pushpull::refusal_with(m, *face, *distance, *new_loop),
             Command::Fillet { corner, radius } => prism_ops::fillet::refusal(m, *corner, *radius),
             Command::RoundEdge { edge, size, fillet } => {
                 prism_ops::round::refusal(m, *edge, *size, *fillet)

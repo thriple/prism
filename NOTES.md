@@ -3647,3 +3647,25 @@ uses it to round many edges.
   yet, so the web build is the same size until step B links it: the
   release `prism-app.wasm` is 21.3 MB (21,251,663 bytes, before
   trunk's optimising pass) as the baseline.
+
+## Bug: the back of a lofted face would not pull (2026-11-14)
+Owner's recorded test (`prism-tools/tests/data/pull-beside-loft.json`):
+a face lofted between four curves, then the flat back face beside it
+pulled out, once plainly and twice with Alt's new loop. Every pull said
+"This pull would bend a curved face, or a face beside a cylinder."
+- **Why:** Push/Pull refused any flat face touching a curved face other
+  than a cylinder along the pull. That is right for cones, spheres and
+  tori that would have to stretch, but a NURBS face beside the pulled one
+  never stretches (it does not run along the pull): the pull leaves it
+  and sweeps new NURBS sides from the shared curved edges, which Push/Pull
+  already knew how to make. And with a new loop nothing beside the face
+  moves at all, so nothing can bend.
+- **Fix** (`pushpull::refusal_with`): no refusal with a new loop, and a
+  NURBS face beside the pulled one no longer refuses. The document's
+  command check passes the new-loop flag through.
+- **Tests:** the recording replays with all three pulls made and the
+  model check clean; ops tests pull the same shape both ways (the sides
+  from the curved edges are NURBS faces).
+- Also found: a recording's final model is saved without the model's id
+  counters, so a test that loads it straight into a model must add them
+  (the ops test's copy has them added by hand).

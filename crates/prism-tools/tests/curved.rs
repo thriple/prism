@@ -48,3 +48,17 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
         assert_eq!(after.to_json(), m.to_json(), "{} changes nothing", c.name());
     }
 }
+
+/// The owner's recorded test (2026-11-14): a face lofted between four
+/// curves, then the flat back face beside it pulled out, once plainly and
+/// twice with Alt's new loop. Every pull was refused ("would bend a curved
+/// face"); now each one adds faces and the model stays valid.
+#[test]
+fn the_back_of_a_lofted_face_pulls_out_in_the_recorded_session() {
+    let r: prism_tools::Recording =
+        serde_json::from_str(include_str!("data/pull-beside-loft.json")).expect("recording");
+    let s = prism_tools::Session::replay(&r);
+    let m = s.model();
+    assert_eq!(m.face_count(), 19, "three pulls, each adding faces");
+    assert_eq!(prism_ops::check::problems(m), Vec::<String>::new());
+}
