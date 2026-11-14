@@ -92,6 +92,17 @@ impl Session {
                     .round_size
                     .or_else(|| prism_ops::round::default_size(m, edge))
                     .ok_or(prism_ops::round::NOT_AN_EDGE)?;
+                // Through the kernel when the edge is on a closed solid
+                // (DECISIONS #37: its one-edge result matches the old
+                // round); the old round still serves an open shell.
+                let kernel = Command::RoundEdges {
+                    edges: std::collections::BTreeSet::from([edge]),
+                    size,
+                    fillet,
+                };
+                if kernel.refusal(m).is_none() {
+                    return Ok(kernel);
+                }
                 Command::RoundEdge { edge, size, fillet }
             }
         };

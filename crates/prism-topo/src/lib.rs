@@ -913,13 +913,26 @@ impl Model {
             } else {
                 // A straight edge along the cylinder turns nothing; an
                 // approximate segment (an ellipse's) turns by the angle
-                // between its ends round the axis.
+                // between its ends round the axis; a curve (an exact
+                // ellipse where two rounds meet) gives its inner points,
+                // each turned from the last.
                 let q = self.vertex(l[(i + 1) % l.len()]);
                 let flat = |x: DVec3| {
                     let w = x - c.origin;
                     w - c.axis * w.dot(c.axis)
                 };
-                let (u, w) = (flat(p), flat(q));
+                let mut inner = e.curve.inner_points(self.vertex(e.a), self.vertex(e.b));
+                if e.a != *v {
+                    inner.reverse();
+                }
+                let mut last = p;
+                for x in inner {
+                    let (u, w) = (flat(last), flat(x));
+                    turned += u.cross(w).dot(c.axis).atan2(u.dot(w));
+                    out.push((x, DVec2::new(turned * c.radius, height(x))));
+                    last = x;
+                }
+                let (u, w) = (flat(last), flat(q));
                 turned += u.cross(w).dot(c.axis).atan2(u.dot(w));
             }
         }

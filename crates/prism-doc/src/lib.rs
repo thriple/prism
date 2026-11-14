@@ -289,6 +289,13 @@ pub enum Command {
         size: f64,
         fillet: bool,
     },
+    /// Round many edges of one closed solid at once through the kernel,
+    /// with clean corners where they meet (Fillet Joins, brief 32).
+    RoundEdges {
+        edges: BTreeSet<prism_topo::EdgeId>,
+        size: f64,
+        fillet: bool,
+    },
     /// Sweep a profile face along a path of lines (Follow Me, Exact Curves
     /// 5c).
     FollowMe {
@@ -519,6 +526,8 @@ impl Command {
             Command::IntersectWith { .. } => "Intersect Faces",
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
+            Command::RoundEdges { fillet: true, .. } => "Fillet",
+            Command::RoundEdges { .. } => "Chamfer",
             Command::FollowMe { .. } => "Follow Me",
             Command::AddMaterial { .. } => "New Material",
             Command::EditMaterial { .. } => "Edit Material",
@@ -678,6 +687,15 @@ impl Command {
             },
             Command::RoundEdge { edge, size, fillet } => Command::RoundEdge {
                 edge: *edge,
+                size: size * scale,
+                fillet: *fillet,
+            },
+            Command::RoundEdges {
+                edges,
+                size,
+                fillet,
+            } => Command::RoundEdges {
+                edges: edges.clone(),
                 size: size * scale,
                 fillet: *fillet,
             },
@@ -887,6 +905,11 @@ impl Command {
             Command::RoundEdge { edge, size, fillet } => {
                 prism_ops::round::refusal(m, *edge, *size, *fillet)
             }
+            Command::RoundEdges {
+                edges,
+                size,
+                fillet,
+            } => prism_ops::rounds::refusal(m, edges, *size, *fillet),
             Command::FollowMe { path, profile, end } => match end {
                 None => prism_ops::follow::refusal(m, path, *profile),
                 Some(p) => {
@@ -970,6 +993,13 @@ impl Command {
             }
             Command::RoundEdge { edge, size, fillet } => {
                 prism_ops::round::round(m, *edge, *size, *fillet);
+            }
+            Command::RoundEdges {
+                edges,
+                size,
+                fillet,
+            } => {
+                let _ = prism_ops::rounds::round_edges(m, edges, *size, *fillet);
             }
             Command::FollowMe { path, profile, end } => {
                 let path = match end {

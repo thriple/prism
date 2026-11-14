@@ -3669,3 +3669,50 @@ pulled out, once plainly and twice with Alt's new loop. Every pull said
 - Also found: a recording's final model is saved without the model's id
   counters, so a test that loads it straight into a model must add them
   (the ops test's copy has them added by hand).
+
+## Fillet Joins step B: many edges through the kernel (brief 32)
+Built 2026-11-14 (`prism-ops/src/rounds.rs`; `Solid::round` in
+`prism-kernel/src/solid.rs`; `Command::RoundEdges` in `prism-doc`).
+- **What it does:** `round_edges` takes any set of edges of one closed
+  solid, sends the solid to the kernel (step A's bridge), fillets or
+  chamfers them all at one size, and writes the result back. Corners come
+  out clean: a mitre where two rounds meet over a sharp third edge, a
+  ball (an eighth of a sphere) where three meet, a round that runs on
+  through a tangent vertex (a cylinder's top circle, two arcs in Prism).
+  Untouched faces keep their ids and paint; the faces beside a round are
+  trimmed in place (same id, same paint); rounds are Default. The lines
+  between a round and the faces it is tangent to are soft and smooth.
+- **Ids:** each key now carries its kind (corner, edge, face) above the
+  id, so a round made from edge 3 is never read back as face 3. The
+  kernel's record of where each entity came from is chained through the
+  build and the round.
+- **New shapes back into Prism:** cones, spheres and tori, ellipses
+  (stored exactly as NURBS curves, DECISIONS #38), NURBS edges, and the
+  kernel's degenerate edges at a sphere's pole (left out: Prism's loops
+  just pass through the point). They can also go back into the kernel
+  (cones, spheres and tori are placed with their seam opposite the face
+  and a sphere's poles a quarter turn away).
+- **Command:** `RoundEdges { edges, size, fillet }`, one undo; refused
+  with a plain sentence (too large, not one solid, faces the kernel has no
+  round for, a size of zero), leaving the model as it was.
+- **DECISIONS #37 in use:** the Fillet tool's click on a solid's edge now
+  goes through the kernel (the one-edge test matches `round.rs`: same
+  volume and faces); an edge of an open shell still uses `round.rs`.
+- **Fixed on the way:** a cylinder face bounded by a NURBS edge was laid
+  out flat as if the edge were straight (for its area, volume and
+  drawing); the curve is now sampled along its length.
+- **Tests** (`prism-ops/tests/rounds.rs`, volumes worked by hand and
+  checked against the kernel's exact measure, and Model Health's within
+  0.1%): one edge, the same edge against `round.rs`, a box's four top
+  edges (mitres: each corner removes r³/3), a chamfer of them (2d³/3 a
+  corner), all twelve (the rounded cube), a 60° edge (r²(√3 − π/3)), a
+  cylinder's top circle (Pappus), refusals. `prism-doc/tests/round_edges.rs`:
+  one undo, a refused round is not an edit, and a property test of random
+  edge sets on a box (round cleanly or refuse, undo restores).
+  `prism-view/tests/curved.rs`: the drawn triangles of the mitred box and
+  the rounded cube add up to their areas worked by hand (in place of the
+  screenshot the brief asked for: the area test checks the same thing
+  without a GPU; not yet seen by eye).
+- **Not yet:** picking many edges in the tool (step C: double-click a
+  face, selection, whole lines, the Fillet window on the set); rounds in
+  an open group, MCP and the golden file (step D).

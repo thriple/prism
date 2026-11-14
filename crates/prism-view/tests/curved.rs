@@ -186,3 +186,46 @@ fn shading_runs_across_a_smooth_edge() {
         .expect("a far corner");
     assert!(far.cross(DVec3::Z).length() < 1e-12);
 }
+
+/// A 2 m cube with `edges` of it rounded by `r` through the kernel (Fillet
+/// Joins step B), and the total area of its drawn triangles.
+fn rounded(top_only: bool, r: f64) -> f64 {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+    let f = m.faces().next().map(|(id, _)| id).unwrap();
+    let up = m.face(f).unwrap().plane().unwrap().normal.z;
+    prism_ops::push_pull(&mut m, f, 2.0 * up, false);
+    let edges: BTreeSet<_> = if top_only {
+        let top = prism_ops::face_at(&m, DVec3::new(1.0, 1.0, 2.0)).unwrap();
+        m.face(top).unwrap().edge_ids().collect()
+    } else {
+        m.edges().map(|(id, _)| id).collect()
+    };
+    prism_ops::rounds::round_edges(&mut m, &edges, r, true).unwrap();
+    let s = Scene::build(&m);
+    s.mesh
+        .indices
+        .chunks(3)
+        .map(|t| {
+            let [a, b, c] = [0, 1, 2].map(|i| s.mesh.positions[t[i] as usize]);
+            (b - a).cross(c - a).length() / 2.0
+        })
+        .sum()
+}
+
+#[test]
+fn rounded_edges_are_drawn_with_the_right_area() {
+    use std::f64::consts::PI;
+    let (l, r) = (2.0, 0.3);
+    let k = l - 2.0 * r;
+    // The four top edges, mitred at the corners: each round is a quarter
+    // cylinder whose length runs from l at its foot to l - 2r at its top,
+    // cut by ellipses: r · ((l - 2r)·π/2 + 2r).
+    let mitred = k * k + 4.0 * l * (l - r) + l * l + 4.0 * r * (k * PI / 2.0 + 2.0 * r);
+    let drawn = rounded(true, r);
+    assert!((drawn - mitred).abs() < mitred * 1e-3, "{drawn} {mitred}");
+    // All twelve: flat faces, quarter cylinders and eighth spheres.
+    let whole = 6.0 * k * k + 12.0 * (PI * r / 2.0) * k + 4.0 * PI * r * r;
+    let drawn = rounded(false, r);
+    assert!((drawn - whole).abs() < whole * 1e-3, "{drawn} {whole}");
+}

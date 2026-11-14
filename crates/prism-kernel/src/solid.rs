@@ -21,7 +21,7 @@ use arris_topo::builder::{
 use arris_topo::entity::EdgeGeometry;
 use arris_topo::provenance::ConsumerKey;
 use arris_topo::{Body, Model, Orientation, Origin, Role, Shape};
-use prism_geom::{Curve, Cylinder, Surface};
+use prism_geom::{Cone, Curve, Cylinder, Nurbs, Sphere, Spline, Surface, Torus};
 use prism_math::{DVec3, Plane};
 
 use crate::{back, point};
@@ -32,15 +32,25 @@ pub const NOT_CLOSED: &str = "Refused: these faces do not close a solid.";
 pub const FAULTY: &str =
     "Refused: the kernel found a fault in this solid (faces crossing, or pointing inward).";
 /// Said for a face the bridge cannot send yet.
-pub const SURFACE_NOT_YET: &str =
-    "Refused: only flat and cylindrical faces can go to the kernel so far.";
+pub const SURFACE_NOT_YET: &str = "Refused: freeform (NURBS) faces cannot go to the kernel yet.";
 /// Said for an edge the bridge cannot send.
-pub const CURVE_NOT_YET: &str =
-    "Refused: only straight lines and arcs can go to the kernel so far.";
+pub const CURVE_NOT_YET: &str = "Refused: an edge of this solid cannot go to the kernel.";
 /// Said for an edge that does not lie on a face it bounds.
 pub const OFF_FACE: &str = "Refused: an edge does not lie on the face it bounds.";
 /// Said when the kernel gives back something Prism cannot store yet.
 pub const CANNOT_STORE: &str = "Refused: the kernel made a shape Prism cannot store yet.";
+
+/// Said when a round is too large for a face beside an edge or for a
+/// neighbouring round.
+pub const TOO_LARGE: &str =
+    "Refused: the size is too large for a face beside an edge, or for a round next to it.";
+/// Said when the kernel has no rounding for the faces at an edge.
+pub const NO_BLEND: &str =
+    "Refused: edges can be rounded only between flat, cylindrical and conical faces so far.";
+/// Said when the kernel cannot round the edges for another reason.
+pub const NOT_ROUNDED: &str = "Refused: the kernel could not round these edges.";
+/// Said when an edge to round is not an edge of the solid.
+pub const NOT_IN_SOLID: &str = "Refused: an edge to round is not an edge of this solid.";
 
 /// A corner of a region, with Prism's id when it has one.
 #[derive(Clone, Debug, PartialEq)]
@@ -89,6 +99,25 @@ pub struct Solid {
 
 /// The keys of one build are in this namespace.
 const NAMESPACE: u32 = 1;
+
+/// A key carries its kind above its id, so a new face made from an edge
+/// (a round) is never read back as the face with that edge's number.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Vertex = 1,
+    Edge = 2,
+    Face = 3,
+}
+
+const TAG_SHIFT: u32 = 40;
+
+fn tagged(kind: Kind, key: Option<u64>) -> u64 {
+    match key {
+        Some(k) if k < (1 << TAG_SHIFT) => ((kind as u64) << TAG_SHIFT) | k,
+        // No Prism id: never read back as one.
+        _ => u64::MAX,
+    }
+}
 
 /// The kernel's precision for a model whose tolerance is `tol` (Prism's
 /// relative tolerance, set at the boundary in this one place).
@@ -161,7 +190,19 @@ fn edge_curve(curve: &Curve, a: DVec3, b: DVec3) -> Result<(ACurve, Interval), &
                 range,
             ))
         }
-        Curve::Spline(_) => Err(CURVE_NOT_YET),
+        Curve::Spline(sp) => {
+            // The kernel's edge runs along its curve's parameter: one that
+            // runs the other way from `a` to `b` is turned round.
+            let (c, t0, t1) = if sp.t0 <= sp.t1 {
+                ((*sp.curve).clone(), sp.t0, sp.t1)
+            } else {
+                let (lo, hi) = sp.curve.domain();
+                (sp.curve.reversed(), lo + hi - sp.t0, lo + hi - sp.t1)
+            };
+            let n = crate::curve(&c).ok_or(CURVE_NOT_YET)?;
+            let range = Interval::new(t0, t1).map_err(|_| CURVE_NOT_YET)?;
+            Ok((ACurve::Nurbs(n), range))
+        }
     }
 }
 
@@ -190,7 +231,54 @@ fn face_surface(s: &Surface, middle: DVec3) -> Result<(ASurface, bool), &'static
                 c.outward,
             ))
         }
-        _ => Err(SURFACE_NOT_YET),
+        Surface::Cone(c) => {
+            // Placed level with the face's middle, the seam opposite it.
+            let h = (middle - c.apex).dot(c.axis).max(1e-9);
+            let o = c.apex + c.axis * h;
+            let away = o - middle;
+            let frame = Frame::new(point(o), vec(c.axis), vec(away))
+                .or_else(|_| Frame::from_z(point(o), vec(c.axis)))
+                .map_err(|_| SURFACE_NOT_YET)?;
+            Ok((
+                ASurface::Cone {
+                    frame,
+                    radius: h * c.half_angle.tan(),
+                    half_angle: c.half_angle,
+                },
+                c.outward,
+            ))
+        }
+        Surface::Sphere(sp) => {
+            // The seam opposite the face's middle and the poles a quarter
+            // turn from it, so the face crosses neither.
+            let x = (sp.centre - middle).try_normalize().unwrap_or(DVec3::X);
+            let z = x.any_orthonormal_vector();
+            let frame =
+                Frame::new(point(sp.centre), vec(z), vec(x)).map_err(|_| SURFACE_NOT_YET)?;
+            Ok((
+                ASurface::Sphere {
+                    frame,
+                    radius: sp.radius,
+                },
+                sp.outward,
+            ))
+        }
+        Surface::Torus(t) => {
+            let flat = middle - t.centre;
+            let away = -(flat - t.axis * flat.dot(t.axis));
+            let frame = Frame::new(point(t.centre), vec(t.axis), vec(away))
+                .or_else(|_| Frame::from_z(point(t.centre), vec(t.axis)))
+                .map_err(|_| SURFACE_NOT_YET)?;
+            Ok((
+                ASurface::Torus {
+                    frame,
+                    major_radius: t.major,
+                    minor_radius: t.minor,
+                },
+                t.outward,
+            ))
+        }
+        Surface::Nurbs(_) => Err(SURFACE_NOT_YET),
     }
 }
 
@@ -276,17 +364,16 @@ impl Solid {
             shells: vec![0],
             ..BuildKeys::default()
         };
-        // Entities with no Prism id are keyed past every id (never read
-        // back as one: `region` gives them no key).
-        let key = |k: Option<u64>| k.unwrap_or(u64::MAX);
         for (i, v) in region.vertices.iter().enumerate() {
-            keys.vertices.insert(slots.vertices[i], key(v.key));
+            keys.vertices
+                .insert(slots.vertices[i], tagged(Kind::Vertex, v.key));
         }
         for (i, e) in region.edges.iter().enumerate() {
-            keys.edges.insert(slots.edges[i], key(e.key));
+            keys.edges.insert(slots.edges[i], tagged(Kind::Edge, e.key));
         }
         for (i, f) in region.faces.iter().enumerate() {
-            keys.faces.insert(slots.faces[0][i], key(f.key));
+            keys.faces
+                .insert(slots.faces[0][i], tagged(Kind::Face, f.key));
         }
         let (body, provenance) =
             build(&mut model, builder, &keys, &Control::NONE).map_err(|e| match e {
@@ -307,19 +394,52 @@ impl Solid {
             .map_err(|_| FAULTY)
     }
 
-    /// Prism's id for a kernel entity, if it came from one.
-    fn key(&self, id: impl Into<arris_topo::EntityId>) -> Option<u64> {
+    /// Prism's id for a kernel entity of `kind`, if it is one of Prism's
+    /// (kept, or a trimmed piece of one).
+    fn key(&self, kind: Kind, id: impl Into<arris_topo::EntityId>) -> Option<u64> {
         self.provenance
             .origins(Shape::new(id.into(), Orientation::Forward))
             .into_iter()
             .find_map(|(_, o)| match o {
                 Origin::Role(Role::Consumer(ConsumerKey { namespace, key }))
-                    if namespace == NAMESPACE && key != u64::MAX =>
+                    if namespace == NAMESPACE && key >> TAG_SHIFT == kind as u64 =>
                 {
-                    Some(key)
+                    Some(key & ((1 << TAG_SHIFT) - 1))
                 }
                 _ => None,
             })
+    }
+
+    /// Round the edges whose Prism ids are `edges`: a fillet of radius
+    /// `size`, or a chamfer `size` back along each face.
+    pub fn round(&mut self, edges: &[u64], size: f64, fillet: bool) -> Result<(), &'static str> {
+        let m = &self.model;
+        let mut picked = Vec::with_capacity(edges.len());
+        for &k in edges {
+            let e = m
+                .edges(self.body)
+                .map_err(|_| NOT_IN_SOLID)?
+                .into_iter()
+                .find(|e| self.key(Kind::Edge, e.id) == Some(k))
+                .ok_or(NOT_IN_SOLID)?;
+            picked.push(e);
+        }
+        let done = if fillet {
+            arris_ops::fillet(&mut self.model, self.body, &picked, size, &Control::NONE)
+        } else {
+            arris_ops::chamfer(&mut self.model, self.body, &picked, size, &Control::NONE)
+        };
+        let (body, p) = done.map_err(|e| match e {
+            arris_ops::OpError::Unsupported { .. } => NO_BLEND,
+            arris_ops::OpError::Degenerate {
+                reason: arris_ops::Reason::Blend(arris_ops::BlendReason::TooLarge),
+                ..
+            } => TOO_LARGE,
+            _ => NOT_ROUNDED,
+        })?;
+        self.body = body;
+        self.provenance = self.provenance.then(&p);
+        Ok(())
     }
 
     /// The solid read back as a region.
@@ -335,7 +455,7 @@ impl Solid {
                 }
                 let at = back(&m.vertex(id).map_err(|_| CANNOT_STORE)?.point());
                 out.vertices.push(Vertex {
-                    key: self.key(id),
+                    key: self.key(Kind::Vertex, id),
                     at,
                 });
                 vmap.insert(id, out.vertices.len() - 1);
@@ -358,6 +478,47 @@ impl Solid {
                     radius: *radius,
                     outward: forward,
                 }),
+                ASurface::Cone {
+                    frame,
+                    radius,
+                    half_angle,
+                } => {
+                    // P = O + (R + v sin a)(radial) + v cos a Z: the apex
+                    // is R / tan a below O along Z.
+                    let z = dvec(&frame.z());
+                    let (z, a) = if *half_angle < 0.0 {
+                        (-z, -half_angle)
+                    } else {
+                        (z, *half_angle)
+                    };
+                    if a <= 0.0 || a >= std::f64::consts::FRAC_PI_2 {
+                        return Err(CANNOT_STORE);
+                    }
+                    let o = back(&frame.origin());
+                    Surface::Cone(Cone {
+                        apex: o - z * (radius / a.tan()),
+                        axis: z,
+                        half_angle: a,
+                        outward: forward,
+                    })
+                }
+                ASurface::Sphere { frame, radius } => Surface::Sphere(Sphere {
+                    centre: back(&frame.origin()),
+                    axis: dvec(&frame.z()),
+                    radius: *radius,
+                    outward: forward,
+                }),
+                ASurface::Torus {
+                    frame,
+                    major_radius,
+                    minor_radius,
+                } => Surface::Torus(Torus {
+                    centre: back(&frame.origin()),
+                    axis: dvec(&frame.z()),
+                    major: *major_radius,
+                    minor: *minor_radius,
+                    outward: forward,
+                }),
                 _ => return Err(CANNOT_STORE),
             };
             let mut loops: Vec<(f64, Vec<(usize, bool)>)> = Vec::new();
@@ -371,6 +532,12 @@ impl Solid {
                 let mut lp = Vec::with_capacity(uses.len());
                 let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
                 for (eid, o, pc) in uses {
+                    // A degenerate edge (a sphere's pole, where a ball
+                    // corner meets) has no curve: Prism's loops just pass
+                    // through the point.
+                    if m.edge(eid).is_ok_and(|e| e.is_degenerate()) {
+                        continue;
+                    }
                     let i = match emap.get(&eid) {
                         Some(i) => *i,
                         None => {
@@ -383,12 +550,32 @@ impl Solid {
                                     axis: dvec(&frame.z()),
                                     radius: *radius,
                                 },
-                                _ => return Err(CANNOT_STORE),
+                                // An ellipse (a mitre between two rounds)
+                                // is stored exactly as a NURBS curve
+                                // (DECISIONS #38).
+                                ACurve::Ellipse {
+                                    frame,
+                                    major_radius,
+                                    minor_radius,
+                                } => {
+                                    let n = arris_geom::NurbsCurve::ellipse(
+                                        frame,
+                                        *major_radius,
+                                        *minor_radius,
+                                        e.range(),
+                                    )
+                                    .map_err(|_| CANNOT_STORE)?;
+                                    spline(&n, None)?
+                                }
+                                ACurve::Nurbs(n) => {
+                                    let r = e.range();
+                                    spline(n, Some((r.lo(), r.hi())))?
+                                }
                             };
                             let a = vertex(&mut out, e.start())?;
                             let b = vertex(&mut out, e.end())?;
                             out.edges.push(Edge {
-                                key: self.key(eid),
+                                key: self.key(Kind::Edge, eid),
                                 a,
                                 b,
                                 curve,
@@ -413,13 +600,33 @@ impl Solid {
             }
             loops.sort_by(|a, b| b.0.total_cmp(&a.0));
             out.faces.push(Face {
-                key: self.key(fu.id),
+                key: self.key(Kind::Face, fu.id),
                 surface,
                 loops: loops.into_iter().map(|(_, l)| l).collect(),
             });
         }
         Ok(out)
     }
+}
+
+/// A kernel NURBS curve as one of Prism's splines, over `range` of it (all
+/// of it when None).
+fn spline(n: &arris_geom::NurbsCurve, range: Option<(f64, f64)>) -> Result<Curve, &'static str> {
+    let k = n.knots();
+    let (t0, t1) = range.unwrap_or((k[0], k[k.len() - 1]));
+    let c = Nurbs::new(
+        n.degree(),
+        k.to_vec(),
+        n.control_points().iter().map(back).collect(),
+        n.weights().to_vec(),
+        false,
+    )
+    .ok_or(CANNOT_STORE)?;
+    Ok(Curve::Spline(Spline {
+        curve: std::sync::Arc::new(c),
+        t0,
+        t1,
+    }))
 }
 
 fn curve2_point(c: &Curve2, t: f64) -> [f64; 2] {
