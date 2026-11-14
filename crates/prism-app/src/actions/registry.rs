@@ -559,7 +559,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 22] = [
+const BUILT_BEHAVIOURS: [&str; 23] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -579,6 +579,8 @@ const BUILT_BEHAVIOURS: [&str; 22] = [
     "Tool memory: double-click or Enter repeats the last value",
     // Everyday Commands part 4 (brief 33).
     "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles (Rotate), time budget, Ctrl+U",
+    // Fillet Joins step C.
+    "Fillet Joins: round many edges at once with clean corners (double-click a face, Shift-click, selection, whole lines)",
     // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.
     "Exact circles, arcs and NURBS",
     "Model Health: reversed faces, holes, interior faces, nesting counts",

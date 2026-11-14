@@ -4,18 +4,31 @@
 //! Hovering shows the result before the click. A new size or kind right
 //! after a round changes it. A click near a flat face's corner rounds the
 //! corner (brief 24's fillet).
+//!
+//! Many edges at once (Fillet Joins step C, brief 32): a click takes the
+//! whole straight run of segments the edge is in; a double-click on a face
+//! rounds all its edges; edges or faces selected before (selected edges
+//! as picked, no more) are rounded by the first click or Enter; Shift-click
+//! adds a run to the selection or takes it away. Hover highlights what a
+//! click would round.
+
+use std::collections::BTreeSet;
 
 use prism_doc::Command;
 use prism_math::{DVec2, DVec3};
 use prism_topo::EdgeId;
+use prism_view::overlay::{Line, Overlay};
 use prism_view::{Hit, View};
 use serde::{Deserialize, Serialize};
 
-use super::{Event, Input, Session};
+use super::{Event, Input, Session, pick};
 
 pub const FILLET: &str = "tool.fillet";
 
-const HOW: &str = "Click an edge to round it · Ctrl swaps fillet and chamfer · type a size + Enter · a click near a flat corner rounds the corner";
+const HOW: &str = "Click an edge to round it (a line in pieces as a whole) · double-click a face for all its edges · Shift-click adds edges, Enter rounds them · Ctrl swaps fillet and chamfer · type a size + Enter";
+/// Said when no size fits the edges on its own (curved edges only).
+const NEED_SIZE: &str = "Type a size for these edges (curved edges have no size of their own)";
+const HOW_SET: &str = "Click or press Enter to round the selected edges · Shift-click adds or takes away edges · Ctrl swaps fillet and chamfer · type a size + Enter";
 
 /// A change from the Fillet window (recorded as `Input::Round`).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -43,10 +56,12 @@ pub struct RoundPanel {
 }
 
 /// What a click would round.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum Target {
     Corner(DVec3),
     Edge(EdgeId),
+    /// Several edges of one solid, rounded together through the kernel.
+    Edges(BTreeSet<EdgeId>),
 }
 
 impl Session {
@@ -55,8 +70,31 @@ impl Session {
         self.round_chamfer == ctrl
     }
 
-    /// The corner or edge under the cursor at `s`.
+    /// The edges the selection names: its edges as picked, and every edge
+    /// of its faces. Empty with nothing selected.
+    fn round_selected(&self) -> BTreeSet<EdgeId> {
+        let m = self.work_model();
+        let mut out = self.selection.edges.clone();
+        for f in &self.selection.faces {
+            if let Some(face) = m.face(*f) {
+                out.extend(face.edge_ids());
+            }
+        }
+        out
+    }
+
+    /// What a click at `s` rounds: the selection when there is one, else
+    /// the corner or edge (with its straight run) under the cursor.
     fn round_target(&self, s: DVec2) -> Option<Target> {
+        let set = self.round_selected();
+        if !set.is_empty() {
+            return Some(Target::Edges(set));
+        }
+        self.round_hovered(s)
+    }
+
+    /// The corner, or the edge and its straight run, under the cursor.
+    fn round_hovered(&self, s: DVec2) -> Option<Target> {
         let p = self.hover?;
         let Hit::Edge(e) = p.hit else { return None };
         let view = self.view();
@@ -72,14 +110,32 @@ impl Session {
         });
         Some(match corner {
             Some(v) => Target::Corner(m.vertex(v)),
-            None => Target::Edge(e),
+            None => {
+                let run = prism_ops::rounds::straight_run(m, e);
+                if run.len() > 1 {
+                    Target::Edges(run)
+                } else {
+                    Target::Edge(e)
+                }
+            }
         })
     }
 
     /// The command a click on `t` would run, or why there is none.
-    fn round_command(&self, t: Target, fillet: bool) -> Result<Command, &'static str> {
+    fn round_command(&self, t: &Target, fillet: bool) -> Result<Command, &'static str> {
         let m = self.work_model();
-        let c = match t {
+        let c = match t.clone() {
+            Target::Edges(edges) => {
+                let size = self
+                    .round_size
+                    .or_else(|| prism_ops::rounds::fit(m, &edges))
+                    .ok_or(NEED_SIZE)?;
+                Command::RoundEdges {
+                    edges,
+                    size,
+                    fillet,
+                }
+            }
             Target::Corner(corner) => {
                 let r = self
                     .round_size
@@ -127,12 +183,12 @@ impl Session {
         }
         let fillet = self.round_fillet(self.ctrl_held);
         let target = self.round_at.and_then(|s| self.round_target(s));
-        let key = target.map(|t| (t, fillet, self.round_size));
+        let key = target.clone().map(|t| (t, fillet, self.round_size));
         if key == self.round_shown {
             return;
         }
         self.round_shown = key;
-        let (why, preview) = match target.map(|t| self.round_command(t, fillet)) {
+        let (why, preview) = match target.map(|t| self.round_command(&t, fillet)) {
             None => (None, None),
             Some(Err(why)) => (Some(why), None),
             Some(Ok(c)) => {
@@ -156,22 +212,66 @@ impl Session {
         }
     }
 
-    pub(super) fn round_press(&mut self, s: DVec2, ctrl: bool) {
+    pub(super) fn round_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
         self.round_notice = None;
-        let Some(t) = self.round_target(s) else {
+        // Shift: the run under the cursor joins the selection, or leaves it.
+        if shift {
+            if let Some(t) = self.round_hovered(s) {
+                let edges = match t {
+                    Target::Edge(e) => BTreeSet::from([e]),
+                    Target::Edges(set) => set,
+                    Target::Corner(_) => BTreeSet::new(),
+                };
+                let mut sel = self.selection.clone();
+                if edges.iter().all(|e| sel.edges.contains(e)) {
+                    sel.edges.retain(|e| !edges.contains(e));
+                } else {
+                    sel.edges.extend(edges);
+                }
+                self.set_selection(sel);
+                self.round_clear();
+                self.round_at = Some(s);
+                self.round_preview();
+            }
+            self.overlay_dirty = true;
+            self.refresh();
+            return;
+        }
+        // A double-click on a face: all its edges.
+        let t = if n_clicks == 2 && self.selection.is_empty() {
+            match pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit) {
+                Some(Hit::Face(f)) if self.owner(Hit::Face(f)).is_none() => self
+                    .work_model()
+                    .face(f)
+                    .map(|x| Target::Edges(x.edge_ids().collect())),
+                _ => self.round_target(s),
+            }
+        } else {
+            self.round_target(s)
+        };
+        let Some(t) = t else {
             return;
         };
-        let fillet = self.round_fillet(ctrl);
+        self.round_go(t, self.round_fillet(ctrl));
+    }
+
+    /// Round `t` now (a click, or Enter on the selection).
+    fn round_go(&mut self, t: Target, fillet: bool) {
         // The click's own result replaces the preview.
         self.round_clear();
-        match self.round_command(t, fillet) {
+        let from_selection = matches!(t, Target::Edges(_)) && !self.selection.is_empty();
+        match self.round_command(&t, fillet) {
             Ok(c) => {
-                let last = match t {
-                    Target::Edge(e) => Some((e, fillet)),
+                let last = match &t {
                     Target::Corner(_) => None,
+                    t => Some((t.clone(), fillet)),
                 };
                 if self.run(c) {
                     self.round_last = last;
+                    if from_selection {
+                        // The rounded edges are gone.
+                        self.set_selection(prism_ops::Selection::default());
+                    }
                 }
             }
             Err(why) => {
@@ -181,6 +281,35 @@ impl Session {
         }
         self.overlay_dirty = true;
         self.refresh();
+    }
+
+    /// The edges a click would round, drawn over the model while hovering
+    /// (the selection shows as selected already).
+    pub(super) fn round_overlay(&self, o: &mut Overlay) {
+        if self.tool != FILLET || !self.selection.is_empty() || self.round_refused.is_some() {
+            return;
+        }
+        let Some(t) = self.round_at.and_then(|s| self.round_hovered(s)) else {
+            return;
+        };
+        let edges = match t {
+            Target::Edge(e) => vec![e],
+            Target::Edges(set) => set.into_iter().collect(),
+            Target::Corner(_) => return,
+        };
+        let m = self.work_model();
+        let fb = &self.style.feedback;
+        for e in edges {
+            for w in m.edge_points(e).windows(2) {
+                o.lines.push(Line {
+                    a: w[0],
+                    b: w[1],
+                    color: self.style.hover,
+                    width: fb.target_width,
+                    dash: [0.0, 0.0],
+                });
+            }
+        }
     }
 
     /// The window's kind or size. Right after a round, it changes that
@@ -195,7 +324,7 @@ impl Session {
         if (self.round_chamfer, self.round_size) == before {
             return;
         }
-        if let Some((edge, was_fillet)) = self.round_last {
+        if let Some((target, was_fillet)) = self.round_last.clone() {
             let fillet = match op {
                 RoundOp::Fillet(f) => f,
                 RoundOp::Size(_) => was_fillet,
@@ -203,10 +332,10 @@ impl Session {
             if self.doc.undo() {
                 self.model_changed();
             }
-            match self.round_command(Target::Edge(edge), fillet) {
+            match self.round_command(&target, fillet) {
                 Ok(c) => {
                     if self.run(c) {
-                        self.round_last = Some((edge, fillet));
+                        self.round_last = Some((target, fillet));
                     }
                 }
                 Err(why) => {
@@ -256,12 +385,13 @@ impl Session {
                 .round_at
                 .and_then(|s| match self.round_target(s)? {
                     Target::Edge(e) => prism_ops::round::default_size(self.work_model(), e),
+                    Target::Edges(set) => prism_ops::rounds::fit(self.work_model(), &set),
                     Target::Corner(c) => prism_ops::fillet::default_radius(self.work_model(), c),
                 })
                 .map(|r| self.number.show(r)),
             changes_last: self.round_last.is_some(),
             refused: self.round_refused,
-            how: HOW,
+            how: self.round_how(),
         })
     }
 
@@ -270,6 +400,14 @@ impl Session {
     pub(super) fn round_enter(&mut self, text: &str) -> bool {
         if self.tool != FILLET {
             return false;
+        }
+        // Enter alone rounds the selected edges.
+        if text.trim().is_empty() {
+            let set = self.round_selected();
+            if !set.is_empty() {
+                self.round_go(Target::Edges(set), self.round_fillet(self.ctrl_held));
+            }
+            return true;
         }
         if let Some(size) = self.number.length(text.trim()).map(f64::abs)
             && size > 0.0
@@ -280,7 +418,17 @@ impl Session {
     }
 
     pub(super) fn round_hint(&self) -> &'static str {
-        self.round_notice.or(self.round_refused).unwrap_or(HOW)
+        self.round_notice
+            .or(self.round_refused)
+            .unwrap_or_else(|| self.round_how())
+    }
+
+    fn round_how(&self) -> &'static str {
+        if self.selection.is_empty() {
+            HOW
+        } else {
+            HOW_SET
+        }
     }
 
     pub(super) fn round_measurement(&self) -> (&'static str, String) {

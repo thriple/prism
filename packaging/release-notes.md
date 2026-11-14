@@ -1,6 +1,9 @@
-**New in this build: a Push/Pull fix.**
-- The flat face beside a lofted or other NURBS face now pulls out, with or without Alt's new loop. Before, it said the pull "would bend a curved face". New sides are swept from the curved edges.
-- Smart Guides in Scale and Rotate (last build) are still in.
+**New in this build: round many edges at once (Fillet Joins).**
+- With the Fillet / Chamfer tool, **double-click a face** to round all its edges. Corners join cleanly: a mitre where two rounds meet, a ball where three do.
+- **Shift-click** edges to gather them, then press **Enter** (or select them first, then click or press Enter).
+- A line drawn in pieces is rounded as a whole.
+- Type a new size, or change it in the Fillet window, right after a round to change the whole round at once. One undo takes it back.
+- Pulling the flat face beside a lofted face now works (last build) and is still in.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

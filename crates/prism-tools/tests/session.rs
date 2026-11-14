@@ -5494,3 +5494,140 @@ fn an_open_ring_shows_where_and_a_click_closes_it_and_esc_steps_back() {
     assert_eq!(d.s.tool(), SELECT);
     assert_eq!(d.faces(), before);
 }
+
+// ---------- Fillet Joins step C (brief 32): picking many edges ----------
+
+/// A 2 m box on the ground, and the Fillet tool with a size of 0.2.
+fn box_for_rounding() -> Driver {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("2");
+    d.tool(FILLET);
+    d.typed("0.2");
+    d
+}
+
+fn cylinders(d: &Driver) -> usize {
+    d.s.model()
+        .faces()
+        .filter(|(_, f)| matches!(f.surface, prism_geom::Surface::Cylinder(_)))
+        .count()
+}
+
+#[test]
+fn a_double_click_on_a_face_rounds_all_its_edges() {
+    let mut d = box_for_rounding();
+    assert_eq!(d.faces(), 6);
+    double_click(&mut d, DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(cylinders(&d), 4, "the four top edges");
+    assert_eq!(d.faces(), 10, "the top face stays, smaller");
+    assert!(d.s.model().edges().all(|(_, e)| !e.approx), "exact mitres");
+    valid(&d);
+    // A new size changes the whole set in place.
+    d.typed("0.3");
+    assert_eq!((cylinders(&d), d.faces()), (4, 10));
+    assert!((radii(&d)[0] - 0.3).abs() < 1e-9, "{:?}", radii(&d));
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 6, "one undo");
+}
+
+#[test]
+fn edges_selected_first_are_rounded_by_enter() {
+    use prism_tools::session::FILLET;
+    let mut d = box_for_rounding();
+    d.tool(SELECT);
+    let a = d.screen(DVec3::new(2.0, 0.0, 1.0));
+    let b = d.screen(DVec3::new(0.0, 0.0, 1.0));
+    d.click_px(a, false, false);
+    d.click_px(b, true, false);
+    assert_eq!(d.s.selection().edges.len(), 2);
+    d.tool(FILLET);
+    assert!(d.s.hint().contains("selected edges"), "{}", d.s.hint());
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(cylinders(&d), 2);
+    assert!(d.s.selection().is_empty(), "the rounded edges are gone");
+    valid(&d);
+}
+
+#[test]
+fn shift_click_gathers_edges_and_a_click_rounds_them() {
+    let mut d = box_for_rounding();
+    let a = d.screen(DVec3::new(2.0, 0.0, 1.0));
+    let b = d.screen(DVec3::new(1.0, 0.0, 2.0));
+    d.click_px(a, true, false);
+    d.click_px(b, true, false);
+    assert_eq!(d.s.selection().edges.len(), 2);
+    assert_eq!(d.faces(), 6, "Shift only gathers");
+    // Shift on one again takes it away.
+    d.click_px(b, true, false);
+    assert_eq!(d.s.selection().edges.len(), 1);
+    d.click_px(b, true, false);
+    d.click_px(a, false, false);
+    assert_eq!(cylinders(&d), 2, "two edges meeting at a corner");
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 6, "one undo");
+}
+
+#[test]
+fn hovering_highlights_what_a_click_rounds() {
+    let mut d = box_for_rounding();
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    let hover = d.s.style.hover;
+    assert!(
+        d.s.overlay().lines.iter().any(|l| l.color == hover),
+        "the edge is highlighted"
+    );
+    assert_eq!(d.faces(), 6, "hovering changes nothing");
+}
+
+#[test]
+fn a_line_in_pieces_is_rounded_as_a_whole() {
+    // The box's top front edge split at its middle by a line down the
+    // front face.
+    let mut d = box_for_rounding();
+    d.tool(LINE);
+    d.click(DVec3::new(1.0, 0.0, 2.0));
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    d.send(Input::Key { key: Key::Escape });
+    let top_front = |d: &Driver| {
+        d.s.model()
+            .edges()
+            .filter(|(_, e)| {
+                let (a, b) = (d.s.model().vertex(e.a), d.s.model().vertex(e.b));
+                a.y.abs() < 1e-9
+                    && b.y.abs() < 1e-9
+                    && (a.z - 2.0).abs() < 1e-9
+                    && (b.z - 2.0).abs() < 1e-9
+            })
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>()
+    };
+    let pieces = top_front(&d);
+    assert_eq!(pieces.len(), 2, "the edge is in two pieces");
+    let run = prism_ops::rounds::straight_run(d.s.model(), pieces[0]);
+    assert_eq!(run.len(), 2, "one straight run");
+    // A click on one piece rounds both.
+    use prism_tools::session::FILLET;
+    d.tool(FILLET);
+    d.click(DVec3::new(0.5, 0.0, 2.0));
+    assert_eq!(cylinders(&d), 2, "a round on each side of the split front");
+    assert!(top_front(&d).is_empty(), "both pieces went");
+    valid(&d);
+    undo(&mut d);
+    // A piece picked by hand is taken alone as the pick, but the kernel
+    // carries a round on along edges that continue smoothly, so the whole
+    // line is still rounded (NOTES, step C).
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.0, 2.0));
+    assert_eq!(d.s.selection().edges.len(), 1);
+    d.tool(FILLET);
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(cylinders(&d), 2);
+    valid(&d);
+}

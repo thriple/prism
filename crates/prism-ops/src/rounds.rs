@@ -117,3 +117,73 @@ fn middle(model: &Model, e: &prism_topo::Edge) -> DVec3 {
         prism_geom::Curve::Spline(sp) => sp.point(sp.halfway()),
     }
 }
+
+/// The straight run `edge` is part of: the segments end to end with it,
+/// along the same line, each between faces on the same two planes as its
+/// own (a line drawn in pieces, rounded as a whole). Just `edge` when it
+/// is curved or not between two flat faces.
+pub fn straight_run(model: &Model, edge: EdgeId) -> BTreeSet<EdgeId> {
+    let mut out = BTreeSet::from([edge]);
+    let edge_faces = model.edge_faces();
+    let planes = |e: EdgeId| -> Option<[prism_math::Plane; 2]> {
+        let fs = edge_faces.get(&e)?;
+        let [f, g] = fs.as_slice() else { return None };
+        Some([*model.face(*f)?.plane()?, *model.face(*g)?.plane()?])
+    };
+    let tol = model.tol();
+    let same_plane = |p: &prism_math::Plane, q: &prism_math::Plane| {
+        p.normal.distance(q.normal) <= 1e-9 && tol.is_zero((q.origin - p.origin).dot(p.normal))
+    };
+    let same_pair = |a: &[prism_math::Plane; 2], b: &[prism_math::Plane; 2]| {
+        (same_plane(&a[0], &b[0]) && same_plane(&a[1], &b[1]))
+            || (same_plane(&a[0], &b[1]) && same_plane(&a[1], &b[0]))
+    };
+    let Some(e0) = model.edge(edge) else {
+        return out;
+    };
+    let Some(pair) = planes(edge) else {
+        return out;
+    };
+    if !matches!(e0.curve, prism_geom::Curve::Line) {
+        return out;
+    }
+    let (a0, b0) = (model.vertex(e0.a), model.vertex(e0.b));
+    let dir = (b0 - a0).normalize_or_zero();
+    let on_line = |p: DVec3| {
+        let w = p - a0;
+        tol.is_zero((w - dir * w.dot(dir)).length())
+    };
+    for start in [e0.a, e0.b] {
+        let (mut v, mut from) = (start, edge);
+        loop {
+            let next: Vec<EdgeId> = model
+                .edges()
+                .filter(|(id, x)| {
+                    *id != from
+                        && !out.contains(id)
+                        && x.has(v)
+                        && matches!(x.curve, prism_geom::Curve::Line)
+                        && on_line(model.vertex(x.a))
+                        && on_line(model.vertex(x.b))
+                        && planes(*id).is_some_and(|p| same_pair(&p, &pair))
+                })
+                .map(|(id, _)| id)
+                .collect();
+            let [n] = next.as_slice() else { break };
+            let x = model.edge(*n).expect("an edge");
+            out.insert(*n);
+            v = if x.a == v { x.b } else { x.a };
+            from = *n;
+        }
+    }
+    out
+}
+
+/// A size that fits every edge of `edges`: the smallest of the straight
+/// edges' own fits (curved edges have none of their own and take it too).
+pub fn fit(model: &Model, edges: &BTreeSet<EdgeId>) -> Option<f64> {
+    edges
+        .iter()
+        .filter_map(|e| crate::round::default_size(model, *e))
+        .min_by(f64::total_cmp)
+}

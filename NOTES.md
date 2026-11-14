@@ -3716,3 +3716,42 @@ Built 2026-11-14 (`prism-ops/src/rounds.rs`; `Solid::round` in
 - **Not yet:** picking many edges in the tool (step C: double-click a
   face, selection, whole lines, the Fillet window on the set); rounds in
   an open group, MCP and the golden file (step D).
+
+## Fillet Joins step C: picking many edges (brief 32)
+Built 2026-11-14 (`prism-tools/src/session/round.rs`;
+`rounds::straight_run`, `rounds::fit`).
+- **With the Fillet / Chamfer tool:**
+  - A click on an edge rounds its whole **straight run**: the segments
+    end to end with it along one line, each between faces on the same
+    two planes (a line drawn in pieces).
+  - A **double-click on a face** rounds all its edges (the face stays,
+    smaller).
+  - **Shift-click** adds a run to the selection, or takes it away if it
+    is all there; the selection is the set.
+  - With **edges or faces selected** (before choosing the tool, or by
+    Shift), the first click or **Enter** rounds them: selected edges as
+    picked, and every edge of selected faces. The selection is cleared
+    after (those edges are gone).
+  - **Hover** highlights the edges a click would round (in the hover
+    colour); the selection shows as selected.
+  - The Fillet window works on the set: the preview shows the whole set,
+    "fits" is the smallest fit among its straight edges, and a new size
+    or kind right after a round changes that whole round in place (one
+    undo). A set with only curved edges asks for a typed size.
+- **Hand-picked pieces:** the brief asks that segments picked by hand be
+  taken as picked, no more. The pick is (one edge), but the kernel
+  carries a round on along edges that continue smoothly, so one piece of
+  a straight line still rounds the whole line. A round that stopped
+  partway along a straight edge would need an end cap the kernel does
+  not make; worth the owner's view if it matters.
+- **Hints:** the status line and the Tool Hint Panel say all this; the
+  hint changes when a selection is waiting. Planned Features has a new
+  built row for rounding many edges.
+- **Tests** (session): a double-click rounds a box's top (four rounds,
+  exact mitres) and a new size changes all four in one undo; Enter rounds
+  edges selected first; Shift gathers and takes away, a click rounds the
+  set in one undo; hover highlights; a line in two pieces is one run and
+  rounds whole.
+- Seen by eye in the app under Xvfb (`docs/screenshots/fillet-joins.png`):
+  a box with its top edges rounded (mitred corners), one with all twelve
+  (ball corners) and one chamfered, all shaded smooth.

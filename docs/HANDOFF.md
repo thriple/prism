@@ -54,9 +54,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   sizes) and Rotate (matching angles) followed (NOTES "Closing gaps:
   Smart Guides in Scale and Rotate"). **Fillet Joins is under way**
   (brief 32; DECISIONS #37 to #39's defaults until the owner answers):
-  steps A (the kernel bridge) and B (`RoundEdges`) are built (NOTES
-  "Fillet Joins step A" and "step B"). **Next: step C**, picking in the
-  tool (double-click a face, selections, whole lines); then Solids & CAD, which was moved up to follow
+  steps A (the kernel bridge), B (`RoundEdges`) and C (picking) are
+  built (NOTES "Fillet Joins step A", "step B", "step C"). **Next: step
+  D**, the finish (rounds in an open group, MCP, golden file `rounded.prism`,
+  the release); then Solids & CAD, which was moved up to follow
   it. The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many

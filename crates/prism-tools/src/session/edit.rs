@@ -804,7 +804,7 @@ impl Session {
         match self.tool.as_str() {
             PAINT => self.paint_press(shift, ctrl),
             TEXTURE => self.texpos_press(s),
-            FILLET => self.round_press(s, ctrl),
+            FILLET => self.round_press(s, n_clicks, shift, ctrl),
             LOFT => self.loft_press(shift),
             FOLLOW => self.follow_press(s),
             PUSH => self.push_press(s, n_clicks),

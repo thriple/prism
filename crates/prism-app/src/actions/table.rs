@@ -2328,6 +2328,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         true,
     ),
     (
+        "Fillet Joins: round many edges at once with clean corners (double-click a face, Shift-click, selection, whole lines)",
+        true,
+    ),
+    (
         "Box select: window (left to right) and crossing (right to left), Shift toggles, Ctrl adds",
         true,
     ),

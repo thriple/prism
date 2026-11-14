@@ -166,10 +166,12 @@ pub fn guide(tool: &str) -> Option<Guide> {
             &["Click the centre, then the base line, then the angle (or type it)."],
         ),
         s::FILLET => g(
-            "Round or chamfer an edge.",
+            "Round or chamfer edges, with clean corners where they meet.",
             &[
                 "Set the size in the Fillet window, or type it.",
-                "Click an edge between two faces.",
+                "Click an edge between two faces (a line in pieces is rounded whole).",
+                "Double-click a face to round all its edges.",
+                "Shift-click edges to gather them (or select them first), then Enter.",
             ],
         ),
         s::LOFT => g(

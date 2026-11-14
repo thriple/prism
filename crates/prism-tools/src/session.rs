@@ -400,7 +400,7 @@ pub struct Session {
     /// The Fillet / Chamfer tool: its size, the edge it last rounded (and
     /// whether as a fillet), and why it last refused.
     round_size: Option<f64>,
-    round_last: Option<(prism_topo::EdgeId, bool)>,
+    round_last: Option<(round::Target, bool)>,
     round_notice: Option<&'static str>,
     /// The Fillet window's kind (chamfer, else fillet), the cursor, what
     /// the preview shows, and why the hovered edge cannot be rounded.
@@ -2300,6 +2300,7 @@ impl Session {
         }
         self.paste_overlay(&mut o);
         self.smart_overlay(&mut o);
+        self.round_overlay(&mut o);
         self.loft_overlay(&mut o);
         self.window_overlay(&mut o);
         if !self.wants_inference() {
