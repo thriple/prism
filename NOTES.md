@@ -3603,3 +3603,47 @@ Owner request, from the left-over list (`prism-tools/src/smart.rs`:
 - Left over: equal sizes are matched along the same axis only (a box's
   width is not matched to a neighbour's height); Rotate matches whole
   quarter turns only, not other angles a neighbour's edges make.
+
+## Fillet Joins step A: the kernel bridge (brief 32)
+Built 2026-11-14 (`prism-kernel/src/solid.rs`, the kernel side;
+`prism-ops/src/bridge.rs`, Prism's side). No visible change yet: step B
+uses it to round many edges.
+- **What it does:** the faces of one closed solid go to the kernel as a
+  `Region` (plain data: corners, edges with their curves, faces with
+  their surfaces and loops, each carrying its Prism id as a key). The
+  kernel builds its own solid, with a curve in each face's coordinates
+  for every edge, and runs its full checker on it. Reading it back gives
+  a `Region` again: whatever the kernel kept carries its Prism id
+  (through the kernel's record of where each entity came from), new
+  entities carry none. `put_back` writes it into the model: kept corners,
+  edges and faces keep their ids, paint and texture placement, and a face
+  whose loops and surface did not change is not touched at all.
+- **Finding the solid** (`solid_of`): the faces reached from one face
+  across its edges. Where more than two faces meet at an edge (two boxes
+  touching along an edge), the next face is the one met first turning
+  about the edge from the face into the solid, running the edge the
+  other way.
+- **Tolerance:** the kernel's is set from the model's relative tolerance
+  in one place (`precision`); its angle tolerance is 1e-9.
+- **Cylinders:** each face's own cylinder has its seam put opposite the
+  face's middle (worked out from the middles of its edges, not its
+  corners, which for a half cylinder average onto the axis), so no Prism
+  face crosses a seam.
+- **Tests** (`prism-ops/tests/bridge.rs`): a painted box, a box with a
+  square hole through it, a cylinder, a block with a round hole beside a
+  loose rectangle and a loose line, an L-shaped prism, and two boxes
+  touching along an edge each come back with the model exactly as it was
+  (every id, paint and position) and the kernel's volume right; an open
+  box and an approximate edge are refused. Kernel tests: a box built by
+  hand comes back with its keys; an open box and an inside-out one are
+  refused.
+- **Refused so far, in plain words:** faces that do not close a solid,
+  a fault the kernel's checker finds, faces other than flat and
+  cylindrical, edges other than lines and arcs, approximate edges
+  (DECISIONS #32). Cones, spheres, tori and NURBS faces wait until a step
+  needs them.
+- **Dependencies:** arris-topo, arris-ops and arris-check (same pinned
+  version, no new third-party crates). The app does not call the bridge
+  yet, so the web build is the same size until step B links it: the
+  release `prism-app.wasm` is 21.3 MB (21,251,663 bytes, before
+  trunk's optimising pass) as the baseline.

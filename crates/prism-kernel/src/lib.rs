@@ -3,14 +3,17 @@
 //! Prism's curves and surfaces are its own (`prism-geom`). What is hard to
 //! own goes through the [`Kernel`] trait, and the one implementation is
 //! [`Arris`] (the kernel picked by the NURBS Spike, DECISIONS #9). arris is
-//! pre-1.0, so its version is pinned and every call to it is in this file:
-//! an upgrade or a change of kernel touches nothing else.
+//! pre-1.0, so its version is pinned and every call to it is in this crate
+//! (here, and the bridge for solids in [`solid`]): an upgrade or a change
+//! of kernel touches nothing else.
 //!
 //! Pure and deterministic, as the core crates are: arris reads no clock
 //! and no random source.
 
 use prism_geom::{Nurbs, NurbsSurface};
 use prism_math::DVec3;
+
+pub mod solid;
 
 /// Said when the kernel cannot make the surface.
 pub const NO_SURFACE: &str = "Refused: no surface could be made from these curves.";
@@ -45,11 +48,11 @@ pub fn kernel() -> &'static dyn Kernel {
 /// arris, behind the trait.
 pub struct Arris;
 
-fn point(p: DVec3) -> arris_math::Point3 {
+pub(crate) fn point(p: DVec3) -> arris_math::Point3 {
     arris_math::Point3::new(p.x, p.y, p.z)
 }
 
-fn back(p: &arris_math::Point3) -> DVec3 {
+pub(crate) fn back(p: &arris_math::Point3) -> DVec3 {
     DVec3::new(p.x, p.y, p.z)
 }
 

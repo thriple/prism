@@ -14,3 +14,6 @@ prism-geom.workspace = true
 # used only in this crate.
 arris-geom = { version = "=0.10.0", default-features = false }
 arris-math = { version = "=0.10.0", default-features = false }
+# Solids (Fillet Joins step A): topology, the builder and the operations.
+arris-topo = { version = "=0.10.0", default-features = false }
+arris-ops = { version = "=0.10.0", default-features = false }
