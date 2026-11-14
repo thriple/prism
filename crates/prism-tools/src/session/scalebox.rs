@@ -213,6 +213,7 @@ impl Session {
         }
         let Some(b) = self.scale_boxes() else { return };
         let verts = self.selection.all_vertices(self.work_model());
+        self.smart_begin_scale(&verts);
         self.edit = Some(EditOp::Scale {
             grip,
             anchor: self.scale_anchor(&b, grip),
@@ -250,7 +251,7 @@ impl Session {
 
     /// The factors that put grip `grip` (from `anchor`) under the cursor.
     fn scale_drag(&mut self, s: DVec2, view: &View) {
-        let Some(EditOp::Scale { grip, .. }) = self.edit.clone() else {
+        let Some(EditOp::Scale { grip, anchor, .. }) = self.edit.clone() else {
             return;
         };
         let Some(b) = self.scale_boxes() else { return };
@@ -268,6 +269,7 @@ impl Session {
         let k = if moving == 2.0 && self.shift_held {
             // An edge grip with Shift, each axis on its own: the cursor on
             // the plane of the two axes it moves along.
+            self.smart_clear();
             let n = DVec3::ONE - m;
             let den = d.dot(n);
             if den.abs() < 1e-12 {
@@ -303,6 +305,10 @@ impl Session {
                 return;
             };
             let t = if (t - 1.0).abs() < SNAP { 1.0 } else { t };
+            // Smart Guides: the dragged side lines up with a neighbour's,
+            // or the size matches one (a snapped point wins).
+            let scaled = self.scale_factor(grip, 2.0).to_array().map(|f| f != 1.0);
+            let t = self.smart_scale(t, anchor, scaled, snapped.is_some(), view);
             self.scale_factor(grip, t.clamp(MIN, MAX))
         };
         if let Some(EditOp::Scale { k: kk, .. }) = &mut self.edit {

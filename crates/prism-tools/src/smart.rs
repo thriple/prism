@@ -7,6 +7,9 @@
 //!   move starts, and `snap` adjusts the move for each cursor position.
 //! - The index sorts every box's three values per axis, so alignment looks
 //!   only at values within the pull (a binary search), never at every box.
+//! - Scale (`snap_scale`) lines the moving side up the same way, and
+//!   matches a neighbour's size; Rotate (`snap_turn`) turns the object to
+//!   face the same way as a neighbour, or square to it.
 //! - The time budget lives with the caller (the app measures; this crate
 //!   reads no clock): it lowers the `Level`, which drops equal spacing
 //!   first, then far objects, then everything.
@@ -120,6 +123,22 @@ pub enum Guide {
     },
     /// Two equal gaps along `axis`, each from one value to another.
     Space { axis: usize, gaps: Gaps, gap: f64 },
+    /// Scale: the scaled box `mine` is as big as `other` along `axis`.
+    Size {
+        axis: usize,
+        size: f64,
+        mine: Bounds,
+        other: Bounds,
+    },
+    /// Rotate: the turned object's heading `mine` (through `at`) is
+    /// parallel to `other`'s heading `along`, or square to it.
+    Turn {
+        other: Bounds,
+        along: DVec3,
+        at: DVec3,
+        mine: DVec3,
+        square: bool,
+    },
 }
 
 /// Two gaps along an axis, each from one value to another.
@@ -249,15 +268,7 @@ pub fn snap(index: &Index, ask: &Ask) -> (DVec3, Vec<Guide>) {
 
     // 2. Equal spacing, with the neighbours in the same row.
     if ask.level == Level::Full {
-        let mut pool: Vec<&Bounds> = index.boxes.iter().collect();
-        if pool.len() > ask.cap {
-            pool.select_nth_unstable_by(ask.cap, |p, q| {
-                (p.centre() - centre)
-                    .length_squared()
-                    .total_cmp(&(q.centre() - centre).length_squared())
-            });
-            pool.truncate(ask.cap);
-        }
+        let pool = nearest(index, centre, ask.cap);
         for &a in &axes {
             let now = ask.moving.moved(d);
             let (b1, b2) = ((a + 1) % 3, (a + 2) % 3);
@@ -305,6 +316,250 @@ pub fn snap(index: &Index, ask: &Ask) -> (DVec3, Vec<Guide>) {
         }
     }
     (d, guides)
+}
+
+/// How a Scale step asks: the factor `t` on the axes in `scaled`, about
+/// `anchor`.
+#[derive(Clone, Copy, Debug)]
+pub struct ScaleAsk {
+    /// The box being scaled, before scaling.
+    pub moving: Bounds,
+    pub anchor: DVec3,
+    pub scaled: [bool; 3],
+    pub t: f64,
+    /// The pull, in model units at the moving box.
+    pub tol: f64,
+    pub level: Level,
+    pub cap: usize,
+}
+
+impl ScaleAsk {
+    fn scaled_box(&self, t: f64) -> Bounds {
+        let k = DVec3::from_array([0, 1, 2].map(|a| if self.scaled[a] { t } else { 1.0 }));
+        Bounds::new(
+            self.anchor + (self.moving.lo - self.anchor) * k,
+            self.anchor + (self.moving.hi - self.anchor) * k,
+        )
+    }
+}
+
+/// The scale factor adjusted by the guides, and the guides to draw: the
+/// side (or centre) that moves lines up with a neighbour's side or centre,
+/// or the size along an axis equals a neighbour's (PLAN 5.1 "equal size").
+/// Equal sizes go with equal spacing when the time budget is short.
+pub fn snap_scale(index: &Index, ask: &ScaleAsk) -> (f64, Vec<Guide>) {
+    let t = ask.t;
+    if ask.level == Level::Paused || index.is_empty() || ask.tol <= 0.0 {
+        return (t, Vec::new());
+    }
+    let tol = ask.tol;
+    let now = ask.scaled_box(t);
+    let centre = now.centre();
+    let reach = (now.hi - now.lo).length().max(tol) * NEAR_SIZES;
+    let near_enough =
+        |b: &Bounds| ask.level != Level::Near || (b.centre() - centre).length() <= reach;
+    // (how far the moving side goes, the factor, the neighbour's distance,
+    // the guide without its scaled box).
+    let mut cands: Vec<(f64, f64, f64, Guide)> = Vec::new();
+    let pool = nearest(index, centre, ask.cap);
+    for a in (0..3).filter(|&a| ask.scaled[a]) {
+        let start = ask.moving.values(a);
+        let arm = |v: f64| v - ask.anchor[a];
+        let far = start.iter().map(|v| arm(*v).abs()).fold(0.0, f64::max);
+        if far <= tol * 1e-6 {
+            continue;
+        }
+        // 1. A side or the centre that moves meets a neighbour's.
+        for (i, v) in start.iter().enumerate() {
+            let r = arm(*v);
+            if r.abs() <= tol * 1e-6 {
+                continue;
+            }
+            let pos = ask.anchor[a] + r * t;
+            for (x, j, is_centre) in index.near(a, pos, tol) {
+                let b = &index.boxes[j];
+                if !near_enough(b) {
+                    continue;
+                }
+                let k = (x - ask.anchor[a]) / r;
+                if k <= 0.0 {
+                    continue;
+                }
+                cands.push((
+                    (x - pos).abs(),
+                    k,
+                    (b.centre() - centre).length(),
+                    Guide::Align {
+                        axis: a,
+                        at: x,
+                        other: *b,
+                        centre: i == 1 || is_centre,
+                        show: true,
+                    },
+                ));
+            }
+        }
+        // 2. As big as a neighbour along this axis.
+        let size = ask.moving.hi[a] - ask.moving.lo[a];
+        if ask.level == Level::Full && size > tol * 1e-6 {
+            for b in &pool {
+                let other = b.hi[a] - b.lo[a];
+                if other < tol || !near_enough(b) {
+                    continue;
+                }
+                let k = other / size;
+                let dist = (k - t).abs() * far;
+                if dist < tol {
+                    cands.push((
+                        dist,
+                        k,
+                        (b.centre() - centre).length(),
+                        Guide::Size {
+                            axis: a,
+                            size: other,
+                            mine: now,
+                            other: **b,
+                        },
+                    ));
+                }
+            }
+        }
+    }
+    let Some(best) = cands
+        .iter()
+        .min_by(|p, q| p.0.total_cmp(&q.0).then(p.2.total_cmp(&q.2)))
+        .map(|c| c.1)
+    else {
+        return (t, Vec::new());
+    };
+    let mine = ask.scaled_box(best);
+    // Every match the chosen factor makes, one per axis and kind: the
+    // sides before centres (the dragged side is what is watched), then the
+    // nearest neighbour.
+    let centre_used = |g: &Guide| matches!(g, Guide::Align { centre: true, .. });
+    cands.sort_by(|p, q| {
+        centre_used(&p.3)
+            .cmp(&centre_used(&q.3))
+            .then(p.2.total_cmp(&q.2))
+    });
+    let mut guides: Vec<Guide> = Vec::new();
+    for (_, k, _, g) in cands {
+        if (k - best).abs() > 1e-9 * best.abs().max(1.0) {
+            continue;
+        }
+        let key = |g: &Guide| match g {
+            Guide::Align { axis, .. } => (*axis, 0),
+            Guide::Size { axis, .. } => (*axis, 1),
+            _ => (9, 9),
+        };
+        if guides.iter().any(|h| key(h) == key(&g)) {
+            continue;
+        }
+        guides.push(match g {
+            Guide::Size {
+                axis, size, other, ..
+            } => Guide::Size {
+                axis,
+                size,
+                mine,
+                other,
+            },
+            g => g,
+        });
+    }
+    (best, guides)
+}
+
+/// The `cap` boxes nearest `centre`.
+fn nearest(index: &Index, centre: DVec3, cap: usize) -> Vec<&Bounds> {
+    let mut pool: Vec<&Bounds> = index.boxes.iter().collect();
+    if pool.len() > cap {
+        pool.select_nth_unstable_by(cap, |p, q| {
+            (p.centre() - centre)
+                .length_squared()
+                .total_cmp(&(q.centre() - centre).length_squared())
+        });
+        pool.truncate(cap);
+    }
+    pool
+}
+
+/// A neighbour's heading for Rotate: the way it faces, with its box.
+#[derive(Clone, Copy, Debug)]
+pub struct Heading {
+    pub dir: DVec3,
+    pub bounds: Bounds,
+}
+
+/// How a Rotate step asks.
+#[derive(Clone, Copy, Debug)]
+pub struct TurnAsk {
+    /// The moving object's heading and box before turning.
+    pub mine: DVec3,
+    pub moving: Bounds,
+    /// The rotation: about `normal` through `centre`, by `angle`.
+    pub centre: DVec3,
+    pub normal: DVec3,
+    pub angle: f64,
+    /// The pull, as an angle.
+    pub tol: f64,
+    pub level: Level,
+}
+
+/// The angle adjusted so the moving object faces the same way as a
+/// neighbour, or square to it (a quarter turn apart), and the guide.
+/// Neighbours are matched only when their heading lies in the plane of
+/// the turn. None when nothing is within the pull.
+pub fn snap_turn(headings: &[Heading], ask: &TurnAsk) -> Option<(f64, Guide)> {
+    if ask.level == Level::Paused || ask.tol <= 0.0 {
+        return None;
+    }
+    let n = ask.normal.normalize_or_zero();
+    let flat = |d: DVec3| {
+        let p = d - n * n.dot(d);
+        (p.length() >= 0.9 * d.length() && p.length() > 0.0).then(|| p.normalize())
+    };
+    let mine0 = flat(ask.mine)?;
+    let turn = |a: f64, v: DVec3| prism_math::DQuat::from_axis_angle(n, a) * v;
+    let now = turn(ask.angle, mine0);
+    let at0 = ask.moving.centre();
+    let at_now = ask.centre + turn(ask.angle, at0 - ask.centre);
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let mut best: Option<(f64, f64, usize)> = None;
+    for (i, h) in headings.iter().enumerate() {
+        if ask.level == Level::Near {
+            let reach = (ask.moving.hi - ask.moving.lo).length() * NEAR_SIZES;
+            if (h.bounds.centre() - at_now).length() > reach {
+                continue;
+            }
+        }
+        let Some(d) = flat(h.dir) else { continue };
+        let a = n.dot(now.cross(d)).atan2(now.dot(d));
+        let df = a - (a / quarter).round() * quarter;
+        let dist = (h.bounds.centre() - at_now).length();
+        if df.abs() < ask.tol
+            && best.is_none_or(|(bdf, bdist, _)| {
+                df.abs() < bdf.abs() - 1e-12
+                    || ((df.abs() - bdf.abs()).abs() <= 1e-12 && dist < bdist)
+            })
+        {
+            best = Some((df, dist, i));
+        }
+    }
+    let (df, _, i) = best?;
+    let angle = ask.angle + df;
+    let mine = turn(angle, mine0);
+    let along = flat(headings[i].dir)?;
+    Some((
+        angle,
+        Guide::Turn {
+            other: headings[i].bounds,
+            along,
+            at: ask.centre + turn(angle, at0 - ask.centre),
+            mine,
+            square: mine.dot(along).abs() < 0.5,
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -474,5 +729,122 @@ mod tests {
         let found: Vec<f64> = index.near(0, 30.0, 0.6).map(|(x, _, _)| x).collect();
         assert_eq!(found, vec![30.0, 30.5]);
         assert_eq!(index.len(), 100);
+    }
+
+    fn scale_ask(moving: Bounds, anchor: DVec3, scaled: [bool; 3], t: f64) -> ScaleAsk {
+        ScaleAsk {
+            moving,
+            anchor,
+            scaled,
+            t,
+            tol: 0.1,
+            level: Level::Full,
+            cap: 200,
+        }
+    }
+
+    #[test]
+    fn a_scaled_box_takes_a_neighbours_size() {
+        // A neighbour 2.5 wide far off in x; the cube scales in x from its
+        // low side and comes near 2.5 wide (but its high side meets nothing).
+        let index = Index::new(vec![Bounds::new(
+            DVec3::new(20.0, 0.0, 0.0),
+            DVec3::new(22.5, 1.0, 1.0),
+        )]);
+        let a = scale_ask(cube(0.0), DVec3::ZERO, [true, false, false], 2.46);
+        let (t, g) = snap_scale(&index, &a);
+        assert!((t - 2.5).abs() < 1e-12, "{t}");
+        assert!(matches!(
+            g[0],
+            Guide::Size { axis: 0, size, mine, .. } if size == 2.5 && (mine.hi.x - 2.5).abs() < 1e-12
+        ));
+        // Too far from 2.5: left alone.
+        let (t, g) = snap_scale(&index, &ScaleAsk { t: 2.3, ..a });
+        assert_eq!(t, 2.3);
+        assert!(g.is_empty());
+        // Short of time: equal sizes go first.
+        let (t, _) = snap_scale(
+            &index,
+            &ScaleAsk {
+                level: Level::AlignOnly,
+                ..a
+            },
+        );
+        assert_eq!(t, 2.46);
+    }
+
+    #[test]
+    fn the_side_being_dragged_lines_up_with_a_neighbour() {
+        // A neighbour whose high side is at x = 3; the cube's high side is
+        // dragged from 1 to 2.95 about its low side.
+        let index = Index::new(vec![Bounds::new(
+            DVec3::new(1.0, 4.0, 0.0),
+            DVec3::new(3.0, 5.0, 1.0),
+        )]);
+        let a = scale_ask(cube(0.0), DVec3::ZERO, [true, false, false], 2.95);
+        let (t, g) = snap_scale(&index, &a);
+        assert!((t - 3.0).abs() < 1e-12, "{t}");
+        assert!(
+            g.iter()
+                .any(|g| matches!(g, Guide::Align { axis: 0, at, .. } if *at == 3.0))
+        );
+        // About the centre both sides move: the low side, at -0.45 for
+        // t = 1.9, is pulled to a neighbour's low side at -0.5 (t = 2).
+        let index = Index::new(vec![Bounds::new(
+            DVec3::new(-0.5, 4.0, 0.0),
+            DVec3::new(0.2, 5.0, 1.0),
+        )]);
+        let a = scale_ask(cube(0.0), DVec3::new(0.5, 0.5, 0.5), [true; 3], 1.9);
+        let (t, _) = snap_scale(&index, &a);
+        assert!((t - 2.0).abs() < 1e-12, "{t}");
+    }
+
+    fn heading(dir: DVec3, x: f64) -> Heading {
+        Heading {
+            dir,
+            bounds: cube(x),
+        }
+    }
+
+    fn turn_ask(angle: f64) -> TurnAsk {
+        TurnAsk {
+            mine: DVec3::X,
+            moving: cube(5.0),
+            centre: DVec3::new(5.5, 0.5, 0.0),
+            normal: DVec3::Z,
+            angle,
+            tol: 0.05,
+            level: Level::Full,
+        }
+    }
+
+    #[test]
+    fn a_turn_matches_a_neighbours_heading_or_squares_to_it() {
+        let deg = |d: f64| d.to_radians();
+        let n = DVec3::new(deg(30.0).cos(), deg(30.0).sin(), 0.0);
+        let hs = [heading(n, 0.0)];
+        // 28.5°: pulled to 30°, parallel.
+        let (a, g) = snap_turn(&hs, &turn_ask(deg(28.5))).unwrap();
+        assert!((a - deg(30.0)).abs() < 1e-12, "{}", a.to_degrees());
+        assert!(matches!(g, Guide::Turn { square: false, .. }));
+        // 121°: pulled to 120°, square to it.
+        let (a, g) = snap_turn(&hs, &turn_ask(deg(121.0))).unwrap();
+        assert!((a - deg(120.0)).abs() < 1e-12);
+        assert!(matches!(g, Guide::Turn { square: true, .. }));
+        // 40°: nothing within the pull.
+        assert!(snap_turn(&hs, &turn_ask(deg(40.0))).is_none());
+        // A heading standing up out of the plane of the turn is not matched.
+        let up = [heading(DVec3::new(0.1, 0.05, 1.0), 0.0)];
+        assert!(snap_turn(&up, &turn_ask(deg(0.5))).is_none());
+        assert!(
+            snap_turn(
+                &hs,
+                &TurnAsk {
+                    level: Level::Paused,
+                    ..turn_ask(deg(29.9))
+                }
+            )
+            .is_none()
+        );
     }
 }

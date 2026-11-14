@@ -2324,7 +2324,7 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     ("Scenes and named cameras (tentative)", false),
     (
-        "Smart Guides: align and equal spacing between objects, time budget, Ctrl+U (Move tool, whole islands)",
+        "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles (Rotate), time budget, Ctrl+U",
         true,
     ),
     (

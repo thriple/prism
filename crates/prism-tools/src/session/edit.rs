@@ -533,48 +533,49 @@ impl Session {
             self.update_preview();
             return;
         }
-        match &mut self.edit {
-            Some(
-                EditOp::Rotate {
-                    centre,
-                    normal,
-                    u0,
-                    u1,
-                    angle,
-                    ..
-                }
-                | EditOp::Protractor {
-                    centre,
-                    normal,
-                    u0,
-                    u1,
-                    angle,
-                    ..
-                },
-            ) => {
-                let Some(p) = plane_point(view, s, *centre, *normal) else {
-                    return;
-                };
-                let v = p - *centre;
-                if v.length() <= 0.0 {
-                    return;
-                }
-                let u = v.normalize();
-                *u1 = Some(u);
-                if let Some(a0) = *u0 {
-                    let mut a = normal.dot(a0.cross(u)).atan2(a0.dot(u));
-                    if shift {
-                        a = (a / SHIFT_STEP).round() * SHIFT_STEP;
-                    } else {
-                        let r = (a / SOFT_STEP).round() * SOFT_STEP;
-                        if (a - r).abs() < SOFT_REACH {
-                            a = r;
-                        }
-                    }
-                    *angle = a;
+        let (c, n, start, rotate) = match &self.edit {
+            Some(EditOp::Rotate {
+                centre, normal, u0, ..
+            }) => (*centre, *normal, *u0, true),
+            Some(EditOp::Protractor {
+                centre, normal, u0, ..
+            }) => (*centre, *normal, *u0, false),
+            _ => return,
+        };
+        let Some(p) = plane_point(view, s, c, n) else {
+            return;
+        };
+        let v = p - c;
+        if v.length() <= 0.0 {
+            return;
+        }
+        let u = v.normalize();
+        let a = start.map(|a0| {
+            let a = n.dot(a0.cross(u)).atan2(a0.dot(u));
+            if shift {
+                (a / SHIFT_STEP).round() * SHIFT_STEP
+            } else {
+                let r = (a / SOFT_STEP).round() * SOFT_STEP;
+                let soft = ((a - r).abs() < SOFT_REACH).then_some(r);
+                // Smart Guides: turn to face the same way as a neighbour,
+                // or square to it.
+                if rotate {
+                    self.smart_turn(a, soft, c, n, v, view)
+                } else {
+                    soft.unwrap_or(a)
                 }
             }
-            _ => return,
+        });
+        if shift {
+            self.smart_clear();
+        }
+        if let Some(EditOp::Rotate { u1, angle, .. } | EditOp::Protractor { u1, angle, .. }) =
+            &mut self.edit
+        {
+            *u1 = Some(u);
+            if let Some(a) = a {
+                *angle = a;
+            }
         }
         self.update_preview();
     }
@@ -1016,6 +1017,7 @@ impl Session {
                 };
                 let normal = self.protractor_normal();
                 let verts = selection.all_vertices(self.work_model());
+                self.smart_begin_turn(&verts, normal);
                 self.edit = Some(EditOp::Rotate {
                     centre: i.point,
                     normal,

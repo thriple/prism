@@ -5028,6 +5028,105 @@ fn a_moved_group_snaps_to_the_gap_its_neighbours_leave() {
     assert!(d.s.smart_shown().is_empty(), "the guides go with the move");
 }
 
+/// Smart Guides in Scale (gaps session): a box scaled up by its top grip
+/// takes a neighbour's height, and the side being dragged lines up with
+/// the neighbour's top.
+#[test]
+fn a_scaled_group_takes_a_neighbours_height() {
+    let (mut d, c) = row_of_groups(10.0);
+    // The first box made 4 m tall.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    d.tool(SCALE);
+    d.click(DVec3::new(1.0, 1.0, 2.1));
+    d.typed("2");
+    act(&mut d, "edit.desel");
+    // The third box's top grip, dragged to 3.97 m tall.
+    d.tool(SELECT);
+    d.click(DVec3::new(11.0, 0.0, 1.0));
+    d.tool(SCALE);
+    d.click(DVec3::new(11.0, 1.0, 2.1));
+    // The drawn box stands 0.1 off the cube: t = (z + 0.1) / 2.2.
+    let z = 1.985 * 2.2 - 0.1;
+    d.hover(DVec3::new(11.0, 1.0, z));
+    let size = d.s.smart_shown().iter().find_map(|g| match g {
+        prism_tools::smart::Guide::Size { axis: 2, size, .. } => Some(*size),
+        _ => None,
+    });
+    assert!(
+        size.is_some_and(|h| (h - 4.0).abs() < 1e-9),
+        "{:?}",
+        d.s.smart_shown()
+    );
+    let aligned = d.s.smart_shown().iter().any(|g| {
+        matches!(g, prism_tools::smart::Guide::Align { axis: 2, at, .. } if (*at - 4.0).abs() < 1e-9)
+    });
+    assert!(
+        aligned,
+        "the top meets the first box's top: {:?}",
+        d.s.smart_shown()
+    );
+    assert!(
+        d.s.overlay()
+            .labels
+            .iter()
+            .any(|l| l.text.starts_with("Height "))
+    );
+    d.click(DVec3::new(11.0, 1.0, z));
+    let w = d.s.document().assembly().world_of(&[c]).expect("placed");
+    assert!((w.matrix3.z_axis.z - 2.0).abs() < 1e-9, "{w:?}");
+    assert!(d.s.smart_shown().is_empty());
+}
+
+/// Smart Guides in Rotate: a box turned near a neighbour's angle turns to
+/// it exactly.
+#[test]
+fn a_turned_group_faces_the_way_its_neighbour_does() {
+    let (mut d, c) = row_of_groups(10.0);
+    let deg = |a: f64| a.to_radians();
+    // The first box turned 37° about its corner on the ground.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    d.tool(ROTATE);
+    d.click(DVec3::new(1.0, -1.0, 0.0));
+    d.click(DVec3::new(2.0, -1.0, 0.0));
+    d.typed("37");
+    act(&mut d, "edit.desel");
+    // The third box turned to 35.5°: pulled to 37°.
+    d.tool(SELECT);
+    d.click(DVec3::new(11.0, 0.0, 1.0));
+    d.tool(ROTATE);
+    d.click(DVec3::new(11.0, -1.0, 0.0));
+    d.click(DVec3::new(12.0, -1.0, 0.0));
+    let at = DVec3::new(
+        11.0 + 2.0 * deg(35.5).cos(),
+        -1.0 + 2.0 * deg(35.5).sin(),
+        0.0,
+    );
+    d.hover(at);
+    assert!(
+        d.s.smart_shown()
+            .iter()
+            .any(|g| matches!(g, prism_tools::smart::Guide::Turn { square: false, .. })),
+        "{:?}",
+        d.s.smart_shown()
+    );
+    assert!(d.s.overlay().labels.iter().any(|l| l.text == "Parallel"));
+    d.click(at);
+    let x =
+        d.s.document()
+            .assembly()
+            .world_of(&[c])
+            .expect("placed")
+            .matrix3
+            .x_axis;
+    assert!(
+        (x.y.atan2(x.x) - deg(37.0)).abs() < 1e-9,
+        "{}",
+        x.y.atan2(x.x).to_degrees()
+    );
+}
+
 #[test]
 fn a_moved_group_lines_up_with_a_neighbour_and_ctrl_u_turns_it_off() {
     let (mut d, c) = row_of_groups(10.0);

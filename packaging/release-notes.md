@@ -1,7 +1,7 @@
-**New in this build: the last of the smaller gaps.**
-- **Sweep turns an open profile with its path:** sweep a profile along a curved path and it turns with the path, as a pipe's circle does (along a straight path it slides, as before).
-- **Freehand in 3D:** hold Shift as you start a Freehand stroke to draw over faces at any height, not just on one plane.
-- **Preferences > Reset Units** puts new documents back to metres.
+**New in this build: Smart Guides in Scale and Rotate.**
+- **Scale:** drag a grip on a group, component or whole object and its side lines up with a neighbour's side, and its width, depth or height snaps to a neighbour's. Both show an orange measurement, such as `Height 4.000 m`.
+- **Rotate:** turn an object near the angle a neighbour faces and it lines up with it exactly, or square to it (`Parallel`, `Square`).
+- Ctrl+U still turns all Smart Guides off.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

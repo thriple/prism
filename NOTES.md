@@ -3472,7 +3472,8 @@ Collected from the "Left over" lines above, for the owner to order.
   The web's clipboard is not needed for now (owner, 2026-11-13).
 - **Freehand:** done (Shift draws in 3D; see "Closing gaps: smaller
   items").
-- **Smart Guides:** equal sizes; Rotate and Scale do not use them.
+- **Smart Guides:** done (see "Closing gaps: Smart Guides in Scale and
+  Rotate").
 - **Preferences:** units reset done; no colour or autosave settings.
 
 ## Closing gaps: curves (2026-11-13)
@@ -3570,5 +3571,35 @@ Collected from the "Left over" lines above, for the owner to order.
   curved path the result is now fitted, not exact.
 - Left over: nothing from the gaps list but cutting and pushing freeform
   faces (Solids & CAD), Smart Guides' equal sizes and their use in Rotate
-  and Scale, a component holding groups pasting as a new definition, and
-  Preferences for colours and autosave (none are settable yet).
+  and Scale (done next, below), a component holding groups pasting as a
+  new definition, and Preferences for colours and autosave (none are
+  settable yet).
+
+## Closing gaps: Smart Guides in Scale and Rotate (2026-11-14)
+Owner request, from the left-over list (`prism-tools/src/smart.rs`:
+`snap_scale`, `snap_turn`; `session/smart.rs`).
+- **Scale:** while a group, component or whole body is scaled by a grip,
+  the side being dragged (or its centre) lines up with a neighbour's
+  side or centre (the teal "Align" guide), and its size along a scaled
+  axis snaps to a neighbour's size there: PLAN 5.1's "equal size". Both
+  boxes then show an orange dimension, `Height 4.000 m` (Width is X,
+  Depth Y, Height Z). With a corner grip every axis can match; the
+  nearest match wins, and every guide that the chosen factor also meets
+  is shown, one per axis and kind, sides before centres.
+- **Rotate:** the object turns to face the same way as a neighbour, or a
+  quarter turn from it (labels `Parallel`, `Square`), with a dashed teal
+  line through each one's middle along its heading. A group's heading is
+  the axis of its own coordinates lying most nearly in the plane of the
+  turn; a loose body's is its longest edge, flattened onto that plane.
+  Neighbours whose heading stands out of the plane are not matched. The
+  protractor's 15° soft steps still work; when both catch, the nearer
+  wins. Shift (45° steps) turns the guides off.
+- **What wins over them, as in Move:** a snapped point (the grip going
+  level with it), typing a number, and in Scale an edge grip with Shift
+  (each axis on its own). Edit Cage's Scale has no guides (it moves
+  control points, not objects). Part of a body gets none.
+- **Time budget:** the same steps as Move. Equal sizes are dropped with
+  equal spacing; then far objects; then everything until the next step.
+- Left over: equal sizes are matched along the same axis only (a box's
+  width is not matched to a neighbour's height); Rotate matches whole
+  quarter turns only, not other angles a neighbour's edges make.
