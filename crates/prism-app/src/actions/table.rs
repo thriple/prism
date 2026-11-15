@@ -240,6 +240,27 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "axes.change",
+        name: "Change Axes",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "axes.reset",
+        name: "Reset Axes",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "axes.centre",
+        name: "Axes to Centre",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "flip.x",
         name: "X (red)",
         key: "",
@@ -1624,6 +1645,14 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("edit.comp"),
             Item::Action("edit.explode"),
             Item::Action("edit.unique"),
+            Item::Sub(
+                "Axes",
+                &[
+                    Item::Action("axes.change"),
+                    Item::Action("axes.reset"),
+                    Item::Action("axes.centre"),
+                ],
+            ),
             Item::Separator,
             Item::Sub(
                 "Flip Along",
@@ -2341,6 +2370,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     (
         "Export for game engines: groups and components as named objects in GLB, components shared",
+        true,
+    ),
+    (
+        "Group axes: set a group's or component's origin and directions (Axes tool, Reset Axes, Axes to Centre)",
         true,
     ),
     (

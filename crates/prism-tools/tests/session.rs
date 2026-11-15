@@ -5673,3 +5673,77 @@ fn imported_objects_become_groups_in_one_step() {
     undo(&mut d);
     assert!(d.s.document().assembly().root().instances.is_empty());
 }
+
+// ---------- Group Axes (brief 36) ----------
+
+fn group_transform(d: &Driver, g: prism_doc::InstanceId) -> prism_math::DAffine3 {
+    d.s.document()
+        .assembly()
+        .find_instance(g)
+        .expect("group")
+        .1
+        .transform
+}
+
+fn world_points(d: &Driver) -> Vec<DVec3> {
+    let m = d.s.document().assembly().flattened();
+    m.vertices().map(|(_, p)| p).collect()
+}
+
+fn kept(a: &[DVec3], b: &[DVec3]) {
+    assert_eq!(a.len(), b.len());
+    for p in a {
+        assert!(b.iter().any(|q| q.distance(*p) < 1e-9), "{p} moved");
+    }
+}
+
+#[test]
+fn the_axes_tool_sets_an_open_groups_axes_in_three_clicks() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let before = world_points(&d);
+    let t0 = group_transform(&d, g);
+    // At the top level the tool asks for a group to be opened.
+    d.tool(prism_tools::session::AXES_TOOL);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    assert!(d.s.hint().contains("Open a group"));
+    assert_eq!(group_transform(&d, g), t0);
+    // Change Axes opens it and starts the tool.
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    act(&mut d, "axes.change");
+    assert_eq!(d.s.open_path(), &[g]);
+    assert_eq!(d.s.tool(), prism_tools::session::AXES_TOOL);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.click(DVec3::new(0.0, 2.0, 0.0));
+    let t = group_transform(&d, g);
+    assert!(
+        t.translation.distance(DVec3::new(2.0, 0.0, 0.0)) < 1e-9,
+        "{t:?}"
+    );
+    assert!(
+        t.matrix3.x_axis.abs_diff_eq(DVec3::Y, 1e-9),
+        "red runs along y"
+    );
+    assert!(t.matrix3.y_axis.abs_diff_eq(-DVec3::X, 1e-9));
+    kept(&before, &world_points(&d));
+    // One undo step.
+    act(&mut d, "edit.undo");
+    assert_eq!(group_transform(&d, g), t0);
+}
+
+#[test]
+fn reset_axes_and_axes_to_centre_from_the_menu() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let before = world_points(&d);
+    act(&mut d, "axes.centre");
+    let t = group_transform(&d, g);
+    assert!(t.translation.distance(DVec3::new(1.0, 1.0, 1.0)) < 1e-9);
+    kept(&before, &world_points(&d));
+    act(&mut d, "axes.reset");
+    let t = group_transform(&d, g);
+    assert!(t.translation.length() < 1e-9, "back at the low corner");
+    kept(&before, &world_points(&d));
+}

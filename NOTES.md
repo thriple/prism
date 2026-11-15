@@ -3847,3 +3847,47 @@ Built 2026-11-15 (`mesh::read_structured`, `mesh::assembly_of`;
   component used many times); setting a group's own axes (pivots) waits
   for the Axes tool (Annotation & Sections); per-instance materials on a
   shared component make a copy of its mesh (the colour is in the mesh).
+
+## Group Axes (brief 36)
+Owner request 2026-11-15, put before Solids & CAD (it gives Beverly its
+pivots). Built 2026-11-15. **Group Axes is done.**
+- **Change Axes** (`Command::ChangeAxes { instance, axes }`,
+  `Assembly::change_axes`): `axes` is the new origin and directions in
+  the definition's own coordinates. The contents (geometry and inner
+  groups) move by its inverse and every instance of the definition
+  anywhere by `axes`, so nothing moves in the world, every copy of a
+  component included. One undo step; a locked group refuses it; no file
+  change (axes are part of an instance's placement already).
+- **Axes tool** (Draw > Axes, Construct toolbar; `session/axes.rs`):
+  inside an open group, click the origin, a point on red, a point that
+  sets green (made square to red), with inference. The new axes are drawn
+  as you go, and the open group's own while the tool waits. At the top
+  level it asks for a group to be opened.
+- **Edit > Axes** and the context menu, for selected groups: **Change
+  Axes** (opens it and starts the tool), **Reset Axes** (square with the
+  parent's, origin at the low corner of the contents), **Axes to Centre**
+  (origin at the middle of the contents' box). Copies of one component
+  are changed once.
+- Axes are kept rigid, worked out in the group's own coordinates, so
+  curved geometry stays exact. Reset Axes on a group scaled unevenly
+  moves only the origin (turning it square would distort the contents).
+- The blue group box follows the group's axes, as before (it is drawn in
+  the group's own coordinates).
+- **Export:** the GLB node of a group is placed by its axes, so Beverly
+  gets the new pivot (tested in `prism-file/tests/structured.rs`).
+- **Tests:** `prism-doc/tests/group_axes.rs` (a group, a component used
+  three times, a group in a group, Reset, Centre, locked, a property test
+  with random rigid axes); session tests for the three clicks, the top
+  level, undo, and the menu items; the GLB pivot.
+- **Left over:** the model's own axes (Annotation & Sections); typed
+  values in the Axes tool; the owner's check (a turret's hinge as its
+  pivot, in Prism and in Beverly).
+
+### Owner request for later: fade other copies of an open component (2026-11-15)
+When a component is opened, everything outside it should be faded, other
+copies of the same component included: only the opened one is shown
+unfaded, as when a group is opened. Today the other copies are drawn
+unfaded on purpose (they show the edit live; `session/groups.rs`,
+`built`, the `sibling` flag). The change is to drop that flag. Not done
+yet: waiting for a slot.
+

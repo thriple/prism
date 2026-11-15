@@ -199,6 +199,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Part 2: components and mirroring.
         || id == "edit.comp"
         || id == "edit.unique"
+        // Group Axes (brief 36).
+        || id.starts_with("axes.")
         // Model Health.
         || id == "edit.revface"
         || id == "edit.orient"
@@ -314,7 +316,8 @@ impl Registry {
                             || r.id == "edit.lock"
                             || r.id == "edit.unlock"
                             || r.id == "edit.isolate"
-                            || r.id.starts_with("flip.") =>
+                            || r.id.starts_with("flip.")
+                            || r.id.starts_with("axes.") =>
                         {
                             When::HasGroups
                         }
@@ -492,6 +495,10 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         A("edit.comp"),
         A("edit.explode"),
         A("edit.unique"),
+        Sub(
+            "Axes",
+            vec![A("axes.change"), A("axes.reset"), A("axes.centre")],
+        ),
         S,
         Sub("Flip Along", vec![A("flip.x"), A("flip.y"), A("flip.z")]),
         Sub(
@@ -560,7 +567,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 24] = [
+const BUILT_BEHAVIOURS: [&str; 25] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -584,6 +591,8 @@ const BUILT_BEHAVIOURS: [&str; 24] = [
     "Fillet Joins: round many edges at once with clean corners (double-click a face, Shift-click, selection, whole lines)",
     // Export for Beverly (brief 35).
     "Export for game engines: groups and components as named objects in GLB, components shared",
+    // Group Axes (brief 36).
+    "Group axes: set a group's or component's origin and directions (Axes tool, Reset Axes, Axes to Centre)",
     // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.
     "Exact circles, arcs and NURBS",
     "Model Health: reversed faces, holes, interior faces, nesting counts",

@@ -1000,6 +1000,97 @@ impl Assembly {
         }
     }
 
+    /// Where an instance is placed: the definition it is in, and itself
+    /// (instance ids are unique in the document).
+    pub fn find_instance(&self, i: InstanceId) -> Option<(DefId, Instance)> {
+        self.defs
+            .iter()
+            .find_map(|(d, def)| def.instances.get(&i).map(|inst| (*d, *inst)))
+    }
+
+    /// Every point of a definition's contents in its own coordinates: its
+    /// vertices and those of its groups, placed (Group Axes).
+    pub fn content_points(&self, def: DefId) -> Vec<DVec3> {
+        let Some(d) = self.def(def) else {
+            return Vec::new();
+        };
+        let mut out: Vec<DVec3> = d.model.vertices().map(|(_, p)| p).collect();
+        for inst in d.instances.values() {
+            out.extend(
+                self.content_points(inst.def)
+                    .into_iter()
+                    .map(|p| inst.transform.transform_point3(p)),
+            );
+        }
+        out
+    }
+
+    /// Change Axes (brief 36): `axes` (in the definition's own coordinates)
+    /// become its origin and directions. Its contents move by the inverse
+    /// and every instance of it by `axes`, so nothing moves in the world,
+    /// every copy of a component included. False if nothing changed.
+    pub fn change_axes(&mut self, def: DefId, axes: &DAffine3) -> bool {
+        let det = axes.matrix3.determinant();
+        if def == ROOT || !det.is_finite() || det.abs() < 1e-12 || !self.defs.contains_key(&def) {
+            return false;
+        }
+        if *axes == DAffine3::IDENTITY {
+            return false;
+        }
+        let back = axes.inverse();
+        if let Some(d) = self.def_mut(def) {
+            transform::affine(&mut d.model, &back);
+            for inst in d.instances.values_mut() {
+                inst.transform = back * inst.transform;
+            }
+        }
+        let parents: Vec<DefId> = self
+            .defs
+            .iter()
+            .filter(|(_, d)| d.instances.values().any(|i| i.def == def))
+            .map(|(id, _)| *id)
+            .collect();
+        for p in parents {
+            if let Some(d) = self.def_mut(p) {
+                for inst in d.instances.values_mut().filter(|i| i.def == def) {
+                    inst.transform *= *axes;
+                }
+            }
+        }
+        true
+    }
+
+    /// Reset Axes (brief 36): the axes for instance `i` that are square
+    /// with its parent's again, origin at the low corner of the contents.
+    /// A group scaled unevenly keeps its directions (only the origin
+    /// moves), so curved geometry stays exact.
+    pub fn reset_axes(&self, i: InstanceId) -> Option<DAffine3> {
+        let (_, inst) = self.find_instance(i)?;
+        let m = inst.transform.matrix3;
+        let c = m.determinant().cbrt();
+        let mut turn = m.inverse() * prism_math::DMat3::from_diagonal(DVec3::splat(c));
+        if !c.is_finite() || prism_geom::even_scale(&DAffine3::from_mat3(turn)).is_none() {
+            turn = prism_math::DMat3::IDENTITY;
+        }
+        let back = turn.inverse();
+        let pts = self.content_points(inst.def);
+        let lo = pts
+            .iter()
+            .map(|p| back * *p)
+            .reduce(DVec3::min)
+            .unwrap_or(DVec3::ZERO);
+        Some(DAffine3::from_mat3_translation(turn, turn * lo))
+    }
+
+    /// Axes to Centre (brief 36): the axes for definition `def` with the
+    /// origin at the centre of its contents' box, directions kept.
+    pub fn centre_axes(&self, def: DefId) -> Option<DAffine3> {
+        let pts = self.content_points(def);
+        let lo = pts.iter().copied().reduce(DVec3::min)?;
+        let hi = pts.iter().copied().reduce(DVec3::max)?;
+        Some(DAffine3::from_translation((lo + hi) * 0.5))
+    }
+
     /// Change the placement of instances in `ctx` by `m` (in `ctx`'s
     /// coordinates).
     pub fn place(&mut self, ctx: DefId, instances: &BTreeSet<InstanceId>, m: &DAffine3) {

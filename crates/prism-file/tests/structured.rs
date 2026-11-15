@@ -233,6 +233,29 @@ fn a_groups_origin_is_its_nodes_translation() {
 }
 
 #[test]
+fn new_group_axes_become_the_nodes_pivot() {
+    // Group Axes (brief 36): Chunk 2's origin moved to its centre.
+    let mut d = document();
+    let p = d
+        .assembly()
+        .placed()
+        .into_iter()
+        .find(|p| p.world.translation.distance(DVec3::new(1.0, 0.0, 0.0)) < 1e-12)
+        .expect("chunk 2");
+    let id = *p.path.last().unwrap();
+    let axes = d.assembly().centre_axes(p.def).unwrap();
+    assert!(d.run(Command::ChangeAxes { instance: id, axes }));
+    let s = structured(d.assembly(), &glb(), "Yard", true);
+    let k = by_name(&s, "Chunk 2")[0];
+    let origin = worlds(&s)[k].transform_point3(DVec3::ZERO);
+    // Prism (1.5, 0.5, 0.5) is glTF (1.5, 0.5, -0.5), Y up.
+    assert!(
+        origin.distance(DVec3::new(1.5, 0.5, -0.5)) < 1e-12,
+        "{origin}"
+    );
+}
+
+#[test]
 fn a_mirrored_copy_keeps_its_faces_facing_out() {
     let d = document();
     let s = structured(d.assembly(), &glb(), "Yard", true);

@@ -57,7 +57,9 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   #39's defaults in use until the owner answers). **Export for Beverly**
   (brief 35, owner request 2026-11-15, put before Solids & CAD) is done:
   GLB keeps groups and components and reads them back (NOTES "Export for
-  Beverly, part 1" and "part 2"). **Next: Solids & CAD**, which was moved up to follow
+  Beverly, part 1" and "part 2"). **Group Axes** (brief 36, owner
+  request, put before Solids & CAD) is done: Change Axes, the Axes tool,
+  Reset Axes and Axes to Centre (NOTES "Group Axes"). **Next: Solids & CAD**, which was moved up to follow
   it (it reuses the kernel bridge, `prism-ops/src/bridge.rs`). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many

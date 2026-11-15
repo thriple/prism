@@ -244,6 +244,12 @@ pub enum Command {
         instances: BTreeSet<InstanceId>,
         tag: Option<TagId>,
     },
+    /// Give a group or component new axes (brief 36): `axes` in its
+    /// definition's own coordinates. Nothing moves in the world.
+    ChangeAxes {
+        instance: InstanceId,
+        axes: DAffine3,
+    },
     /// Move, rotate or scale whole groups.
     Place {
         instances: BTreeSet<InstanceId>,
@@ -504,6 +510,7 @@ impl Command {
             Command::Explode { .. } => "Explode",
             Command::MakeComponent { .. } => "Make Component",
             Command::MakeUnique { .. } => "Make Unique",
+            Command::ChangeAxes { .. } => "Change Axes",
             Command::Rename { .. } | Command::RenameTag { .. } => "Rename",
             Command::SetHidden { hidden: true, .. } => "Hide",
             Command::SetHidden { .. } => "Unhide",
@@ -791,6 +798,11 @@ impl Command {
                 asm.make_component(ctx, selection, instances, name);
             }
             Command::MakeUnique { instances } => asm.make_unique(ctx, instances),
+            Command::ChangeAxes { instance, axes } => {
+                if let Some((_, inst)) = asm.find_instance(*instance) {
+                    asm.change_axes(inst.def, axes);
+                }
+            }
             Command::Rename { def, name } => {
                 asm.rename(*def, name);
             }
@@ -868,7 +880,9 @@ impl Command {
             | Command::PaintInstances { instances, .. }
             | Command::MakeGroup { instances, .. }
             | Command::MakeComponent { instances, .. } => any(instances),
-            Command::Explode { instance } => asm.is_locked(*instance),
+            Command::Explode { instance } | Command::ChangeAxes { instance, .. } => {
+                asm.is_locked(*instance)
+            }
             _ => false,
         }
     }
@@ -1112,6 +1126,7 @@ impl Command {
             | Command::Explode { .. }
             | Command::MakeComponent { .. }
             | Command::MakeUnique { .. }
+            | Command::ChangeAxes { .. }
             | Command::Rename { .. }
             | Command::SetHidden { .. }
             | Command::NameInstance { .. }

@@ -55,6 +55,16 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Arrows pick the plane.",
             ],
         ),
+        s::AXES_TOOL => g(
+            "Set a group's or component's own axes: its origin and directions.",
+            &[
+                "Open the group first (double-click it), or right-click it and pick Change Axes.",
+                "Click the new origin.",
+                "Click a point on the red axis, then a point that sets green.",
+                "Nothing moves: only the axes change, for every copy of a component.",
+                "Edit > Axes > Reset Axes squares them again; Axes to Centre moves the origin to the middle.",
+            ],
+        ),
         s::RRECT => g(
             "Draw a rectangle at any angle, on any plane.",
             &[

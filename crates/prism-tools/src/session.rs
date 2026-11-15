@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::select::box_select;
 
 mod arcs;
+mod axes;
 mod cage;
 mod clip;
 mod construct;
@@ -46,6 +47,7 @@ mod texpos;
 mod views;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
+pub use axes::{AXES_TOOL, axes_from};
 pub use cage::PICK_FIRST;
 pub use clip::LOCKED;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
@@ -75,7 +77,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 32] = [
+pub const TOOLS: [&str; 33] = [
     SELECT,
     LINE,
     RECT,
@@ -115,6 +117,8 @@ pub const TOOLS: [&str; 32] = [
     // Everyday Commands part 3.
     draw::RRECT,
     draw::FREEHAND,
+    // Group Axes (brief 36).
+    axes::AXES_TOOL,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -516,6 +520,8 @@ pub struct Session {
     /// The Rotated Rectangle and Freehand tools in progress (part 3).
     rrect: Option<draw::RRect>,
     freehand: Option<draw::Freehand>,
+    /// The Axes tool's clicks (brief 36).
+    axes_op: Option<axes::AxesOp>,
 }
 
 impl Session {
@@ -531,6 +537,7 @@ impl Session {
             curve: None,
             rrect: None,
             freehand: None,
+            axes_op: None,
             cage: None,
             cage_notice: None,
             curve_through: false,
@@ -731,6 +738,7 @@ impl Session {
             || self.curve.is_some()
             || self.rrect.is_some()
             || self.freehand.is_some()
+            || self.axes_op.is_some()
             || self.cage_start().is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
@@ -870,7 +878,11 @@ impl Session {
         if let Some(h) = self.curve_hint() {
             return h;
         }
-        if let Some(h) = self.rrect_hint().or_else(|| self.freehand_hint()) {
+        if let Some(h) = self
+            .rrect_hint()
+            .or_else(|| self.freehand_hint())
+            .or_else(|| self.axes_hint())
+        {
             return h;
         }
         match self.tool.as_str() {
@@ -1141,6 +1153,7 @@ impl Session {
         self.curve = None;
         self.rrect = None;
         self.freehand = None;
+        self.axes_op = None;
         self.cage_cancel();
         self.last_fillet = None;
         self.round_last = None;
@@ -1544,6 +1557,9 @@ impl Session {
             "edit.unhidelast" => self.unhide_last(),
             "edit.isolate" => self.isolate(),
             "edit.unique" => self.make_unique(),
+            "axes.change" => self.change_axes(),
+            "axes.reset" => self.reset_axes(false),
+            "axes.centre" => self.reset_axes(true),
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
@@ -1601,6 +1617,7 @@ impl Session {
             || self.tool == CURVE
             || self.tool == RRECT
             || self.tool == FREEHAND
+            || self.tool == AXES_TOOL
             || self.cage_wants_inference()
             || self.edit_wants_inference()
             || self.pasting()
@@ -1644,6 +1661,10 @@ impl Session {
             RRECT => Context {
                 start: self.rrect.map(|r| r.b.unwrap_or(r.a)),
                 no_lock: self.rrect.is_some_and(|r| r.b.is_some()),
+                ..Default::default()
+            },
+            AXES_TOOL => Context {
+                start: self.axes_op.map(|a| a.red.unwrap_or(a.origin)),
                 ..Default::default()
             },
             MOVE => match &self.edit {
@@ -1737,6 +1758,7 @@ impl Session {
             }
             self.shape_hover(s, &view);
             self.rrect_hover(s, &view);
+            self.axes_hover();
             self.arc_hover(s, &view);
             self.cage_hover();
             self.paste_hover(&view);
@@ -1849,6 +1871,7 @@ impl Session {
                     self.curve_press(s, n);
                 }
                 RRECT => self.rrect_press(s),
+                AXES_TOOL => self.axes_press(s),
                 FREEHAND => self.freehand_press(s, shift),
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
@@ -2436,6 +2459,7 @@ impl Session {
         self.arc_overlay(&mut o);
         self.curve_overlay(&mut o);
         self.rrect_overlay(&mut o);
+        self.axes_overlay(&mut o);
         self.freehand_overlay(&mut o);
         self.cage_overlay(&mut o);
         // The snap: its target, glyph and label.

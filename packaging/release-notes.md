@@ -1,8 +1,8 @@
-**New in this build: export for game engines.**
-- **File > Export > Game engine (Beverly, Godot, Unity)** writes a GLB where every group and component is its own named object, nested as in Prism, turning about its own origin. A component used many times is stored once and shared.
-- GLB from the media preset keeps groups too; tick **Merge into one mesh** for the old single mesh.
-- **Importing a GLB** with several objects brings them in as groups and components (named, nested, placed as they were). A single object imports as before.
-- Rounding many edges at once (Fillet Joins) is in from the last builds.
+**New in this build: group axes.**
+- **Set a group's or component's own axes** (its origin and directions). Nothing moves; only the axes change, for every copy of a component.
+- **Draw > Axes:** open a group, click the new origin, a point on the red axis, then a point that sets green.
+- **Right-click a group > Axes:** Change Axes (opens it with the Axes tool), Reset Axes (square again, origin at the corner), Axes to Centre.
+- Exporting for game engines (File > Export > Game engine) uses these axes as each object's pivot.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
