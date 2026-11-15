@@ -1377,6 +1377,27 @@ impl Session {
         true
     }
 
+    /// Import a file's objects as groups and components (brief 35): the
+    /// clip is pasted where it stands, one undo step, and the view fits it.
+    pub fn import_assembly(&mut self, clip: prism_doc::Assembly) -> bool {
+        let Some((lo, hi)) = clip.flattened().bbox() else {
+            return false;
+        };
+        self.cancel();
+        // Where it stands in the world (the command places it in the open
+        // group's coordinates).
+        if !self.run(Command::Paste {
+            clip: Box::new(clip),
+            at: prism_math::DAffine3::IDENTITY,
+        }) {
+            return false;
+        }
+        let goal = self.camera.extents(lo, hi, self.view().aspect());
+        self.ease_to(goal, EASE_EXTENTS);
+        self.refresh();
+        true
+    }
+
     /// What is shown and how (View Settings).
     pub fn view_style(&self) -> &prism_view::ViewStyle {
         &self.view

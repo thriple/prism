@@ -5,7 +5,7 @@
 use prism_doc::{Change, Command, Document};
 use prism_file::mesh::gltf::Scene;
 use prism_file::mesh::{ExportOptions, Format, structured, to_painted_mesh};
-use prism_math::{DMat4, DVec3};
+use prism_math::{DAffine3, DMat4, DVec3};
 use prism_ops::Selection;
 
 fn all(m: &prism_topo::Model, from: &Selection) -> Selection {
@@ -326,4 +326,89 @@ fn hidden_groups_are_left_out() {
     assert!(by_name(&s, "Wall").is_empty());
     let s = structured(d.assembly(), &glb(), "Yard", false);
     assert_eq!(by_name(&s, "Wall").len(), 1);
+}
+
+// ---------- Part 2: reading the structure back ----------
+
+#[test]
+fn a_round_trip_keeps_names_nesting_axes_components_and_materials() {
+    let mut d = document();
+    // The wall painted red (a group's material on its Default faces).
+    let red = d.assembly().materials().1;
+    d.run(Command::AddMaterial {
+        material: prism_doc::Material::colour("Brick", [200, 40, 30]),
+    });
+    let wall = *d.assembly().root().instances.keys().next().unwrap();
+    d.run(Command::PaintInstances {
+        instances: [wall].into(),
+        material: Some(prism_topo::MaterialId(red)),
+    });
+    let bytes = prism_file::mesh::export_structured(d.assembly(), &glb(), "Yard", true);
+    let sc = prism_file::mesh::read_structured(&bytes).unwrap();
+    assert!(prism_file::mesh::has_structure(&sc));
+    let back = prism_file::mesh::assembly_of(&sc, 1.0, true, true);
+    // At the top: the wall and three posts; the loose box is loose again.
+    let root = back.root();
+    assert_eq!(root.instances.len(), 4);
+    assert!(root.model.face_count() > 0, "the loose box");
+    let names: Vec<Option<&str>> = root.instances.keys().map(|i| back.name_of(*i)).collect();
+    assert_eq!(names[0], Some("Wall"));
+    // One component, used three times.
+    let comps = back.components();
+    assert_eq!(comps.len(), 1);
+    assert_eq!(comps[0].1, "Post");
+    assert_eq!(back.uses(comps[0].0), 3);
+    // The wall holds the two chunks.
+    let (wall_id, wall_inst) = root.instances.iter().next().unwrap();
+    let inner = &back.def(wall_inst.def).unwrap().instances;
+    let kids: Vec<Option<&str>> = inner.keys().map(|i| back.name_of(*i)).collect();
+    assert_eq!(kids, [Some("Chunk"), Some("Chunk 2")]);
+    // Every group placed where it was: the same world placements.
+    let before: Vec<DAffine3> = d.assembly().placed().iter().map(|p| p.world).collect();
+    let after: Vec<DAffine3> = back.placed().iter().map(|p| p.world).collect();
+    assert_eq!(before.len(), after.len());
+    for (a, b) in before.iter().zip(&after) {
+        assert!(a.abs_diff_eq(*b, 1e-6), "{a:?} {b:?}");
+    }
+    // The material came back, and is on the wall's faces.
+    assert!(back.materials().0.values().any(|m| m.name == "Brick"));
+    let chunk = inner.values().next().unwrap();
+    assert!(
+        back.def(chunk.def)
+            .unwrap()
+            .model
+            .faces()
+            .all(|(_, f)| f.paint.front.is_some())
+    );
+    // Placed geometry matches: the same flattened box.
+    let (a, b) = (
+        d.assembly().flattened().bbox().unwrap(),
+        back.flattened().bbox().unwrap(),
+    );
+    assert!(a.0.distance(b.0) < 1e-6 && a.1.distance(b.1) < 1e-6);
+    let _ = wall_id;
+}
+
+#[test]
+fn a_single_object_is_not_structure() {
+    // Prism's merged export: one node.
+    let d = document();
+    let o = ExportOptions::for_format(Format::Glb);
+    let flat = prism_file::mesh::export(&d.assembly().flattened_visible(), None, &o);
+    let sc = prism_file::mesh::read_structured(&flat).unwrap();
+    assert!(!prism_file::mesh::has_structure(&sc));
+}
+
+#[test]
+fn nodes_sharing_a_mesh_from_another_program_become_one_component() {
+    // Three nodes pointing at one mesh, no Prism extras.
+    let d = document();
+    let mut sc = structured(d.assembly(), &glb(), "Yard", true);
+    for n in &mut sc.nodes {
+        n.extras = None;
+    }
+    let back = prism_file::mesh::assembly_of(&sc, 1.0, true, true);
+    let comps = back.components();
+    assert_eq!(comps.len(), 1, "{comps:?}");
+    assert_eq!(back.uses(comps[0].0), 3);
 }

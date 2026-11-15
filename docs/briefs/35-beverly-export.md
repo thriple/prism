@@ -42,4 +42,4 @@ M: two parts. Part 1 is export; part 2 is reading the same structure back.
 ## Acceptance
 - [ ] A wall cut into chunks exports from Prism and opens in Beverly with each chunk as its own named object (owner).
 - [ ] A model with a component used many times opens in Beverly with one shared mesh (owner).
-- [ ] PLAN and NOTES are updated.
+- [x] PLAN and NOTES are updated.

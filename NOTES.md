@@ -3820,3 +3820,30 @@ the GLB writer in `mesh/gltf.rs` now writes a scene).
   groups are left out (or kept when asked); the merged export is the same
   bytes as before.
 - **Not checked yet:** opening the file in Beverly (owner).
+
+## Export for Beverly, part 2: reading the structure back (brief 35)
+Built 2026-11-15 (`mesh::read_structured`, `mesh::assembly_of`;
+`Session::import_assembly`). **Export for Beverly is done.**
+- **Import:** a GLB with more than one object (or nesting) shows "Keep
+  its N objects as groups and components" in the Import dialog (on by
+  default). Each node becomes a group named after it (an unnamed Prism
+  group, written "Group", stays unnamed), nested, with the node's matrix
+  as its axes; nodes alike (the same mesh, children placed alike) become
+  instances of one component, named from Prism's `extras` or the first
+  node's name; Prism's own loose geometry (its top node marked
+  `"kind": "loose"`, added to the export for this) comes back loose. The
+  file's materials come in and stay on their faces. It is pasted as one
+  undo step (Paste's own rules: a component that is already in the
+  document, the same, is reused). A single object imports as before.
+- **Round trip** (Prism → GLB → Prism, tested): names, nesting, every
+  placement, the component and its three uses, materials, and the loose
+  box all come back. Two things change: duplicate sibling names come back
+  made unique ("Chunk", "Chunk 2"), and a group's material comes back on
+  its faces (the GLB carries the colour in the mesh, not on the object).
+- **Checked with another reader:** trimesh (Python) loads the structured
+  GLB: one shared mesh for a component's two instances, a mirrored copy
+  with a mirroring matrix.
+- **Left over:** the owner's check in Beverly (a wall in chunks; a
+  component used many times); setting a group's own axes (pivots) waits
+  for the Axes tool (Annotation & Sections); per-instance materials on a
+  shared component make a copy of its mesh (the colour is in the mesh).

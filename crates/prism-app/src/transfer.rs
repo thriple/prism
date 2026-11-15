@@ -24,6 +24,10 @@ struct Importing {
     y_up: bool,
     merge: bool,
     bytes: usize,
+    /// A GLB's objects (brief 35): kept as groups and components when
+    /// `keep` is on.
+    scene: Option<mesh::gltf::Scene>,
+    keep: bool,
 }
 
 /// The Export dialog.
@@ -130,7 +134,13 @@ impl Transfer {
                 chrome.status_note(format!("{} has no faces to import", o.name));
             }
             Ok(m) => {
+                let scene = (format == Format::Glb)
+                    .then(|| mesh::read_structured(&o.bytes).ok())
+                    .flatten()
+                    .filter(mesh::has_structure);
                 self.importing = Some(Importing {
+                    keep: scene.is_some(),
+                    scene,
                     name: o.name,
                     format,
                     stated: mesh::stated_unit(&o.bytes, format),
@@ -196,6 +206,13 @@ impl Transfer {
                     s.number.show(size.z)
                 ));
                 ui.add(SoftToggle::new(&mut i.y_up, "Y is up in the file"));
+                if let Some(sc) = &i.scene {
+                    let n = sc.nodes.len();
+                    ui.add(SoftToggle::new(
+                        &mut i.keep,
+                        format!("Keep its {n} objects as groups and components"),
+                    ));
+                }
                 ui.add(SoftToggle::new(
                     &mut i.merge,
                     "Merge coplanar triangles into faces",
@@ -217,6 +234,17 @@ impl Transfer {
             && yes
         {
             let scale = i.stated.unwrap_or(i.unit.metres());
+            // A GLB's objects as groups and components (brief 35).
+            if let Some(sc) = i.scene.as_ref().filter(|_| i.keep) {
+                let asm = mesh::assembly_of(sc, scale, i.y_up, i.merge);
+                let n = asm.placed().len();
+                if s.import_assembly(asm) {
+                    chrome.status_note(format!("Imported {} ({n} groups and components)", i.name));
+                } else {
+                    chrome.status_note(format!("{} had nothing to import", i.name));
+                }
+                return;
+            }
             // The file's materials come in too (Basic Materials part 3).
             let (model, sizes) = mesh::build_painted(&i.mesh, scale, i.y_up, i.merge);
             let materials: Vec<_> = i

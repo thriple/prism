@@ -2,7 +2,8 @@
 //! brief 35: export for Beverly and other game engines): one named node per
 //! group and component instance, nested as in Prism, each with its own
 //! axes as its transform and its mesh in those local coordinates; a
-//! component's mesh is stored once and shared by its instances.
+//! component's mesh is stored once and shared by its instances. Part 2
+//! reads that structure back ([`assembly_of`]).
 
 use std::collections::BTreeMap;
 
@@ -12,7 +13,8 @@ use prism_topo::{MaterialId, Model};
 use serde_json::json;
 
 use super::gltf::{Node, Scene};
-use super::{ExportOptions, Mesh, MeshMaterial, to_painted_mesh};
+use super::{ExportOptions, Mesh, MeshMaterial, build_painted, to_painted_mesh};
+use prism_doc::Definition;
 
 /// The document as a GLB with its groups and components kept. `name`
 /// names the node holding the loose geometry at the top (the document's
@@ -41,6 +43,8 @@ pub fn structured(asm: &Assembly, o: &ExportOptions, name: &str, visible_only: b
         roots.push(b.push(Node {
             name: names.unique(name),
             mesh: Some(k),
+            // Loose geometry, not a group: it comes back loose.
+            extras: Some(json!({"prism": {"kind": "loose"}})),
             ..Node::default()
         }));
     }
@@ -214,4 +218,214 @@ pub(super) fn matrix(t: &DAffine3, o: &ExportOptions) -> [f64; 16] {
         l.x_axis.x, l.x_axis.y, l.x_axis.z, 0.0, l.y_axis.x, l.y_axis.y, l.y_axis.z, 0.0,
         l.z_axis.x, l.z_axis.y, l.z_axis.z, 0.0, p.x, p.y, p.z, 1.0,
     ]
+}
+
+/// The file's structure, read (brief 35, part 2).
+pub fn read_structured(bytes: &[u8]) -> Result<Scene, crate::FileError> {
+    super::gltf::read_scene(bytes)
+}
+
+/// Whether a file's scene is worth keeping as groups: more than one node,
+/// or nesting. A single object imports as plain geometry, as before.
+pub fn has_structure(sc: &Scene) -> bool {
+    let objects = sc
+        .nodes
+        .iter()
+        .filter(|n| n.mesh.is_some() || !n.children.is_empty())
+        .count();
+    objects > 1 || sc.roots.iter().any(|r| !sc.nodes[*r].children.is_empty())
+}
+
+fn prism_kind(n: &Node) -> Option<&str> {
+    n.extras.as_ref()?.get("prism")?.get("kind")?.as_str()
+}
+
+/// A file matrix (column-major, the file's frame and unit) as a placement
+/// in Prism's.
+fn placement(m: &[f64; 16], metres_per_unit: f64, y_up: bool) -> DAffine3 {
+    let f = DAffine3::from_mat4(prism_math::DMat4::from_cols_array(m));
+    let r = if y_up {
+        DMat3::from_cols(DVec3::X, -DVec3::Z, DVec3::Y)
+    } else {
+        DMat3::IDENTITY
+    };
+    DAffine3 {
+        matrix3: r.transpose() * f.matrix3 * r,
+        translation: r.transpose() * f.translation * metres_per_unit,
+    }
+}
+
+/// A file's scene as an assembly to paste: each node a group (named after
+/// it), nested, its matrix its axes; nodes alike that share a mesh (or
+/// that Prism marked as components) become instances of one component;
+/// Prism's own loose geometry comes back loose. Materials come in as the
+/// file has them.
+pub fn assembly_of(sc: &Scene, metres_per_unit: f64, y_up: bool, merge: bool) -> Assembly {
+    // Each mesh as faces in its own coordinates, and each material's
+    // texture size from the first mesh that uses it.
+    let mut models = Vec::with_capacity(sc.meshes.len());
+    let mut sizes: Vec<Option<[f64; 2]>> = vec![None; sc.materials.len()];
+    for m in &sc.meshes {
+        let mesh = Mesh {
+            materials: sc.materials.clone(),
+            ..m.clone()
+        };
+        let (model, s) = build_painted(&mesh, metres_per_unit, y_up, merge);
+        for (k, size) in s.into_iter().enumerate() {
+            if sizes[k].is_none() && m.polygon_materials.contains(&Some(k as u32)) {
+                sizes[k] = Some(size);
+            }
+        }
+        models.push(model);
+    }
+    let mut b = Reader {
+        sc,
+        models,
+        metres_per_unit,
+        y_up,
+        defs: BTreeMap::from([(ROOT, Definition::default())]),
+        names: BTreeMap::new(),
+        keys: BTreeMap::new(),
+        shared: BTreeMap::new(),
+        next_instance: 0,
+    };
+    // How many nodes look alike (same mesh, same children placed alike).
+    let mut alike: BTreeMap<String, usize> = BTreeMap::new();
+    for (k, n) in sc.nodes.iter().enumerate() {
+        let key = b.key(k, 0);
+        if n.mesh.is_some() {
+            *alike.entry(key).or_default() += 1;
+        }
+    }
+    for r in sc.roots.clone() {
+        let n = &sc.nodes[r];
+        let unplaced = n
+            .matrix
+            .is_none_or(|m| m == prism_math::DMat4::IDENTITY.to_cols_array());
+        if prism_kind(n) == Some("loose") && unplaced && n.children.is_empty() {
+            if let Some(m) = n.mesh {
+                let geo = b.models[m].clone();
+                b.defs.get_mut(&ROOT).expect("a root").model.append(&geo);
+            }
+            continue;
+        }
+        let (id, inst) = b.instance(r, &alike, 0);
+        b.defs
+            .get_mut(&ROOT)
+            .expect("a root")
+            .instances
+            .insert(id, inst);
+    }
+    let next_def = b.defs.keys().map(|k| k.0 + 1).max().unwrap_or(1);
+    let mut asm = Assembly::from_parts(b.defs, next_def, b.next_instance)
+        .unwrap_or_else(|_| Assembly::with_model(Model::new()));
+    for (id, name) in b.names {
+        asm.set_name(id, &name);
+    }
+    // Materials in the file's order, so face k's material is the k-th.
+    let mut map = BTreeMap::new();
+    for (k, m) in sc.materials.iter().enumerate() {
+        let (mat, image) = m.to_doc(sizes[k].unwrap_or([1.0, 1.0]));
+        if let Some(i) = image {
+            asm.add_image(i);
+        }
+        map.insert(MaterialId(k as u32), asm.add_material(mat));
+    }
+    let ids: Vec<DefId> = asm.defs().map(|(k, _)| k).collect();
+    for k in ids {
+        if let Some(d) = asm.def_mut(k) {
+            prism_doc::material::remap(&mut d.model, &map);
+        }
+    }
+    asm
+}
+
+struct Reader<'a> {
+    sc: &'a Scene,
+    models: Vec<Model>,
+    metres_per_unit: f64,
+    y_up: bool,
+    defs: BTreeMap<DefId, Definition>,
+    names: BTreeMap<InstanceId, String>,
+    keys: BTreeMap<usize, String>,
+    /// A component's definition, by its nodes' likeness.
+    shared: BTreeMap<String, DefId>,
+    next_instance: u32,
+}
+
+impl Reader<'_> {
+    /// What makes nodes alike: their mesh, and their children's likeness
+    /// and placement (not names).
+    fn key(&mut self, k: usize, depth: usize) -> String {
+        if let Some(x) = self.keys.get(&k) {
+            return x.clone();
+        }
+        let n = &self.sc.nodes[k];
+        let mut s = format!("m{:?}[", n.mesh);
+        if depth < 64 {
+            for c in n.children.clone() {
+                let ck = self.key(c, depth + 1);
+                let m = self.sc.nodes[c].matrix.unwrap_or([0.0; 16]);
+                s.push_str(&format!("{ck}@{m:?};"));
+            }
+        }
+        s.push(']');
+        self.keys.insert(k, s.clone());
+        s
+    }
+
+    fn instance(
+        &mut self,
+        k: usize,
+        alike: &BTreeMap<String, usize>,
+        depth: usize,
+    ) -> (InstanceId, Instance) {
+        let n = &self.sc.nodes[k];
+        let key = self.key(k, 0);
+        let component = prism_kind(n) == Some("component")
+            || (prism_kind(n).is_none() && alike.get(&key).copied().unwrap_or(0) > 1);
+        let def = match self.shared.get(&key).filter(|_| component) {
+            Some(d) => *d,
+            None => {
+                let name = component.then(|| {
+                    n.extras
+                        .as_ref()
+                        .and_then(|e| e.get("prism")?.get("definition")?.as_str())
+                        .map_or_else(|| n.name.clone(), str::to_owned)
+                });
+                let model = n.mesh.map(|m| self.models[m].clone()).unwrap_or_default();
+                let mut instances = BTreeMap::new();
+                if depth < 64 {
+                    for c in n.children.clone() {
+                        let (id, inst) = self.instance(c, alike, depth + 1);
+                        instances.insert(id, inst);
+                    }
+                }
+                let id = DefId(self.defs.len() as u32);
+                self.defs.insert(
+                    id,
+                    Definition {
+                        model,
+                        instances,
+                        name,
+                    },
+                );
+                if component {
+                    self.shared.insert(key, id);
+                }
+                id
+            }
+        };
+        let id = InstanceId(self.next_instance);
+        self.next_instance += 1;
+        // A group keeps its name (an unnamed one was written "Group"); a
+        // component instance is named by its definition.
+        if !component && n.name != "Group" {
+            self.names.insert(id, n.name.clone());
+        }
+        let transform = n.matrix.map_or(DAffine3::IDENTITY, |m| {
+            placement(&m, self.metres_per_unit, self.y_up)
+        });
+        (id, Instance { def, transform })
+    }
 }

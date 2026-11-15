@@ -5656,3 +5656,20 @@ fn a_face_is_rounded_inside_an_open_group() {
     undo(&mut d);
     assert_eq!(d.s.work_model().face_count(), 6);
 }
+
+/// Brief 35, part 2: a file's objects come in as groups, one undo step.
+#[test]
+fn imported_objects_become_groups_in_one_step() {
+    let mut src = Driver::empty();
+    let g = grouped_box(&mut src);
+    let mut asm = src.s.document().assembly().clone();
+    asm.set_name(g, "Crate");
+    let mut d = Driver::empty();
+    assert!(d.s.import_assembly(asm));
+    let root = d.s.document().assembly().root();
+    assert_eq!(root.instances.len(), 1);
+    let id = *root.instances.keys().next().unwrap();
+    assert_eq!(d.s.document().assembly().name_of(id), Some("Crate"));
+    undo(&mut d);
+    assert!(d.s.document().assembly().root().instances.is_empty());
+}

@@ -1,6 +1,7 @@
 **New in this build: export for game engines.**
 - **File > Export > Game engine (Beverly, Godot, Unity)** writes a GLB where every group and component is its own named object, nested as in Prism, turning about its own origin. A component used many times is stored once and shared.
 - GLB from the media preset keeps groups too; tick **Merge into one mesh** for the old single mesh.
+- **Importing a GLB** with several objects brings them in as groups and components (named, nested, placed as they were). A single object imports as before.
 - Rounding many edges at once (Fillet Joins) is in from the last builds.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.

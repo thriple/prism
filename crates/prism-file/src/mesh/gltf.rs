@@ -396,6 +396,19 @@ impl Doc<'_> {
         let n = self.get("nodes", i)?;
         let world = parent * node_matrix(n);
         if let Some(mi) = n.get("mesh").and_then(Value::as_u64) {
+            self.mesh_into(mi, world, m)?;
+        }
+        if let Some(children) = n.get("children").and_then(Value::as_array) {
+            for c in children.iter().filter_map(Value::as_u64) {
+                self.node(c, world, depth + 1, m)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Mesh `mi`'s triangles, placed by `world`, added to `m`.
+    fn mesh_into(&self, mi: u64, world: DMat4, m: &mut Mesh) -> Result<(), FileError> {
+        {
             let mesh = self.get("meshes", mi)?;
             for p in mesh
                 .get("primitives")
@@ -452,17 +465,12 @@ impl Doc<'_> {
                 }
             }
         }
-        if let Some(children) = n.get("children").and_then(Value::as_array) {
-            for c in children.iter().filter_map(Value::as_u64) {
-                self.node(c, world, depth + 1, m)?;
-            }
-        }
         Ok(())
     }
 }
 
-pub fn read(b: &[u8]) -> Result<Mesh, FileError> {
-    let (doc, bin) = split(b)?;
+/// The file's buffers: the GLB's binary chunk, or embedded data.
+fn buffers(doc: &Value, bin: Option<&[u8]>) -> Result<Vec<Vec<u8>>, FileError> {
     let mut buffers = Vec::new();
     for (k, buf) in doc
         .get("buffers")
@@ -484,13 +492,13 @@ pub fn read(b: &[u8]) -> Result<Mesh, FileError> {
             }
         }
     }
-    let d = Doc { doc: &doc, buffers };
-    let mut m = Mesh {
-        materials: d.materials(),
-        ..Mesh::default()
-    };
+    Ok(buffers)
+}
+
+/// The scene's top nodes.
+fn roots(doc: &Value) -> Vec<u64> {
     let scene = doc.get("scene").and_then(Value::as_u64).unwrap_or(0);
-    let roots: Vec<u64> = match doc
+    match doc
         .get("scenes")
         .and_then(|s| s.get(scene as usize))
         .and_then(|s| s.get("nodes"))
@@ -502,7 +510,88 @@ pub fn read(b: &[u8]) -> Result<Mesh, FileError> {
             .and_then(Value::as_array)
             .map_or(0, Vec::len) as u64)
             .collect(),
+    }
+}
+
+/// The file as a scene (brief 35): its nodes with their names, matrices,
+/// children and extras, and its meshes each in its own coordinates.
+pub fn read_scene(b: &[u8]) -> Result<Scene, FileError> {
+    let (doc, bin) = split(b)?;
+    let d = Doc {
+        doc: &doc,
+        buffers: buffers(&doc, bin)?,
     };
+    let materials = d.materials();
+    let n_meshes = doc
+        .get("meshes")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let mut meshes = Vec::with_capacity(n_meshes);
+    for mi in 0..n_meshes {
+        let mut m = Mesh {
+            materials: materials.clone(),
+            ..Mesh::default()
+        };
+        d.mesh_into(mi as u64, DMat4::IDENTITY, &mut m)?;
+        m.materials.clear();
+        if m.uvs.iter().all(|q| *q == prism_math::DVec2::ZERO) {
+            m.uvs.clear();
+        }
+        meshes.push(m);
+    }
+    let nodes: Vec<Node> = doc
+        .get("nodes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(k, n)| Node {
+            name: n
+                .get("name")
+                .and_then(Value::as_str)
+                .map_or_else(|| format!("Object {}", k + 1), str::to_owned),
+            matrix: Some(node_matrix(n).to_cols_array()),
+            mesh: n
+                .get("mesh")
+                .and_then(Value::as_u64)
+                .map(|m| m as usize)
+                .filter(|m| *m < n_meshes),
+            children: n
+                .get("children")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_u64)
+                .map(|c| c as usize)
+                .collect(),
+            extras: n.get("extras").cloned(),
+        })
+        .collect();
+    let count = nodes.len();
+    let roots = roots(&doc)
+        .into_iter()
+        .map(|r| r as usize)
+        .filter(|r| *r < count)
+        .collect();
+    Ok(Scene {
+        materials,
+        meshes,
+        nodes,
+        roots,
+    })
+}
+
+pub fn read(b: &[u8]) -> Result<Mesh, FileError> {
+    let (doc, bin) = split(b)?;
+    let d = Doc {
+        doc: &doc,
+        buffers: buffers(&doc, bin)?,
+    };
+    let mut m = Mesh {
+        materials: d.materials(),
+        ..Mesh::default()
+    };
+    let roots = roots(&doc);
     for r in roots {
         d.node(r, DMat4::IDENTITY, 0, &mut m)?;
     }
