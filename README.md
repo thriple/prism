@@ -1,70 +1,27 @@
-# Prism handoff package
+# Prism
 
-What is in this folder, and how to use it with Claude Code.
+Prism is a 3D modelling program written in Rust. It aims for SketchUp's easy tool feel, with exact curved geometry underneath. A path-traced renderer and simulations come later.
 
-| File | What it is |
-|---|---|
-| `CLAUDE.md` | Working rules. Put it in the root of the repo. |
-| `PLAN.md` | The full plan. Put it in the root of the repo. |
-| `docs/DECISIONS.md` | Open decisions, with the defaults to use until you decide |
-| `docs/briefs/01-skeleton.md` | Chunk 1: native and web window, CI |
-| `docs/briefs/02-core-model.md` | Chunk 2: the geometry core, with tests |
-| `docs/briefs/03-actions-and-keys.md` | Chunk 3: action registry, menus, dock, hotkeys |
-| `docs/briefs/04-viewport.md` | Chunk 4: the wgpu viewport, camera, lines, faces, picking and highlighting |
-| `docs/briefs/05-inference-and-drawing.md` | Chunk 5: the inference engine, Line, Rectangle, the measurement box, Select |
-| `docs/briefs/06-edit-tools.md` | Chunk 6: Push/Pull, Move and copy, Rotate, Scale, Eraser |
-| `docs/briefs/07-edit-tools-2.md` | Chunk 6, part 2: Offset, Tape Measure, Protractor and guides |
-| `docs/briefs/08-files-and-formats.md` | Chunk 7: `.prism` save and open, autosave and recovery, units |
-| `docs/briefs/09-files-and-formats-2.md` | Chunk 7, part 2: mesh import and export, drag and drop |
-| `docs/briefs/10-edit-tools-3.md` | Chunk 6, part 3: Intersect Faces and snapping to where faces cross |
-| `docs/briefs/11-files-and-formats-3.md` | Chunk 7, part 3: tabs, and double-click opens in the running Prism |
-| `docs/acceptance/golden-cases.json` | 19 test cases from the prototype, for Core Model |
-| `docs/acceptance/core-model-acceptance.md` | The same cases in words, plus the rules every model must satisfy |
-| `docs/prototype/` | The prototype's code and a guide to reading it |
-| `docs/UI-STYLE.md` | The look every screen must use: Motion Kit, dark Soft glass (tokens, motion, which component to copy) |
-| `docs/ui-kit/` | The Motion Kit itself (React, for reference). Open `soft.html` and `demo.html` in a browser |
+It runs on Windows, macOS and in the browser.
 
-## Putting it in the repo
+## Download
 
-This repository is the handoff. Start Claude Code in a clone of it.
+The newest Windows and macOS builds are on the [latest release](https://github.com/thriple/prism/releases/tag/latest). Older builds stay on the Releases page as "Prism build N".
 
-## What to say to Claude Code
+## Build it yourself
 
-Start with chunk 1 and only move on when its acceptance list is done.
-
-**Chunk 1.** "Read CLAUDE.md, PLAN.md and docs/DECISIONS.md. Then build the chunk in docs/briefs/01-skeleton.md."
-
-**Soft Theme (before Chunk 3).** "Read CLAUDE.md and docs/UI-STYLE.md, open docs/ui-kit/soft.html and demo.html in a browser, then build docs/briefs/02a-soft-theme.md."
-
-**Chunk 2.** "Read CLAUDE.md, then build docs/briefs/02-core-model.md. The golden cases in docs/acceptance/golden-cases.json must all pass."
-
-**Chunk 3.** "Read CLAUDE.md, then build docs/briefs/03-actions-and-keys.md."
-
-**Chunk 4.** "Read CLAUDE.md, then build docs/briefs/04-viewport.md. The prototype shows the behaviour; build it the way the brief says, not the prototype's way."
-
-**Chunk 5.** "Read CLAUDE.md, then build docs/briefs/05-inference-and-drawing.md."
-
-**Chunk 6.** "Read CLAUDE.md, then build docs/briefs/06-edit-tools.md."
-
-**Chunk 6, part 2.** "Read CLAUDE.md, then build docs/briefs/07-edit-tools-2.md."
-
-**Chunk 7.** "Read CLAUDE.md, then build docs/briefs/08-files-and-formats.md."
-
-**Chunk 7, part 2.** "Read CLAUDE.md, then build docs/briefs/09-files-and-formats-2.md."
-
-Soft Theme, Chunk 2 and Chunk 3 can run in separate sessions (Chunk 3 should come after Soft Theme, since it builds the menus in that look). Chunks 2 and 3 do not depend on each other, so they can run in separate sessions once chunk 1 is merged. Both need chunk 1.
-
-## What is deliberately not here yet
-
-The NURBS test, the dependency and licence table, and the performance targets (see DECISIONS.md).
-
-## Building and running
-
-```
-cargo run -p prism-app          # native window
-trunk serve                     # web build at http://127.0.0.1:8080 (install with: cargo install trunk --locked)
+```bash
+cargo run -p prism-app
 ```
 
-CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, Windows and macOS builds and the web build on every push. Pushes to `main` publish the web build to GitHub Pages. Every push also rebuilds the **latest** release: https://github.com/thriple/prism/releases/tag/latest (Windows zip and macOS `.app` zip). Each build is also kept as "Prism build N" on the Releases page (newest 30), so an older one can be downloaded again.
+For the web version, install [Trunk](https://trunkrs.dev) and run `trunk serve`, then open http://127.0.0.1:8080.
+
+## Where to read more
+
+- `PLAN.md`: the full plan and where the work stands
+- `NOTES.md`: recent changes and loose ends
+- `docs/`: decisions, briefs for each piece of work, and the UI style guide
+
+## Try it in your browser
 
 https://thriple.github.io/prism/
