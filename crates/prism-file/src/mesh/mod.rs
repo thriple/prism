@@ -13,13 +13,15 @@ use prism_topo::{FaceId, Model};
 use crate::FileError;
 
 mod build;
-mod gltf;
+pub mod gltf;
 mod obj;
 mod ply;
+mod scene;
 mod stl;
 mod threemf;
 
 pub use build::{build, build_painted};
+pub use scene::{export_structured, structured};
 
 /// Triangles or polygons, as indices into `positions`.
 #[derive(Clone, Debug, Default, PartialEq)]

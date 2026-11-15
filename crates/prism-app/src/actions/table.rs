@@ -77,6 +77,13 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "exp.game",
+        name: "Game engine (Beverly, Godot, Unity)",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "file.recent",
         name: "No recent files",
         key: "",
@@ -1560,6 +1567,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                     Item::Action("exp.dxf"),
                     Item::Action("exp.3mf"),
                     Item::Action("exp.gltf"),
+                    Item::Action("exp.game"),
                 ],
             ),
             Item::Separator,
@@ -2329,6 +2337,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     (
         "Fillet Joins: round many edges at once with clean corners (double-click a face, Shift-click, selection, whole lines)",
+        true,
+    ),
+    (
+        "Export for game engines: groups and components as named objects in GLB, components shared",
         true,
     ),
     (

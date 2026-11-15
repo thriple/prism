@@ -181,6 +181,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id.starts_with("file.")
         || id == "exp.3mf"
         || id == "exp.gltf"
+        || id == "exp.game"
         || id == "isect.model"
         || id == "isect.sel"
         // Everyday Commands part 2 (brief 33): the Camera menu.
@@ -559,7 +560,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 23] = [
+const BUILT_BEHAVIOURS: [&str; 24] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -581,6 +582,8 @@ const BUILT_BEHAVIOURS: [&str; 23] = [
     "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles (Rotate), time budget, Ctrl+U",
     // Fillet Joins step C.
     "Fillet Joins: round many edges at once with clean corners (double-click a face, Shift-click, selection, whole lines)",
+    // Export for Beverly (brief 35).
+    "Export for game engines: groups and components as named objects in GLB, components shared",
     // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.
     "Exact circles, arcs and NURBS",
     "Model Health: reversed faces, holes, interior faces, nesting counts",

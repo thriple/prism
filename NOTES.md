@@ -3784,3 +3784,39 @@ Built 2026-11-14.
     worked from the drawn curve (within 0.1%); the kernel's is exact.
   - The owner's check by hand (a box's top double-clicked, then all
     twelve edges, then a chamfer) is waiting for the next release.
+
+## Export for Beverly, part 1: GLB keeps the structure (brief 35)
+Owner request 2026-11-15 (Beverly is the owner's Bevy game editor), put
+before Solids & CAD. Built 2026-11-15 (`prism-file/src/mesh/scene.rs`;
+the GLB writer in `mesh/gltf.rs` now writes a scene).
+- **What it does:** File > Export > **Game engine (Beverly, Godot, Unity)**
+  writes a GLB in metres, Y up, where every shown group and component
+  instance is its own node: named after the group (or "Group") or the
+  component, siblings that would share a name getting " 2", " 3" in id
+  order (so a re-export gives the same names in the same places), nested
+  as in Prism. Loose geometry at the top is one node named after the file.
+  Each node's matrix is its instance's transform (its own axes, mirroring
+  included), and its mesh is in those local coordinates, so a piece turns
+  about its own origin. A component's mesh is stored once and shared by
+  every instance (a group whose material shows on Default faces gets its
+  own copy, since the colour is in the mesh). Each node has
+  `extras: {"prism": {"kind": "group" | "component", "definition": ...}}`.
+- **The media preset too:** GLB from "glTF / OBJ / USD" now keeps the
+  structure by default (valid glTF for every program); **Merge into one
+  mesh** in the Export dialog gives the old single mesh, byte for byte
+  (a reference GLB made by the old writer is kept as a test). Exporting
+  only the selected faces is always merged.
+- **Group axes:** a group's origin is where Make Group puts it, the low
+  corner of its contents (its axes follow the world's). Prism has no way
+  yet to set a group's own axes (the Axes tool is greyed, Annotation &
+  Sections): for Beverly's pivots that tool should also move a group's
+  axes. Left for that chunk.
+- **Tests** (`prism-file/tests/structured.rs`): names and nesting with a
+  duplicate name; one shared mesh for a component used three times;
+  every vertex placed by the node matrices lands where the merged export
+  puts it; a group's origin is its node's translation with its mesh
+  offset to match; a mirrored copy's faces still face out (glTF flips the
+  winding under a mirroring matrix); two exports are identical; hidden
+  groups are left out (or kept when asked); the merged export is the same
+  bytes as before.
+- **Not checked yet:** opening the file in Beverly (owner).

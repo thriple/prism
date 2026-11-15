@@ -54,7 +54,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   sizes) and Rotate (matching angles) followed (NOTES "Closing gaps:
   Smart Guides in Scale and Rotate"). **Fillet Joins is done** (brief 32,
   four steps; NOTES "Fillet Joins step A" to "step D"; DECISIONS #37 to
-  #39's defaults in use until the owner answers). **Next: Solids & CAD**, which was moved up to follow
+  #39's defaults in use until the owner answers). **Export for Beverly**
+  (brief 35, owner request 2026-11-15, put before Solids & CAD): part 1,
+  GLB that keeps groups and components, is built (NOTES "Export for
+  Beverly, part 1"); **next: part 2**, reading that structure back.
+  Then **Solids & CAD**, which was moved up to follow
   it (it reuses the kernel bridge, `prism-ops/src/bridge.rs`). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many

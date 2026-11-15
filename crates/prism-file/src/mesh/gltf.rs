@@ -19,11 +19,56 @@ fn pad(v: &mut Vec<u8>, with: u8) {
     }
 }
 
+/// A node of a scene to write: a name, its transform in its parent (a
+/// column-major 4×4 matrix; None is none), its mesh (an index into
+/// `Scene::meshes`), its children (indices into `Scene::nodes`) and its
+/// `extras`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Node {
+    pub name: String,
+    pub matrix: Option<[f64; 16]>,
+    pub mesh: Option<usize>,
+    pub children: Vec<usize>,
+    pub extras: Option<Value>,
+}
+
+/// What a GLB holds: meshes (their `polygon_materials` index `materials`;
+/// their own `materials` lists are not used), and nodes placing them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Scene {
+    pub materials: Vec<MeshMaterial>,
+    pub meshes: Vec<Mesh>,
+    pub nodes: Vec<Node>,
+    /// The scene's top nodes.
+    pub roots: Vec<usize>,
+}
+
+/// One mesh in one node named "Prism": everything merged (the plain
+/// export, and the "Merge into one mesh" option).
 pub fn write(m: &Mesh) -> Vec<u8> {
-    let mut bin = Vec::new();
-    let mut views: Vec<Value> = Vec::new();
-    let mut accessors: Vec<Value> = Vec::new();
+    let mut mesh = m.clone();
+    let materials = std::mem::take(&mut mesh.materials);
+    write_scene(&Scene {
+        materials,
+        meshes: vec![mesh],
+        nodes: vec![Node {
+            name: "Prism".to_owned(),
+            mesh: Some(0),
+            ..Node::default()
+        }],
+        roots: vec![0],
+    })
+}
+
+/// A mesh's buffers and accessors, appended; its JSON.
+fn mesh_json(
+    m: &Mesh,
+    bin: &mut Vec<u8>,
+    views: &mut Vec<Value>,
+    accessors: &mut Vec<Value>,
+) -> Value {
     let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+    let start = bin.len();
     for p in &m.positions {
         for (k, c) in p.to_array().iter().enumerate() {
             let c = *c as f32;
@@ -35,12 +80,14 @@ pub fn write(m: &Mesh) -> Vec<u8> {
     if m.positions.is_empty() {
         (lo, hi) = ([0.0; 3], [0.0; 3]);
     }
-    views.push(json!({"buffer": 0, "byteOffset": 0, "byteLength": bin.len(), "target": 34962}));
+    views.push(
+        json!({"buffer": 0, "byteOffset": start, "byteLength": bin.len() - start, "target": 34962}),
+    );
     accessors.push(
-        json!({"bufferView": 0, "componentType": 5126, "count": m.positions.len(),
+        json!({"bufferView": views.len() - 1, "componentType": 5126, "count": m.positions.len(),
         "type": "VEC3", "min": lo, "max": hi}),
     );
-    let mut attributes = json!({"POSITION": 0});
+    let mut attributes = json!({"POSITION": accessors.len() - 1});
     if !m.uvs.is_empty() && m.uvs.len() == m.positions.len() {
         let at = bin.len();
         for q in &m.uvs {
@@ -87,9 +134,22 @@ pub fn write(m: &Mesh) -> Vec<u8> {
         primitives
             .push(json!({"attributes": attributes, "indices": accessors.len() - 1, "mode": 4}));
     }
+    json!({"primitives": primitives})
+}
+
+/// A scene as GLB bytes.
+pub fn write_scene(sc: &Scene) -> Vec<u8> {
+    let mut bin = Vec::new();
+    let mut views: Vec<Value> = Vec::new();
+    let mut accessors: Vec<Value> = Vec::new();
+    let meshes: Vec<Value> = sc
+        .meshes
+        .iter()
+        .map(|m| mesh_json(m, &mut bin, &mut views, &mut accessors))
+        .collect();
     // Materials, and their images in the binary chunk.
     let (mut images, mut textures, mut materials) = (Vec::new(), Vec::new(), Vec::new());
-    for mm in &m.materials {
+    for mm in &sc.materials {
         let mut pbr = json!({
             "baseColorFactor": mm.base,
             "metallicFactor": mm.metalness,
@@ -121,12 +181,32 @@ pub fn write(m: &Mesh) -> Vec<u8> {
         materials.push(x);
     }
     pad(&mut bin, 0);
+    let nodes: Vec<Value> = sc
+        .nodes
+        .iter()
+        .map(|n| {
+            let mut j = json!({"name": n.name});
+            if let Some(k) = n.mesh {
+                j["mesh"] = json!(k);
+            }
+            if let Some(m) = n.matrix {
+                j["matrix"] = json!(m);
+            }
+            if !n.children.is_empty() {
+                j["children"] = json!(n.children);
+            }
+            if let Some(e) = &n.extras {
+                j["extras"] = e.clone();
+            }
+            j
+        })
+        .collect();
     let mut doc = json!({
         "asset": {"version": "2.0", "generator": "Prism"},
         "scene": 0,
-        "scenes": [{"nodes": [0]}],
-        "nodes": [{"mesh": 0, "name": "Prism"}],
-        "meshes": [{"primitives": primitives}],
+        "scenes": [{"nodes": sc.roots}],
+        "nodes": nodes,
+        "meshes": meshes,
         "buffers": [{"byteLength": bin.len()}],
         "bufferViews": views,
         "accessors": accessors,

@@ -34,6 +34,9 @@ struct Exporting {
     selection_only: bool,
     unit: LengthUnit,
     y_up: bool,
+    /// GLB: everything as one mesh (off: groups and components stay
+    /// separate named objects, brief 35).
+    merge: bool,
 }
 
 #[derive(Default)]
@@ -44,6 +47,8 @@ pub struct Transfer {
 
 const PRINT: [Format; 2] = [Format::ThreeMf, Format::Stl];
 const MEDIA: [Format; 3] = [Format::Glb, Format::Obj, Format::Ply];
+/// Game engines (brief 35): GLB, metres, Y up, the structure kept.
+const GAME: [Format; 1] = [Format::Glb];
 const UNITS: [LengthUnit; 4] = [
     LengthUnit::Millimetres,
     LengthUnit::Centimetres,
@@ -66,6 +71,14 @@ impl Transfer {
             },
             "exp.3mf" => self.start_export(&PRINT, "Export for 3D printing", s),
             "exp.gltf" => self.start_export(&MEDIA, "Export for media and the web", s),
+            "exp.game" => {
+                self.start_export(&GAME, "Export for a game engine (Beverly, Godot, Unity)", s);
+                if let Some(e) = &mut self.exporting {
+                    e.unit = LengthUnit::Metres;
+                    e.y_up = true;
+                    e.selection_only = false;
+                }
+            }
             _ => {}
         }
     }
@@ -80,6 +93,7 @@ impl Transfer {
             selection_only: !s.selection().faces.is_empty(),
             unit: o.unit,
             y_up: o.y_up,
+            merge: false,
         });
     }
 
@@ -253,6 +267,14 @@ impl Transfer {
                 if has_selection {
                     ui.add(SoftToggle::new(&mut e.selection_only, "Only the selected faces"));
                 }
+                if e.formats[e.format] == Format::Glb && !(has_selection && e.selection_only) {
+                    ui.add(SoftToggle::new(&mut e.merge, "Merge into one mesh"));
+                    if !e.merge {
+                        ui.label(
+                            "Each group and component is its own named object, with its own axes; a component's mesh is stored once.",
+                        );
+                    }
+                }
                 ui.label(
                     "A mesh keeps the shape as triangles: exact curves and faces with holes become triangles.",
                 );
@@ -290,8 +312,21 @@ impl Transfer {
             } else {
                 faces.as_ref()
             };
-            // OBJ with materials is several files (its .mtl and images).
-            let make = |stem: &str| mesh::export_files(model, only, &o, asm, stem);
+            // GLB keeps groups and components as named objects unless
+            // merged (brief 35); OBJ with materials is several files (its
+            // .mtl and images).
+            let structured = f == Format::Glb && !e.merge && faces.is_none();
+            let doc = s.document().assembly();
+            let make = |stem: &str| {
+                if structured {
+                    vec![(
+                        format!("{stem}.glb"),
+                        mesh::export_structured(doc, &o, stem, true),
+                    )]
+                } else {
+                    mesh::export_files(model, only, &o, asm, stem)
+                }
+            };
             // Check what was written (PLAN 1.3): printing formats must be
             // watertight. The export still happens.
             let printing = matches!(f.extension(), "stl" | "3mf");

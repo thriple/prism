@@ -1,9 +1,7 @@
-**New in this build: round many edges at once (Fillet Joins).**
-- With the Fillet / Chamfer tool, **double-click a face** to round all its edges. Corners join cleanly: a mitre where two rounds meet, a ball where three do.
-- **Shift-click** edges to gather them, then press **Enter** (or select them first, then click or press Enter).
-- A line drawn in pieces is rounded as a whole.
-- Type a new size, or change it in the Fillet window, right after a round to change the whole round at once. One undo takes it back.
-- Pulling the flat face beside a lofted face now works (last build) and is still in.
+**New in this build: export for game engines.**
+- **File > Export > Game engine (Beverly, Godot, Unity)** writes a GLB where every group and component is its own named object, nested as in Prism, turning about its own origin. A component used many times is stored once and shared.
+- GLB from the media preset keeps groups too; tick **Merge into one mesh** for the old single mesh.
+- Rounding many edges at once (Fillet Joins) is in from the last builds.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

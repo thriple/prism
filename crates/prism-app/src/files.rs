@@ -246,7 +246,9 @@ impl Files {
             "file.save" => self.save(false, None, s, chrome),
             "file.saveas" => self.save(true, None, s, chrome),
             "file.docsettings" => self.settings_open = true,
-            "file.import" | "exp.3mf" | "exp.gltf" => self.transfer.action(id, s, chrome),
+            "file.import" | "exp.3mf" | "exp.gltf" | "exp.game" => {
+                self.transfer.action(id, s, chrome)
+            }
             _ => {
                 if let Some(n) = id
                     .strip_prefix("file.recent")
