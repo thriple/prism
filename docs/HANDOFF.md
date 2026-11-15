@@ -59,8 +59,14 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   GLB keeps groups and components and reads them back (NOTES "Export for
   Beverly, part 1" and "part 2"). **Group Axes** (brief 36, owner
   request, put before Solids & CAD) is done: Change Axes, the Axes tool,
-  Reset Axes and Axes to Centre (NOTES "Group Axes"). **Next: Solids & CAD**, which was moved up to follow
-  it (it reuses the kernel bridge, `prism-ops/src/bridge.rs`). The owner also floated a chat window in Prism (NOTES "Owner idea
+  Reset Axes and Axes to Centre (NOTES "Group Axes"). **Solids & CAD**
+  (moved up to follow it; it reuses the kernel bridge,
+  `prism-ops/src/bridge.rs`) **part 1 is built** (brief 37, 2026-11-15):
+  Solid > Validate and Heal, the Solids window, MCP `validate_solids`
+  and `heal` (NOTES "Solids & CAD part 1"). **Next: Angle Guides**
+  (owner request 2026-11-15, PLAN 6.0: Rotate's Smart Guides match any
+  angle a neighbour's edges make), then Solids & CAD part 2 (exact
+  planar booleans). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no

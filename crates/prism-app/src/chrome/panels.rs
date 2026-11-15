@@ -23,6 +23,9 @@ pub enum PanelOp {
     /// Model Health: select a row's items, or run its fix.
     HealthSelect(&'static str),
     HealthFix(&'static str),
+    /// The Solids window: select a solid, or heal.
+    SolidSelect(prism_tools::session::SolidOf),
+    Heal,
     /// View Settings: the new view style.
     View(prism_view::ViewStyle),
     /// The Materials window.
@@ -45,6 +48,8 @@ pub struct PanelData {
     pub tags: Vec<(TagId, String, bool, usize)>,
     /// Model Health's rows (computed when the model changes while open).
     pub health: Vec<prism_tools::HealthRow>,
+    /// The Solids window's rows (computed when the model changes while open).
+    pub solids: Vec<prism_tools::session::SolidRow>,
     /// View Settings' style.
     pub view: prism_view::ViewStyle,
     /// The Materials window: the document's materials, the Paint Bucket's
@@ -67,6 +72,10 @@ pub struct Panels {
     pub info: bool,
     pub tags: bool,
     pub health: bool,
+    /// The Solids window (Solid > Validate and Heal), and what the last
+    /// Heal did.
+    pub solids: bool,
+    pub healed: Option<String>,
     /// View Settings.
     pub view: bool,
     /// The Materials window, and the chosen material's name being edited.
@@ -103,6 +112,7 @@ impl Panels {
             || self.info
             || self.tags
             || self.health
+            || self.solids
             || self.view
             || self.materials
     }
@@ -141,6 +151,7 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     super::components::card(chrome, ui, &mut p.folded);
                     tags(ui, &mut p, &data, &mut ops);
                     health(ui, &mut p, &data, &mut ops);
+                    solids(ui, &mut p, &data, &mut ops);
                     view(ui, &mut p, &data, &mut ops);
                     // Room for the last card's shadow.
                     ui.add_space(size::GAP);
@@ -452,6 +463,67 @@ fn health(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>)
         });
     if after_card(ui, &mut p.folded, "Model Health", r) {
         p.health = false;
+    }
+}
+
+/// Solid > Validate and Heal (Solids & CAD part 1, brief 37).
+fn solids(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
+    if !p.solids {
+        return;
+    }
+    let valid = data.solids.iter().filter(|r| r.valid).count();
+    let r = SideCard::new("Solids")
+        .subtitle(match data.solids.len() {
+            0 => "No faces".to_owned(),
+            n if valid == n => format!("{n} valid"),
+            n => format!("{valid} of {n} valid"),
+        })
+        .show(ui, p.folded.contains("Solids"), |ui| {
+            for row in &data.solids {
+                ui.horizontal_wrapped(|ui| {
+                    let name = ui.add(
+                        egui::Label::new(RichText::new(&row.name).color(color::INK))
+                            .sense(egui::Sense::click()),
+                    );
+                    if name.clicked() {
+                        ops.push(PanelOp::SolidSelect(row.of.clone()));
+                    }
+                    let (word, colour) = if row.valid {
+                        ("Valid", color::MUTED)
+                    } else {
+                        ("Not a solid", color::INK)
+                    };
+                    ui.label(RichText::new(word).color(colour));
+                    if let Some(v) = &row.volume {
+                        ui.label(RichText::new(v).font(theme::mono()).color(color::MUTED));
+                    }
+                });
+                for why in &row.reasons {
+                    ui.label(RichText::new(format!("  {why}")).color(color::MUTED));
+                }
+                if let Some(note) = row.note {
+                    ui.label(RichText::new(format!("  {note}")).color(color::MUTED));
+                }
+            }
+            ui.add_space(size::MENU_PAD);
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add(SoftButton::new("Heal").small())
+                    .on_hover_text(
+                        "Weld near misses, fill flat holes, orient faces, remove inside faces",
+                    )
+                    .clicked()
+                {
+                    ops.push(PanelOp::Heal);
+                }
+                if let Some(h) = &p.healed {
+                    ui.label(RichText::new(h).color(color::MUTED));
+                }
+            });
+            ui.label(RichText::new("Click a name to select and zoom to it.").color(color::MUTED));
+        });
+    if after_card(ui, &mut p.folded, "Solids", r) {
+        p.solids = false;
     }
 }
 

@@ -43,6 +43,7 @@ mod round;
 mod scalebox;
 mod shapes;
 mod smart;
+mod solids;
 mod texpos;
 mod views;
 use crate::units::NumberFormat;
@@ -64,6 +65,7 @@ pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
 pub use smart::BUDGET_MS as SMART_BUDGET_MS;
+pub use solids::{SolidOf, SolidRow};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
 pub use views::{LOOK, WALK, WINDOW};
 

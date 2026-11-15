@@ -49,6 +49,11 @@ impl Host for AppHost<'_> {
             "get_model" => self.model(),
             "get_selection" => self.selection(),
             "get_health" => self.health(),
+            "validate_solids" => self.solids(),
+            "heal" => {
+                let did = self.viewport.session.heal_solids();
+                json!({"healed": did, "solids": self.solids()})
+            }
             "list_actions" => self.actions(args.get("query").and_then(Value::as_str)),
             "get_geometry" => self.geometry(
                 args.get("limit")
@@ -200,6 +205,32 @@ impl AppHost<'_> {
                     "count": r.count,
                     "detail": r.detail,
                     "fix": r.fix,
+                })
+            })
+            .collect();
+        json!(rows)
+    }
+
+    fn solids(&self) -> Value {
+        use prism_tools::session::SolidOf;
+        let rows: Vec<Value> = self
+            .viewport
+            .session
+            .solid_rows()
+            .into_iter()
+            .map(|r| {
+                let (faces, group) = match &r.of {
+                    SolidOf::Faces(f) => (f.iter().map(|x| x.0).collect::<Vec<_>>(), None),
+                    SolidOf::Group(g) => (Vec::new(), Some(g.0)),
+                };
+                json!({
+                    "name": r.name,
+                    "valid": r.valid,
+                    "volume": r.volume,
+                    "reasons": r.reasons,
+                    "note": r.note,
+                    "faces": faces,
+                    "group": group,
                 })
             })
             .collect();
@@ -712,6 +743,53 @@ mod tests {
         });
         let files = Files::new(&viewport.session, 1);
         (chrome, viewport, files)
+    }
+
+    /// Validate and Heal over MCP (brief 37): a box is valid; with its top
+    /// gone it is not, and `heal` fills it in one undo step.
+    #[test]
+    fn validate_solids_and_heal_a_box() {
+        let doc = prism_tools::scenes::cube();
+        let mut m = doc.model().clone();
+        let top = m
+            .faces()
+            .find(|(_, f)| f.plane().is_some_and(|p| p.normal.z > 0.9))
+            .map(|(id, _)| id)
+            .unwrap();
+        let (mut chrome, mut viewport, mut files) =
+            parts(prism_doc::Document::with_model(m.clone()));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let r = value(h.call("validate_solids", &json!({})));
+        assert_eq!(r[0]["valid"], true, "{r}");
+        assert_eq!(r[0]["volume"], "8.000 m³");
+        assert_eq!(r[0]["faces"].as_array().unwrap().len(), 6);
+        m.remove_face(top);
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::with_model(m));
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let r = value(h.call("validate_solids", &json!({})));
+        assert_eq!(r[0]["valid"], false);
+        assert_eq!(r[0]["reasons"], json!(["4 open edges (holes)"]));
+        let r = value(h.call("heal", &json!({})));
+        assert_eq!(r["healed"], "Filled 1 hole");
+        assert_eq!(r["solids"][0]["valid"], true, "{r}");
+        value(h.call("run_action", &json!({"id": "edit.undo"})));
+        assert_eq!(
+            value(h.call("validate_solids", &json!({})))[0]["valid"],
+            false
+        );
     }
 
     #[test]

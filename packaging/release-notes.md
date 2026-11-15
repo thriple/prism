@@ -1,8 +1,8 @@
-**New in this build: group axes.**
-- **Set a group's or component's own axes** (its origin and directions). Nothing moves; only the axes change, for every copy of a component.
-- **Draw > Axes:** open a group, click the new origin, a point on the red axis, then a point that sets green.
-- **Right-click a group > Axes:** Change Axes (opens it with the Axes tool), Reset Axes (square again, origin at the corner), Axes to Centre.
-- Exporting for game engines (File > Export > Game engine) uses these axes as each object's pivot.
+**New in this build: Validate and Heal.**
+- **Solid > Validate and Heal** opens the Solids window: each solid in the open group says Valid with its volume, or Not a solid with the reasons (holes, faces pointing inward, faces crossing, points almost touching).
+- Click a solid's name to select and zoom to it.
+- **Heal** fixes what it safely can in one undo step: welds points that almost touch, fills holes whose edges lie flat, turns faces to face out, and removes faces left inside and stray edges. It says what it did.
+- Fixed: Model Health no longer lists every cone, sphere and torus face as "Degenerate".
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

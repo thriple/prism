@@ -306,6 +306,11 @@ impl Chrome {
         self.panels.health
     }
 
+    /// Whether the Solids window (Solid > Validate and Heal) is open.
+    pub fn solids_open(&self) -> bool {
+        self.panels.solids
+    }
+
     /// Whether Model Health's problems are drawn in the model.
     pub fn health_marks(&self) -> bool {
         self.panels.health && !self.panels.health_marks_off
@@ -428,6 +433,10 @@ impl Chrome {
                     "win.info" => self.panels.info = true,
                     "win.tags" => self.panels.tags = true,
                     "win.health" => self.panels.health = true,
+                    "solid.heal" => {
+                        self.panels.solids = true;
+                        self.panels.folded.remove("Solids");
+                    }
                     "win.materials" => self.panels.materials = true,
                     "view.edittoolbars" => self.toolbars.editing = true,
                     "view.toolbars" => self.toolbars.window = true,
@@ -804,6 +813,18 @@ mod tests {
         c.run("tool.paint", Source::Key);
         assert_eq!(c.active_tool, "tool.paint");
         assert!(c.panels.materials && !c.panels.folded.contains("Materials"));
+    }
+
+    /// Solid > Validate and Heal opens the Solids window, unfolded
+    /// (brief 37).
+    #[test]
+    fn validate_and_heal_opens_the_solids_window() {
+        let mut c = chrome();
+        c.panels.folded.insert("Solids");
+        assert!(!c.solids_open());
+        c.run("solid.heal", Source::Menu);
+        assert!(c.solids_open() && c.panels_open());
+        assert!(!c.panels.folded.contains("Solids"));
     }
 
     /// Choosing the Fillet tool opens its window, unfolded; it is shown

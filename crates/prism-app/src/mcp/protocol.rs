@@ -95,6 +95,18 @@ pub fn tools() -> Value {
             "inputSchema": none,
         },
         {
+            "name": "validate_solids",
+            "title": "Validate solids",
+            "description": "Solid > Validate and Heal: each solid in the open group (its loose pieces of faces, then its groups and components), whether it is a valid solid (closed, facing out, nothing crossing, passed by the kernel's checker), its volume, and the reasons it is not.",
+            "inputSchema": none,
+        },
+        {
+            "name": "heal",
+            "title": "Heal solids",
+            "description": "Heal the open group's loose geometry (the selected faces' pieces, if faces are selected) in one undo step: weld near misses, merge repeated faces, put curves back, fill flat holes, orient faces, remove inside faces and stray edges. Returns what it did and the solids after.",
+            "inputSchema": none,
+        },
+        {
             "name": "list_actions",
             "title": "List actions",
             "description": "Prism's actions (the same ones as the menus, toolbars and keys): id, name, menu path, key, and whether it can run now (and why not). Filter with an optional query matched against id, name and menu path.",
@@ -387,6 +399,8 @@ mod tests {
                 "get_model",
                 "get_selection",
                 "get_health",
+                "validate_solids",
+                "heal",
                 "list_actions",
                 "get_geometry",
                 "use_tool",

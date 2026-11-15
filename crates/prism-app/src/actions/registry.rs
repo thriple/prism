@@ -95,7 +95,9 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 28] = [
+const COMMANDS: [&str; 29] = [
+    // Solids & CAD part 1 (brief 37): opens the Solids window.
+    "solid.heal",
     // Everyday Commands part 4 (brief 33): kept in the preferences.
     "view.smart",
     // Everyday Commands part 3 (brief 33).

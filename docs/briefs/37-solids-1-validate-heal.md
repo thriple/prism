@@ -9,11 +9,11 @@ M: two steps. A: the core (validate, heal, the command). B: the window, the acti
 
 ## Requirements
 - **A solid** is a connected piece of faces (joined across edges) in the open context. Groups and components inside the context are listed by name and validated from their own geometry; healing them needs opening them (as Model Health works on the open group).
-- **Validate** (`prism_ops::solid_check::validate`), per piece:
+- **Validate** (`prism_ops::validate::validate`), per piece:
   - *Valid solid*: closed (every edge has exactly two of its faces), no reversed, interior, crossing, degenerate or off-curve faces, and the kernel's checker passes. Shows its volume.
   - *Not a solid*: the reasons, each with a count ("3 open edges (holes)", "2 faces pointing inward", "1 edge with 3 or more faces", "faces crossing with no edge").
-  - The kernel's findings in plain words ("an edge does not lie on its face", "faces cross", "a face of no size"), grouped with counts. Freeform (NURBS) faces cannot go to the kernel yet: those solids are checked by Prism's rules only, and the row says so.
-- **Heal** (`prism_ops::solid_check::heal`, `Command::Heal`), on the open context's loose geometry (the selected faces' pieces if faces are selected), in this order, then validate again:
+  - The kernel's findings in plain words ("an edge does not lie on its face", "faces cross", "a face of no size"), grouped with counts. Freeform (NURBS) faces, approximate edges, spheres, tori and cone tips cannot go to the kernel yet (the bridge cannot send poles or a torus's two seams; part 3): those solids are checked by Prism's rules only, and the row says so.
+- **Heal** (`prism_ops::validate::heal`, `Command::Heal`), on the open context's loose geometry (the selected faces' pieces if faces are selected), in this order, then validate again:
   1. Weld near misses (points closer than ten tolerances, Model Health's "Near misses").
   2. Merge repeated faces (`settle::dedupe_faces`).
   3. Put arcs and curved faces back on their curves (`repair_arcs`).

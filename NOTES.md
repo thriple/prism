@@ -3891,3 +3891,50 @@ unfaded on purpose (they show the edit live; `session/groups.rs`,
 `built`, the `sibling` flag). The change is to drop that flag. Not done
 yet: waiting for a slot.
 
+
+## Solids & CAD part 1: Validate and Heal (brief 37, 2026-11-15)
+- **Solid > Validate and Heal** opens the **Solids** window (right
+  column). One row per solid in the open group: its loose pieces of
+  faces ("Solid 1", ...), then each group or component in it that has
+  faces of its own (checked from its own geometry, volume scaled by its
+  placement). Each row says Valid or Not a solid, the volume when it is
+  closed, and the reasons in plain words with counts ("4 open edges
+  (holes)", "1 face pointing inward", "2 points almost touching
+  others"). Click a name to select and zoom to it. It rechecks when the
+  model changes while open, like Model Health.
+- **Valid** means: every edge has exactly two of its faces, nothing
+  reversed, inside, crossing, of no size or off its curve, no near
+  misses, and the kernel's checker passes (`Solid::faults` in
+  `prism-kernel`, its findings grouped into plain words).
+- **Heal** (`prism_ops::validate::heal`, `Command::Heal`, one undo
+  step) on the loose geometry of the open group (only the selected
+  faces' pieces when faces are selected): weld points closer than ten
+  tolerances, merge repeated faces, put curves back on their circles and
+  surfaces, fill holes whose edges lie flat (the coplanar rule's
+  `Fill::Closing`), orient faces, remove inside faces, and (for the
+  whole model) stray edges. It says what it did ("Filled 1 hole");
+  nothing needed adds no undo step.
+- **MCP:** `validate_solids` (the rows) and `heal` (what it did, and the
+  rows after). `run_action("solid.heal")` opens the window.
+- **Bug fixed on the way:** a cone's, sphere's or torus's face had an
+  area of 0 (`Model::face_area` unrolled them as cylinders), so Model
+  Health listed every one as "Degenerate". Their area is now exact (by
+  Green's theorem in (θ, s), as their volume already was).
+- **Left over (sorted, DECISIONS #33):**
+  - Serious, in part 3 (curved booleans): the bridge cannot send a
+    sphere's poles, a torus's two seams or a cone's tip, so those solids
+    are checked by Prism's rules only (the row says so). Cones without a
+    tip, cylinders and planes go through the kernel.
+  - Later: healing inside a closed group (open it first); gaps wider
+    than ten tolerances; holes whose edges are not flat (a patch, part
+    4); kernel calls off the interface thread (DECISIONS #39).
+  - The owner's check: a leaky imported mesh healed to a valid solid.
+
+### Owner request: Angle Guides (2026-11-15)
+"When an object is rotated near an angle, I'd like smart guides to show
+and lightly snap the object's rotation to that near angle in case I want
+to match it. Similar to parallel lines" (as in Illustrator). Rotate's
+Smart Guides match only the same heading or a quarter turn from it
+(NOTES "Closing gaps: Smart Guides in Scale and Rotate", left over).
+Added to the plan as **Angle Guides** (PLAN 6.0), built right after this
+part, before Solids & CAD part 2.

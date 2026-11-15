@@ -157,6 +157,8 @@ struct App {
     start_file: Option<String>,
     /// The model version Model Health last checked.
     health_version: Option<u64>,
+    /// The model version the Solids window's rows were made for.
+    solids_version: Option<u64>,
     /// Screenshots the assistant asked for, taken after the next frame.
     shots: Vec<crate::mcp::Call>,
 }
@@ -207,6 +209,7 @@ impl App {
             tab_actions: Vec::new(),
             start_file,
             health_version: None,
+            solids_version: None,
             shots: Vec::new(),
         }
     }
@@ -369,6 +372,7 @@ impl App {
         let start_file = self.start_file.take();
         let mut tab_actions: Vec<isize> = Vec::new();
         let mut health_version = self.health_version;
+        let mut solids_version = self.solids_version;
         chrome.viewport_texture = gpu.viewport_texture();
         viewport.session.reduce_motion = motion.reduce_motion;
         let mut viewport_px = [1u32, 1u32];
@@ -435,11 +439,21 @@ impl App {
                 if !chrome.health_open() {
                     health_version = None;
                 }
+                let solids = if !chrome.solids_open() {
+                    solids_version = None;
+                    Vec::new()
+                } else if solids_version == Some(s.version()) {
+                    std::mem::take(&mut chrome.panel_data.solids)
+                } else {
+                    solids_version = Some(s.version());
+                    s.solid_rows()
+                };
                 chrome.panel_data = crate::chrome::PanelData {
                     outline: s.outline(),
                     info: Some(s.entity_info()),
                     tags: s.tag_rows(),
                     health,
+                    solids,
                     view: s.view_style().clone(),
                     materials: s.material_rows(),
                     brush: s.brush(),
@@ -458,6 +472,8 @@ impl App {
                     crate::chrome::PanelOp::Tag(t) => s.tag_command(t),
                     crate::chrome::PanelOp::HealthSelect(k) => s.select_health(k),
                     crate::chrome::PanelOp::HealthFix(k) => s.health_fix(k),
+                    crate::chrome::PanelOp::SolidSelect(of) => s.select_solid(&of),
+                    crate::chrome::PanelOp::Heal => chrome.panels.healed = Some(s.heal_solids()),
                     crate::chrome::PanelOp::View(v) => s.set_view_style(v),
                     crate::chrome::PanelOp::Round(op) => s.round_input(op),
                     crate::chrome::PanelOp::RoundSize(text) => s.round_text(&text),
@@ -551,6 +567,7 @@ impl App {
         egui_state.handle_platform_output(window, output.platform_output);
         self.tab_actions = tab_actions;
         self.health_version = health_version;
+        self.solids_version = solids_version;
         if let Some(t) = self.files.new_title(&self.viewport.session) {
             window.set_title(&t);
             // winit does not set the page's title on the web.
