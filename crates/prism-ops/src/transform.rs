@@ -458,7 +458,7 @@ pub fn weld_new(model: &mut Model, new: &BTreeSet<VertexId>, tol: &Tol) {
     apply_weld(model, &into);
 }
 
-fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
+pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>) {
     if into.is_empty() {
         return;
     }

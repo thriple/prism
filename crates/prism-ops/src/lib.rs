@@ -36,6 +36,7 @@ pub mod solid;
 pub mod sticky;
 pub mod sweep;
 pub mod transform;
+pub mod validate;
 
 pub use pushpull::push_pull;
 pub use select::{Selection, connected, duplicate, remove};

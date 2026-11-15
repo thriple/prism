@@ -840,6 +840,47 @@ impl Model {
     pub fn face_area(&self, id: FaceId) -> f64 {
         let Some(f) = self.face(id) else { return 0.0 };
         let Some(n) = f.plane().map(|p| p.normal) else {
+            // Cones, spheres and tori (Solids & CAD part 1 found this was
+            // 0): by Green's theorem in (θ, s), the area ∬ r |(r', h')| dθ ds
+            // is the loop integral of θ r |(r', h')| ds. Circles round the
+            // axis keep s and add nothing.
+            if let Some(rev) = f.surface.revolution()
+                && !matches!(f.surface, Surface::Cylinder(_))
+            {
+                const X: [f64; 4] = [
+                    0.183_434_642_495_649_8,
+                    0.525_532_409_916_329,
+                    0.796_666_477_413_626_7,
+                    0.960_289_856_497_536_3,
+                ];
+                const W: [f64; 4] = [
+                    0.362_683_783_378_362,
+                    0.313_706_645_877_887_3,
+                    0.222_381_034_453_374_5,
+                    0.101_228_536_290_376_3,
+                ];
+                let area = |k: usize| {
+                    let pts = self.param_loop(f, k);
+                    let n = pts.len();
+                    let mut sum = 0.0;
+                    for i in 0..n {
+                        let (a, b) = (pts[i].1, pts[(i + 1) % n].1);
+                        let ds = b.y - a.y;
+                        if ds == 0.0 {
+                            continue;
+                        }
+                        for (x, w) in X.iter().zip(W) {
+                            for t in [0.5 - x / 2.0, 0.5 + x / 2.0] {
+                                let q = a.lerp(b, t);
+                                let (r, _, dr, dh) = rev.at(q.y);
+                                sum += w / 2.0 * q.x * r * dr.hypot(dh) * ds;
+                            }
+                        }
+                    }
+                    sum.abs()
+                };
+                return area(0) - (1..=f.holes.len()).map(area).sum::<f64>();
+            }
             // A curved face is flat when unrolled.
             let area = |k: usize| {
                 let p: Vec<DVec2> = self.unrolled(f, k).into_iter().map(|x| x.1).collect();

@@ -355,6 +355,11 @@ pub enum Command {
         to: Option<prism_topo::MaterialId>,
         everywhere: bool,
     },
+    /// Solid > Validate and Heal's Heal (Solids & CAD part 1): the pieces
+    /// holding these faces, or all of them.
+    Heal {
+        faces: Option<BTreeSet<FaceId>>,
+    },
 }
 
 /// How groups are moved, turned or scaled.
@@ -489,6 +494,7 @@ impl Command {
             Command::CleanEnvelope { .. } => "Clean Envelope",
             Command::RemoveStray => "Remove Stray Edges",
             Command::RepairArcs => "Repair Arcs",
+            Command::Heal { .. } => "Heal",
             // Materials and images added for the step are named by the
             // step (a material on its own by the material).
             Command::Batch { commands } => {
@@ -1118,6 +1124,9 @@ impl Command {
             }
             Command::RepairArcs => {
                 prism_ops::health::repair_arcs(m);
+            }
+            Command::Heal { faces } => {
+                prism_ops::validate::heal(m, faces.as_ref());
             }
             // These change groups: run them with `apply_in`.
             Command::In { .. }

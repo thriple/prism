@@ -286,8 +286,29 @@ impl Solid {
     /// The kernel's solid for `region`, checked by the kernel's checker.
     /// `tol` is Prism's tolerance for the model.
     pub fn build(region: &Region, tol: f64) -> Result<Solid, &'static str> {
+        Self::build_checked(region, tol).map_err(|(why, _)| why)
+    }
+
+    /// What the kernel's checker finds wrong with `region`, in plain words
+    /// with counts ("faces cross (2)"); empty when it is a valid solid.
+    /// Errs when the region cannot reach the checker at all (a freeform
+    /// face, faces that do not close).
+    pub fn faults(region: &Region, tol: f64) -> Result<Vec<String>, &'static str> {
+        match Self::build_checked(region, tol) {
+            Ok(_) => Ok(Vec::new()),
+            Err((_, Some(words))) => Ok(words),
+            Err((why, None)) => Err(why),
+        }
+    }
+
+    /// As `build`, with the checker's findings when it rejects the solid.
+    fn build_checked(
+        region: &Region,
+        tol: f64,
+    ) -> Result<Solid, (&'static str, Option<Vec<String>>)> {
+        let no = |why: &'static str| (why, None);
         let prec = precision(tol);
-        let mut model = Model::new(prec).map_err(|_| NOT_CLOSED)?;
+        let mut model = Model::new(prec).map_err(|_| no(NOT_CLOSED))?;
         let t = prec.default_tolerance;
         let mut meter = Meter::default();
         let vertices = region
@@ -302,10 +323,10 @@ impl Solid {
         let mut edges = Vec::with_capacity(region.edges.len());
         for e in &region.edges {
             let (pa, pb) = (
-                region.vertices.get(e.a).ok_or(NOT_CLOSED)?.at,
-                region.vertices.get(e.b).ok_or(NOT_CLOSED)?.at,
+                region.vertices.get(e.a).ok_or(no(NOT_CLOSED))?.at,
+                region.vertices.get(e.b).ok_or(no(NOT_CLOSED))?.at,
             );
-            let (c, range) = edge_curve(&e.curve, pa, pb)?;
+            let (c, range) = edge_curve(&e.curve, pa, pb).map_err(no)?;
             edges.push(EdgeSpec::New {
                 geometry: EdgeGeometry::Curve {
                     curve: model.add_curve(c.clone()),
@@ -324,20 +345,20 @@ impl Solid {
             let mids: Vec<DVec3> = f
                 .loops
                 .first()
-                .ok_or(NOT_CLOSED)?
+                .ok_or(no(NOT_CLOSED))?
                 .iter()
                 .filter_map(|(e, _)| curves.get(*e))
                 .map(|(c, r)| back(&c.point(0.5 * (r.lo() + r.hi()))))
                 .collect();
             let middle = mids.iter().copied().sum::<DVec3>() / mids.len().max(1) as f64;
-            let (surface, out) = face_surface(&f.surface, middle)?;
+            let (surface, out) = face_surface(&f.surface, middle).map_err(no)?;
             let mut loops = Vec::with_capacity(f.loops.len());
             for l in &f.loops {
                 let mut uses = Vec::with_capacity(l.len());
                 for &(e, forward) in l {
-                    let (c, range) = curves.get(e).ok_or(NOT_CLOSED)?;
+                    let (c, range) = curves.get(e).ok_or(no(NOT_CLOSED))?;
                     let pc = pcurve_on(c, *range, &surface, prec.tolerance(), &mut meter)
-                        .map_err(|_| OFF_FACE)?;
+                        .map_err(|_| no(OFF_FACE))?;
                     uses.push(UseSpec {
                         edge: EdgeKey::New(e),
                         orientation: orientation(forward),
@@ -358,7 +379,8 @@ impl Solid {
             edges,
             shells: vec![faces],
         };
-        let (builder, slots) = Builder::assemble(&model, t, assembly).map_err(|_| NOT_CLOSED)?;
+        let (builder, slots) =
+            Builder::assemble(&model, t, assembly).map_err(|_| no(NOT_CLOSED))?;
         let mut keys = BuildKeys {
             namespace: NAMESPACE,
             shells: vec![0],
@@ -377,8 +399,10 @@ impl Solid {
         }
         let (body, provenance) =
             build(&mut model, builder, &keys, &Control::NONE).map_err(|e| match e {
-                arris_ops::OpError::Rejected(arris_ops::Rejection::Checker(_)) => FAULTY,
-                _ => NOT_CLOSED,
+                arris_ops::OpError::Rejected(arris_ops::Rejection::Checker(r)) => {
+                    (FAULTY, Some(plain_faults(r.violations())))
+                }
+                _ => no(NOT_CLOSED),
             })?;
         Ok(Solid {
             model,
@@ -632,6 +656,40 @@ fn spline(n: &arris_geom::NurbsCurve, range: Option<(f64, f64)>) -> Result<Curve
 fn curve2_point(c: &Curve2, t: f64) -> [f64; 2] {
     let p = c.point(t);
     [p.x, p.y]
+}
+
+/// The checker's findings in plain words, each kind once with its count.
+fn plain_faults<V: std::fmt::Debug>(found: &[V]) -> Vec<String> {
+    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for v in found {
+        let name = format!("{v:?}");
+        let kind: String = name.chars().take_while(|c| c.is_alphanumeric()).collect();
+        *counts.entry(fault_words(&kind)).or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .map(|(w, n)| format!("{w} ({n})"))
+        .collect()
+}
+
+/// One kind of checker finding, in words.
+fn fault_words(kind: &str) -> &'static str {
+    match kind {
+        "ShellOpen" | "LoopOpen" | "PcurveGap" => "a gap in the surface",
+        "LoopsIntersect" | "EdgeSelfIntersects" | "Overlap" | "FaceMalformed" => "faces cross",
+        "InsideOut" | "Orientation" | "SameOrientation" => "faces point inward",
+        "VertexOffEdge" | "VertexOffFace" | "PcurveOffCurve" | "EdgeEnds" => {
+            "an edge or point off the face it bounds"
+        }
+        "VertexTolerance" | "EdgeTolerance" | "FaceTolerance" | "ToleranceBound" => {
+            "a gap wider than the tolerance"
+        }
+        "DegenerateEdge" | "ZeroArea" | "Empty" => "an edge or face of no size",
+        "EdgeUses" | "FaceUsedTwice" | "EdgeReusedInFace" | "VertexOverused" => {
+            "an edge used by too many faces"
+        }
+        _ => "a fault in how the solid is joined",
+    }
 }
 
 #[cfg(test)]

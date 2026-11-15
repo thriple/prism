@@ -207,7 +207,7 @@ fn pair(a: VertexId, b: VertexId) -> (VertexId, VertexId) {
 }
 
 /// Points closer than `d`, found by sweeping along x.
-fn close_points(model: &Model, d: f64) -> Vec<(VertexId, VertexId, f64)> {
+pub(crate) fn close_points(model: &Model, d: f64) -> Vec<(VertexId, VertexId, f64)> {
     let mut pts: Vec<(VertexId, DVec3)> = model.vertices().collect();
     pts.sort_by(|a, b| a.1.x.total_cmp(&b.1.x).then(a.0.cmp(&b.0)));
     let mut out = Vec::new();
