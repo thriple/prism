@@ -22,7 +22,9 @@ use prism_view::View;
 use prism_view::overlay::{Label, Line, Mark, Overlay, Shape};
 
 use super::Session;
-use crate::smart::{self, Ask, Bounds, Guide, Heading, Index, Level, ScaleAsk, TurnAsk};
+use crate::smart::{
+    self, Ask, Bounds, EdgeDir, Edges, Guide, Heading, Index, Level, ScaleAsk, TurnAsk, edge_dirs,
+};
 
 /// The pull, in points at aperture 1 (the feel test's 8 px).
 const PULL_PX: f64 = 8.0;
@@ -57,6 +59,10 @@ pub(super) struct SmartOp {
     /// Rotate: the neighbours' headings, and the moving object's.
     headings: Vec<Heading>,
     mine: Option<DVec3>,
+    /// Angle Guides: the neighbours' straight edges, and the moving
+    /// object's (before turning).
+    edges: Vec<Edges>,
+    mine_edges: Vec<EdgeDir>,
 }
 
 /// What a guided step is.
@@ -152,8 +158,17 @@ impl Session {
                     .first()
                     .and_then(|g| self.group_heading(*g, n))
                     .or_else(|| longest_edge(self.work_model(), n, |v| verts.contains(&v)));
+                let model = self.work_model();
+                let mut segs: Vec<(DVec3, DVec3)> = line_segments(model, |v| verts.contains(&v));
+                for g in &self.groups {
+                    segs.extend(self.group_segments(*g));
+                }
+                let mine_edges = edge_dirs(segs);
                 match (mine, self.smart.as_mut()) {
-                    (Some(m), Some(op)) => op.mine = Some(m),
+                    (Some(m), Some(op)) => {
+                        op.mine = Some(m);
+                        op.mine_edges = mine_edges;
+                    }
                     _ => self.smart = None,
                 }
             }
@@ -181,6 +196,26 @@ impl Session {
             .min_by(|a, b| (a.normalize().dot(n).abs()).total_cmp(&b.normalize().dot(n).abs()))
     }
 
+    /// A group's straight edges in the world (its own geometry, placed).
+    fn group_segments(&self, id: prism_doc::InstanceId) -> Vec<(DVec3, DVec3)> {
+        let mut path = self.ctx.clone();
+        path.push(id);
+        let asm = self.doc.assembly();
+        let (Some(w), Some(def)) = (
+            asm.world_of(&path),
+            asm.context_def(&self.ctx)
+                .and_then(|d| asm.def(d))
+                .and_then(|d| d.instances.get(&id))
+                .and_then(|i| asm.def(i.def)),
+        ) else {
+            return Vec::new();
+        };
+        line_segments(&def.model, |_| true)
+            .into_iter()
+            .map(|(a, b)| (w.transform_point3(a), w.transform_point3(b)))
+            .collect()
+    }
+
     fn smart_begin(
         &mut self,
         moving: Bounds,
@@ -191,6 +226,7 @@ impl Session {
         let asm = self.doc.assembly();
         let mut boxes = Vec::new();
         let mut headings = Vec::new();
+        let mut edges = Vec::new();
         if let Some(def) = asm.context_def(&self.ctx).and_then(|d| asm.def(d)) {
             for id in def.instances.keys() {
                 if skip.contains(id) || !asm.is_shown(*id) {
@@ -198,10 +234,14 @@ impl Session {
                 }
                 if let Some(b) = self.group_box(*id).and_then(Bounds::around) {
                     boxes.push(b);
-                    if let Step::Turn(n) = step
-                        && let Some(dir) = self.group_heading(*id, n)
-                    {
-                        headings.push(Heading { dir, bounds: b });
+                    if let Step::Turn(n) = step {
+                        if let Some(dir) = self.group_heading(*id, n) {
+                            headings.push(Heading { dir, bounds: b });
+                        }
+                        edges.push(Edges {
+                            bounds: b,
+                            edges: edge_dirs(self.group_segments(*id)),
+                        });
                     }
                 }
             }
@@ -215,6 +255,10 @@ impl Session {
                     if let Some(dir) = longest_edge(model, n, |v| set.contains(&v)) {
                         headings.push(Heading { dir, bounds: bb });
                     }
+                    edges.push(Edges {
+                        bounds: bb,
+                        edges: edge_dirs(line_segments(model, |v| set.contains(&v))),
+                    });
                 }
             }
         }
@@ -229,6 +273,8 @@ impl Session {
             ring: step == Step::Move,
             headings,
             mine: None,
+            edges,
+            mine_edges: Vec::new(),
         });
     }
 
@@ -396,18 +442,25 @@ impl Session {
         let found = if self.smart_point_snap() {
             None
         } else {
-            smart::snap_turn(
-                &op.headings,
-                &TurnAsk {
-                    mine,
-                    moving: op.moving,
-                    centre,
-                    normal,
-                    angle: raw,
-                    tol,
-                    level: op.level,
-                },
-            )
+            let ask = TurnAsk {
+                mine,
+                moving: op.moving,
+                centre,
+                normal,
+                angle: raw,
+                tol,
+                level: op.level,
+            };
+            // The heading's match, or an edge made parallel to a
+            // neighbour's (Angle Guides): the nearer wins, the heading on
+            // a tie.
+            let heading = smart::snap_turn(&op.headings, &ask);
+            let edge = smart::snap_angle(&op.edges, &op.mine_edges, &ask);
+            match (heading, edge) {
+                (Some(h), Some(e)) if (e.0 - raw).abs() < (h.0 - raw).abs() - 1e-12 => Some(e),
+                (Some(h), _) => Some(h),
+                (None, e) => e,
+            }
         };
         let found = found.filter(|(a, _)| soft.is_none_or(|s| (a - raw).abs() <= (s - raw).abs()));
         let angle = found.as_ref().map_or(plain, |(a, _)| *a);
@@ -549,6 +602,37 @@ impl Session {
                         color: fb.smart_align,
                     });
                 }
+                Guide::Angle {
+                    at,
+                    mine,
+                    half,
+                    other_at,
+                    along,
+                    other_half,
+                } => {
+                    // Along both edges, a little longer than they are.
+                    for (c, d, h) in [(other_at, along, other_half), (at, mine, half)] {
+                        o.lines.push(Line {
+                            a: c - d * h * 1.25,
+                            b: c + d * h * 1.25,
+                            color: fb.smart_align,
+                            width: fb.guide_width,
+                            dash: fb.guide_dash,
+                        });
+                        o.marks.push(Mark {
+                            at: c,
+                            shape: Shape::Circle,
+                            color: fb.smart_align,
+                            size: END_SIZE,
+                        });
+                    }
+                    o.labels.push(Label {
+                        at: at + mine * half,
+                        offset: [10.0, -14.0],
+                        text: "Parallel".to_owned(),
+                        color: fb.smart_align,
+                    });
+                }
             }
         }
     }
@@ -612,6 +696,18 @@ fn longest_edge(
         .filter(|d| d.length() > 0.0)
         .max_by(|a, b| a.length().total_cmp(&b.length()))
         .map(DVec3::normalize)
+}
+
+/// The straight edges of `model` whose ends `keep` takes.
+fn line_segments(
+    model: &prism_topo::Model,
+    keep: impl Fn(VertexId) -> bool,
+) -> Vec<(DVec3, DVec3)> {
+    model
+        .edges()
+        .filter(|(_, e)| keep(e.a) && keep(e.b) && !e.curve.is_curved())
+        .map(|(_, e)| (model.vertex(e.a), model.vertex(e.b)))
+        .collect()
 }
 
 /// The loose bodies (pieces joined by edges) of `model`, leaving out any

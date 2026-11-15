@@ -2361,7 +2361,7 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     ("Scenes and named cameras (tentative)", false),
     (
-        "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles (Rotate), time budget, Ctrl+U",
+        "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles and edges parallel to a neighbour's at any angle (Rotate), time budget, Ctrl+U",
         true,
     ),
     (

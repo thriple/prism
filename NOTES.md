@@ -3938,3 +3938,24 @@ Smart Guides match only the same heading or a quarter turn from it
 (NOTES "Closing gaps: Smart Guides in Scale and Rotate", left over).
 Added to the plan as **Angle Guides** (PLAN 6.0), built right after this
 part, before Solids & CAD part 2.
+
+## Angle Guides (brief 38, owner request, 2026-11-15)
+- **Rotate's Smart Guides match any angle** a neighbour's edges make. At
+  the start of a turn, the object's straight edges and each neighbour's
+  (groups and components from their own geometry, placed; loose bodies)
+  are listed: up to 12 per object, longest first, one per direction
+  (`smart::edge_dirs`). While turning, an edge of the object that comes
+  within the pull of parallel to a neighbour's edge, both lying in the
+  plane of the turn, snaps parallel (`smart::snap_angle`). The guide is a
+  dashed teal line along each edge, a little longer than it, and the
+  label **Parallel** (`Guide::Angle`).
+- The heading match (Parallel / Square, `snap_turn`) stays; when both
+  catch, the one nearer the cursor's angle wins, the heading on a tie.
+  The protractor's soft steps, a snapped point, typing and Shift win as
+  before; the time budget lowers it with the other guides.
+- **Tests:** `smart::tests::a_turn_makes_an_edge_parallel_...` and the
+  session test `a_turned_group_matches_the_angle_of_a_neighbours_edge` (a
+  box at 35.5° beside a triangle with a side at 37° lands at 37°).
+- **Left over:** curved edges are not compared; no angle guides in Move,
+  Line or Scale. The owner's check: a box turned square with a wall
+  drawn at 30°.

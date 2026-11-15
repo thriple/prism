@@ -588,7 +588,7 @@ const BUILT_BEHAVIOURS: [&str; 25] = [
     "Live ghost previews",
     "Tool memory: double-click or Enter repeats the last value",
     // Everyday Commands part 4 (brief 33).
-    "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles (Rotate), time budget, Ctrl+U",
+    "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles and edges parallel to a neighbour's at any angle (Rotate), time budget, Ctrl+U",
     // Fillet Joins step C.
     "Fillet Joins: round many edges at once with clean corners (double-click a face, Shift-click, selection, whole lines)",
     // Export for Beverly (brief 35).

@@ -5127,6 +5127,63 @@ fn a_turned_group_faces_the_way_its_neighbour_does() {
     );
 }
 
+/// Angle Guides (brief 38): a box turned near the angle of a neighbour's
+/// edge turns to make them parallel, though the neighbour's heading (its
+/// longest edge) points another way.
+#[test]
+fn a_turned_group_matches_the_angle_of_a_neighbours_edge() {
+    let (mut d, c) = row_of_groups(10.0);
+    let deg = |a: f64| a.to_radians();
+    // A triangle on the ground, away from the boxes: its longest side
+    // along x, another at 37°.
+    let a = DVec3::new(5.0, 6.0, 0.0);
+    let tip = a + DVec3::new(deg(37.0).cos(), deg(37.0).sin(), 0.0) * 2.0;
+    d.tool(LINE);
+    for p in [a, DVec3::new(9.0, 6.0, 0.0), tip, a] {
+        d.click(p);
+    }
+    key(&mut d, Key::Escape);
+    let m = d.s.work_model();
+    assert!(
+        m.vertices().any(|(_, p)| p.distance(tip) < 1e-9) && m.faces().count() == 1,
+        "the triangle as drawn"
+    );
+    act(&mut d, "edit.desel");
+    // The third box turned to 35.5°: pulled to 37°.
+    d.tool(SELECT);
+    d.click(DVec3::new(11.0, 0.0, 1.0));
+    d.tool(ROTATE);
+    d.click(DVec3::new(11.0, -1.0, 0.0));
+    d.click(DVec3::new(12.0, -1.0, 0.0));
+    let at = DVec3::new(
+        11.0 + 2.0 * deg(35.5).cos(),
+        -1.0 + 2.0 * deg(35.5).sin(),
+        0.0,
+    );
+    d.hover(at);
+    assert!(
+        d.s.smart_shown()
+            .iter()
+            .any(|g| matches!(g, prism_tools::smart::Guide::Angle { .. })),
+        "{:?}",
+        d.s.smart_shown()
+    );
+    assert!(d.s.overlay().labels.iter().any(|l| l.text == "Parallel"));
+    d.click(at);
+    let x =
+        d.s.document()
+            .assembly()
+            .world_of(&[c])
+            .expect("placed")
+            .matrix3
+            .x_axis;
+    assert!(
+        (x.y.atan2(x.x) - deg(37.0)).abs() < 1e-9,
+        "{}",
+        x.y.atan2(x.x).to_degrees()
+    );
+}
+
 #[test]
 fn a_moved_group_lines_up_with_a_neighbour_and_ctrl_u_turns_it_off() {
     let (mut d, c) = row_of_groups(10.0);

@@ -139,6 +139,17 @@ pub enum Guide {
         mine: DVec3,
         square: bool,
     },
+    /// Rotate (Angle Guides): the turned object's edge (through `at` along
+    /// `mine`, `half` long each way) is parallel to a neighbour's edge
+    /// (through `other_at` along `along`).
+    Angle {
+        at: DVec3,
+        mine: DVec3,
+        half: f64,
+        other_at: DVec3,
+        along: DVec3,
+        other_half: f64,
+    },
 }
 
 /// Two gaps along an axis, each from one value to another.
@@ -562,6 +573,111 @@ pub fn snap_turn(headings: &[Heading], ask: &TurnAsk) -> Option<(f64, Guide)> {
     ))
 }
 
+/// A straight edge for Angle Guides: its direction, middle and half length.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EdgeDir {
+    pub dir: DVec3,
+    pub mid: DVec3,
+    pub half: f64,
+}
+
+/// Most edges listed per object for Angle Guides.
+pub const EDGES_PER_OBJECT: usize = 12;
+
+/// Up to [`EDGES_PER_OBJECT`] edges from segments `(a, b)`: longest first,
+/// one per direction.
+pub fn edge_dirs(segments: impl IntoIterator<Item = (DVec3, DVec3)>) -> Vec<EdgeDir> {
+    let mut all: Vec<EdgeDir> = segments
+        .into_iter()
+        .filter_map(|(a, b)| {
+            let d = b - a;
+            (d.length() > 0.0).then(|| EdgeDir {
+                dir: d.normalize(),
+                mid: (a + b) * 0.5,
+                half: d.length() * 0.5,
+            })
+        })
+        .collect();
+    all.sort_by(|x, y| y.half.total_cmp(&x.half));
+    let mut out: Vec<EdgeDir> = Vec::new();
+    for e in all {
+        if out.len() >= EDGES_PER_OBJECT {
+            break;
+        }
+        // Parallel within about half a degree: the same direction.
+        if out.iter().all(|o| o.dir.dot(e.dir).abs() < 0.999_95) {
+            out.push(e);
+        }
+    }
+    out
+}
+
+/// A neighbour's edges for Angle Guides, with its box.
+#[derive(Clone, Debug)]
+pub struct Edges {
+    pub bounds: Bounds,
+    pub edges: Vec<EdgeDir>,
+}
+
+/// Angle Guides: the angle adjusted so one of the moving object's edges
+/// `mine` (before turning) is parallel to a neighbour's edge, and the
+/// guide. Only edges lying in the plane of the turn are compared. None
+/// when nothing is within the pull.
+pub fn snap_angle(neighbours: &[Edges], mine: &[EdgeDir], ask: &TurnAsk) -> Option<(f64, Guide)> {
+    if ask.level == Level::Paused || ask.tol <= 0.0 {
+        return None;
+    }
+    let n = ask.normal.normalize_or_zero();
+    let flat = |d: DVec3| {
+        let p = d - n * n.dot(d);
+        (p.length() >= 0.9 * d.length() && p.length() > 0.0).then(|| p.normalize())
+    };
+    let turn = |a: f64, v: DVec3| prism_math::DQuat::from_axis_angle(n, a) * v;
+    let at_now = ask.centre + turn(ask.angle, ask.moving.centre() - ask.centre);
+    let half_turn = std::f64::consts::PI;
+    let mine: Vec<(EdgeDir, DVec3)> = mine
+        .iter()
+        .filter_map(|e| Some((*e, flat(e.dir)?)))
+        .collect();
+    // (|off|, off, distance, mine, neighbour, its edge)
+    let mut best: Option<(f64, f64, usize, usize, usize)> = None;
+    for (i, nb) in neighbours.iter().enumerate() {
+        let dist = (nb.bounds.centre() - at_now).length();
+        if ask.level == Level::Near {
+            let reach = (ask.moving.hi - ask.moving.lo).length() * NEAR_SIZES;
+            if dist > reach {
+                continue;
+            }
+        }
+        for (k, e) in nb.edges.iter().enumerate() {
+            let Some(d) = flat(e.dir) else { continue };
+            for (j, (_, m0)) in mine.iter().enumerate() {
+                let now = turn(ask.angle, *m0);
+                let a = n.dot(now.cross(d)).atan2(now.dot(d));
+                let off = a - (a / half_turn).round() * half_turn;
+                if off.abs() < ask.tol && best.is_none_or(|(b, ..)| off.abs() < b.abs() - 1e-12) {
+                    best = Some((off, dist, j, i, k));
+                }
+            }
+        }
+    }
+    let (off, _, j, i, k) = best?;
+    let angle = ask.angle + off;
+    let (e, m0) = mine[j];
+    let other = neighbours[i].edges[k];
+    Some((
+        angle,
+        Guide::Angle {
+            at: ask.centre + turn(angle, e.mid - ask.centre),
+            mine: turn(angle, m0),
+            half: e.half,
+            other_at: other.mid,
+            along: flat(other.dir)?,
+            other_half: other.half,
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -816,6 +932,51 @@ mod tests {
             tol: 0.05,
             level: Level::Full,
         }
+    }
+
+    #[test]
+    fn a_turn_makes_an_edge_parallel_to_a_neighbours_edge_at_any_angle() {
+        let deg = |d: f64| d.to_radians();
+        let at = |d: f64| DVec3::new(d.to_radians().cos(), d.to_radians().sin(), 0.0);
+        // A wall's long edge at 33°, ten metres away.
+        let wall = Edges {
+            bounds: Bounds::new(DVec3::new(10.0, 0.0, 0.0), DVec3::new(12.0, 1.0, 1.0)),
+            edges: edge_dirs([(
+                DVec3::new(10.0, 0.0, 0.0),
+                DVec3::new(10.0, 0.0, 0.0) + at(33.0) * 2.0,
+            )]),
+        };
+        // The moving box's edges along x and y.
+        let mine = edge_dirs([
+            (DVec3::ZERO, DVec3::X),
+            (DVec3::ZERO, DVec3::Y),
+            (DVec3::ZERO, DVec3::Z),
+        ]);
+        assert_eq!(mine.len(), 3);
+        let ask = |a: f64| TurnAsk {
+            angle: a,
+            ..turn_ask(0.0)
+        };
+        // 31.5°: its x edge pulled parallel to the wall, at 33°.
+        let (a, g) = snap_angle(std::slice::from_ref(&wall), &mine, &ask(deg(31.5))).unwrap();
+        assert!((a - deg(33.0)).abs() < 1e-12, "{}", a.to_degrees());
+        assert!(matches!(g, Guide::Angle { .. }));
+        // 124°: its y edge, at 123°.
+        let (a, _) = snap_angle(std::slice::from_ref(&wall), &mine, &ask(deg(124.0))).unwrap();
+        assert!((a - deg(123.0)).abs() < 1e-12, "{}", a.to_degrees());
+        // 40°: nothing within the pull; paused: nothing.
+        assert!(snap_angle(std::slice::from_ref(&wall), &mine, &ask(deg(40.0))).is_none());
+        let paused = TurnAsk {
+            level: Level::Paused,
+            ..ask(deg(32.9))
+        };
+        assert!(snap_angle(std::slice::from_ref(&wall), &mine, &paused).is_none());
+        // An edge standing up out of the plane of the turn is not matched.
+        let up = Edges {
+            bounds: wall.bounds,
+            edges: edge_dirs([(DVec3::ZERO, DVec3::new(0.1, 0.05, 1.0))]),
+        };
+        assert!(snap_angle(&[up], &mine, &ask(deg(0.5))).is_none());
     }
 
     #[test]

@@ -1,8 +1,6 @@
-**New in this build: Validate and Heal.**
-- **Solid > Validate and Heal** opens the Solids window: each solid in the open group says Valid with its volume, or Not a solid with the reasons (holes, faces pointing inward, faces crossing, points almost touching).
-- Click a solid's name to select and zoom to it.
-- **Heal** fixes what it safely can in one undo step: welds points that almost touch, fills holes whose edges lie flat, turns faces to face out, and removes faces left inside and stray edges. It says what it did.
-- Fixed: Model Health no longer lists every cone, sphere and torus face as "Degenerate".
+**New in this build: Angle Guides.**
+- **Rotate** now matches any angle a neighbour's edges make, not only the way it faces or a quarter turn from it. Turn a group, component or whole body near the angle of a neighbour's edge: a dashed teal guide shows along both edges, labelled Parallel, and the turn snaps softly to it.
+- Typing an angle, Shift (45° steps) and snapping to a point win over it, as with the other guides.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
