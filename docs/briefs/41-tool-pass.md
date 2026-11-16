@@ -19,10 +19,13 @@ L: three parts, each pushed and tested on its own.
   - Enter makes the surface as soon as the ring closes, even while its last side is still being picked. Before, it took two Enters.
   - Smooth / Straight is greyed out where it changes nothing: a ring, or two sections. Before, toggling it remade the same loft, so the next undo removed the whole loft.
   - Outside the Loft tool: the Eraser showed a stale refusal from Move ("a face with arcs would fold") while it erased.
+  - Part 1b (owner's screenshot): a line drawn across an arc parts it into two curves, so hover, click and the Loft tool take one piece. Alt+click in the Loft tool takes one edge, whatever the threshold.
 - **Part 2. Select-first tools and the Solid menu.**
   - Loft, Revolve and Sweep picked with nothing right selected say what to select, then take clicks like the Solid tools, instead of only refusing.
   - Every Solid tool's hint names what to click next. Heal says what it fixed.
-  - The owner decides on two duplicates: Outer Shell, which Union now covers, and the two Lofts (the Loft tool and Loft from a selection).
+  - Outer Shell is removed: Union does it (owner, 2026-11-16).
+  - The two Lofts (the Loft tool and Loft from a selection): the owner decides.
+  - Edit tools on a closed group say "double-click the group to open it" (from the Fillet window's leftovers).
 - **Part 3. Shell / Thicken.** Build the tool as designed in NOTES ("Shell / Thicken design"). It may need its own brief: Part 2 ends by saying.
 
 **MCP:** nothing new. `use_tool`, `run_action` and `replay` drive these tools, and `replay` plays the owner's recorded sessions.

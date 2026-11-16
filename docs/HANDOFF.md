@@ -78,8 +78,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   brief). **The tool pass** (brief 41, owner request): part 1, the Loft
   tool from Session 10, is built (NOTES "Tool pass part 1"); next is part
   2 (select-first Loft, Revolve and Sweep, the Solid menu; ask the owner
-  about Outer Shell and the two Lofts). Ask the owner where an arc was not
-  cut by a crossing line: the Session 10 replay shows none. The owner also floated a chat window in Prism (NOTES "Owner idea
+  about the two Lofts; Outer Shell goes, owner 2026-11-16). Part 1b: a
+  line across an arc parts it into two curves, and Alt+click in Loft
+  takes one edge. **Every planned feature has a chunk** now
+  (`docs/feature-map.md`, ten new rows in PLAN 6.0, a test): add each
+  chunk's new leftovers to its table C. The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no

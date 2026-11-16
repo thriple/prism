@@ -153,3 +153,45 @@ fn follow_me_sticks_to_a_wall_it_ends_on() {
     // The rod's sides' share of its volume: area × r / 3 = 2πr·L·r/3.
     assert!((v - 2.0 * PI * 0.25 * 2.0 / 3.0).abs() < 1e-9, "{v}");
 }
+
+/// Session 10: a line drawn across an arc leaves two arcs, each picked on
+/// its own (as in SketchUp); a cylinder's soft seams do not part its rims.
+#[test]
+fn a_line_across_an_arc_parts_it_into_two_curves() {
+    let mut m = Model::new();
+    let added = prism_ops::add_arc(&mut m, DVec3::ZERO, DVec3::Z, 2.0, DVec3::X * 2.0, PI);
+    let first = added.edges[0];
+    assert_eq!(m.curve_edges(first).len(), added.edges.len(), "one curve");
+    add_segment(&mut m, DVec3::new(0.0, 1.0, 0.0), DVec3::new(0.0, 3.0, 0.0));
+    let arcs: Vec<_> = m
+        .edges()
+        .filter(|(_, e)| e.curve.is_curved())
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(arcs.len(), 2, "cut where the line crosses");
+    for a in &arcs {
+        assert_eq!(m.curve_edges(*a), vec![*a], "each arc is its own curve");
+    }
+    // A circle crossed by a line is two arcs, too.
+    let mut m = Model::new();
+    add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    add_segment(
+        &mut m,
+        DVec3::new(-2.0, 0.3, 0.0),
+        DVec3::new(2.0, 0.3, 0.0),
+    );
+    let curves: BTreeSet<_> = m
+        .edges()
+        .filter(|(_, e)| e.curve.is_curved())
+        .map(|(id, _)| m.curve_edges(id))
+        .collect();
+    assert_eq!(curves.len(), 2);
+    // The rims of a cylinder stay whole across its soft seams.
+    let m = cylinder();
+    let rim = m
+        .edges()
+        .find(|(_, e)| e.curve.is_curved())
+        .map(|(id, _)| id)
+        .unwrap();
+    assert!(m.curve_edges(rim).len() > 1, "the rim is one curve");
+}

@@ -3,8 +3,9 @@
 //!
 //! - A click on an edge picks the whole side: the edges that run on from
 //!   it without a turn sharper than the window's threshold. A click on an
-//!   edge that joins the side being picked adds it (and its run). Shift
-//!   adds or removes one edge. Next Side (or Enter) finishes the side.
+//!   edge that joins the side being picked adds it (and its run). Alt+click
+//!   takes the one edge alone, whatever the threshold (owner, Session 10).
+//!   Shift adds or removes one edge. Next Side (or Enter) finishes the side.
 //! - Sides that close a ring fill it, in whatever order they were picked;
 //!   sides that stand apart are lofted through, in the order picked. While
 //!   they are valid the surface shows as a preview; Loft (or Enter) makes
@@ -33,7 +34,7 @@ use super::{Event, Input, Response, SELECT, Session};
 
 pub const LOFT: &str = "tool.loft";
 
-const HOW: &str = "Click an edge to pick a side, then edges that join it to add them · Shift adds or removes one edge · Enter or Next Side when the side is done · Esc steps back";
+const HOW: &str = "Click an edge to pick a side, then edges that join it to add them · Alt+click takes one edge alone · Shift adds or removes one edge · Enter or Next Side when the side is done · Esc steps back";
 const READY: &str = "Enter or Loft makes it · click an edge to pick another side";
 const TAKEN: &str =
     "That edge is already in a side. Esc steps back, or remove the side in the window.";
@@ -161,8 +162,19 @@ impl Session {
             self.loft_last = None;
         }
         let joins = self.loft_joins(e);
+        let alt = self.press_alt;
         let l = &mut self.lofting;
-        if l.closing.contains(&e) {
+        if alt && !shift && !l.used().contains(&e) {
+            // Alt: this edge alone, whatever the sharpest turn, added to
+            // the side being picked if it joins it.
+            if !joins {
+                l.current.clear();
+            }
+            if !l.current.contains(&e) {
+                l.current.push(e);
+            }
+            l.from = None;
+        } else if l.closing.contains(&e) {
             // The edges that close the ring: on the side being picked if
             // they join it, else a side of their own.
             let c = std::mem::take(&mut l.closing);

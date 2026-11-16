@@ -634,6 +634,46 @@ mod tests {
         }
     }
 
+    /// Owner, 2026-11-16: every planned feature has a chunk that builds it
+    /// (`docs/feature-map.md`), and every chunk named there is in the plan.
+    #[test]
+    fn every_unbuilt_feature_has_a_chunk() {
+        let map = include_str!("../../../../docs/feature-map.md");
+        let plan = include_str!("../../../../PLAN.md");
+        let chunks: Vec<&str> = plan
+            .lines()
+            .filter_map(|l| l.strip_prefix("| **")?.split("** |").next())
+            .collect();
+        let rows: Vec<Vec<&str>> = map
+            .lines()
+            .filter(|l| l.starts_with("| ") && !l.starts_with("|---"))
+            .map(|l| l.split('|').map(str::trim).collect())
+            .collect();
+        for r in &rows {
+            let chunk = r[r.len() - 2];
+            assert!(
+                chunk == "Chunk" || chunks.contains(&chunk),
+                "{chunk:?} is not a chunk in PLAN 6.0"
+            );
+        }
+        let table_a = &map[map.find("## A.").unwrap()..map.find("## B.").unwrap()];
+        let names: Vec<&str> = table_a
+            .lines()
+            .filter(|l| l.starts_with("| "))
+            .filter_map(|l| l.split('|').nth(2).map(str::trim))
+            .collect();
+        let reg = Registry::new();
+        for (_, feats) in planned_features(&reg) {
+            for f in feats.iter().filter(|f| !f.built) {
+                assert!(
+                    names.contains(&f.name),
+                    "{:?} is not built and has no chunk in docs/feature-map.md",
+                    f.name
+                );
+            }
+        }
+    }
+
     #[test]
     fn every_action_has_a_menu_path() {
         let reg = Registry::new();

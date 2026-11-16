@@ -4220,11 +4220,10 @@ Replaying it showed why; each is fixed:
   The hint now shows a refusal only for the edit it was worked out for.
 
 **Also seen in Session 10, not fixed here:**
-- The owner said arcs still are not cut by a crossing line. The replay
-  (current code) found no line or arc crossing another without a cut, at
-  any step: the lines drawn across arcs, and the arc drawn across a
-  line, were cut. Ask the owner for the case; the Eraser's wrong
-  "arcs would fold" message may have looked like it.
+- The owner said arcs still are not cut by a crossing line. They are
+  cut, but both pieces kept one curve id, so hovering, clicking and the
+  Loft tool still took the whole arc (owner's screenshot). Fixed the same
+  day: see "Tool pass part 1b".
 - A recording's saved result is the root model only, so a session that
   ends with everything in components saves an empty result.
 - Three rectangles started in empty space (nothing under the pointer)
@@ -4245,3 +4244,43 @@ the surface belong to no chunk yet.
 out of order, edge by edge, one Enter, Smooth / Straight left alone, Rows
 in the preview and on the loft made; `refused_edits_of_arcs_say_why`: the
 Eraser's hint).
+
+## Tool pass part 1b: a line across an arc parts it; Alt+click in Loft (owner, 2026-11-16)
+- **The owner's screenshot:** a line drawn across an arc, and hovering
+  half the arc still lit the whole arc. The edges were cut, but both
+  pieces kept the arc's curve id (`Model::split_edge` keeps it), so
+  hover, click, the Eraser and the Loft tool's runs took the whole arc.
+  The owner had cut it to stop a Loft side there (a Curviloft habit).
+- **Now** (`sticky::break_curves`): where a drawn edge meets a curve
+  partway, the curve parts there, and each run becomes a curve of its
+  own, as in SketchUp (a circle crossed by a line is two arcs). Soft
+  edges do not part a curve, so a cylinder's rims stay whole across its
+  seams. It runs after drawing a line, an arc or circle, or a spline.
+  Behaviour change: a circle cut by a line no longer clicks or erases as
+  one curve (two session tests changed to say so).
+- **Alt+click in the Loft tool** takes the clicked edge alone, whatever
+  the sharpest-turn setting (owner's suggestion), added to the side
+  being picked when it joins it. A plain click still takes the run.
+
+**Tests:** `prism-ops` `a_line_across_an_arc_parts_it_into_two_curves`
+(also a circle, and a cylinder's rims staying whole), `circles.rs` (two
+curves after a line), `prism-tools` session
+(`alt_click_takes_one_edge_whatever_the_threshold`,
+`a_click_on_an_arc_cut_by_a_line_selects_that_arc_alone`,
+`the_eraser_takes_the_arc_clicked_and_the_faces_merge`).
+
+## Every planned feature has a chunk (owner, 2026-11-16)
+`docs/feature-map.md` lists every planned feature with the chunk that
+builds it: (A) everything the Planned Features window shows as not built,
+(B) features PLAN section 1 describes with no entry in the window (the
+loft's styles and handles, polar arrays, glue-to, USD, the text tool's
+details, keymap presets), and (C) the "Left over" lists in these notes,
+where not done since. Ten chunks were added to PLAN 6.0 for features no
+chunk owned: Groups & Components 2, Drawing & Edit Polish, View &
+Materials Polish, Loft & Sweep Controls, Cage & Subdivision, More Formats,
+Input & Feel, Performance & Scale, Packaging & App Polish and Scripting.
+Shell / Thicken moved from Solids & CAD to Tool Pass. A test
+(`every_unbuilt_feature_has_a_chunk`, `prism-app`) fails when a feature in
+the window is not built and has no chunk, or when the map names a chunk
+the plan does not have. When a chunk writes a new "Left over" list, add
+its items to table C.

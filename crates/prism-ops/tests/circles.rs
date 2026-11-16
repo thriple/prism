@@ -200,14 +200,15 @@ fn a_line_across_a_circle_splits_its_face() {
     assert_eq!(a.len(), 2);
     assert!((a[0] - slice(0.5)).abs() < 1e-9, "{a:?}");
     assert!((sum(&a) - PI).abs() < 1e-9);
-    // Four arcs of one curve: the two halves, each cut once.
+    // Four arcs: the two halves, each cut once. The line parts the circle
+    // into two curves, one each side of it (owner, Session 10).
     assert_eq!(arcs(&m).len(), 4);
     let ids: BTreeSet<_> = m
         .edges()
         .filter(|(_, e)| e.curve.is_arc())
         .map(|(_, e)| e.curve_id)
         .collect();
-    assert_eq!(ids.len(), 1);
+    assert_eq!(ids.len(), 2);
     clean(&m);
 }
 

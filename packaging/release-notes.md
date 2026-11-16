@@ -4,6 +4,8 @@
 - Rows shows live: the preview draws the faces the loft will be cut into, and so does the loft you just made while Rows can still change it.
 - Smooth / Straight is greyed where it changes nothing (a ring, or two sections). It no longer remakes the loft, so Undo no longer takes the whole loft away.
 - The Eraser no longer shows Move's "a face with arcs would fold" message.
+- A line drawn across an arc or circle now cuts it into separate curves, as in SketchUp: hovering, clicking or erasing one piece takes that piece only.
+- In the Loft tool, Alt+click takes just the edge clicked, whatever the "sharpest turn" setting.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

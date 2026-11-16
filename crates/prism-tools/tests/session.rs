@@ -2000,26 +2000,54 @@ fn circle_in_a_rectangle() -> Driver {
 }
 
 #[test]
-fn a_click_on_an_arc_selects_its_whole_circle() {
+fn a_click_on_an_arc_cut_by_a_line_selects_that_arc_alone() {
+    // The line across the circle parts it into two arcs, each picked on
+    // its own, as in SketchUp (owner, Session 10).
     let mut d = circle_in_a_rectangle();
     assert_eq!(d.faces(), 4);
     d.tool(SELECT);
     d.click(DVec3::new(4.0, 2.0, 0.0));
     let sel = d.s.selection().clone();
-    assert_eq!(sel.edges.len(), 2, "both halves of the circle");
+    assert_eq!(sel.edges.len(), 1, "the half clicked");
     for e in &sel.edges {
         assert!(d.s.model().edge(*e).unwrap().curve.is_arc());
     }
+    // A circle with nothing across it is still taken whole.
+    let mut doc = Document::new();
+    doc.run(prism_doc::Command::Circle {
+        centre: DVec3::new(3.0, 2.0, 0.0),
+        normal: DVec3::Z,
+        radius: 1.0,
+    });
+    let mut d = Driver::new(doc);
+    d.look(Camera {
+        eye: DVec3::new(3.0, -4.0, 9.0),
+        target: DVec3::new(3.0, 2.0, 0.0),
+    });
+    d.tool(SELECT);
+    d.click(DVec3::new(4.0, 2.0, 0.0));
+    assert_eq!(
+        d.s.selection().edges.len(),
+        2,
+        "both halves of a whole circle"
+    );
 }
 
 #[test]
-fn the_eraser_takes_the_whole_circle_and_the_faces_merge() {
+fn the_eraser_takes_the_arc_clicked_and_the_faces_merge() {
     let mut d = circle_in_a_rectangle();
     d.tool(ERASE);
     d.click(DVec3::new(4.0, 2.0, 0.0));
-    assert_eq!(d.faces(), 2, "the line still splits the rectangle");
-    assert!(d.s.model().edges().all(|(_, e)| !e.curve.is_arc()));
-    same(&areas(&d), &[12.0, 12.0]);
+    assert_eq!(d.faces(), 3, "the right half merges; the left half stays");
+    assert_eq!(
+        d.s.model()
+            .edges()
+            .filter(|(_, e)| e.curve.is_arc())
+            .count(),
+        1
+    );
+    let half = std::f64::consts::PI / 2.0;
+    same(&areas(&d), &[half, 12.0 - half, 12.0]);
     valid(&d);
 }
 
@@ -5607,6 +5635,48 @@ fn a_ring_picked_out_of_order_and_edge_by_edge_fills_with_one_enter() {
     assert!(d.s.overlay().lines.len() > lines, "the new rows show");
     undo(&mut d);
     assert_eq!(d.faces(), 0);
+}
+
+#[test]
+fn alt_click_takes_one_edge_whatever_the_threshold() {
+    // Owner, Session 10: a straight run is one side by a click; Alt+click
+    // takes one segment of it.
+    use prism_tools::session::LOFT;
+    let (a, mid, b) = (
+        DVec3::ZERO,
+        DVec3::new(1.5, 0.0, 0.0),
+        DVec3::new(3.0, 0.0, 0.0),
+    );
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_segment(&mut m, a, mid);
+    prism_ops::add_segment(&mut m, mid, b);
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(1.5, -6.0, 7.0),
+        target: DVec3::new(1.5, 1.5, 0.0),
+    });
+    d.tool(LOFT);
+    d.click(a.lerp(mid, 0.5));
+    assert_eq!(
+        d.s.loft_panel().unwrap().current,
+        2,
+        "the whole straight run"
+    );
+    key(&mut d, Key::Escape);
+    let p = d.screen(a.lerp(mid, 0.5));
+    d.send(Input::Move { x: p.x, y: p.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: p.x,
+        y: p.y,
+        shift: false,
+        ctrl: false,
+        alt: true,
+    });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(d.s.loft_panel().unwrap().current, 1, "Alt: one edge");
 }
 
 #[test]

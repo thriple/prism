@@ -2,7 +2,7 @@
 //! they land on; segments split at every vertex and crossing; closed
 //! coplanar loops become faces; overlapping coplanar faces split.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use std::f64::consts::TAU;
 
@@ -239,6 +239,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     // splits it too.
     faces.extend(crate::cut::split_along(model, &added));
     faces.retain(|f| model.face(*f).is_some());
+    break_curves(model, &chain);
     Added {
         edges: added,
         faces,
@@ -517,6 +518,7 @@ fn add_arc_from(
     // sphere), it splits it too.
     faces.extend(crate::cut::split_along(model, &added));
     faces.retain(|f| model.face(*f).is_some());
+    break_curves_along(model, &added);
     Added {
         edges: added,
         faces,
@@ -854,8 +856,89 @@ pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
         faces = rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0);
     }
     faces.retain(|f| model.face(*f).is_some());
+    break_curves_along(model, &added);
     Added {
         edges: added,
         faces,
+    }
+}
+
+/// [`break_curves`] at the ends of `edges`.
+fn break_curves_along(model: &mut Model, edges: &[EdgeId]) {
+    let at: Vec<VertexId> = edges
+        .iter()
+        .filter_map(|e| model.edge(*e))
+        .flat_map(|x| [x.a, x.b])
+        .collect();
+    break_curves(model, &at);
+}
+
+/// Where a drawn edge (not a soft seam) meets a curve partway, at one of
+/// `at`, the curve parts there: each run between such points becomes a
+/// curve of its own, picked, moved and erased alone (as in SketchUp, where
+/// a line across an arc leaves two arcs).
+pub fn break_curves(model: &mut Model, at: &[VertexId]) {
+    let at: BTreeSet<VertexId> = at.iter().copied().collect();
+    let mut by_vertex: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+    for (id, e) in model.edges() {
+        for v in [e.a, e.b] {
+            if at.contains(&v) {
+                by_vertex.entry(v).or_default().push(id);
+            }
+        }
+    }
+    // The curves that run through a point where another hard edge meets.
+    let mut breaks: BTreeMap<prism_topo::CurveId, BTreeSet<VertexId>> = BTreeMap::new();
+    for (v, ids) in &by_vertex {
+        let edges: Vec<_> = ids.iter().filter_map(|e| model.edge(*e)).collect();
+        for c in edges.iter().filter_map(|e| e.curve_id) {
+            let through = edges.iter().filter(|e| e.curve_id == Some(c)).count() >= 2;
+            let crossed = edges.iter().any(|e| e.curve_id != Some(c) && !e.soft);
+            if through && crossed {
+                breaks.entry(c).or_default().insert(*v);
+            }
+        }
+    }
+    for (c, stops) in breaks {
+        let mut left: BTreeSet<EdgeId> = model
+            .edges()
+            .filter(|(_, e)| e.curve_id == Some(c))
+            .map(|(id, _)| id)
+            .collect();
+        let mut first = true;
+        while let Some(start) = left.pop_first() {
+            // The run joined to `start`, not across a break.
+            let mut run = vec![start];
+            let mut i = 0;
+            while i < run.len() {
+                let Some(x) = model.edge(run[i]) else { break };
+                let ends: Vec<VertexId> = [x.a, x.b]
+                    .into_iter()
+                    .filter(|v| !stops.contains(v))
+                    .collect();
+                let next: Vec<EdgeId> = left
+                    .iter()
+                    .copied()
+                    .filter(|k| {
+                        model
+                            .edge(*k)
+                            .is_some_and(|y| ends.iter().any(|v| y.has(*v)))
+                    })
+                    .collect();
+                for k in next {
+                    left.remove(&k);
+                    run.push(k);
+                }
+                i += 1;
+            }
+            if first {
+                first = false;
+                continue;
+            }
+            let id = model.new_curve_id();
+            for e in run {
+                model.set_curve_id(e, Some(id));
+            }
+        }
     }
 }
