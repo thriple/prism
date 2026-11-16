@@ -4152,3 +4152,17 @@ old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
   the bump block's top pulled out 0.1 everywhere), `splines.rs` (a
   freeform wall pulled out 0.5, flat sides, through the kernel),
   `prism-geom` (`a_fit_follows_a_surface_with_a_crease`).
+
+## Owner feedback for the next session (2026-11-16): make Solid, Fabricate and Shapes tools obvious
+- **A pass on every tool in Solid, Fabricate and Shapes** so it is
+  obvious how to use each one: open its side window, show a ghost
+  (preview), or whatever fits that tool. Do this first in the next
+  session.
+- **Shell / Thicken** (`tool.shell`) was not obvious: the owner expected
+  it to offset a watertight body into a new watertight body, a new inside
+  or outside shell, depending on which way the pointer moves. They worked
+  it out in the end, so the pass should make that clear up front.
+- **Outer Shell** (`solid.shell`) does the same job as Union now (Union of
+  more than two groups already runs it, `session/booleans.rs`). The owner
+  sees it as redundant: decide with the owner whether to remove it or fold
+  it into Union.
