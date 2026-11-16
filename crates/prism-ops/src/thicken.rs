@@ -412,7 +412,7 @@ pub fn pull(model: &mut Model, face: FaceId, d: f64) -> Result<(), &'static str>
 }
 
 /// Remove `faces`, and the edges and points only they used.
-fn remove_faces(model: &mut Model, faces: &BTreeSet<FaceId>) {
+pub(crate) fn remove_faces(model: &mut Model, faces: &BTreeSet<FaceId>) {
     let points: BTreeSet<VertexId> = faces
         .iter()
         .filter_map(|f| model.face(*f))

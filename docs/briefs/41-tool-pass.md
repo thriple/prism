@@ -26,7 +26,7 @@ L: three parts, each pushed and tested on its own.
   - Outer Shell is removed: Union does it (owner, 2026-11-16).
   - Both Lofts stay (owner, 2026-11-16): the menu Loft gets the visual feedback above.
   - Edit tools on a closed group say "double-click the group to open it" (from the Fillet window's leftovers).
-- **Part 3. Shell / Thicken.** Build the tool as designed in NOTES ("Shell / Thicken design"). It may need its own brief: Part 2 ends by saying.
+- **Part 3. Shell / Thicken.** Build the tool as designed in NOTES ("Shell / Thicken design"). It has its own brief: `42-shell-thicken.md`.
 
 **MCP:** nothing new. `use_tool`, `run_action` and `replay` drive these tools, and `replay` plays the owner's recorded sessions.
 

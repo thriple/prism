@@ -90,6 +90,14 @@ pub enum Command {
     Patch {
         edges: std::collections::BTreeSet<prism_topo::EdgeId>,
     },
+    /// Shell / Thicken (brief 42): the bodies of `faces` made `thickness`
+    /// thick (out along their normals for more than zero, in for less),
+    /// with `open` left open.
+    Shell {
+        faces: std::collections::BTreeSet<FaceId>,
+        open: std::collections::BTreeSet<FaceId>,
+        thickness: f64,
+    },
     /// The Loft tool's surface: sides picked by hand (each a run of edges,
     /// in the order picked) filled as a ring or lofted through (brief 34).
     LoftSides {
@@ -478,6 +486,7 @@ impl Command {
             Command::Spline { .. } => "Curve",
             Command::MoveCage { .. } => "Move Control Points",
             Command::Loft { .. } => "Loft",
+            Command::Shell { .. } => "Shell / Thicken",
             Command::Revolve { .. } => "Revolve",
             Command::Sweep { .. } => "Sweep",
             Command::Patch { .. } => "Patch",
@@ -635,6 +644,15 @@ impl Command {
             },
             Command::Polygon { points } => Command::Polygon {
                 points: points.iter().map(|v| p(*v)).collect(),
+            },
+            Command::Shell {
+                faces,
+                open,
+                thickness,
+            } => Command::Shell {
+                faces: faces.clone(),
+                open: open.clone(),
+                thickness: thickness * scale,
             },
             Command::Fillet { corner, radius } => Command::Fillet {
                 corner: p(*corner),
@@ -943,6 +961,11 @@ impl Command {
             Command::Revolve { edges } => prism_ops::loft::revolved(m, edges).err(),
             Command::Sweep { edges } => prism_ops::sweep::swept(m, edges).err(),
             Command::Patch { edges } => prism_ops::sweep::patched(m, edges).err(),
+            Command::Shell {
+                faces,
+                open,
+                thickness,
+            } => prism_ops::shelling::refusal(m, faces, open, *thickness),
             Command::LoftSides { sides, preset } => {
                 prism_ops::sides::made_from(m, sides, *preset).err()
             }
@@ -1025,6 +1048,13 @@ impl Command {
             }
             Command::Loft { edges } => {
                 let _ = prism_ops::loft::loft(m, edges);
+            }
+            Command::Shell {
+                faces,
+                open,
+                thickness,
+            } => {
+                let _ = prism_ops::shelling::shell(m, faces, open, *thickness);
             }
             Command::Revolve { edges } => {
                 let _ = prism_ops::loft::revolve(m, edges);

@@ -32,6 +32,7 @@ pub mod rounds;
 pub mod select;
 pub mod settle;
 mod shell;
+pub mod shelling;
 pub mod sides;
 pub mod solid;
 pub mod sticky;

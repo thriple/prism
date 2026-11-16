@@ -4328,3 +4328,19 @@ tests now expect the picking hint).
 - **Cause:** the old line was the border of faces with soft (hidden) lines between them, like a loft's rows. Erasing the border took the faces but left the soft lines. With no face beside them they could not be seen or picked, but the new line was still cut where they ended.
 - **Fix:** `prism_ops::remove` also erases a soft line that bordered a face being erased once no face is left beside it. Test: `sticky.rs` `soft_lines_left_with_no_face_go_with_it`. A soft line that had no face before the erase (hidden on purpose) is kept.
 - **Not confirmed from the recording:** Session 11 was made inside an open group, and a recording saves only the top-level model, not groups or which group is open. So it replays on an empty model, and the cause above is the one that matches the report, not one seen in the replay. Leftover: recordings should save the whole assembly and the open group, so sessions inside groups replay (Input & Feel, or the next MCP/replay work).
+
+## Shell / Thicken part 3a: the operation for flat faces (brief 42, 2026-11-16)
+- The owner gave the go-ahead for part 3 of the tool pass. It has its own brief: `docs/briefs/42-shell-thicken.md` (four parts).
+- **Built:**
+  - `prism_ops::shelling::shell(model, faces, open, thickness)` and `refusal`;
+  - `Command::Shell { faces, open, thickness }` ("Shell / Thicken", one undo step; in a group the thickness scales with it).
+- **How it works:**
+  - The faces joined to the given ones by edges are taken whole. A sheet becomes a slab. A closed body becomes hollow, less the open faces, so a box with its top open is a tray.
+  - Each face moves along its own normal (out for more than zero). A point goes to the nearest place on all its faces' moved planes: exact where up to three planes meet, so walls keep their thickness at corners and a tray's rim lies flat in the open face's plane.
+  - Edges with a kept face on one side get a flat wall (two triangles if it cannot be flat).
+  - The new solid is built on its own and joined in place of the old faces (`boolean::join`).
+- **Refused:** zero thickness, every face open, curved faces or arcs (3c), faces facing different ways (Heal), three faces at an edge, a corner of four or more planes whose moved copies miss one point (3d; a regular pyramid's tip is fine), and a thickness that turns a face inside out.
+- **Leftovers:**
+  - Two shells crossing each other after the move (an inward corner deeper than a far wall) are not checked beyond the face test.
+  - Moved faces keep their paint. Walls are unpainted.
+- **Tests:** `prism-ops/tests/shelling.rs` (slab on both sides, an L, a box hollowed in and grown out, a tray, a face with a hole, every refusal) and `prism-doc/tests/shell.rs` (undo and replay).
