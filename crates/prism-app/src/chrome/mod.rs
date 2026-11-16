@@ -660,7 +660,7 @@ mod tests {
     #[test]
     fn greyed_actions_do_nothing() {
         let mut c = chrome();
-        c.run("solid.union", Source::Menu);
+        c.run("conv.curve", Source::Menu);
         c.run("edit.undo", Source::Menu); // nothing to undo
         assert!(c.events.is_empty());
     }

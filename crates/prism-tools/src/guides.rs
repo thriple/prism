@@ -55,6 +55,23 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Arrows pick the plane.",
             ],
         ),
+        "solid.union" | "solid.isect" | "solid.split" | "solid.shell" => g(
+            "Join solid groups (Union, Outer Shell), keep what is in both (Intersect), or cut them into pieces (Split).",
+            &[
+                "Select two or more solid groups or components, then pick the command: it runs at once.",
+                "Or pick it with nothing selected and click one solid, then the other.",
+                "The result is a group; Undo brings the solids back.",
+                "Solid > Validate and Heal says why a group is not a solid.",
+            ],
+        ),
+        "solid.sub" | "solid.trim" => g(
+            "Cut one solid with another.",
+            &[
+                "Click the cutter, then the solid to cut.",
+                "Subtract removes the cutter; Trim keeps it.",
+                "Esc starts over. Undo brings the solids back.",
+            ],
+        ),
         s::AXES_TOOL => g(
             "Set a group's or component's own axes: its origin and directions.",
             &[

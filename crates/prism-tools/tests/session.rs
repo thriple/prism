@@ -5804,3 +5804,74 @@ fn reset_axes_and_axes_to_centre_from_the_menu() {
     assert!(t.translation.length() < 1e-9, "back at the low corner");
     kept(&before, &world_points(&d));
 }
+
+// ---------- the Solid tools (Solids & CAD part 2, brief 39) ----------
+
+/// The world volume of a group at the root.
+fn group_volume(d: &Driver, g: prism_doc::InstanceId) -> f64 {
+    let asm = d.s.document().assembly();
+    let i = asm.root().instances[&g];
+    let mut m = asm.def(i.def).unwrap().model.clone();
+    prism_ops::transform::affine(&mut m, &i.transform);
+    prism_ops::validate::validate(&m)
+        .iter()
+        .map(|c| c.volume.unwrap_or(0.0))
+        .sum()
+}
+
+/// Three 2 m boxes along x at 0, 3 and 1: the first and the last overlap.
+fn overlapping_groups() -> Driver {
+    let (d, _) = row_of_groups(1.0);
+    d
+}
+
+#[test]
+fn subtract_by_two_clicks_cutter_first_and_esc_starts_over() {
+    use prism_tools::session::SOLID_TOOLS;
+    let mut d = overlapping_groups();
+    let subtract = SOLID_TOOLS[1];
+    d.tool(subtract);
+    // The last box (1 to 3), then Esc: forgotten.
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    key(&mut d, Key::Escape);
+    // The first box (0 to 2) is the cutter, the last is cut: 2 to 3 is left.
+    d.click(DVec3::new(0.5, 0.0, 1.0));
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    assert_eq!(d.s.document().undo_name(), Some("Subtract"));
+    let asm = d.s.document().assembly();
+    assert_eq!(asm.root().instances.len(), 2, "the box at 3 and the result");
+    let (g, i) = asm
+        .root()
+        .instances
+        .iter()
+        .find(|(_, i)| i.transform.translation.x < 2.0)
+        .map(|(g, i)| (*g, *i))
+        .expect("the result, at the cut box's axes");
+    assert!((i.transform.translation.x - 1.0).abs() < 1e-9, "{i:?}");
+    assert!((group_volume(&d, g) - 4.0).abs() < 1e-9);
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.document().assembly().root().instances.len(), 3);
+}
+
+#[test]
+fn union_runs_at_once_on_two_selected_groups() {
+    use prism_tools::session::SOLID_TOOLS;
+    let mut d = overlapping_groups();
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.0, 1.0));
+    let s2 = d.screen(DVec3::new(2.5, 0.0, 1.0));
+    d.click_px(s2, false, true);
+    assert_eq!(d.s.selected_groups().len(), 2);
+    d.tool(SOLID_TOOLS[0]);
+    assert_eq!(d.s.document().undo_name(), Some("Union"));
+    let asm = d.s.document().assembly();
+    assert_eq!(asm.root().instances.len(), 2);
+    let g = *asm
+        .root()
+        .instances
+        .iter()
+        .find(|(_, i)| i.transform.translation.x < 2.0)
+        .unwrap()
+        .0;
+    assert!((group_volume(&d, g) - 12.0).abs() < 1e-9);
+}

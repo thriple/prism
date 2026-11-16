@@ -1169,7 +1169,6 @@ impl Assembly {
         }
     }
 
-    /// Erase instances from `ctx`.
     // ---------- booleans (Solids & CAD part 2, brief 39) ----------
 
     /// A group's own geometry, placed in `ctx`. Refused for a group with
@@ -1301,6 +1300,7 @@ impl Assembly {
         made
     }
 
+    /// Erase instances from `ctx`.
     pub fn erase(&mut self, ctx: DefId, instances: &BTreeSet<InstanceId>) {
         if let Some(d) = self.def_mut(ctx) {
             for i in instances {

@@ -56,8 +56,8 @@ fn volumes(d: &Document) -> Vec<f64> {
     let asm = d.assembly();
     asm.root()
         .instances
-        .iter()
-        .map(|(_, i)| {
+        .values()
+        .map(|i| {
             let mut m = asm.def(i.def).unwrap().model.clone();
             prism_ops::transform::affine(&mut m, &i.transform);
             let checks = prism_ops::validate::validate(&m);

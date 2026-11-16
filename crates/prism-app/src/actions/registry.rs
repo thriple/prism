@@ -803,8 +803,8 @@ mod tests {
     fn greyed_actions_cannot_run_and_say_why() {
         let reg = Registry::new();
         let ctx = Context::default();
-        assert!(!reg.enabled("solid.union", &ctx));
-        assert_eq!(reg.why_disabled("solid.union", &ctx), Some("Not built yet"));
+        assert!(!reg.enabled("conv.curve", &ctx));
+        assert_eq!(reg.why_disabled("conv.curve", &ctx), Some("Not built yet"));
         assert!(!reg.enabled("edit.undo", &ctx));
         assert_eq!(reg.why_disabled("edit.undo", &ctx), Some("Nothing to undo"));
         let ctx = Context {

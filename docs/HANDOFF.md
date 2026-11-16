@@ -65,8 +65,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   Solid > Validate and Heal, the Solids window, MCP `validate_solids`
   and `heal` (NOTES "Solids & CAD part 1"). **Angle Guides** is done
   too (brief 38, owner request: Rotate snaps an edge parallel to a
-  neighbour's edge at any angle; NOTES "Angle Guides"). **Next: Solids &
-  CAD part 2** (exact planar booleans; write its brief first). The owner also floated a chat window in Prism (NOTES "Owner idea
+  neighbour's edge at any angle; NOTES "Angle Guides"). **Solids & CAD part 2
+  is built** (brief 39: the Solid menu's booleans; NOTES "Solids & CAD
+  part 2"). **Next: part 3** (booleans through the kernel; write its
+  brief first, and decide with the owner what it adds now that Prism's
+  own booleans already handle the analytic curved faces). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no

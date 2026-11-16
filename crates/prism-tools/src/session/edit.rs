@@ -147,7 +147,7 @@ pub(super) fn is_edit(t: &str) -> bool {
             | FOLLOW
             | PAINT
             | TEXTURE
-    )
+    ) || super::booleans::is_solid_tool(t)
 }
 
 /// The rotation of `p` about the line through `c` along unit `n`.
@@ -272,6 +272,7 @@ impl Session {
     pub(super) fn edit_hover(&mut self, s: DVec2, view: &View) {
         match self.tool.as_str() {
             PAINT => self.paint_hover(s, view),
+            t if super::booleans::is_solid_tool(t) => self.solid_hover(s, view),
             TEXTURE => self.texpos_hover(s, view),
             FILLET => self.round_hover(s, view),
             LOFT => self.loft_hover(s, view),
@@ -803,6 +804,7 @@ impl Session {
     pub(super) fn edit_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
         match self.tool.as_str() {
             PAINT => self.paint_press(shift, ctrl),
+            t if super::booleans::is_solid_tool(t) => self.solid_press(s),
             TEXTURE => self.texpos_press(s),
             FILLET => self.round_press(s, n_clicks, shift, ctrl),
             LOFT => self.loft_press(shift),

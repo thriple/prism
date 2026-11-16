@@ -3959,3 +3959,45 @@ part, before Solids & CAD part 2.
 - **Left over:** curved edges are not compared; no angle guides in Move,
   Line or Scale. The owner's check: a box turned square with a wall
   drawn at 30°.
+
+## Solids & CAD part 2: booleans (brief 39, 2026-11-16)
+- **Solid > Union, Subtract, Intersect, Trim, Split, Outer Shell** are
+  built, as tools (`prism-tools/src/session/booleans.rs`). With two or
+  more groups selected, Union, Intersect (two only), Split (two only) and
+  Outer Shell run at once (Union of more than two is Outer Shell).
+  Otherwise, as in SketchUp: click the first solid, then the second; for
+  Subtract and Trim the first is the cutter. Esc starts over. A refusal
+  shows in the status bar.
+- **The core** (`prism_ops::boolean`): each solid is cut where the other
+  crosses it (`intersect_with`), each piece placed against the other
+  solid by the two-sided inside test (inside, outside, on it facing the
+  same way, on it facing the other way), and the pieces the operation
+  keeps are joined: points and edges shared where they coincide, edges
+  matched by their middles too (the halves of a circle join the same two
+  points). Seams between faces on one plane are erased (the eraser's
+  merge). Works for flat faces and cylinders, cones, spheres and tori, as
+  Intersect Faces does. Refused: not a solid, freeform faces, a group
+  with groups inside (explode them first).
+- **The command** (`Command::Boolean { op, first, second }`,
+  `Command::OuterShell`, `Assembly::boolean`): one undo step; results are
+  groups at the cut solid's axes (Split's first-less-second at the
+  first's); the inputs go (Trim keeps the cutter); an empty result makes
+  no group; locked groups refuse.
+- **Hollows:** Model Health's reversed check now knows a shell inside
+  another solid is a hollow that rightly faces into itself (it used to
+  say every face was reversed), and Validate joins a hollow to the solid
+  around it (one row; the kernel checks the outer shell only).
+- **Tests:** `prism-ops/tests/boolean.rs` (overlapping boxes both ways,
+  touching boxes, a hollow, a round hole, refusal),
+  `prism-doc/tests/booleans.rs` (every operation's volumes, undo, Outer
+  Shell of three, locked), session tests for the clicks and the
+  selection.
+- **Left over (sorted, DECISIONS #33):**
+  - Part 3: decide what the kernel adds (Prism's own booleans already do
+    the analytic curved faces); freeform faces are part 4.
+  - Later: nested groups as inputs; loose geometry as an input; keeping
+    the inputs (a preference); the result keeps no component link; a
+    hover highlight of the whole group in the tool; Split places one
+    piece at each input's axes. Not checked by eye in the app yet.
+  - The owner's check: a box with a cylinder subtracted shows a clean
+    round hole, and Undo brings both back.

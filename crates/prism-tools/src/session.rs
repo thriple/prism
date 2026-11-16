@@ -27,6 +27,7 @@ use crate::select::box_select;
 
 mod arcs;
 mod axes;
+mod booleans;
 mod cage;
 mod clip;
 mod construct;
@@ -49,6 +50,7 @@ mod views;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use axes::{AXES_TOOL, axes_from};
+pub use booleans::SOLID_TOOLS;
 pub use cage::PICK_FIRST;
 pub use clip::LOCKED;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
@@ -79,7 +81,7 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 33] = [
+pub const TOOLS: [&str; 39] = [
     SELECT,
     LINE,
     RECT,
@@ -121,6 +123,13 @@ pub const TOOLS: [&str; 33] = [
     draw::FREEHAND,
     // Group Axes (brief 36).
     axes::AXES_TOOL,
+    // Solids & CAD part 2 (brief 39): the Solid menu's booleans.
+    booleans::UNION,
+    booleans::SUBTRACT,
+    booleans::INTERSECT,
+    booleans::TRIM,
+    booleans::SPLIT,
+    booleans::OUTER_SHELL,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -515,6 +524,8 @@ pub struct Session {
     smart_budget: f64,
     smart: Option<smart::SmartOp>,
     notice: Option<&'static str>,
+    /// The Solid tools: the first solid clicked (brief 39).
+    solid_first: Option<prism_doc::InstanceId>,
     /// Perspective or parallel, and the field of view (part 2); the Zoom
     /// Window box being dragged.
     lens: prism_view::Lens,
@@ -577,6 +588,7 @@ impl Session {
             smart_budget: smart::BUDGET_MS,
             smart: None,
             notice: None,
+            solid_first: None,
             lens: prism_view::Lens::default(),
             zoom_box: None,
             doc,
@@ -741,6 +753,7 @@ impl Session {
             || self.rrect.is_some()
             || self.freehand.is_some()
             || self.axes_op.is_some()
+            || self.solid_first.is_some()
             || self.cage_start().is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
@@ -884,6 +897,7 @@ impl Session {
             .rrect_hint()
             .or_else(|| self.freehand_hint())
             .or_else(|| self.axes_hint())
+            .or_else(|| self.solid_hint())
         {
             return h;
         }
@@ -1133,6 +1147,9 @@ impl Session {
         if id == TEXTURE {
             self.texpos_picked();
         }
+        if booleans::is_solid_tool(id) {
+            self.solid_tool_picked();
+        }
         self.overlay_dirty = true;
         self.dirty = true;
         self.refresh();
@@ -1156,6 +1173,7 @@ impl Session {
         self.rrect = None;
         self.freehand = None;
         self.axes_op = None;
+        self.solid_first = None;
         self.cage_cancel();
         self.last_fillet = None;
         self.round_last = None;

@@ -1,6 +1,8 @@
-**New in this build: Angle Guides.**
-- **Rotate** now matches any angle a neighbour's edges make, not only the way it faces or a quarter turn from it. Turn a group, component or whole body near the angle of a neighbour's edge: a dashed teal guide shows along both edges, labelled Parallel, and the turn snaps softly to it.
-- Typing an angle, Shift (45° steps) and snapping to a point win over it, as with the other guides.
+**New in this build: Solid tools.**
+- **Solid > Union, Subtract, Intersect, Trim, Split and Outer Shell** work on groups and components that are solids. The result is a group, exact (flat faces, cylinders, cones, spheres and tori), with no seams left on flat faces; Undo brings the solids back.
+- Select two or more solids and pick Union, Intersect, Split or Outer Shell: it runs at once. Or pick a command and click one solid, then the other.
+- **Subtract and Trim:** click the cutter, then the solid to cut. Subtract removes the cutter; Trim keeps it. Esc starts over.
+- A box with a box removed from inside it now counts as one valid solid with a hollow; Model Health no longer calls the hollow's faces reversed.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
