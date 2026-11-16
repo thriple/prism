@@ -3998,6 +3998,7 @@ part, before Solids & CAD part 2.
   - Later: nested groups as inputs; loose geometry as an input; keeping
     the inputs (a preference); the result keeps no component link; a
     hover highlight of the whole group in the tool; Split places one
-    piece at each input's axes. Not checked by eye in the app yet.
+    piece at each input's axes. Checked by eye: Subtract by two clicks
+    leaves a clean round hole in a box.
   - The owner's check: a box with a cylinder subtracted shows a clean
     round hole, and Undo brings both back.
