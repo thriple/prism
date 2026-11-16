@@ -181,6 +181,24 @@ impl Laid {
         })
     }
 
+    /// Whether a loop goes all the way round a closed direction (its last
+    /// place is a whole period from its first).
+    pub(crate) fn wraps(&self) -> bool {
+        self.polys.iter().any(|l| {
+            let (Some(a), Some(b)) = (l.first(), l.last()) else {
+                return false;
+            };
+            (0..2).any(|d| {
+                let p = self.shifts[d]
+                    .iter()
+                    .map(|x| x.abs())
+                    .filter(|x| *x > 0.0)
+                    .fold(f64::INFINITY, f64::min);
+                p.is_finite() && (a[d] - b[d]).abs() > p / 2.0
+            })
+        })
+    }
+
     /// The turned form, for a turned face.
     pub(crate) fn rev(&self) -> Option<&Revolution> {
         match &self.param {
@@ -846,33 +864,66 @@ impl Tracer<'_> {
     }
 
     /// A cubic through the traced points (every eighth, fourth, second,
-    /// then all of them), the first whose every place is on both faces'
-    /// surfaces within the tolerance.
+    /// then all of them, then with points put between them), the first
+    /// whose every place is on both faces' surfaces within a hundredth of
+    /// the tolerance: the kernel fits its own curves on the faces to the
+    /// tolerance, so it needs the room.
     fn spline_fit(&self, pts: &[DVec3]) -> Option<Nurbs> {
-        let eps = self.tol.dist;
-        let n = pts.len();
-        for stride in [8, 4, 2, 1] {
-            let mut sub: Vec<DVec3> = pts.iter().step_by(stride).copied().collect();
-            if !(n - 1).is_multiple_of(stride) {
-                sub.push(pts[n - 1]);
+        let eps = self.tol.dist * 1e-2;
+        let mut pts = pts.to_vec();
+        for round in 0..3 {
+            let strides: &[usize] = if round == 0 { &[8, 4, 2, 1] } else { &[1] };
+            let n = pts.len();
+            for &stride in strides {
+                let mut sub: Vec<DVec3> = pts.iter().step_by(stride).copied().collect();
+                if !(n - 1).is_multiple_of(stride) {
+                    sub.push(pts[n - 1]);
+                }
+                if sub.len() < 2 {
+                    continue;
+                }
+                let Some(c) = Nurbs::through(&sub, false) else {
+                    continue;
+                };
+                let (d0, d1) = c.domain();
+                let k = 2 * n;
+                let on = (0..=k).all(|i| {
+                    let x = c.eval(d0 + (d1 - d0) * i as f64 / k as f64);
+                    self.a.surface.distance(x).abs() <= eps && self.b.value(x).abs() <= eps
+                });
+                if on {
+                    return Some(c);
+                }
             }
-            if sub.len() < 2 {
-                continue;
+            if pts.len() > 1000 {
+                break;
             }
-            let Some(c) = Nurbs::through(&sub, false) else {
-                continue;
-            };
-            let (d0, d1) = c.domain();
-            let k = 4 * n;
-            let on = (0..=k).all(|i| {
-                let x = c.eval(d0 + (d1 - d0) * i as f64 / k as f64);
-                self.a.surface.distance(x).abs() <= eps && self.b.value(x).abs() <= eps
-            });
-            if on {
-                return Some(c);
-            }
+            pts = self.densified(&pts);
         }
         None
+    }
+
+    /// The points with a point of the crossing put between each two.
+    fn densified(&self, pts: &[DVec3]) -> Vec<DVec3> {
+        let mut out = vec![pts[0]];
+        for w in pts.windows(2) {
+            let (a, b) = (
+                self.a.place(w[0], f64::INFINITY),
+                self.a.place(w[1], f64::INFINITY),
+            );
+            if let (Some(a), Some(b)) = (a, b)
+                && let Some(m) = self.refine(a.lerp(b, 0.5))
+            {
+                // One found elsewhere (across a seam) is left out.
+                let p = self.point(m);
+                let gap = w[0].distance(w[1]);
+                if p.distance(w[0]) < gap && p.distance(w[1]) < gap {
+                    out.push(p);
+                }
+            }
+            out.push(w[1]);
+        }
+        out
     }
 
     fn fit(&self, pts: Vec<DVec3>) -> Piece {

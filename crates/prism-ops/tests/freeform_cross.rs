@@ -1,5 +1,6 @@
 //! Crossings with freeform faces (Solids & CAD part 3, step 3b): traced in
-//! the patch's (u, v) and kept as a cubic on both surfaces.
+//! the patch's (u, v) and kept as a cubic on both surfaces; solids with
+//! freeform faces checked by the kernel (step 3c).
 
 use std::sync::Arc;
 
@@ -257,15 +258,28 @@ fn under_bump(lo: f64, hi: f64) -> f64 {
     sum * h * h
 }
 
+/// The volume the kernel gives for the one solid in `m`, once its checker
+/// has passed it.
+fn kernel_volume(m: &Model) -> f64 {
+    let all = prism_ops::validate::validate(m);
+    assert_eq!(all.len(), 1);
+    assert!(all[0].valid, "{all:?}");
+    assert_eq!(all[0].kernel_skipped, None, "checked by the kernel");
+    let r = prism_ops::bridge::region(m, &all[0].faces).unwrap();
+    prism_kernel::solid::Solid::build(&r, m.tol().dist)
+        .and_then(|s| s.volume())
+        .unwrap()
+}
+
 #[test]
 fn the_bump_block_is_a_solid_of_its_volume() {
     let m = bump_block();
     assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
     let all = prism_ops::validate::validate(&m);
-    assert_eq!(all.len(), 1);
-    assert!(all[0].valid, "{all:?}");
     let v = all[0].volume.unwrap();
     assert!((v - BLOCK).abs() < 1e-9, "{v} vs {BLOCK}");
+    let k = kernel_volume(&m);
+    assert!((k - BLOCK).abs() < 1e-9, "the kernel's {k} vs {BLOCK}");
 }
 
 #[test]
@@ -282,6 +296,12 @@ fn a_box_subtracted_from_the_bump_block() {
     assert!(all.iter().all(|c| c.valid), "{all:?}");
     let v: f64 = all.iter().map(|c| c.volume.unwrap()).sum();
     let want = BLOCK - under_bump(0.25, 0.75);
+    // The kernel's checker passes it, and its volume agrees.
+    let k = kernel_volume(&out);
+    assert!(
+        (k - want).abs() < out.tol().dist * 0.1,
+        "the kernel's {k} vs {want}"
+    );
     // The cut's edges are cubics within the tolerance of the crossing, so
     // the volume is as close as a tenth of the tolerance.
     assert!((v - want).abs() < out.tol().dist * 0.1, "{v} vs {want}");

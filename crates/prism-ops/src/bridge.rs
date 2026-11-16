@@ -161,6 +161,10 @@ pub fn region(model: &Model, faces: &BTreeSet<FaceId>) -> Result<Region, &'stati
             key: Some(u64::from(fid.0)),
             surface: f.surface.clone(),
             loops,
+            inside: f
+                .is_curved()
+                .then(|| crate::shell::interior(model, fid).first().map(|x| x.0))
+                .flatten(),
         });
     }
     Ok(r)

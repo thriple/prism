@@ -137,7 +137,7 @@ fn a_valid_solid_needs_no_healing() {
 }
 
 #[test]
-fn a_cylinder_is_valid_through_the_kernel_and_a_ball_by_prisms_rules() {
+fn a_cylinder_and_a_ball_are_valid_through_the_kernel() {
     let mut m = Model::new();
     add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
     let f = face_at(&m, v(0.0, 0.0, 0.0)).unwrap();
@@ -166,14 +166,47 @@ fn a_cylinder_is_valid_through_the_kernel_and_a_ball_by_prisms_rules() {
         .iter()
         .find(|c| c.valid)
         .unwrap_or_else(|| panic!("{all:?}"));
-    // Its poles cannot go to the kernel yet (part 3).
-    assert_eq!(
-        ball.kernel_skipped,
-        Some(prism_ops::validate::KERNEL_NOT_YET)
-    );
+    // Its poles go to the kernel as edges of no length (part 3c).
+    assert_eq!(ball.kernel_skipped, None);
     close(ball.volume.unwrap(), 4.0 / 3.0 * PI);
     // Its area is exact too (it was 0, so Model Health called every
     // turned face "of no size").
     close(ball.faces.iter().map(|f| m.face_area(*f)).sum(), 4.0 * PI);
     assert_eq!(all.len(), 2);
+}
+
+/// A profile drawn by `draw` turned round a circle about z by Follow Me:
+/// the solid it makes.
+fn turned(draw: impl Fn(&mut Model)) -> SolidCheck {
+    let mut m = Model::new();
+    draw(&mut m);
+    let prof = m.faces().next().map(|(id, _)| id).unwrap();
+    let before: BTreeSet<_> = m.edges().map(|(id, _)| id).collect();
+    add_circle(&mut m, v(0.0, 0.0, 10.0), DVec3::Z, 0.5);
+    let path: BTreeSet<_> = m
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| !before.contains(id))
+        .collect();
+    assert!(follow::follow(&mut m, &path, prof));
+    let all = validate(&m);
+    all.into_iter()
+        .find(|c| c.valid && c.volume.is_some_and(|x| x > 0.0))
+        .expect("a solid")
+}
+
+#[test]
+fn a_torus_and_a_cone_go_through_the_kernel() {
+    // A tube of radius 0.5 round a circle of radius 2.
+    let torus = turned(|m| {
+        add_circle(m, v(2.0, 0.0, 0.0), DVec3::Y, 0.5);
+    });
+    assert_eq!(torus.kernel_skipped, None);
+    close(torus.volume.unwrap(), 2.0 * PI * PI * 2.0 * 0.25);
+    // A right triangle turned: a cone 1 wide and 2 high, its tip a corner.
+    let cone = turned(|m| {
+        prism_ops::add_polygon(m, &[v(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0), v(0.0, 0.0, 2.0)]);
+    });
+    assert_eq!(cone.kernel_skipped, None);
+    close(cone.volume.unwrap(), PI * 2.0 / 3.0);
 }

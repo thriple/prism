@@ -15,10 +15,10 @@ use prism_topo::{EdgeId, FaceId, Model, VertexId};
 use crate::health::{self, Found};
 use crate::regions::{Fill, rebuild_plane};
 
-/// Said for a solid the bridge cannot send yet: a sphere's poles, a
-/// torus's two seams and a cone's tip need part 3 of Solids & CAD.
-pub const KERNEL_NOT_YET: &str =
-    "Spheres, tori and cone tips cannot go to the kernel yet: checked by Prism's rules only.";
+/// Said for a solid the bridge cannot send yet: a face with a sphere's
+/// pole or a cone's tip inside it (not at a corner), or a curved face
+/// that goes all the way round (other than a cylinder's).
+pub const KERNEL_NOT_YET: &str = "A face round a pole or a tip, or one that goes all the way round, cannot go to the kernel yet: checked by Prism's rules only.";
 
 /// What Validate says about one piece of faces.
 #[derive(Clone, Debug, PartialEq)]
@@ -227,14 +227,28 @@ fn kernel_takes(model: &Model, f: FaceId) -> bool {
         return false;
     };
     let tol = model.tol().dist;
+    let laid = crate::crossing::Laid::new(model, f);
+    // A point where the surface's parameters pinch (a pole, a tip) inside
+    // the face, not at a corner of it: the bridge cannot send it yet.
+    let pinched = |p: DVec3| {
+        !face
+            .loops()
+            .flatten()
+            .any(|v| model.vertex(*v).distance(p) <= tol)
+            && laid
+                .as_ref()
+                .is_none_or(|l| l.classify(p, tol) != Some(false))
+    };
+    let wraps = laid.as_ref().is_none_or(|l| l.wraps());
     match &face.surface {
-        Surface::Sphere(_) | Surface::Torus(_) => false,
-        Surface::Cone(_) => face.surface.revolution().is_some_and(|rev| {
-            face.loops()
-                .flatten()
-                .all(|v| rev.axis_distance(model.vertex(*v)) > tol)
-        }),
-        _ => true,
+        Surface::Plane(_) | Surface::Cylinder(_) => true,
+        Surface::Cone(c) => !pinched(c.apex),
+        Surface::Sphere(x) => {
+            !wraps
+                && !pinched(x.centre + x.axis * x.radius)
+                && !pinched(x.centre - x.axis * x.radius)
+        }
+        Surface::Torus(_) | Surface::Nurbs(_) => !wraps,
     }
 }
 
