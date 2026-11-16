@@ -690,13 +690,14 @@ fn crossing_faces(model: &Model, tol: &Tol) -> BTreeSet<FaceId> {
         .map(|(id, _)| id)
         .collect();
     let all: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
+    let mut cache = crate::crossing::Layouts::new();
     for &a in &curved {
         for &b in &all {
             let b_curved = model.face(b).is_some_and(|f| f.is_curved());
             if b == a || (b_curved && b < a) {
                 continue;
             }
-            if !crate::crossing::crossings_with(model, a, b).is_empty() {
+            if !crate::crossing::crossings_in(model, a, b, &mut cache).is_empty() {
                 out.insert(a);
                 out.insert(b);
             }

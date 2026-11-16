@@ -323,6 +323,12 @@ fn the_bump_blocks_top_pulls_out_by_the_distance() {
     let all = prism_ops::validate::validate(&m);
     assert_eq!(all.len(), 1, "{all:?}");
     assert!(all[0].valid, "{all:?}");
+    // Its curved sides meet the new top along many pieces: too slow for
+    // the kernel's check yet.
+    assert_eq!(
+        all[0].kernel_skipped,
+        Some(prism_ops::validate::KERNEL_TOO_LONG)
+    );
     // About the top's area times 0.1 more.
     let grown = all[0].volume.unwrap() - BLOCK;
     assert!(

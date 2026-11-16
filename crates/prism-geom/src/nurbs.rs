@@ -133,67 +133,45 @@ pub(crate) fn clamped_knots(p: usize, n: usize) -> Vec<f64> {
         .collect()
 }
 
-/// Which way to take differences at node `t`: forward at the first,
-/// back at the last (a curve or surface may not reach past its ends),
-/// both ways between.
-pub(crate) fn side_of(nodes: &[f64], last: usize, t: f64) -> i8 {
-    if t <= nodes[0] {
-        1
-    } else if t >= nodes[last] {
-        -1
-    } else {
-        0
-    }
-}
-
-/// The slope of `f` at `t` with step `h`: central differences, or one
-/// way (second order) when `side` is 1 (forward) or -1 (back).
-pub(crate) fn slope_h(f: &dyn Fn(f64) -> DVec3, t: f64, side: i8, h: f64) -> DVec3 {
-    match side {
-        0 => (f(t + h) - f(t - h)) / (2.0 * h),
-        s => {
-            let k = f64::from(s);
-            (f(t) * -3.0 + f(t + k * h) * 4.0 - f(t + 2.0 * k * h)) / (2.0 * k * h)
-        }
-    }
-}
-
-pub(crate) fn slope(f: &dyn Fn(f64) -> DVec3, t: f64, side: i8) -> DVec3 {
-    slope_h(f, t, side, 1e-6)
-}
-
-/// The control points and knots of the cubic Hermite through `nodes`, from
-/// each node's value and slope: per node, a point a third of the step
-/// before it and one a third after (only after the first, before the
-/// last), with every inner node a double knot.
-pub(crate) fn hermite_row(
-    at: &dyn Fn(f64) -> (DVec3, DVec3),
-    nodes: &[f64],
-) -> Option<(Vec<DVec3>, Vec<f64>)> {
+/// Clamped knots of degree `p` over `nodes` (rising): once at each inner
+/// node, `p - 1` times at one of `creases` (the same numbers), where a
+/// curve on them need only be smooth once. None for nodes that do not rise.
+pub fn knots_over(p: usize, nodes: &[f64], creases: &[f64]) -> Option<Vec<f64>> {
     let n = nodes.len();
-    if n < 2 || nodes.windows(2).any(|w| w[1] <= w[0]) {
+    if n < 2 || p == 0 || nodes.windows(2).any(|w| w[1] <= w[0]) {
         return None;
     }
-    let mut pts = Vec::with_capacity(2 * n);
-    let mut knots = vec![nodes[0]; 4];
-    for (k, &t) in nodes.iter().enumerate() {
-        let (p, d) = at(t);
-        if k > 0 {
-            pts.push(p - d * ((t - nodes[k - 1]) / 3.0));
-        } else {
-            pts.push(p);
-        }
-        if k + 1 < n {
-            pts.push(p + d * ((nodes[k + 1] - t) / 3.0));
-            if k > 0 {
-                knots.extend([t, t]);
-            }
-        } else {
-            pts.push(p);
-        }
+    let mut k = vec![nodes[0]; p + 1];
+    for t in &nodes[1..n - 1] {
+        let times = if creases.contains(t) { p - 1 } else { 1 };
+        k.extend(std::iter::repeat_n(*t, times.max(1)));
     }
-    knots.extend([nodes[n - 1]; 4]);
-    Some((pts, knots))
+    k.extend(std::iter::repeat_n(nodes[n - 1], p + 1));
+    Some(k)
+}
+
+/// Where a curve of degree `p` on `knots` is fitted: each control point's
+/// Greville point (the average of its `p` inner knots), and the basis
+/// functions' values there, a row per point.
+pub(crate) fn collocation(p: usize, knots: &[f64]) -> Option<(Vec<f64>, Vec<Vec<f64>>)> {
+    let n = knots.len().checked_sub(p + 1)?;
+    if !knots_ok(p, knots, n) {
+        return None;
+    }
+    let at: Vec<f64> = (0..n)
+        .map(|i| knots[i + 1..=i + p].iter().sum::<f64>() / p as f64)
+        .collect();
+    let rows = at
+        .iter()
+        .map(|&t| {
+            let k = span(p, knots, n, t);
+            let b = basis(p, knots, k, t);
+            let mut row = vec![0.0; n];
+            row[k - p..=k].copy_from_slice(&b[..=p]);
+            row
+        })
+        .collect();
+    Some((at, rows))
 }
 
 /// Solve `a x = b` (rows of `a` are `n` long) by elimination with
@@ -294,17 +272,14 @@ impl Nurbs {
         Nurbs::new(p, knots, all, vec![1.0; n + p], true)
     }
 
-    /// The cubic that matches `f` and its slope at each of `nodes`
-    /// (rising from 0 to 1), cubic Hermite between them: smooth at a node
-    /// once (a double knot), so a curve that bends sharply only there is
-    /// followed exactly. Slopes are taken by differences, one way at the
-    /// ends.
-    pub fn hermite(f: &dyn Fn(f64) -> DVec3, nodes: &[f64]) -> Option<Nurbs> {
-        let last = nodes.len().saturating_sub(1);
-        let side = |t: f64| side_of(nodes, last, t);
-        let (pts, knots) = hermite_row(&|t| (f(t), slope(f, t, side(t))), nodes)?;
+    /// The curve of degree `p` on `knots` (see [`knots_over`]) that
+    /// passes through `f` at its Greville points: close to `f` everywhere
+    /// when `f` is smooth between the knots.
+    pub fn fitted(f: &dyn Fn(f64) -> DVec3, p: usize, knots: Vec<f64>) -> Option<Nurbs> {
+        let (at, rows) = collocation(p, &knots)?;
+        let pts = solve(rows, at.iter().map(|t| f(*t)).collect())?;
         let n = pts.len();
-        Nurbs::new(3, knots, pts, vec![1.0; n], false)
+        Nurbs::new(p, knots, pts, vec![1.0; n], false)
     }
 
     /// A cubic curve through `points`, open or closed.

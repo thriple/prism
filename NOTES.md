@@ -4084,7 +4084,7 @@ old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
   (0, 4.816), (0.865, 5.317), (5.305, 3.734), (4.245, 4.226), (3.586,
   3.541) and a line from (5.702, 3.424) to (1.008, 5.988).
 
-## Solids & CAD part 3c: the kernel checks freeform faces, spheres, tori and cone tips (brief 40, 2026-11-16)
+## Solids & CAD part 3c: the kernel checks freeform faces, spheres, tori and cone tips; Push/Pull of a freeform face (brief 40, 2026-11-16)
 - **The bridge sends them** (`prism-kernel/src/solid.rs`): a freeform
   face as its NURBS surface (facing along u × v unless flipped); a
   sphere with its poles on Prism's axis, where Prism's faces have their
@@ -4110,10 +4110,45 @@ old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
 - **The kernel is optimised in test builds** (`[profile.dev.package.arris-*]`
   and nalgebra at opt-level 3): unoptimised, fitting an edge's curve on a
   freeform face took minutes.
-- **Push/Pull of a freeform face is not built:** the kernel cannot do it.
-  arris 0.10 (and 0.11, the newest) refuses to offset a freeform face
-  (`OffsetReason::NoExactOffset`) or to move a face beside one. Asked the
-  owner how to go on (HANDOFF).
+- **Push/Pull of a freeform face is built, with Prism's own offset**
+  (`prism-ops/src/thicken.rs`; the owner left the choice to me): arris
+  0.10 (and 0.11, the newest) refuses to offset a freeform face
+  (`OffsetReason::NoExactOffset`). The offset is a fit of degree 5
+  through the face's points moved along its normal, at the fit's
+  Greville points (`Nurbs::fitted`, `NurbsSurface::fitted`), on knots
+  that bend once at the surface's own knot lines (`knots_over`), degree 1
+  where the offset is straight (a wall's height); pieces are split until
+  within a tenth of the tolerance. The face, its offset and ruled sides
+  close a slab; a side that lies flat is a plane. A lone face becomes the
+  slab; on a solid the face gives way to the sides and offset (reversed
+  for a push). No booleans: nothing is cut where the pull runs into other
+  geometry, and where the face is not square to its neighbours the pull
+  leaves a crease. Refused: a face that goes all the way round (`ROUND`).
+- **Making it quick to check** (owner: "make 3c more efficient"). First
+  try: cubic Hermite pieces, Validate of a pulled wall 65 s. Where the
+  time went: the kernel's face-against-face check (`s5_face_pairs`,
+  `boundary_seeds`, `spline_nurbs::isolate`) tests each freeform face's
+  edge against a freeform face beside it piece by piece, and an edge
+  lying on that face is its slowest case (about a tenth of a second per
+  piece). Fewer pieces of higher degree did not help: each costs more
+  (degree 5: 21 control points, not 82, same time). What did:
+  - flat sides are planes: the pulled wall checks in 1 s, the kernel
+    included;
+  - `NurbsSurface::closest` collapses each grid line once (same sums as
+    `eval`, about 5 times fewer), and one pass of the crossing check
+    lays out each face once (`crossing::Layouts`);
+  - a solid whose freeform faces meet along many pieces skips the
+    kernel (`KERNEL_TOO_LONG`, `validate::kernel_work`, budget about 2
+    to 3 s): the pulled bump (curved sides) takes 2.7 s, Prism's rules
+    only (it was 96 s). Most of that is Prism's crossing check tracing
+    the new top against its sides; faster needs a warm start for
+    `Patch::param` (not done).
+  - Validate runs on the UI thread whenever the Solids window is open
+    and the model changes, so this matters: running it in the
+    background would be the next step if it is still too slow.
 - **Tests:** `prism-ops/tests/validate.rs` (a ball through the kernel; a
   torus and a cone with its tip), `prism-ops/tests/freeform_cross.rs` (the
-  bump block and the block minus a box through the kernel, its volume).
+  bump block and the block minus a box through the kernel, its volume;
+  the bump block's top pulled out 0.1 everywhere), `splines.rs` (a
+  freeform wall pulled out 0.5, flat sides, through the kernel),
+  `prism-geom` (`a_fit_follows_a_surface_with_a_crease`).

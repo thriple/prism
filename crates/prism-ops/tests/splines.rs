@@ -238,6 +238,7 @@ fn a_freeform_wall_pulls_out_by_the_distance() {
         let all = prism_ops::validate::validate(m);
         assert_eq!(all.len(), 1, "{all:?}");
         assert!(all[0].valid, "{all:?}");
+        assert_eq!(all[0].kernel_skipped, None);
         all[0].volume.unwrap()
     };
     let before = solid(&m);
@@ -254,6 +255,10 @@ fn a_freeform_wall_pulls_out_by_the_distance() {
         prism_ops::pushpull::Pulled::Nothing
     );
     clean(&m);
+    // Its ends and sides are flat (planes): only the rest of the wall and
+    // the moved piece are freeform, and the kernel checks it.
+    let freeform = m.faces().filter(|(_, f)| f.surface.patch().is_some());
+    assert_eq!(freeform.count(), 2);
     // A slab about as big as the wall, 0.5 thick, was added.
     let grown = solid(&m) - before;
     assert!(

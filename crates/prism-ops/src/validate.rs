@@ -20,6 +20,14 @@ use crate::regions::{Fill, rebuild_plane};
 /// that goes all the way round (other than a cylinder's).
 pub const KERNEL_NOT_YET: &str = "A face round a pole or a tip, or one that goes all the way round, cannot go to the kernel yet: checked by Prism's rules only.";
 
+/// Said for a solid whose freeform faces meet each other along many curve
+/// pieces: the kernel's check of faces against faces takes too long there
+/// yet (Solids & CAD part 3c).
+pub const KERNEL_TOO_LONG: &str = "Freeform faces that meet along many curve pieces take the kernel too long to check yet: checked by Prism's rules only.";
+
+/// The most [`kernel_work`] Validate sends to the kernel: a few seconds.
+const KERNEL_BUDGET: f64 = 24.0;
+
 /// What Validate says about one piece of faces.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SolidCheck {
@@ -144,6 +152,8 @@ pub fn validate(model: &Model) -> Vec<SolidCheck> {
             if hollow {
             } else if reasons.is_empty() && !faces.iter().all(|f| kernel_takes(model, *f)) {
                 kernel_skipped = Some(KERNEL_NOT_YET);
+            } else if reasons.is_empty() && kernel_work(model, &faces) > KERNEL_BUDGET {
+                kernel_skipped = Some(KERNEL_TOO_LONG);
             } else if reasons.is_empty() {
                 let found = crate::bridge::region(model, &faces)
                     .and_then(|region| prism_kernel::solid::Solid::faults(&region, tol));
@@ -250,6 +260,38 @@ fn kernel_takes(model: &Model, f: FaceId) -> bool {
         }
         Surface::Torus(_) | Surface::Nurbs(_) => !wraps,
     }
+}
+
+/// About how long the kernel takes to check `faces`, in tenths of a
+/// second. Where two freeform faces meet, it tests each one's edge
+/// against the other piece by piece (an edge lying on a face is its
+/// slowest case), so each edge between two freeform faces costs about
+/// its own pieces for each face, more for a higher degree. Edges with
+/// flat or simply curved faces cost next to nothing.
+fn kernel_work(model: &Model, faces: &BTreeSet<FaceId>) -> f64 {
+    let patch = |f: &FaceId| model.face(*f).and_then(|x| x.surface.patch());
+    let mut work = 0.0;
+    for (e, by) in model.edge_faces() {
+        let [a, b] = by[..] else {
+            continue;
+        };
+        let (Some(pa), Some(pb), Some(edge)) = (patch(&a), patch(&b), model.edge(e)) else {
+            continue;
+        };
+        if !(faces.contains(&a) && faces.contains(&b)) {
+            continue;
+        }
+        let pieces = match &edge.curve {
+            Curve::Spline(sp) => sp.curve.spans() as f64,
+            _ => 1.0,
+        };
+        for p in [pa, pb] {
+            let d = p.surface.degree();
+            let d = d[0].max(d[1]) as f64 + 1.0;
+            work += 2.0 * pieces * d.powi(3) / 64.0;
+        }
+    }
+    work
 }
 
 /// What Heal did.

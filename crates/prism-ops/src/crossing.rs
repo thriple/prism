@@ -74,6 +74,7 @@ pub(crate) enum Param {
 }
 
 /// A curved face laid out flat: in (θ, s) or in (u, v).
+#[derive(Clone)]
 pub(crate) struct Laid {
     pub(crate) face: FaceId,
     pub(crate) surface: Surface,
@@ -1016,8 +1017,21 @@ fn face_box(m: &Model, id: FaceId) -> Option<(DVec3, DVec3)> {
     crate::cut::face_box(m, m.face(id)?)
 }
 
+/// Each face's layout, made once for a pass over many pairs of faces
+/// (laying out a large freeform face is slow).
+pub(crate) type Layouts = BTreeMap<FaceId, Option<Laid>>;
+
+fn laid_once(m: &Model, cache: &mut Layouts, f: FaceId) -> Option<Laid> {
+    cache.entry(f).or_insert_with(|| Laid::new(m, f)).clone()
+}
+
 /// Where curved face `a` crosses face `b` (flat or curved).
 pub fn crossings_with(m: &Model, a: FaceId, b: FaceId) -> Vec<Piece> {
+    crossings_in(m, a, b, &mut Layouts::new())
+}
+
+/// [`crossings_with`], with the layouts made so far.
+pub(crate) fn crossings_in(m: &Model, a: FaceId, b: FaceId, cache: &mut Layouts) -> Vec<Piece> {
     if a == b {
         return Vec::new();
     }
@@ -1040,7 +1054,7 @@ pub fn crossings_with(m: &Model, a: FaceId, b: FaceId) -> Vec<Piece> {
     if ba.1.cmplt(bb.0).any() || bb.1.cmplt(ba.0).any() {
         return Vec::new();
     }
-    let Some(laid) = Laid::new(m, a) else {
+    let Some(laid) = laid_once(m, cache, a) else {
         return Vec::new();
     };
     let Some(fb) = m.face(b) else {
@@ -1051,7 +1065,7 @@ pub fn crossings_with(m: &Model, a: FaceId, b: FaceId) -> Vec<Piece> {
             Some(f) => Other::Flat(b, f, *pl),
             None => return Vec::new(),
         },
-        None => match Laid::new(m, b) {
+        None => match laid_once(m, cache, b) {
             Some(l) => Other::Curved(l),
             None => return Vec::new(),
         },
@@ -1083,6 +1097,7 @@ pub fn curved_crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) 
         .collect();
     let all: Vec<FaceId> = m.faces().map(|(id, _)| id).collect();
     let mut out = Vec::new();
+    let mut cache = Layouts::new();
     for &a in &curved {
         for &b in &all {
             let b_curved = m.face(b).is_some_and(|f| f.is_curved());
@@ -1093,7 +1108,7 @@ pub fn curved_crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) 
             if !keep(a, b) {
                 continue;
             }
-            out.extend(crossings_with(m, a, b));
+            out.extend(crossings_in(m, a, b, &mut cache));
         }
     }
     out

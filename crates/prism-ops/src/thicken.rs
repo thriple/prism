@@ -2,11 +2,12 @@
 //! along its normal by the distance, everywhere.
 //!
 //! The kernel cannot offset a freeform face (arris refuses one), so Prism
-//! makes the offset itself: cubic Hermite pieces through the face's
-//! points moved along its normal, between grid lines that include the
-//! surface's knot lines (where its normal bends sharply), each piece split
-//! until it is within a tenth of the tolerance of the true offset. The
-//! face, its offset and ruled sides between their edges close a slab. A
+//! makes the offset itself: a fit of degree 5 through the face's points
+//! moved along its normal (degree 1 where the offset is straight), on
+//! knots that include the surface's knot lines (where its normal bends
+//! sharply), its pieces split until it is within a tenth of the tolerance
+//! of the true offset. The face, its offset and ruled sides between their
+//! edges close a slab; a side that lies flat is a flat face. A
 //! lone face becomes the slab, as a lone flat face becomes a box; on a
 //! solid the face gives way to the slab's sides and offset (out for a
 //! pull, in for a push). Nothing is cut where the pull runs into other
@@ -16,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_geom::{Curve, Nurbs, NurbsSurface, Patch, Spline, Surface};
+use prism_geom::{Curve, Nurbs, NurbsSurface, Patch, Spline, Surface, knots_over};
 use prism_math::{DVec2, DVec3};
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
@@ -29,6 +30,10 @@ pub const ROUND: &str =
 
 /// How many times the pieces may be split.
 const ROUNDS: usize = 8;
+
+/// The degree of the offset's pieces: high, so few pieces are needed (the
+/// kernel's checks take longer the more pieces two faces have).
+const DEGREE: usize = 5;
 
 /// The slab a face sweeps: closed, facing out, and which of its faces is
 /// the copy of the face.
@@ -96,6 +101,10 @@ pub fn slab(model: &Model, face: FaceId, d: f64) -> Result<Slab, &'static str> {
         // from a to b and along v up, u × v faces right of a to b when the
         // pull is out: the side keeps it when the face walks a to b.
         let flip = (side.from == e.a) != (d > 0.0);
+        let ruled = Patch {
+            flipped: flip,
+            ..ruled
+        };
         let (va, vb, ua, ub) = (vmap[&e.a], vmap[&e.b], up[&e.a], up[&e.b]);
         let (ra, rb) = (rise[&e.a], rise[&e.b]);
         let (loop_v, loop_e) = if flip {
@@ -106,10 +115,7 @@ pub fn slab(model: &Model, face: FaceId, d: f64) -> Result<Slab, &'static str> {
         s.add_face(Face::with_edges(
             loop_v,
             vec![],
-            Surface::Nurbs(Patch {
-                flipped: flip,
-                ..ruled
-            }),
+            flat(&ruled, eps).unwrap_or(Surface::Nurbs(ruled)),
             vec![loop_e],
         ));
     }
@@ -184,37 +190,82 @@ fn offset_surface(patch: &Patch, outline: &[DVec2], d: f64, eps: f64) -> Option<
         out.dedup_by(|x, y| (*x - *y).abs() < 1e-12);
         out
     };
-    let (mut us, mut vs) = (breaks(0), breaks(1));
+    let creases = [breaks(0), breaks(1)];
+    // Straight across one way (a wall's offset up its height): degree 1
+    // that way.
+    let straight = |k: usize| {
+        (0..=8).all(|i| {
+            let w = i as f64 / 8.0;
+            let at = |x: f64| if k == 0 { f(x, w) } else { f(w, x) };
+            let (a, b) = (at(0.0), at(1.0));
+            [0.25, 0.5, 0.75]
+                .iter()
+                .all(|x| at(*x).distance(a.lerp(b, *x)) <= eps / 4.0)
+        })
+    };
+    let degree = [0, 1].map(|k| if straight(k) { 1 } else { DEGREE });
+    // Each way first on its own: curves along it, on lines across, within
+    // half of `eps`.
+    let way = |k: usize| -> Option<Vec<f64>> {
+        let mut nodes = creases[k].clone();
+        for _ in 0..ROUNDS {
+            let knots = knots_over(degree[k], &nodes, &creases[k])?;
+            let mut split = vec![false; nodes.len() - 1];
+            for i in 0..=8 {
+                let w = i as f64 / 8.0;
+                let at = |x: f64| if k == 0 { f(x, w) } else { f(w, x) };
+                let c = Nurbs::fitted(&at, degree[k], knots.clone())?;
+                for (j, n) in nodes.windows(2).enumerate() {
+                    split[j] |= off_between(n, &|t| c.eval(t).distance(at(t)), eps / 2.0);
+                }
+            }
+            if !split.contains(&true) {
+                return Some(nodes);
+            }
+            nodes = halved(&nodes, &split);
+        }
+        None
+    };
+    let (mut us, mut vs) = (way(0)?, way(1)?);
+    // Then the whole: a cell still off is split both ways.
     for _ in 0..ROUNDS {
-        let grid = NurbsSurface::hermite(&f, &us, &vs)?;
-        let off = |u: f64, v: f64| grid.eval(u, v).distance(f(u, v)) > eps;
-        // An interval is split where the surface is off half way along it
-        // (on a grid line, or in the middle of a cell).
+        let grid = NurbsSurface::fitted(
+            &f,
+            degree,
+            [
+                knots_over(degree[0], &us, &creases[0])?,
+                knots_over(degree[1], &vs, &creases[1])?,
+            ],
+        )?;
         let mut split_u = vec![false; us.len() - 1];
         let mut split_v = vec![false; vs.len() - 1];
         for (i, a) in us.windows(2).enumerate() {
-            let mu = (a[0] + a[1]) / 2.0;
             for (j, b) in vs.windows(2).enumerate() {
-                let mv = (b[0] + b[1]) / 2.0;
-                if off(mu, b[0]) || off(mu, b[1]) {
-                    split_u[i] = true;
-                }
-                if off(a[0], mv) || off(a[1], mv) {
-                    split_v[j] = true;
-                }
-                if !split_u[i] && !split_v[j] && off(mu, mv) {
-                    split_u[i] = true;
-                    split_v[j] = true;
-                }
+                let x = |t: f64| (a[0] + (a[1] - a[0]) * t, b[0] + (b[1] - b[0]) * t);
+                let off = [0.25, 0.5, 0.75].iter().any(|t| {
+                    let (u, v) = x(*t);
+                    grid.eval(u, v).distance(f(u, v)) > eps
+                });
+                split_u[i] |= off;
+                split_v[j] |= off;
             }
         }
-        if !split_u.contains(&true) && !split_v.contains(&true) {
+        if !split_u.contains(&true) {
             return Some(grid);
         }
         us = halved(&us, &split_u);
         vs = halved(&vs, &split_v);
     }
     None
+}
+
+/// Whether `error` is above `eps` a quarter, half or three quarters of
+/// the way across `span` (a fit through Greville points is not exact at
+/// its nodes, so the middle alone is not enough).
+fn off_between(span: &[f64], error: &dyn Fn(f64) -> f64, eps: f64) -> bool {
+    [0.25, 0.5, 0.75]
+        .iter()
+        .any(|x| error(span[0] + (span[1] - span[0]) * x) > eps)
 }
 
 /// The nodes with the marked intervals cut in two.
@@ -270,9 +321,9 @@ fn kinks(curve: &Curve, along: &dyn Fn(f64) -> DVec3, patch: &Patch) -> Vec<f64>
     out
 }
 
-/// An edge as a cubic, and its offset with the same knots, both within
-/// `eps` of the edge and of its offset: Hermite pieces between `nodes`,
-/// split until close.
+/// An edge as a curve of degree 5, and its offset with the same knots,
+/// both within `eps` of the edge and of its offset: fitted on knots at
+/// `nodes` (where they may bend), split until close.
 fn edge_pair(
     along: &dyn Fn(f64) -> DVec3,
     off: &dyn Fn(DVec3) -> DVec3,
@@ -282,13 +333,14 @@ fn edge_pair(
     let high_at = |t: f64| off(along(t));
     let mut ts = nodes.to_vec();
     for _ in 0..ROUNDS {
-        let low = Nurbs::hermite(along, &ts)?;
-        let high = Nurbs::hermite(&high_at, &ts)?;
+        let knots = knots_over(DEGREE, &ts, nodes)?;
+        let low = Nurbs::fitted(along, DEGREE, knots.clone())?;
+        let high = Nurbs::fitted(&high_at, DEGREE, knots)?;
         let split: Vec<bool> = ts
             .windows(2)
             .map(|w| {
-                let t = (w[0] + w[1]) / 2.0;
-                low.eval(t).distance(along(t)) > eps || high.eval(t).distance(high_at(t)) > eps
+                off_between(w, &|t| low.eval(t).distance(along(t)), eps)
+                    || off_between(w, &|t| high.eval(t).distance(high_at(t)), eps)
             })
             .collect();
         if !split.contains(&true) {
@@ -320,6 +372,17 @@ fn ruled(low: &Nurbs, high: &Nurbs) -> Option<NurbsSurface> {
         weights,
         [false, false],
     )
+}
+
+/// The plane a side lies in (all its control points within `eps` of it),
+/// facing the way the side faces: a flat side is a flat face (pulling a
+/// wall out gives flat ends), which is also far quicker to check.
+fn flat(side: &Patch, eps: f64) -> Option<Surface> {
+    let s = &side.surface;
+    let n = side.normal(0.5, 0.5);
+    let o = s.eval(0.5, 0.5);
+    (n != DVec3::ZERO && s.points().iter().all(|p| (*p - o).dot(n).abs() <= eps))
+        .then(|| Surface::Plane(prism_math::Plane::new(o, n)))
 }
 
 /// Push/Pull a freeform face by `d` along its normal. A lone face becomes

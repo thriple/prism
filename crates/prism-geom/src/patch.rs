@@ -193,59 +193,44 @@ impl NurbsSurface {
         (s, du, dv)
     }
 
-    /// The bicubic that matches `f`, its slopes and its twist at every
-    /// grid node (`us` by `vs`, each rising from 0 to 1): the tensor
-    /// product of cubic Hermite pieces, smooth across a grid line once (a
-    /// double knot). Derivatives are taken by differences, one way at the
-    /// grid's edges.
-    pub fn hermite(f: &dyn Fn(f64, f64) -> DVec3, us: &[f64], vs: &[f64]) -> Option<NurbsSurface> {
-        // Each control point is the node's value plus a third of a step
-        // along u, along v, and their product times the twist.
-        let steps = |nodes: &[f64]| -> Vec<(usize, f64)> {
-            let n = nodes.len();
-            let mut out = Vec::with_capacity(2 * n);
-            for k in 0..n {
-                if k > 0 {
-                    out.push((k, -(nodes[k] - nodes[k - 1]) / 3.0));
-                } else {
-                    out.push((k, 0.0));
-                }
-                if k + 1 < n {
-                    out.push((k, (nodes[k + 1] - nodes[k]) / 3.0));
-                } else {
-                    out.push((k, 0.0));
-                }
-            }
-            out
-        };
-        let (_, ku) = crate::nurbs::hermite_row(&|_| (DVec3::ZERO, DVec3::ZERO), us)?;
-        let (_, kv) = crate::nurbs::hermite_row(&|_| (DVec3::ZERO, DVec3::ZERO), vs)?;
-        let (su, sv) = (steps(us), steps(vs));
-        use crate::nurbs::{side_of, slope, slope_h};
-        let (lu, lv) = (us.len() - 1, vs.len() - 1);
-        let mut points = Vec::with_capacity(su.len() * sv.len());
-        for &(i, a) in &su {
-            for &(j, b) in &sv {
-                let (u, v) = (us[i], vs[j]);
-                let (iu, iv) = (side_of(us, lu, u), side_of(vs, lv, v));
-                let p = f(u, v);
-                let fu = slope(&|x| f(x, v), u, iu);
-                let fv = slope(&|y| f(u, y), v, iv);
-                // The twist: the slope along u, itself sloped along v
-                // (larger steps, so rounding stays small).
-                let fuv = slope_h(&|y| slope_h(&|x| f(x, y), u, iu, 1e-4), v, iv, 1e-4);
-                points.push(p + fu * a + fv * b + fuv * (a * b));
-            }
+    /// The surface of `degree` on `knots` (see [`crate::knots_over`])
+    /// that passes through `f` at its Greville points, a grid of them:
+    /// fitted along u for each grid row, then along v.
+    pub fn fitted(
+        f: &dyn Fn(f64, f64) -> DVec3,
+        degree: [usize; 2],
+        knots: [Vec<f64>; 2],
+    ) -> Option<NurbsSurface> {
+        use crate::nurbs::{collocation, solve};
+        let (au, ru) = collocation(degree[0], &knots[0])?;
+        let (av, rv) = collocation(degree[1], &knots[1])?;
+        let (nu, nv) = (au.len(), av.len());
+        let rows: Vec<Vec<DVec3>> = av
+            .iter()
+            .map(|&v| solve(ru.clone(), au.iter().map(|&u| f(u, v)).collect()))
+            .collect::<Option<_>>()?;
+        let mut points = Vec::with_capacity(nu * nv);
+        for i in 0..nu {
+            points.extend(solve(rv.clone(), rows.iter().map(|r| r[i]).collect())?);
         }
-        let count = [su.len(), sv.len()];
         NurbsSurface::new(
-            [3, 3],
-            [ku, kv],
-            count,
+            degree,
+            knots,
+            [nu, nv],
             points,
-            vec![1.0; count[0] * count[1]],
+            vec![1.0; nu * nv],
             [false, false],
         )
+    }
+
+    /// How many knot spans it has each way (Bézier pieces, once split).
+    pub fn spans(&self) -> [usize; 2] {
+        [0, 1].map(|d| {
+            let (p, n) = (self.degree[d], self.count[d]);
+            (p..n)
+                .filter(|&k| self.knots[d][k] < self.knots[d][k + 1])
+                .count()
+        })
     }
 
     /// The point at (`u`, `v`).
@@ -377,10 +362,28 @@ impl NurbsSurface {
         });
         let at =
             |d: usize, i: usize| range[d].0 + (range[d].1 - range[d].0) * i as f64 / n[d] as f64;
+        // The grid a line across v at a time: each column of control
+        // points collapsed along v once, as `eval` does, then each point
+        // along u from those (the same sums as `eval`, a few times fewer).
+        let [du, dv] = self.degree;
+        let mut dist = vec![0.0; (n[0] + 1) * (n[1] + 1)];
+        for j in 0..=n[1] {
+            let v = self.wrap(1, at(1, j));
+            let kv = span(dv, &self.knots[1], self.count[1], v);
+            let column: Vec<H> = (0..self.count[0])
+                .map(|i| de_boor(dv, &self.knots[1], kv, v, |c| self.at(i, c)).0)
+                .collect();
+            for i in 0..=n[0] {
+                let u = self.wrap(0, at(0, i));
+                let ku = span(du, &self.knots[0], self.count[0], u);
+                let (s, _) = de_boor(du, &self.knots[0], ku, u, |r| column[r]);
+                dist[i * (n[1] + 1) + j] = (s.p / s.w).distance_squared(p);
+            }
+        }
         let mut best = (f64::INFINITY, 0, 0);
         for i in 0..=n[0] {
             for j in 0..=n[1] {
-                let d = self.eval(at(0, i), at(1, j)).distance_squared(p);
+                let d = dist[i * (n[1] + 1) + j];
                 if d < best.0 {
                     best = (d, i, j);
                 }
@@ -778,30 +781,38 @@ mod tests {
     }
 
     #[test]
-    fn hermite_pieces_follow_a_surface_with_a_crease() {
+    fn a_fit_follows_a_surface_with_a_crease() {
         // Bent once along u = 0.5: smooth on either side.
         let f = |u: f64, v: f64| {
             let k = (u - 0.5).max(0.0);
             DVec3::new(u, v, k * k * 3.0 + (v * 2.0).sin() * 0.2)
         };
         let nodes = [0.0, 0.25, 0.5, 0.75, 1.0];
-        let s = NurbsSurface::hermite(&f, &nodes, &nodes).unwrap();
+        let ku = crate::nurbs::knots_over(5, &nodes, &[0.5]).unwrap();
+        let kv = crate::nurbs::knots_over(5, &nodes, &[]).unwrap();
+        let s = NurbsSurface::fitted(&f, [5, 5], [ku.clone(), kv]).unwrap();
+        assert_eq!(s.spans(), [4, 4]);
+        // Smooth once at the crease (a knot four times), and five times
+        // elsewhere.
+        assert_eq!(s.count(), [12, 9]);
         for i in 0..=20 {
             for j in 0..=20 {
                 let (u, v) = (i as f64 / 20.0, j as f64 / 20.0);
-                assert!(s.eval(u, v).distance(f(u, v)) < 2e-4, "{u} {v}");
+                assert!(s.eval(u, v).distance(f(u, v)) < 1e-6, "{u} {v}");
             }
         }
-        // At the nodes, exactly.
-        for u in nodes {
-            for v in nodes {
-                assert!(s.eval(u, v).distance(f(u, v)) < 1e-9);
-            }
-        }
-        let c = crate::Nurbs::hermite(&|t| f(t, 0.3), &nodes).unwrap();
+        // Without the crease, the bend is missed.
+        let plain = crate::nurbs::knots_over(5, &nodes, &[]).unwrap();
+        let c = crate::Nurbs::fitted(&|t| f(t, 0.3), 5, plain).unwrap();
+        let off = (0..=20)
+            .map(|i| i as f64 / 20.0)
+            .map(|t| c.eval(t).distance(f(t, 0.3)))
+            .fold(0.0, f64::max);
+        assert!(off > 1e-4, "{off}");
+        let c = crate::Nurbs::fitted(&|t| f(t, 0.3), 5, ku).unwrap();
         for i in 0..=20 {
             let t = i as f64 / 20.0;
-            assert!(c.eval(t).distance(f(t, 0.3)) < 2e-4);
+            assert!(c.eval(t).distance(f(t, 0.3)) < 1e-6);
         }
     }
 }

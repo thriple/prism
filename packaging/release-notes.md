@@ -1,8 +1,8 @@
 **New in this build:**
-- Solid > Validate now checks balls, tori, cones and freeform (NURBS) solids, cut ones too, with the kernel's own checker, as it already did for boxes and cylinders.
+- Push/Pull works on freeform (NURBS) faces: the face moves out (or in) by the distance everywhere, with sides joining it to where it was. A side that lies flat, as when you pull out a curved wall, is a flat face.
 
 **Fixed in this build:**
-- Faster and more exact cuts where shapes cross freeform faces.
+- Solid > Validate is much quicker on freeform solids. Where freeform faces meet along very many curve pieces, the kernel's check would take minutes, so Validate checks those by Prism's own rules and says so.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

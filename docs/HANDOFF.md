@@ -70,10 +70,12 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   part 2"). The owner merged the old part 3 into part 4
   (2026-11-16): **part 3 is now cutting freeform faces** (brief 40,
   steps 3a to 3c). **3a and 3b are built** (NOTES "Solids & CAD part
-  3a" and "... 3b"). **3c is built in part** (NOTES "Solids & CAD part
-  3c"): the kernel checks freeform faces, spheres, tori and cone tips.
-  **Waiting on the owner:** Push/Pull of a freeform face, which the kernel
-  cannot offset (arris 0.10 and 0.11 refuse freeform offsets). The owner also floated a chat window in Prism (NOTES "Owner idea
+  3a" and "... 3b"). **3c is built** (NOTES "Solids & CAD part 3c"): the
+  kernel checks freeform faces, spheres, tori and cone tips, and Push/Pull
+  takes a freeform face (Prism's own offset; a solid whose freeform faces
+  meet along many pieces is checked by Prism's rules only, the kernel
+  being too slow there). **Part 3 is done; next is part 4** (it needs a
+  brief). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no
