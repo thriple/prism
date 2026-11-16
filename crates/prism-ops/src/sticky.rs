@@ -882,16 +882,25 @@ pub fn break_curves(model: &mut Model, at: &[VertexId]) {
     let mut by_vertex: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
     for (id, e) in model.edges() {
         for v in [e.a, e.b] {
-            if at.contains(&v) {
-                by_vertex.entry(v).or_default().push(id);
-            }
+            by_vertex.entry(v).or_default().push(id);
         }
     }
-    // The curves that run through a point where another hard edge meets.
+    // The curves through the points drawn at.
+    let curves: BTreeSet<prism_topo::CurveId> = at
+        .iter()
+        .filter_map(|v| by_vertex.get(v))
+        .flatten()
+        .filter_map(|e| model.edge(*e).and_then(|x| x.curve_id))
+        .collect();
+    // Each one's points where another hard edge meets it partway, all along
+    // it (not only those drawn at), so drawing again changes nothing.
     let mut breaks: BTreeMap<prism_topo::CurveId, BTreeSet<VertexId>> = BTreeMap::new();
     for (v, ids) in &by_vertex {
         let edges: Vec<_> = ids.iter().filter_map(|e| model.edge(*e)).collect();
         for c in edges.iter().filter_map(|e| e.curve_id) {
+            if !curves.contains(&c) {
+                continue;
+            }
             let through = edges.iter().filter(|e| e.curve_id == Some(c)).count() >= 2;
             let crossed = edges.iter().any(|e| e.curve_id != Some(c) && !e.soft);
             if through && crossed {

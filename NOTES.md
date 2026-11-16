@@ -4257,7 +4257,11 @@ Eraser's hint).
   edges do not part a curve, so a cylinder's rims stay whole across its
   seams. It runs after drawing a line, an arc or circle, or a spline.
   Behaviour change: a circle cut by a line no longer clicks or erases as
-  one curve (two session tests changed to say so).
+  one curve (two session tests changed to say so). CI's property test then
+  found that drawing the same thing again renumbered a curve: a curve was
+  only parted at the points just drawn. Now every curve through those
+  points parts at all its crossings at once
+  (`drawing_again_does_not_part_curves_again`).
 - **Alt+click in the Loft tool** takes the clicked edge alone, whatever
   the sharpest-turn setting (owner's suggestion), added to the side
   being picked when it joins it. A plain click still takes the run.

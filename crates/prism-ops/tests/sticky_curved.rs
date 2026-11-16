@@ -195,3 +195,17 @@ fn a_line_across_an_arc_parts_it_into_two_curves() {
         .unwrap();
     assert!(m.curve_edges(rim).len() > 1, "the rim is one curve");
 }
+
+/// CI's property test (2026-11-16): a circle touched by one side of a
+/// rectangle and cut by another. Drawing both again changes nothing (the
+/// circle parts at every crossing the first time, not only at the last).
+#[test]
+fn drawing_again_does_not_part_curves_again() {
+    let mut m = Model::new();
+    add_circle(&mut m, DVec3::new(2.0, 1.0, 0.0), DVec3::Z, 1.0);
+    add_rect(&mut m, 0.0, 0.0, 3.0, 1.0, 0.0);
+    let once = m.geometry_json();
+    add_circle(&mut m, DVec3::new(2.0, 1.0, 0.0), DVec3::Z, 1.0);
+    add_rect(&mut m, 0.0, 0.0, 3.0, 1.0, 0.0);
+    assert_eq!(m.geometry_json(), once);
+}

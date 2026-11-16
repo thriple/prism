@@ -5,6 +5,9 @@
 - Solid > Outer Shell is gone: Union of three or more groups does the same.
 - Push/Pull, Offset, Fillet and Follow Me say to open a group when you point at one, instead of doing nothing.
 
+**Fixed in this build:**
+- Drawing the same lines again over a cut circle or arc no longer splits its curve a second time.
+
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
 **macOS** (universal: Apple Silicon and Intel)
