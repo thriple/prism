@@ -992,13 +992,6 @@ impl Model {
         out
     }
 
-    /// Loop `k` of a curved face as places on its turned surface: each drawn
-    /// point with (θ round the axis, s along the profile), unwrapped so
-    /// neither jumps by a turn. A point on the axis (a sphere's pole, a
-    /// cone's apex) has no angle of its own: it comes twice, at the angle
-    /// of the side before and of the side after, crossing the way a face
-    /// pointing out of its surface goes (counter-clockwise in (θ, s)).
-    /// Empty for a flat face.
     /// Loop `k` of a freeform face laid out in its patch's (u, v)
     /// (Solids & CAD part 3): every drawn point of its sides, each with
     /// its place on the surface, unwrapped across a closed direction's
@@ -1058,6 +1051,13 @@ impl Model {
             .all(|v| corners.iter().any(|c| tol.same_point(*c, self.vertex(*v))))
     }
 
+    /// Loop `k` of a curved face as places on its turned surface: each drawn
+    /// point with (θ round the axis, s along the profile), unwrapped so
+    /// neither jumps by a turn. A point on the axis (a sphere's pole, a
+    /// cone's apex) has no angle of its own: it comes twice, at the angle
+    /// of the side before and of the side after, crossing the way a face
+    /// pointing out of its surface goes (counter-clockwise in (θ, s)).
+    /// Empty for a flat face.
     pub fn param_loop(&self, f: &Face, k: usize) -> Vec<(DVec3, DVec2)> {
         let Some(rev) = f.surface.revolution() else {
             return Vec::new();

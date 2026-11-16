@@ -30,6 +30,10 @@ pub const NEIGHBOUR: &str =
 pub const CLOSED_ADD: &str =
     "Refused: control points cannot be added round a closed curve or surface yet.";
 pub const COLLAPSED: &str = "Refused: the curve or face would shrink to nothing.";
+/// Said for a surface with a face cut from it (Solids & CAD part 3): its
+/// cuts would be left off the moved surface.
+pub const TRIMMED: &str =
+    "Refused: a face on this surface has been cut; editing its control points comes later.";
 
 fn curve_of(model: &Model, e: EdgeId) -> Option<Arc<Nurbs>> {
     Some(model.edge(e)?.curve.spline()?.curve.clone())
@@ -319,6 +323,13 @@ fn edited(
         }
         Cage::Surface(f) => {
             let old = surface_of(model, f).ok_or(NO_CAGE)?;
+            let (_, fs) = members(model, cage);
+            if fs
+                .iter()
+                .any(|f| model.face(*f).is_some_and(|x| model.is_trimmed(x)))
+            {
+                return Err(TRIMMED);
+            }
             (None, Some(Arc::new(surface(&old)?)))
         }
     };

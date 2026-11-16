@@ -280,6 +280,7 @@ fn to_mesh_faces(
         }
         let grid = match f.surface.patch() {
             // A freeform face: its own grid.
+            Some(_) if m.is_trimmed(f) => prism_view_tess::trimmed(m, f),
             Some(p) => Some(prism_view_tess::patch(p)),
             None => prism_view_tess::turned(m, f),
         };

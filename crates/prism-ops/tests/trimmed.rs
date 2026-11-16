@@ -142,3 +142,27 @@ fn an_l_shaped_trim_is_the_whole_less_a_corner_patch() {
     let vol = |f| prism_ops::health::face_volume(&m, f);
     close(vol(l), vol(full) - vol(corner));
 }
+
+#[test]
+fn a_cage_edit_of_a_cut_surface_is_refused() {
+    let s = Arc::new(bump());
+    let mut m = Model::new();
+    let l = face_by_corners(
+        &mut m,
+        &s,
+        part(&s, (0.0, 1.0), (0.0, 1.0)),
+        &[
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 0.5),
+            (0.5, 0.5),
+            (0.5, 1.0),
+            (0.0, 1.0),
+        ],
+    );
+    let up = prism_math::DAffine3::from_translation(DVec3::Z);
+    let r = prism_ops::cage::moved(&m, prism_ops::cage::Cage::Surface(l), &[5].into(), &up);
+    assert_eq!(r.err(), Some(prism_ops::cage::TRIMMED));
+    // The model check is clean for the cut face.
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+}

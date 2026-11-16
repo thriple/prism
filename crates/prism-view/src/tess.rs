@@ -611,6 +611,118 @@ fn is_ear(
     true
 }
 
+/// A freeform face cut from its patch (Solids & CAD part 3): its loops in
+/// (u, v) (`Model::patch_loop`) triangulated, then edges split where the
+/// surface bulges away from them, every point on the surface with its
+/// normal. `params` are the (u, v).
+pub fn trimmed(model: &prism_topo::Model, face: &prism_topo::Face) -> Option<Turned> {
+    use prism_math::predicates::orient2d;
+    let p = face.surface.patch()?;
+    let s = &p.surface;
+    let loops: Vec<Vec<DVec2>> = (0..face.loops().count())
+        .map(|k| {
+            let mut l: Vec<DVec2> = model.patch_loop(face, k).into_iter().map(|x| x.1).collect();
+            l.dedup_by(|b, a| a.distance(*b) <= 1e-12);
+            while l.len() > 1 && l[0].distance(l[l.len() - 1]) <= 1e-12 {
+                l.pop();
+            }
+            l
+        })
+        .collect();
+    let outer = loops.first()?;
+    let mut uv: Vec<DVec2> = loops.iter().flatten().copied().collect();
+    let mut tris = triangulate(outer, &loops[1..]);
+    let at = |q: DVec2| s.eval(q.x, q.y);
+    let (lo, hi) = uv.iter().fold((at(uv[0]), at(uv[0])), |(l, h), q| {
+        (l.min(at(*q)), h.max(at(*q)))
+    });
+    let sag = (hi - lo).length() * 1.2e-3;
+    for _ in 0..12 {
+        let mut mids: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
+        for t in &tris {
+            for k in 0..3 {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                let key = (a.min(b), a.max(b));
+                if mids.contains_key(&key) {
+                    continue;
+                }
+                let m = (uv[a] + uv[b]) * 0.5;
+                if at(m).distance((at(uv[a]) + at(uv[b])) * 0.5) > sag {
+                    mids.insert(key, uv.len());
+                    uv.push(m);
+                }
+            }
+        }
+        if mids.is_empty() {
+            break;
+        }
+        let mut next = Vec::with_capacity(tris.len() * 4);
+        for t in tris {
+            let mid = |k: usize| {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                mids.get(&(a.min(b), a.max(b))).copied()
+            };
+            match (mid(0), mid(1), mid(2)) {
+                (None, None, None) => next.push(t),
+                (m0, m1, m2) => {
+                    // Split every side that bulges: the corners and the
+                    // middles found, fanned from the first corner's
+                    // middles round.
+                    let ring: Vec<usize> = [Some(t[0]), m0, Some(t[1]), m1, Some(t[2]), m2]
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                    // A middle's neighbours: cut off each corner, then fan
+                    // the rest from a middle.
+                    if let (Some(a), Some(b), Some(c)) = (m0, m1, m2) {
+                        next.extend([[t[0], a, c], [a, t[1], b], [c, b, t[2]], [a, b, c]]);
+                    } else {
+                        let start = ring
+                            .iter()
+                            .position(|x| Some(*x) == m0.or(m1).or(m2))
+                            .unwrap_or(0);
+                        let n = ring.len();
+                        for i in 1..n - 1 {
+                            next.push([
+                                ring[start],
+                                ring[(start + i) % n],
+                                ring[(start + i + 1) % n],
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+        tris = next;
+    }
+    let (ulo, uhi) = uv
+        .iter()
+        .fold((uv[0], uv[0]), |(l, h), q| (l.min(*q), h.max(*q)));
+    let tiny = (uhi - ulo).length_squared() * 1e-14;
+    let points: Vec<prism_math::DVec3> = uv.iter().map(|q| at(*q)).collect();
+    let normals = uv.iter().map(|q| p.normal(q.x, q.y)).collect();
+    // Counter-clockwise seen from the front: in (u, v) unless flipped.
+    let tris = tris
+        .into_iter()
+        // Slivers along a straight side (its points in a row) have no area.
+        .filter(|t| orient2d(uv[t[0]], uv[t[1]], uv[t[2]]).abs() > tiny)
+        .map(|t| {
+            let ccw = orient2d(uv[t[0]], uv[t[1]], uv[t[2]]) > 0.0;
+            if ccw != p.flipped {
+                t
+            } else {
+                [t[0], t[2], t[1]]
+            }
+        })
+        .collect();
+    Some(Turned {
+        points,
+        normals,
+        params: uv,
+        tris,
+    })
+}
+
 /// A freeform face drawn (Freeform NURBS part 2): a grid over the patch,
 /// finer where the surface bends (`NurbsSurface::grid`), each point on the
 /// surface with its normal. `params` are distances over the surface in

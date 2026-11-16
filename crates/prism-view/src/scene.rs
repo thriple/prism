@@ -680,6 +680,23 @@ impl Scene {
     /// A cone, sphere or torus face (Exact Curves 5b): drawn from a grid on
     /// the surface (`tess::turned`), with the surface's normals.
     fn add_turned(&mut self, model: &Model, id: FaceId, f: &prism_topo::Face) {
+        if let Some(p) = f.surface.patch()
+            && model.is_trimmed(f)
+        {
+            // A freeform face cut from its patch (Solids & CAD part 3):
+            // its (u, v) region, triangulated.
+            let Some(t) = crate::tess::trimmed(model, f) else {
+                return;
+            };
+            let uvs = t.params.clone();
+            let frame = (p.surface.eval(p.u.0, p.v.0), DVec3::X, DVec3::Y);
+            let loops: Vec<Vec<DVec2>> = (0..f.loops().count())
+                .map(|k| model.patch_loop(f, k).into_iter().map(|x| x.1).collect())
+                .collect();
+            let (outer, holes) = (loops[0].clone(), loops[1..].to_vec());
+            self.add_grid(model, id, f, t, frame, (outer, holes), uvs);
+            return;
+        }
         if let Some(p) = f.surface.patch() {
             // A freeform face: its own grid, and (u, v) for its flat frame.
             let t = crate::tess::patch(p);
