@@ -4322,3 +4322,9 @@ its items to table C.
 (`surface_commands_wait_for_clicks_and_show_a_ghost`,
 `tools_that_cannot_change_a_closed_group_say_to_open_it`; the Loft, Sweep
 tests now expect the picking hint).
+
+## Fix: hidden lines left after an erase cut the next line (Session 11, owner 2026-11-16)
+- **Report:** the owner erased the segments of a straight line, drew a new line in the same place, and the new line came out cut where the old one was.
+- **Cause:** the old line was the border of faces with soft (hidden) lines between them, like a loft's rows. Erasing the border took the faces but left the soft lines. With no face beside them they could not be seen or picked, but the new line was still cut where they ended.
+- **Fix:** `prism_ops::remove` also erases a soft line that bordered a face being erased once no face is left beside it. Test: `sticky.rs` `soft_lines_left_with_no_face_go_with_it`. A soft line that had no face before the erase (hidden on purpose) is kept.
+- **Not confirmed from the recording:** Session 11 was made inside an open group, and a recording saves only the top-level model, not groups or which group is open. So it replays on an empty model, and the cause above is the one that matches the report, not one seen in the replay. Leftover: recordings should save the whole assembly and the open group, so sessions inside groups replay (Input & Feel, or the next MCP/replay work).

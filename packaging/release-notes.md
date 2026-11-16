@@ -1,12 +1,5 @@
-**New in this build:**
-- Draw > Surface's Loft, Revolve, Sweep and Patch no longer just refuse when the right curves are not selected: they say what to click, a click adds a curve (no Shift needed), a ghost shows the surface once the curves make it, and Enter makes it. Esc leaves.
-
-**Changed in this build:**
-- Solid > Outer Shell is gone: Union of three or more groups does the same.
-- Push/Pull, Offset, Fillet and Follow Me say to open a group when you point at one, instead of doing nothing.
-
 **Fixed in this build:**
-- Drawing the same lines again over a cut circle or arc no longer splits its curve a second time.
+- Erasing faces now also erases the hidden (soft) lines that were only there between them, such as a loft's rows. Left behind, they could not be seen, yet a new line drawn there was cut where they ended.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

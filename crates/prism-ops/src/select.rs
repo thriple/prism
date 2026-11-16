@@ -84,9 +84,23 @@ pub fn remove(model: &mut Model, sel: &Selection) {
             });
         }
     }
+    // Soft lines beside the faces that go: once no face is left beside one,
+    // it hides nothing, cannot be seen or picked, and would still cut the
+    // next line drawn over its end (session 11). It goes too.
+    let mut soft: BTreeSet<EdgeId> = BTreeSet::new();
+    for f in &gone_faces {
+        if let Some(face) = model.face(*f) {
+            soft.extend(
+                face.edge_ids()
+                    .filter(|e| model.edge(*e).is_some_and(|x| x.soft)),
+            );
+        }
+    }
     for f in gone_faces {
         model.remove_face(f);
     }
+    let edge_faces = model.edge_faces();
+    gone_edges.extend(soft.into_iter().filter(|e| !edge_faces.contains_key(e)));
     for e in gone_edges {
         model.remove_edge(e);
     }
