@@ -4188,3 +4188,60 @@ old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
   more than two groups already runs it, `session/booleans.rs`). The owner
   sees it as redundant: decide with the owner whether to remove it or fold
   it into Union.
+
+## Tool pass part 1: the Loft tool (brief 41, from Session 10, 2026-11-16)
+Session 10 (the owner's recording) lost most of its time in the Loft tool.
+Replaying it showed why; each is fixed:
+- **Sides out of order.** The owner picked a ring's sides in no set order;
+  a ring only closed in the order picked, so it said "neither close a ring
+  nor stand apart". `sides::ring_order` now puts sides that join end to
+  end in order, round a ring or along an open chain (then the closing
+  edges are offered as before).
+- **Clicks replaced the side.** Clicking edge after edge to build a side
+  threw away the one before each time, until Shift was found. A click on
+  an edge that joins the side being picked now adds it (and its run). A
+  highlighted closing edge that joins it is added too, not made a side of
+  its own.
+- **Two Enters.** With the last side still being picked, Enter only
+  finished the side; the owner gave up on a ready "Fill a ring of 3
+  sides". Enter now makes a closed ring at once (sections still take
+  Enter per side).
+- **Smooth / Straight did nothing, then undo lost the loft.** It only
+  shapes a loft through three or more sections, but it remade a ring's
+  fill (the same surface), so the next Ctrl+Z took the whole loft away.
+  It is greyed now for a ring or two sections, and does not remake.
+- **Rows did not show** (owner, same day): rows only cut the faces made,
+  and the cuts are soft edges, so neither the preview nor the result
+  changed visibly. The preview now draws the edges of the faces it will
+  make, and right after a loft its faces' edges are drawn while a preset
+  can still change it.
+- **Outside the Loft tool:** the Eraser showed Move's "a face with arcs
+  would fold" while erasing (a refusal left over from an earlier move).
+  The hint now shows a refusal only for the edit it was worked out for.
+
+**Also seen in Session 10, not fixed here:**
+- The owner said arcs still are not cut by a crossing line. The replay
+  (current code) found no line or arc crossing another without a cut, at
+  any step: the lines drawn across arcs, and the arc drawn across a
+  line, were cut. Ask the owner for the case; the Eraser's wrong
+  "arcs would fold" message may have looked like it.
+- A recording's saved result is the root model only, so a session that
+  ends with everything in components saves an empty result.
+- Three rectangles started in empty space (nothing under the pointer)
+  came out 0 wide; the owner drew the shape with lines instead.
+
+**Loft options the owner remembered** (asked 2026-11-16): PLAN 1.4 lists
+more for Loft than is built: Rhino's loft styles (Normal, Loose, Tight,
+Straight, Uniform, Developable) with a ghost of each, a tension control,
+end conditions as arrows to drag in the viewport, dragging the surface
+itself (adds a guide curve), rails and a spine, and the loft staying live
+when a profile moves. Built: Smooth / Straight and Rows, and Edit Cage
+for direct editing. Inspector & Features owns "style, tension,
+end-condition weights" (not started); the viewport handles and dragging
+the surface belong to no chunk yet.
+
+**Tests:** `prism-ops` sides (`sides_picked_out_of_order_are_put_round_the_ring`),
+`prism-tools` session (`a_ring_picked_out_of_order_and_edge_by_edge_fills_with_one_enter`:
+out of order, edge by edge, one Enter, Smooth / Straight left alone, Rows
+in the preview and on the loft made; `refused_edits_of_arcs_say_why`: the
+Eraser's hint).

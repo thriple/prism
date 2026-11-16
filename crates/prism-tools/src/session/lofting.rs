@@ -2,15 +2,21 @@
 //! close or loft through them.
 //!
 //! - A click on an edge picks the whole side: the edges that run on from
-//!   it without a turn sharper than the window's threshold. Shift adds or
-//!   removes one edge. Next Side (or Enter) finishes the side.
-//! - Sides that close a ring fill it; sides that stand apart are lofted
-//!   through, in the order picked. While they are valid the surface shows
-//!   as a preview; Loft (or Enter) makes it, one command.
+//!   it without a turn sharper than the window's threshold. A click on an
+//!   edge that joins the side being picked adds it (and its run). Shift
+//!   adds or removes one edge. Next Side (or Enter) finishes the side.
+//! - Sides that close a ring fill it, in whatever order they were picked;
+//!   sides that stand apart are lofted through, in the order picked. While
+//!   they are valid the surface shows as a preview; Loft (or Enter) makes
+//!   it, one command. Enter makes a ring as soon as it closes, even while
+//!   its last side is being picked.
 //! - Sides that almost close a ring: a tip says where it is open and the
-//!   edges that would close it are highlighted; a click takes them.
+//!   edges that would close it are highlighted; a click takes them (on the
+//!   side being picked if they join it, else as a side).
 //! - Esc steps back one side; with none, it leaves the tool.
 //! - Right after a loft, the presets (smooth or straight, rows) change it.
+//!   Smooth or straight only shapes a loft through three or more sections,
+//!   so it is greyed for a ring or two sections.
 
 use std::collections::BTreeSet;
 
@@ -27,7 +33,7 @@ use super::{Event, Input, Response, SELECT, Session};
 
 pub const LOFT: &str = "tool.loft";
 
-const HOW: &str = "Click an edge to pick a side · Shift adds or removes one edge · Enter or Next Side when the side is done · Esc steps back";
+const HOW: &str = "Click an edge to pick a side, then edges that join it to add them · Shift adds or removes one edge · Enter or Next Side when the side is done · Esc steps back";
 const READY: &str = "Enter or Loft makes it · click an edge to pick another side";
 const TAKEN: &str =
     "That edge is already in a side. Esc steps back, or remove the side in the window.";
@@ -63,6 +69,8 @@ pub struct LoftPanel {
     pub current: usize,
     pub turn_deg: f64,
     pub straight: bool,
+    /// Smooth or straight changes the loft (three or more sections).
+    pub straight_applies: bool,
     pub rows: usize,
     pub can_next: bool,
     pub can_make: bool,
@@ -78,10 +86,18 @@ pub struct LoftPanel {
 /// What the sides make, worked out.
 #[derive(Default)]
 struct Found {
+    /// The sides in the order they make it (round the ring).
+    ordered: Vec<Vec<EdgeId>>,
+    /// They close a ring of three or more.
+    ring: bool,
+    /// How many sections they loft through (0 for a ring).
+    sections: usize,
     closing: Vec<EdgeId>,
     tip: Option<&'static str>,
     makes: Option<String>,
     preview: Vec<NurbsSurface>,
+    /// The edges of the faces it would make (the rows show).
+    cuts: Vec<Vec<DVec3>>,
 }
 
 /// The tool's state while sides are picked.
@@ -97,7 +113,11 @@ pub(super) struct Lofting {
     tip: Option<&'static str>,
     makes: Option<String>,
     valid: bool,
+    ordered: Vec<Vec<EdgeId>>,
+    ring: bool,
+    sections: usize,
     preview: Vec<NurbsSurface>,
+    cuts: Vec<Vec<DVec3>>,
 }
 
 impl Lofting {
@@ -140,14 +160,21 @@ impl Session {
             // Starting again: the presets now shape the new one.
             self.loft_last = None;
         }
+        let joins = self.loft_joins(e);
         let l = &mut self.lofting;
         if l.closing.contains(&e) {
-            if !l.current.is_empty() {
-                let c = std::mem::take(&mut l.current);
+            // The edges that close the ring: on the side being picked if
+            // they join it, else a side of their own.
+            let c = std::mem::take(&mut l.closing);
+            if joins {
+                l.current.extend(c);
+            } else {
+                if !l.current.is_empty() {
+                    let c = std::mem::take(&mut l.current);
+                    l.sides.push(c);
+                }
                 l.sides.push(c);
             }
-            let c = std::mem::take(&mut l.closing);
-            l.sides.push(c);
             l.from = None;
         } else if l.used().contains(&e) {
             self.loft_notice = Some(TAKEN);
@@ -159,10 +186,50 @@ impl Session {
                 None => l.current.push(e),
             }
             l.from = None;
+        } else if joins {
+            self.loft_extend(e);
         } else {
             self.loft_pick_from(e);
         }
         self.loft_update();
+    }
+
+    /// Whether `e`, not yet picked, joins a free end of the side being
+    /// picked.
+    fn loft_joins(&self, e: EdgeId) -> bool {
+        let model = self.work_model();
+        let l = &self.lofting;
+        if l.current.is_empty() || l.current.contains(&e) {
+            return false;
+        }
+        let mut count: std::collections::BTreeMap<prism_topo::VertexId, usize> = Default::default();
+        for k in &l.current {
+            if let Some(x) = model.edge(*k) {
+                *count.entry(x.a).or_default() += 1;
+                *count.entry(x.b).or_default() += 1;
+            }
+        }
+        model
+            .edge(e)
+            .is_some_and(|x| [x.a, x.b].iter().any(|v| count.get(v) == Some(&1)))
+    }
+
+    /// Add `e`, and the run from it, to the side being picked: up to edges
+    /// already picked.
+    fn loft_extend(&mut self, e: EdgeId) {
+        let mut stop = self.lofting.used();
+        stop.extend(self.lofting.current.iter().copied());
+        let run = sides::chain(self.work_model(), e, self.loft_turn_rad());
+        let at = run.iter().position(|k| *k == e).unwrap_or(0);
+        let (mut lo, mut hi) = (at, at);
+        while lo > 0 && !stop.contains(&run[lo - 1]) {
+            lo -= 1;
+        }
+        while hi + 1 < run.len() && !stop.contains(&run[hi + 1]) {
+            hi += 1;
+        }
+        self.lofting.current.extend_from_slice(&run[lo..=hi]);
+        self.lofting.from = None;
     }
 
     /// The current side: the run of edges from `e`, leaving out edges
@@ -210,7 +277,11 @@ impl Session {
         let l = &mut self.lofting;
         l.valid = !found.preview.is_empty();
         l.makes = if l.valid { found.makes } else { None };
+        l.ordered = found.ordered;
+        l.ring = found.ring;
+        l.sections = found.sections;
         l.preview = found.preview;
+        l.cuts = found.cuts;
         l.tip = found.tip;
         l.closing = found.closing;
         self.overlay_dirty = true;
@@ -219,8 +290,8 @@ impl Session {
 
     fn loft_found(&self) -> Found {
         let model = self.work_model();
-        let all = self.lofting.all();
-        let list: Vec<Side> = match all.iter().map(|e| sides::side(model, e)).collect() {
+        let mut all = self.lofting.all();
+        let mut list: Vec<Side> = match all.iter().map(|e| sides::side(model, e)).collect() {
             Ok(list) => list,
             Err(why) => {
                 return Found {
@@ -230,8 +301,22 @@ impl Session {
             }
         };
         let tol = model.tol().dist * 10.0;
+        // Sides picked out of order round a ring: put them in order.
+        if sides::shape(&list, tol) == Shape::Mixed
+            && let Some(order) = sides::ring_order(&list, tol)
+        {
+            list = order.iter().map(|i| list[*i].clone()).collect();
+            all = order.iter().map(|i| all[*i].clone()).collect();
+        }
+        let shape = sides::shape(&list, tol);
+        let ring = matches!(shape, Shape::Ring { .. }) && list.len() > 2;
+        let sections = if shape == Shape::Sections {
+            list.len()
+        } else {
+            0
+        };
         let mut closing = Vec::new();
-        let (mut tip, makes) = match sides::shape(&list, tol) {
+        let (mut tip, makes) = match shape {
             Shape::Few => (None, None),
             Shape::Ring { .. } if list.len() == 2 => (Some(sides::RING_OF_TWO), None),
             Shape::Ring { .. } => (None, Some(format!("Fill a ring of {} sides", list.len()))),
@@ -248,17 +333,25 @@ impl Session {
             Shape::Mixed => (Some(sides::OPEN), None),
         };
         let mut preview = Vec::new();
+        let mut cuts = Vec::new();
         if makes.is_some() {
             match sides::surfaces(model, &list, self.loft_preset) {
                 Ok(s) => preview = s,
                 Err(why) => tip = Some(why),
             }
+            if let Ok((w, faces)) = sides::made(model, &list, self.loft_preset) {
+                cuts = face_lines(&w, &faces);
+            }
         }
         Found {
+            ordered: all,
+            ring,
+            sections,
             closing,
             tip,
             makes,
             preview,
+            cuts,
         }
     }
 
@@ -311,7 +404,8 @@ impl Session {
             self.loft_notice = self.lofting.tip.is_none().then_some(sides::TOO_FEW);
             return;
         }
-        let all = self.lofting.all();
+        let all = self.lofting.ordered.clone();
+        let sections = self.lofting.sections;
         let c = Command::LoftSides {
             sides: all.clone(),
             preset: self.loft_preset,
@@ -320,9 +414,12 @@ impl Session {
             self.loft_notice = Some(why);
             return;
         }
+        let before = self.face_ids();
         if self.run(c) {
             self.lofting = Lofting::default();
             self.loft_last = Some(all);
+            self.loft_last_sections = sections;
+            self.loft_last_faces = self.new_faces(&before);
             self.overlay_dirty = true;
             self.refresh();
         }
@@ -334,7 +431,14 @@ impl Session {
         if p == self.loft_preset {
             return;
         }
+        // Smooth or straight changes nothing here: keep it for the next.
+        let only_straight = p.rows == self.loft_preset.rows;
         self.loft_preset = p;
+        if only_straight && !self.loft_straight_applies() {
+            self.loft_update();
+            self.refresh();
+            return;
+        }
         if let (Some(last), true) = (self.loft_last.clone(), self.lofting.is_empty()) {
             if self.doc.undo() {
                 self.model_changed();
@@ -345,7 +449,9 @@ impl Session {
             };
             match c.refusal(self.work_model()) {
                 None => {
+                    let before = self.face_ids();
                     self.run(c);
+                    self.loft_last_faces = self.new_faces(&before);
                 }
                 Some(why) => {
                     if self.doc.redo() {
@@ -399,12 +505,37 @@ impl Session {
         });
     }
 
-    /// Enter: finish the side being picked, else make the surface.
+    fn face_ids(&self) -> BTreeSet<prism_topo::FaceId> {
+        self.work_model().faces().map(|(id, _)| id).collect()
+    }
+
+    fn new_faces(&self, before: &BTreeSet<prism_topo::FaceId>) -> Vec<prism_topo::FaceId> {
+        self.work_model()
+            .faces()
+            .map(|(id, _)| id)
+            .filter(|id| !before.contains(id))
+            .collect()
+    }
+
+    /// Whether smooth or straight would change the loft: only through
+    /// three or more sections (the sides picked, else the last loft).
+    fn loft_straight_applies(&self) -> bool {
+        let l = &self.lofting;
+        if l.is_empty() && self.loft_last.is_some() {
+            self.loft_last_sections > 2
+        } else {
+            l.is_empty() || l.sections > 2
+        }
+    }
+
+    /// Enter: make the surface when the sides are done or close a ring,
+    /// else finish the side being picked.
     pub(super) fn loft_enter(&mut self) -> bool {
         if self.tool != LOFT {
             return false;
         }
-        if self.lofting.current.is_empty() {
+        let l = &self.lofting;
+        if l.current.is_empty() || (l.valid && l.ring) {
             self.loft_make();
         } else {
             self.loft_next();
@@ -450,6 +581,7 @@ impl Session {
                 current: l.current.len(),
                 turn_deg: self.loft_turn,
                 straight: self.loft_preset.straight,
+                straight_applies: self.loft_straight_applies(),
                 rows: self.loft_preset.rows,
                 can_next: !l.current.is_empty(),
                 can_make: l.valid,
@@ -482,7 +614,7 @@ impl Session {
         if let Some(n) = self.loft_notice.or(l.tip) {
             return n;
         }
-        if l.valid && l.current.is_empty() {
+        if l.valid && (l.current.is_empty() || l.ring) {
             return READY;
         }
         HOW
@@ -538,6 +670,32 @@ impl Session {
             fb.guide_dash,
             fb.target_width,
         );
+        // The faces it makes, rows and all; right after a loft, the faces
+        // a preset would change.
+        let last;
+        let cuts = if self.lofting.is_empty() && self.loft_last.is_some() {
+            let faces: Vec<_> = self
+                .loft_last_faces
+                .iter()
+                .copied()
+                .filter(|f| model.face(*f).is_some())
+                .collect();
+            last = face_lines(model, &faces);
+            &last
+        } else {
+            &self.lofting.cuts
+        };
+        for pts in cuts {
+            for w in pts.windows(2) {
+                o.lines.push(Line {
+                    a: w[0],
+                    b: w[1],
+                    color: fb.loft_preview,
+                    width: fb.target_width,
+                    dash: solid,
+                });
+            }
+        }
         for s in &self.lofting.preview {
             let [(u0, u1), (v0, v1)] = s.domain();
             for k in 0..=PREVIEW_LINES {
@@ -563,6 +721,17 @@ impl Session {
             }
         }
     }
+}
+
+/// The edges of `faces`, as lines of points.
+fn face_lines(model: &prism_topo::Model, faces: &[prism_topo::FaceId]) -> Vec<Vec<DVec3>> {
+    let set: BTreeSet<prism_topo::FaceId> = faces.iter().copied().collect();
+    model
+        .edge_faces()
+        .into_iter()
+        .filter(|(_, fs)| fs.iter().any(|f| set.contains(f)))
+        .map(|(e, _)| model.edge_points(e))
+        .collect()
 }
 
 /// The stretch of `run` (edges in order, end to end) from vertex `a` to

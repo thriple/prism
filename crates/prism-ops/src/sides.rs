@@ -337,6 +337,52 @@ pub fn shape(sides: &[Side], tol: f64) -> Shape {
     }
 }
 
+/// The order that joins sides picked in any order end to end, into a ring
+/// or an open chain: None if they do not make one chain (or stand apart,
+/// or one is closed).
+pub fn ring_order(sides: &[Side], tol: f64) -> Option<Vec<usize>> {
+    let n = sides.len();
+    if n < 2 || sides.iter().any(|s| s.curve.is_closed()) {
+        return None;
+    }
+    let ends: Vec<[DVec3; 2]> = sides
+        .iter()
+        .map(|s| {
+            let (a, b) = s.ends();
+            [a, b]
+        })
+        .collect();
+    let near = |a: DVec3, b: DVec3| a.distance(b) <= tol;
+    let touch = |i: usize, j: usize| ends[i].iter().any(|a| ends[j].iter().any(|b| near(*a, *b)));
+    let neighbours: Vec<usize> = (0..n)
+        .map(|i| (0..n).filter(|j| *j != i && touch(i, *j)).count())
+        .collect();
+    if neighbours.iter().any(|k| *k == 0 || *k > 2) {
+        return None;
+    }
+    // Start at a chain end if there is one; leave by the end that touches.
+    let start = (0..n).find(|i| neighbours[*i] == 1).unwrap_or(0);
+    let mut out_end = if neighbours[start] == 1
+        && (0..n).any(|j| j != start && ends[j].iter().any(|b| near(ends[start][0], *b)))
+    {
+        ends[start][0]
+    } else {
+        ends[start][1]
+    };
+    let mut order = vec![start];
+    while order.len() < n {
+        let next =
+            (0..n).find(|j| !order.contains(j) && ends[*j].iter().any(|b| near(out_end, *b)))?;
+        out_end = if near(ends[next][0], out_end) {
+            ends[next][1]
+        } else {
+            ends[next][0]
+        };
+        order.push(next);
+    }
+    Some(order)
+}
+
 /// The sides' curves round the ring, each from its corner to the next.
 fn round(sides: &[Side], turned: &[bool]) -> Vec<Nurbs> {
     sides
@@ -982,6 +1028,38 @@ mod tests {
             }
         }
         assert!(seams > 0);
+    }
+
+    #[test]
+    fn sides_picked_out_of_order_are_put_round_the_ring() {
+        let mut m = Model::new();
+        let sq = [
+            DVec3::ZERO,
+            DVec3::new(3.0, 0.0, 0.5),
+            DVec3::new(3.0, 3.0, 0.0),
+            DVec3::new(0.0, 3.0, 0.5),
+        ];
+        let mut edges = Vec::new();
+        for i in 0..4 {
+            add_segment(&mut m, sq[i], sq[(i + 1) % 4]);
+            edges.push(m.edges().last().unwrap().0);
+        }
+        // Picked as 0, 2, 1, 3: 0 and 2 do not touch.
+        let picked: Vec<Side> = [0, 2, 1, 3]
+            .iter()
+            .map(|i| side(&m, &[edges[*i]]).unwrap())
+            .collect();
+        assert_eq!(shape(&picked, 1e-6), Shape::Mixed);
+        let order = ring_order(&picked, 1e-6).unwrap();
+        let ordered: Vec<Side> = order.iter().map(|i| picked[*i].clone()).collect();
+        assert!(matches!(shape(&ordered, 1e-6), Shape::Ring { .. }));
+        // Three of them, out of order: an open chain.
+        let three: Vec<Side> = [0, 2, 1].iter().map(|i| picked[*i].clone()).collect();
+        let order = ring_order(&three, 1e-6).unwrap();
+        let ordered: Vec<Side> = order.iter().map(|i| three[*i].clone()).collect();
+        assert!(matches!(shape(&ordered, 1e-6), Shape::Open { .. }));
+        // Apart, or branching: no order.
+        assert!(ring_order(&[picked[0].clone(), picked[1].clone()], 1e-6).is_none());
     }
 
     #[test]

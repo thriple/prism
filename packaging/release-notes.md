@@ -1,8 +1,9 @@
-**New in this build:**
-- Push/Pull works on freeform (NURBS) faces: the face moves out (or in) by the distance everywhere, with sides joining it to where it was. A side that lies flat, as when you pull out a curved wall, is a flat face.
-
 **Fixed in this build:**
-- Solid > Validate is much quicker on freeform solids. Where freeform faces meet along very many curve pieces, the kernel's check would take minutes, so Validate checks those by Prism's own rules and says so.
+- The Loft tool picks a ring's sides in any order, and a click on an edge that joins the side you are picking adds it to that side.
+- Enter makes a ring as soon as it closes, even while you are still picking its last side.
+- Rows shows live: the preview draws the faces the loft will be cut into, and so does the loft you just made while Rows can still change it.
+- Smooth / Straight is greyed where it changes nothing (a ring, or two sections). It no longer remakes the loft, so Undo no longer takes the whole loft away.
+- The Eraser no longer shows Move's "a face with arcs would fold" message.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

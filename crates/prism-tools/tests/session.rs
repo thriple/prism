@@ -2077,6 +2077,23 @@ fn refused_edits_of_arcs_say_why() {
     assert_eq!(d.s.hint(), ARC_FACE_WOULD_FOLD);
     d.send(Input::Key { key: Key::Escape });
     assert_eq!(d.s.model(), &before, "nothing changed");
+    // The Eraser does not show the move's refusal while it erases
+    // (Session 10).
+    d.tool(ERASE);
+    let p = d.screen(DVec3::new(3.0, 0.0, 0.0));
+    d.send(Input::Move { x: p.x, y: p.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: p.x,
+        y: p.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    assert_ne!(d.s.hint(), ARC_FACE_WOULD_FOLD);
+    d.send(Input::Release {
+        button: Button::Left,
+    });
 }
 
 // ---------- Circle and Polygon (brief 23, step 2d) ----------
@@ -5520,6 +5537,76 @@ fn a_square_ring_is_one_patch_and_two_curves_loft() {
     valid(&d);
     undo(&mut d);
     assert_eq!(d.faces(), 0, "one undo step");
+}
+
+#[test]
+fn a_ring_picked_out_of_order_and_edge_by_edge_fills_with_one_enter() {
+    // As in Session 10: sides picked out of order, the last one an edge
+    // at a time (its corner is a junction, so no edges are offered to
+    // close the ring), then one Enter.
+    use prism_tools::session::{LOFT, LoftOp};
+    let a = DVec3::ZERO;
+    let b = DVec3::new(3.0, 0.0, 0.5);
+    let c = DVec3::new(3.0, 3.0, 0.0);
+    let dd = DVec3::new(0.0, 3.0, 0.5);
+    let mid = dd.lerp(a, 0.5);
+    let mut m = prism_topo::Model::new();
+    for (p, q) in [(a, b), (b, c), (c, dd), (dd, mid), (mid, a)] {
+        prism_ops::add_segment(&mut m, p, q);
+    }
+    // A stub at the middle point makes it a junction.
+    prism_ops::add_segment(&mut m, mid, mid - DVec3::new(1.0, 0.0, 0.0));
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(1.5, -6.0, 7.0),
+        target: DVec3::new(1.5, 1.5, 0.0),
+    });
+    d.tool(LOFT);
+    for (p, q) in [(a, b), (c, dd), (b, c)] {
+        d.click(p.lerp(q, 0.5));
+        key(&mut d, Key::Enter);
+    }
+    assert!(d.s.loft_closing_edges().is_empty());
+    assert!(d.s.hint().contains("open"), "{}", d.s.hint());
+    // A click on an edge that joins the side being picked adds to it.
+    d.click(dd.lerp(mid, 0.5));
+    d.click(mid.lerp(a, 0.5));
+    let p = d.s.loft_panel().unwrap();
+    assert_eq!(p.sides, vec![1, 1, 1]);
+    assert_eq!(p.current, 2, "both edges in the last side");
+    assert_eq!(p.makes.as_deref(), Some("Fill a ring of 4 sides"));
+    assert!(
+        !p.straight_applies,
+        "smooth or straight does not shape a ring"
+    );
+    // Smooth or straight leaves the picked ring alone.
+    let v = d.s.version();
+    d.s.loft_input(LoftOp::Straight(true));
+    assert_eq!(d.s.version(), v);
+    // The preview shows the rows the faces will be cut into.
+    let lines = d.s.overlay().lines.len();
+    d.s.loft_input(LoftOp::Rows(3));
+    assert!(
+        d.s.overlay().lines.len() > lines,
+        "rows show in the preview"
+    );
+    d.s.loft_input(LoftOp::Rows(1));
+    assert_eq!(d.s.overlay().lines.len(), lines);
+    key(&mut d, Key::Enter);
+    // Two faces: the patch is cut across at the point in its last side.
+    assert_eq!(d.faces(), 2, "one Enter makes the closed ring");
+    valid(&d);
+    // ... and the loft just made.
+    let v = d.s.version();
+    d.s.loft_input(LoftOp::Straight(false));
+    assert_eq!(d.s.version(), v, "not remade");
+    // Rows change it in place, and show.
+    let lines = d.s.overlay().lines.len();
+    d.s.loft_input(LoftOp::Rows(3));
+    assert_eq!(d.faces(), 4, "cut at a third, the middle and two thirds");
+    assert!(d.s.overlay().lines.len() > lines, "the new rows show");
+    undo(&mut d);
+    assert_eq!(d.faces(), 0);
 }
 
 #[test]

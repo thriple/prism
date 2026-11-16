@@ -79,13 +79,20 @@ pub(super) fn card(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<
                         ("Smooth", false, "Smooth through the sections"),
                         ("Straight", true, "Straight between sections"),
                     ] {
+                        let tip = if r.straight_applies {
+                            tip
+                        } else {
+                            "Only shapes a loft through three or more sections"
+                        };
                         if ui
-                            .add(
+                            .add_enabled(
+                                r.straight_applies,
                                 SoftButton::new(label)
                                     .small()
                                     .selected(r.straight == straight),
                             )
                             .on_hover_text(tip)
+                            .on_disabled_hover_text(tip)
                             .clicked()
                         {
                             ops.push(PanelOp::Loft(LoftOp::Straight(straight)));

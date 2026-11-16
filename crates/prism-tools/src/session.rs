@@ -430,6 +430,10 @@ pub struct Session {
     loft_turn: f64,
     loft_preset: prism_ops::sides::Preset,
     loft_last: Option<Vec<Vec<prism_topo::EdgeId>>>,
+    /// How many sections the last loft went through (0 for a ring).
+    loft_last_sections: usize,
+    /// The faces the last loft made (drawn while a preset can change it).
+    loft_last_faces: Vec<prism_topo::FaceId>,
     loft_notice: Option<&'static str>,
     follow_notice: Option<&'static str>,
     /// Follow Me follows the selected face's edge (Alt).
@@ -628,6 +632,8 @@ impl Session {
             loft_turn: prism_ops::sides::TURN_DEG,
             loft_preset: prism_ops::sides::Preset::default(),
             loft_last: None,
+            loft_last_sections: 0,
+            loft_last_faces: Vec::new(),
             loft_notice: None,
             follow_notice: None,
             follow_perimeter: false,
@@ -875,7 +881,19 @@ impl Session {
         if let Some(h) = self.cage_hint() {
             return h;
         }
-        if let Some(r) = self.refused.filter(|_| self.edit.is_some()) {
+        // Only for the edit it was worked out for (not a later Eraser drag).
+        if let Some(r) = self.refused.filter(|_| {
+            matches!(
+                self.edit,
+                Some(
+                    edit::EditOp::Push { .. }
+                        | edit::EditOp::Offset { .. }
+                        | edit::EditOp::Move { .. }
+                        | edit::EditOp::Rotate { .. }
+                        | edit::EditOp::Scale { .. }
+                )
+            )
+        }) {
             return r;
         }
         if let Some(h) = self.texpos_hint() {
