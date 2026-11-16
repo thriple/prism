@@ -4158,10 +4158,32 @@ old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
   obvious how to use each one: open its side window, show a ghost
   (preview), or whatever fits that tool. Do this first in the next
   session.
-- **Shell / Thicken** (`tool.shell`) was not obvious: the owner expected
-  it to offset a watertight body into a new watertight body, a new inside
-  or outside shell, depending on which way the pointer moves. They worked
-  it out in the end, so the pass should make that clear up front.
+- **Shell / Thicken** (`tool.shell`) is not built yet (greyed). The
+  owner tried Outer Shell expecting it to be this. What they expect: an
+  offset that makes a new watertight body, inside or outside depending on
+  which way the pointer moves.
+- **Shell / Thicken design (owner agreed, 2026-11-16):** one tool that
+  takes any selection of faces, open or closed, and always gives a
+  watertight result.
+  - Open faces (one surface, a few joined faces): thicken into a slab,
+    the open rim closed by side walls (Blender's Solidify, Fusion's
+    Thicken). Prism does this already for one freeform face: Push/Pull of
+    a lone face makes the slab (`prism-ops/src/thicken.rs`).
+  - A closed body: hollow it, the new shell inside or outside by drag
+    direction; click faces to leave open (Fusion's Shell: a box into a
+    tray).
+  - The hard part is the same for both, and watertight input does not
+    make it easier: where neighbouring faces' offsets meet. At an outward
+    corner they part (fill with a rounded or extended strip); at an
+    inward corner they overlap (cut back); a distance past a curve's
+    radius folds the offset through itself (refuse or trim). The rim walls
+    of open input are the easy part.
+  - Flat faces ("meshes" in Prism are just many flat faces): offset
+    planes, exact and cheap. Keep the thickness exact, not Blender's
+    per-vertex move (thinner at corners).
+  - Lines are a different job: round gives a pipe (Follow Me with a
+    circle), flat gives a wall (offset in its plane, then Push/Pull). An
+    option in the tool at most; it may be left to Follow Me.
 - **Outer Shell** (`solid.shell`) does the same job as Union now (Union of
   more than two groups already runs it, `session/booleans.rs`). The owner
   sees it as redundant: decide with the owner whether to remove it or fold
