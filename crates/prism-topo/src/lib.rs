@@ -840,6 +840,18 @@ impl Model {
     pub fn face_area(&self, id: FaceId) -> f64 {
         let Some(f) = self.face(id) else { return 0.0 };
         let Some(n) = f.plane().map(|p| p.normal) else {
+            // A freeform face, cut from its patch or not: by Green's
+            // theorem in (u, v) (Solids & CAD part 3; it was 0).
+            if let Some(patch) = f.surface.patch() {
+                let total: f64 = (0..=f.holes.len())
+                    .map(|k| {
+                        let uv: Vec<DVec2> =
+                            self.patch_loop(f, k).into_iter().map(|x| x.1).collect();
+                        patch.loop_integrals(&uv).0
+                    })
+                    .sum();
+                return total.abs();
+            }
             // Cones, spheres and tori (Solids & CAD part 1 found this was
             // 0): by Green's theorem in (θ, s), the area ∬ r |(r', h')| dθ ds
             // is the loop integral of θ r |(r', h')| ds. Circles round the
@@ -987,6 +999,65 @@ impl Model {
     /// of the side before and of the side after, crossing the way a face
     /// pointing out of its surface goes (counter-clockwise in (θ, s)).
     /// Empty for a flat face.
+    /// Loop `k` of a freeform face laid out in its patch's (u, v)
+    /// (Solids & CAD part 3): every drawn point of its sides, each with
+    /// its place on the surface, unwrapped across a closed direction's
+    /// seam so nothing jumps by a period. Empty if it is not freeform.
+    pub fn patch_loop(&self, f: &Face, k: usize) -> Vec<(DVec3, DVec2)> {
+        let Some(patch) = f.surface.patch() else {
+            return Vec::new();
+        };
+        let s = &patch.surface;
+        let [du, dv] = s.domain();
+        let period = [du.1 - du.0, dv.1 - dv.0];
+        let closed = s.periodic();
+        let mut out: Vec<(DVec3, DVec2)> = Vec::new();
+        for side in f.loop_edges(k) {
+            let Some(e) = self.edges.get(&side.edge) else {
+                continue;
+            };
+            let (p, q) = (self.vertex(side.from), self.vertex(side.to));
+            let mut pts = vec![p];
+            match e.curve {
+                // A line on a curved surface can bend in (u, v): a few
+                // points along it.
+                Curve::Line => pts.extend((1..8).map(|i| p.lerp(q, i as f64 / 8.0))),
+                _ => pts.extend(e.curve_from(side.from).inner_points(p, q)),
+            }
+            for x in pts {
+                let (u, v) = patch.param(x);
+                let mut uv = DVec2::new(u, v);
+                if let Some(last) = out.last().map(|l| l.1) {
+                    for d in 0..2 {
+                        if closed[d] && period[d] > 0.0 {
+                            let t = uv[d] - last[d];
+                            uv[d] -= (t / period[d]).round() * period[d];
+                        }
+                    }
+                }
+                out.push((x, uv));
+            }
+        }
+        out
+    }
+
+    /// Whether a freeform face is cut from its patch (Solids & CAD part
+    /// 3): it has holes, or its outer loop is not the patch's four
+    /// corners.
+    pub fn is_trimmed(&self, f: &Face) -> bool {
+        let Some(patch) = f.surface.patch() else {
+            return false;
+        };
+        if !f.holes.is_empty() || f.outer.len() != 4 {
+            return true;
+        }
+        let tol = self.tol();
+        let corners = patch.corners();
+        !f.outer
+            .iter()
+            .all(|v| corners.iter().any(|c| tol.same_point(*c, self.vertex(*v))))
+    }
+
     pub fn param_loop(&self, f: &Face, k: usize) -> Vec<(DVec3, DVec2)> {
         let Some(rev) = f.surface.revolution() else {
             return Vec::new();

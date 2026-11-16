@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use prism_math::{DAffine3, DVec3};
+use prism_math::{DAffine3, DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 
 use crate::SEGMENTS_PER_TURN;
@@ -454,6 +454,93 @@ impl Patch {
 
     pub fn range(&self) -> [(f64, f64); 2] {
         [self.u, self.v]
+    }
+
+    /// The area and volume share (a third of the integral of position ·
+    /// normal) of the region inside the loop `pts` in (u, v), by Green's
+    /// theorem: the loop integral of the integrand integrated along u.
+    /// The outer loop runs counter-clockwise about the face's normal (so
+    /// clockwise in (u, v) when `flipped`), holes the other way; summing
+    /// every loop gives the face. The loop is cut where it crosses the
+    /// surface's grid, and each piece integrated with Gauss-Legendre.
+    pub fn loop_integrals(&self, pts: &[DVec2]) -> (f64, f64) {
+        const X: [f64; 5] = [
+            -0.906_179_845_938_664,
+            -0.538_469_310_105_683_1,
+            0.0,
+            0.538_469_310_105_683_1,
+            0.906_179_845_938_664,
+        ];
+        const W: [f64; 5] = [
+            0.236_926_885_056_189_08,
+            0.478_628_670_499_366_47,
+            0.568_888_888_888_888_9,
+            0.478_628_670_499_366_47,
+            0.236_926_885_056_189_08,
+        ];
+        let s = &self.surface;
+        let (ulo, uhi) = (self.u.0.min(self.u.1), self.u.0.max(self.u.1));
+        let (vlo, vhi) = (self.v.0.min(self.v.1), self.v.0.max(self.v.1));
+        let ug = s.grid(0, ulo, uhi, self.v);
+        let vg = s.grid(1, vlo, vhi, self.u);
+        // (area, volume) integrands at (u, v), unsigned by the facing.
+        let g = |u: f64, v: f64| {
+            let (q, du, dv) = s.eval_d(u, v);
+            let n = du.cross(dv);
+            (n.length(), q.dot(n))
+        };
+        // Both integrated along u from `ulo` to `u`.
+        let along_u = |u: f64, v: f64| {
+            let mut cuts: Vec<f64> = vec![ulo];
+            cuts.extend(ug.iter().copied().filter(|t| *t > ulo && *t < u));
+            cuts.push(u);
+            let mut acc = (0.0, 0.0);
+            for w in cuts.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                let h = (b - a) * 0.5;
+                for (x, wt) in X.iter().zip(W) {
+                    let (ga, gv) = g(a + h * (1.0 + x), v);
+                    acc.0 += wt * h * ga;
+                    acc.1 += wt * h * gv;
+                }
+            }
+            acc
+        };
+        let mut total = (0.0, 0.0);
+        let n = pts.len();
+        for i in 0..n {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            let dv = b.y - a.y;
+            if dv == 0.0 {
+                continue;
+            }
+            // Where the side crosses a grid line, as a share of it.
+            let mut ts = vec![0.0, 1.0];
+            for (d, grid) in [(0usize, &ug), (1, &vg)] {
+                let (x0, x1) = if d == 0 { (a.x, b.x) } else { (a.y, b.y) };
+                if x0 != x1 {
+                    for t in grid.iter() {
+                        let k = (t - x0) / (x1 - x0);
+                        if k > 0.0 && k < 1.0 {
+                            ts.push(k);
+                        }
+                    }
+                }
+            }
+            ts.sort_by(f64::total_cmp);
+            ts.dedup();
+            for w in ts.windows(2) {
+                let h = (w[1] - w[0]) * 0.5;
+                for (x, wt) in X.iter().zip(W) {
+                    let q = a.lerp(b, w[0] + h * (1.0 + x));
+                    let (ga, gv) = along_u(q.x, q.y);
+                    total.0 += wt * h * dv * ga;
+                    total.1 += wt * h * dv * gv;
+                }
+            }
+        }
+        let sign = if self.flipped { -1.0 } else { 1.0 };
+        (sign * total.0, total.1 / 3.0)
     }
 
     /// The (u, v) of the patch's point closest to `p`.

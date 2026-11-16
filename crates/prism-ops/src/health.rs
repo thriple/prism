@@ -443,6 +443,15 @@ pub fn face_volume(model: &Model, id: FaceId) -> f64 {
         }
         // A freeform face: position · normal integrated over its grid
         // (three Gauss points each way in every cell).
+        // A freeform face cut from its patch: by Green's theorem over its
+        // loops in (u, v) (Solids & CAD part 3).
+        Surface::Nurbs(p) if model.is_trimmed(f) => (0..=f.holes.len())
+            .map(|k| {
+                let uv: Vec<prism_math::DVec2> =
+                    model.patch_loop(f, k).into_iter().map(|x| x.1).collect();
+                p.loop_integrals(&uv).1
+            })
+            .sum(),
         Surface::Nurbs(p) => {
             const G: [(f64, f64); 3] = [
                 (-0.774_596_669_241_483_4, 5.0 / 9.0),
