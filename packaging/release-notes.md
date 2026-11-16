@@ -1,9 +1,8 @@
 **New in this build:**
-- Intersect Faces and the Solid tools (Union, Subtract, Intersect, Trim, Split) now work with freeform (NURBS) faces, such as lofts: where they cross, Prism traces an exact-enough curve on both.
+- Solid > Validate now checks balls, tori, cones and freeform (NURBS) solids, cut ones too, with the kernel's own checker, as it already did for boxes and cylinders.
 
 **Fixed in this build:**
-- A flat face with a curved (NURBS) side now has its exact area and volume.
-- A mirrored freeform face no longer faces the wrong way.
+- Faster and more exact cuts where shapes cross freeform faces.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

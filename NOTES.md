@@ -4083,3 +4083,37 @@ old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
   same on the code before 3b. Input: a closed cubic through (0, 0),
   (0, 4.816), (0.865, 5.317), (5.305, 3.734), (4.245, 4.226), (3.586,
   3.541) and a line from (5.702, 3.424) to (1.008, 5.988).
+
+## Solids & CAD part 3c: the kernel checks freeform faces, spheres, tori and cone tips (brief 40, 2026-11-16)
+- **The bridge sends them** (`prism-kernel/src/solid.rs`): a freeform
+  face as its NURBS surface (facing along u × v unless flipped); a
+  sphere with its poles on Prism's axis, where Prism's faces have their
+  corners. Each side's curve in (u, v) is moved by whole periods to lie
+  within half a period of the face's middle (`Face::inside`, a point
+  inside it that the bridge now passes, from `shell::interior`: a half
+  sphere's edge middles average to its centre). Where a loop passes
+  through a pole or a cone's tip, an edge of no length is added across it
+  (`EdgeGeometry::Degenerate`, keyed `Kind::Pole`; reading back skips
+  them, as before).
+- **Validate** now checks a ball, a torus, a cone with its tip and
+  freeform solids (cut ones too) with the kernel's checker; the kernel's
+  volumes match Prism's (a ball 4π/3, a torus 2π²Rr², a cone πr²h/3, the
+  bump block exactly, the block minus a box to 3e-11). Still skipped,
+  checked by Prism's rules only (`KERNEL_NOT_YET`): a face with a pole or
+  a tip inside it (not at a corner), and a sphere, torus or freeform face
+  whose loop goes all the way round (`Laid::wraps`); a cylinder's does go.
+- **Crossings with freeform faces are tighter:** a cubic is kept only
+  within a hundredth of the tolerance of both surfaces (points are put
+  between the traced ones until it is, up to about 1000), because the
+  kernel fits each edge's curve on the face to the tolerance and cannot
+  when the edge is already that far off.
+- **The kernel is optimised in test builds** (`[profile.dev.package.arris-*]`
+  and nalgebra at opt-level 3): unoptimised, fitting an edge's curve on a
+  freeform face took minutes.
+- **Push/Pull of a freeform face is not built:** the kernel cannot do it.
+  arris 0.10 (and 0.11, the newest) refuses to offset a freeform face
+  (`OffsetReason::NoExactOffset`) or to move a face beside one. Asked the
+  owner how to go on (HANDOFF).
+- **Tests:** `prism-ops/tests/validate.rs` (a ball through the kernel; a
+  torus and a cone with its tip), `prism-ops/tests/freeform_cross.rs` (the
+  bump block and the block minus a box through the kernel, its volume).
