@@ -80,7 +80,8 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   Shell / Thicken tool, with its own brief (42, four parts): 3a, the
   operation for flat faces (`prism_ops::shelling`, `Command::Shell`), is
   built (NOTES "Shell / Thicken part 3a"), and 3b, the tool (NOTES
-  "... part 3b"); next is 3c, curved faces. Both Lofts stay (owner). Part 1b: a
+  "... part 3b"), and 3c, curved faces (NOTES "... part 3c"); next is
+  3d, the window and corners of four or more faces. Both Lofts stay (owner). Part 1b: a
   line across an arc parts it into two curves, and Alt+click in Loft
   takes one edge. **Every planned feature has a chunk** now
   (`docs/feature-map.md`, ten new rows in PLAN 6.0, a test): add each

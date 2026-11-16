@@ -6201,3 +6201,34 @@ fn shell_grows_a_box_outside_inside_a_group() {
     assert!((v - (2.2f64.powi(3) - 8.0)).abs() < 1e-6, "{v}");
     assert_eq!(d.faces(), 0, "nothing at the root");
 }
+
+#[test]
+fn shell_takes_a_curved_face() {
+    let mut d = Driver::empty();
+    // A cylinder of radius 1 and height 1.
+    let mut doc = d.s.document().clone();
+    doc.run(prism_doc::Command::Circle {
+        centre: DVec3::ZERO,
+        normal: DVec3::Z,
+        radius: 1.0,
+    });
+    d.s.open_document(doc, Some(d.s.camera()));
+    d.tool(PUSH);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.typed("1");
+    let v0 = model_volume(d.s.model());
+    assert!((v0 - std::f64::consts::PI).abs() < 1e-6, "{v0}");
+    // Click the round side and move out from it.
+    d.tool(SHELL);
+    d.click(DVec3::new(0.0, -1.0, 0.5));
+    d.hover(DVec3::new(0.0, -1.3, 0.5));
+    assert!(
+        d.s.shell_sizing().is_some_and(|t| t > 0.0),
+        "out of the side"
+    );
+    d.typed("0.1");
+    let v = model_volume(d.s.model());
+    let want = std::f64::consts::PI * (1.21 * 1.2 - 1.0);
+    assert!((v - want).abs() < 1e-6, "{v} is not {want}");
+    valid(&d);
+}

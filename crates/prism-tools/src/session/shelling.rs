@@ -85,20 +85,16 @@ impl Session {
         let Some(f) = face else {
             return;
         };
-        let Some(n) = self
-            .work_model()
-            .face(f)
-            .and_then(|x| x.plane())
-            .map(|p| p.normal)
-        else {
-            self.notice = Some(prism_ops::shelling::FLAT_ONLY);
+        let p0 = self.hover.map_or(DVec3::ZERO, |p| p.point);
+        // Thickness is measured along the face's direction where it was
+        // clicked (a curved face points a different way at each place).
+        let Some(n) = self.work_model().face(f).map(|x| x.surface.normal_at(p0)) else {
             return;
         };
         // Open faces of another body do not count.
         let body = prism_ops::shelling::body(self.work_model(), &[f].into());
         self.shell_open.retain(|g| body.contains(g));
         self.shell_open.remove(&f);
-        let p0 = self.hover.map_or(DVec3::ZERO, |p| p.point);
         self.notice = None;
         self.shell_op = Some(ShellOp {
             face: f,

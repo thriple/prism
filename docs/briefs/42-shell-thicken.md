@@ -30,7 +30,7 @@ XL: four parts, each pushed and tested on its own.
     - a corner where more than three faces meet and their moved copies do not meet at one point (part 3d);
     - a thickness that turns a face inside out.
 - **Part 3b. The tool.** `tool.shell` is built: click, move, type, Shift+click to leave faces open, Enter or click to finish. A ghost of the result shows while you size it. The hint names the next step. It works inside an open group.
-- **Part 3c. Curved faces.** Arcs in flat faces, cylinders, cones, spheres and tori (their offsets are the same kinds of surface), and freeform faces (the offset from `thicken.rs`).
+- **Part 3c. Curved faces.** Arcs in flat faces, cylinders, cones, spheres and tori (their offsets are the same kinds of surface), and freeform faces (the offset from `thicken.rs`). Built for a freeform face on its own; freeform faces joined to others are a leftover (NOTES "Shell / Thicken part 3c").
 - **Part 3d. The window and harder corners.**
   - The window: thickness, inside or outside, and the open faces.
   - Corners where more than three faces meet, as on a pyramid's tip or a mesh: the moved faces leave a gap there, and a small face fills it.

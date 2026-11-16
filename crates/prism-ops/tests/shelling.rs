@@ -1,9 +1,9 @@
-//! Shell / Thicken of flat faces (brief 42, part 3a).
+//! Shell / Thicken (brief 42): flat faces (part 3a) and curved ones (3c).
 
 use std::collections::BTreeSet;
 
 use prism_math::DVec3;
-use prism_ops::shelling::{self, ALL_OPEN, BRANCHES, CORNER, FLAT_ONLY, MIXED, TOO_THICK, ZERO};
+use prism_ops::shelling::{self, ALL_OPEN, BRANCHES, CORNER, FREEFORM, MIXED, TOO_THICK, ZERO};
 use prism_ops::{add_segment, boolean::is_solid, health::face_volume};
 use prism_topo::{FaceId, Model};
 
@@ -175,12 +175,33 @@ fn shelling_is_refused_with_a_reason() {
         Some(TOO_THICK)
     );
 
-    // A circle.
+    // A face bounded by a freeform curve.
+    let p = DVec3::new;
     let mut c = Model::new();
-    prism_ops::sticky::add_circle(&mut c, DVec3::ZERO, DVec3::Z, 1.0);
+    let curve = prism_geom::Nurbs::open(
+        &[
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(0.5, 0.8, 0.0),
+            DVec3::new(1.5, -0.5, 0.0),
+            DVec3::new(2.0, 0.0, 0.0),
+        ],
+        3,
+    )
+    .unwrap();
+    prism_ops::sticky::add_spline(&mut c, &curve);
+    poly(
+        &mut c,
+        &[
+            p(2.0, 0.0, 0.0),
+            p(2.0, 1.0, 0.0),
+            p(0.0, 1.0, 0.0),
+            p(0.0, 0.0, 0.0),
+        ],
+    );
+    assert!(c.face_count() >= 1);
     assert_eq!(
         shelling::refusal(&c, &any_face(&c), &none, 0.1),
-        Some(FLAT_ONLY)
+        Some(FREEFORM)
     );
 
     // A lopsided pyramid: four faces meet at its tip, and their moved
@@ -282,4 +303,168 @@ fn a_face_with_a_hole_gets_a_wall_round_the_hole_too() {
     sound(&m);
     assert_eq!(m.face_count(), 2 + 4 + 4);
     near(volume(&m), 0.75 * 0.1);
+}
+
+// ---------- Part 3c: curved faces ----------
+
+use std::f64::consts::PI;
+
+fn disc() -> (Model, FaceId) {
+    let mut m = Model::new();
+    let f = prism_ops::sticky::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0).faces[0];
+    (m, f)
+}
+
+/// A cylinder of radius 1 and height 1 on the ground, its faces out.
+fn cylinder() -> Model {
+    let (mut m, f) = disc();
+    let up = m.face(f).unwrap().plane().unwrap().normal.z > 0.0;
+    prism_ops::pushpull::push_pull(&mut m, f, if up { 1.0 } else { -1.0 }, false);
+    sound(&m);
+    near_enough(volume(&m), PI);
+    m
+}
+
+fn near_enough(a: f64, b: f64) {
+    assert!((a - b).abs() < 1e-6, "{a} is not {b}");
+}
+
+#[test]
+fn a_disc_becomes_a_round_slab() {
+    for t in [0.2, -0.2] {
+        let (mut m, f) = disc();
+        shelling::shell(&mut m, &[f].into(), &BTreeSet::new(), t).unwrap();
+        sound(&m);
+        near_enough(volume(&m), PI * 0.2);
+        // The wall is a cylinder, its seams hidden.
+        assert!(
+            m.faces()
+                .any(|(_, f)| matches!(f.surface, prism_geom::Surface::Cylinder(_)))
+        );
+        assert!(
+            m.edges()
+                .filter(|(_, e)| !e.curve.is_curved())
+                .all(|(_, e)| e.soft)
+        );
+    }
+}
+
+#[test]
+fn a_cylinder_is_hollowed_inside_or_grown_outside() {
+    for (d, vol) in [(-0.1, PI - PI * 0.81 * 0.8), (0.1, PI * 1.21 * 1.2 - PI)] {
+        let mut m = cylinder();
+        let all = any_face(&m);
+        shelling::shell(&mut m, &all, &BTreeSet::new(), d).unwrap();
+        sound(&m);
+        near_enough(volume(&m), vol);
+    }
+    let m = cylinder();
+    assert_eq!(
+        shelling::refusal(&m, &any_face(&m), &BTreeSet::new(), -1.2),
+        Some(TOO_THICK)
+    );
+}
+
+#[test]
+fn a_cylinder_with_its_top_open_becomes_a_cup() {
+    let mut m = cylinder();
+    let top = face_at(&m, DVec3::Z);
+    let all = any_face(&m);
+    shelling::shell(&mut m, &all, &[top].into(), -0.1).unwrap();
+    sound(&m);
+    near_enough(volume(&m), PI - PI * 0.81 * 0.9);
+    // The rim is a flat ring at the top.
+    assert!(m.faces().any(|(_, f)| {
+        f.plane()
+            .is_some_and(|p| p.normal.z > 0.99 && p.origin.z > 0.99)
+    }));
+}
+
+#[test]
+fn a_box_with_a_rounded_edge_keeps_its_wall_even() {
+    let mut m = cube();
+    // The upright edge at x = 1, y = 1.
+    let corner = |q: DVec3| (q.x - 1.0).abs() < 1e-9 && (q.y - 1.0).abs() < 1e-9;
+    let e = m
+        .edges()
+        .find(|(_, e)| corner(m.vertex(e.a)) && corner(m.vertex(e.b)))
+        .map(|(id, _)| id)
+        .unwrap();
+    assert!(prism_ops::round::round(&mut m, e, 0.3, true));
+    sound(&m);
+    let before = volume(&m);
+    let all = any_face(&m);
+    shelling::shell(&mut m, &all, &BTreeSet::new(), -0.1).unwrap();
+    sound(&m);
+    // The inside is the same shape 0.1 in: an 0.8 box with an 0.2 round.
+    let inner = 0.8 * 0.8 * 0.8 - (0.2 * 0.2 - PI * 0.04 / 4.0) * 0.8;
+    near_enough(volume(&m), before - inner);
+}
+
+#[test]
+fn a_freeform_face_on_its_own_becomes_a_slab() {
+    let mut m = Model::new();
+    let curve = |y: f64| {
+        prism_geom::Nurbs::open(
+            &[
+                DVec3::new(0.0, y, 0.0),
+                DVec3::new(0.4, y, 0.5),
+                DVec3::new(0.8, y, -0.3),
+                DVec3::new(1.2, y, 0.0),
+            ],
+            3,
+        )
+        .unwrap()
+    };
+    prism_ops::sticky::add_spline(&mut m, &curve(0.0));
+    prism_ops::sticky::add_spline(&mut m, &curve(1.0));
+    let edges: BTreeSet<_> = m.edges().map(|(id, _)| id).collect();
+    prism_ops::loft::loft(&mut m, &edges).unwrap();
+    let f = m
+        .faces()
+        .find(|(_, f)| f.surface.patch().is_some())
+        .map(|(id, _)| id)
+        .expect("a freeform face");
+    assert_eq!(m.face_count(), 1);
+    shelling::shell(&mut m, &[f].into(), &BTreeSet::new(), 0.1).unwrap();
+    assert!(is_solid(&m));
+    assert!(volume(&m).abs() > 0.1, "{}", volume(&m));
+}
+
+#[test]
+fn a_sphere_is_hollowed() {
+    // A sphere of radius 1, by Follow Me of a half disc round a circle far
+    // above (which stays as it is).
+    let mut m = Model::new();
+    add_segment(
+        &mut m,
+        DVec3::new(0.0, 0.0, -1.0),
+        DVec3::new(0.0, 0.0, 1.0),
+    );
+    prism_ops::sticky::add_arc(
+        &mut m,
+        DVec3::ZERO,
+        -DVec3::Y,
+        1.0,
+        DVec3::new(0.0, 0.0, -1.0),
+        PI,
+    );
+    let prof = m.faces().next().map(|(id, _)| id).unwrap();
+    let before: BTreeSet<_> = m.edges().map(|(id, _)| id).collect();
+    prism_ops::sticky::add_circle(&mut m, DVec3::new(0.0, 0.0, 3.0), DVec3::Z, 0.5);
+    let path: BTreeSet<_> = m
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| !before.contains(id))
+        .collect();
+    assert!(prism_ops::follow::follow(&mut m, &path, prof));
+    let ball = m
+        .faces()
+        .find(|(_, f)| matches!(f.surface, prism_geom::Surface::Sphere(_)))
+        .map(|(id, _)| id)
+        .unwrap();
+    let v0 = volume(&m);
+    shelling::shell(&mut m, &[ball].into(), &BTreeSet::new(), -0.1).unwrap();
+    assert!(prism_ops::check::problems(&m).is_empty());
+    near_enough(volume(&m) - v0, -4.0 / 3.0 * PI * 0.9f64.powi(3));
 }

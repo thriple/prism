@@ -4362,3 +4362,24 @@ tests now expect the picking hint).
 - **Not checked in the app:** the tool was tested through the session only. The app was not run (to save build time); the registry tests cover its menu and dock entry.
 - **Leftovers for 3d:** the window (thickness, inside or outside, open faces), and snapping the thickness to points, as Push/Pull does.
 - **Tests:** `session.rs` `shell_hollows_a_box_into_a_tray_with_a_ghost_first`, `shell_says_why_and_esc_steps_back`, `shell_grows_a_box_outside_inside_a_group`.
+
+## Shell / Thicken part 3c: curved faces (brief 42, 2026-11-16)
+- **Built:** `prism_ops::shelling` takes curved faces.
+  - Each surface moves to the same kind, exactly:
+    - a plane moves along its normal;
+    - a cylinder or sphere gets a radius the thickness more or less;
+    - a torus gets a tube the thickness thicker or thinner;
+    - a cone keeps its angle, with its tip moved along the axis by thickness / sin(half angle).
+  - A point moves the shortest way onto every moved face it is on (the same rule as the corners in 3a). Tangent faces share a direction, so a fillet's edges move along it.
+  - Each edge moves to the same kind of curve. A line stays a line and an arc an arc: its centre comes from three moved points and two more are checked.
+  - Rim walls: flat for a line; for an arc, a flat ring, a cylinder or a cone (same axis). A line up between walls that meet smoothly is soft.
+- **A freeform face on its own** becomes the slab Push/Pull makes of it (`thicken::slab`).
+- **Refused (`FREEFORM`):** a freeform face joined to others, and faces bounded by freeform curves. This replaces 3a's flat-faces-only refusal.
+- The tool measures the thickness along the clicked face's direction at the click, so a round side works.
+- **Tests:**
+  - `prism-ops/tests/shelling.rs`: a disc, a cylinder in and out, a cup, a box with a rounded edge, a sphere hollowed, a freeform face alone, the freeform-curve refusal;
+  - `session.rs` `shell_takes_a_curved_face`.
+- **Not tested:** cones and tori (Prism has no quick way to make one in a test). Their offsets are coded and written down above.
+- **Leftovers:**
+  - freeform faces joined to others (their offsets meet along curves that need fitting);
+  - spline edges.
