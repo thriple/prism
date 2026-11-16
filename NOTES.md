@@ -4383,3 +4383,16 @@ tests now expect the picking hint).
 - **Leftovers:**
   - freeform faces joined to others (their offsets meet along curves that need fitting);
   - spline edges.
+
+## Shell / Thicken part 3d, step 1: corners of four or more faces (brief 42, 2026-11-16)
+- **Built:** a corner where four or more flat faces meet, and their moved copies miss one point (a lopsided pyramid's tip, or a mesh's corners), is no longer refused.
+  - Each face still moves by exactly the thickness.
+  - The moved edges end on one plane across the corner (square to the faces' mean direction, as far out as they move on average).
+  - Each moved face gets a short edge there, and a small flat face fills the gap.
+  - Ends that fall together share a point; two faces then share a short edge (a ridge) and no fill face is needed.
+- **Still refused (`CORNER`):** such a corner on a rim (an open face's edge or a sheet's edge), or one with a curved face at it.
+- **Tests:** `shelling.rs` `a_tip_of_four_faces_gets_a_small_face_and_walls_stay_even` (in and out, every face moved by the thickness) and `a_rim_corner_of_four_faces_is_still_refused`.
+- **Owner question (2026-11-16): extruding a curved face.**
+  - Push/Pull changes a cylinder's or sphere's radius, and makes a slab of a freeform face along its normals. Shell / Thicken does the same for any curved face.
+  - Not built: moving a curved face in a straight direction or along a path into a solid. Follow Me takes only flat profiles; Sweep makes surfaces from curves.
+  - Leftover for Loft & Sweep Controls.

@@ -74,6 +74,7 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | Loft styles (Normal, Loose, Tight, Straight, Uniform, Developable) with a ghost of each; tension; refit tolerance; closed loft; match start and end tangents (1.4) | Loft & Sweep Controls |
 | Loft end conditions as arrows dragged in the viewport (weights) (1.4) | Loft & Sweep Controls |
 | Dragging a loft's surface adds a guide curve; rails and a spine; dragging profile start points (1.4) | Loft & Sweep Controls |
+| Extrude a curved face in a straight direction or along a path into a solid (Follow Me takes flat profiles only; owner, 2026-11-16) | Loft & Sweep Controls |
 | The loft stays live: moving a profile updates it until exploded (1.4) | Loft & Sweep Controls |
 | Sweep twist and scale (1.4) | Loft & Sweep Controls |
 | Arrays: polar and along a path, not only Move's linear copies (1.4) | Shapes & Placement |

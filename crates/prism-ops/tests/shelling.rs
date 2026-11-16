@@ -204,27 +204,6 @@ fn shelling_is_refused_with_a_reason() {
         Some(FREEFORM)
     );
 
-    // A lopsided pyramid: four faces meet at its tip, and their moved
-    // copies do not meet at one point.
-    let mut py = Model::new();
-    let p = DVec3::new;
-    let base = [
-        p(0.0, 0.0, 0.0),
-        p(1.0, 0.0, 0.0),
-        p(1.0, 1.0, 0.0),
-        p(0.0, 1.0, 0.0),
-    ];
-    poly(&mut py, &base);
-    for q in base {
-        add_segment(&mut py, q, p(0.3, 0.6, 1.0));
-    }
-    assert_eq!(py.face_count(), 5);
-    prism_ops::health::orient(&mut py, None);
-    assert_eq!(
-        shelling::refusal(&py, &any_face(&py), &none, -0.05),
-        Some(CORNER)
-    );
-
     // Two faces that face different ways.
     let (mut m2, f) = square();
     let g = poly(
@@ -467,4 +446,83 @@ fn a_sphere_is_hollowed() {
     shelling::shell(&mut m, &[ball].into(), &BTreeSet::new(), -0.1).unwrap();
     assert!(prism_ops::check::problems(&m).is_empty());
     near_enough(volume(&m) - v0, -4.0 / 3.0 * PI * 0.9f64.powi(3));
+}
+
+// ---------- Part 3d: corners of four or more faces ----------
+
+/// A lopsided pyramid on a polygon base (faces out), its tip at `tip`.
+fn pyramid(base: &[DVec3], tip: DVec3) -> Model {
+    let mut py = Model::new();
+    poly(&mut py, base);
+    for q in base {
+        add_segment(&mut py, *q, tip);
+    }
+    assert_eq!(py.face_count(), base.len() + 1);
+    prism_ops::health::orient(&mut py, None);
+    assert!(volume(&py) > 0.0, "faces out");
+    py
+}
+
+fn square_base() -> Vec<DVec3> {
+    let p = DVec3::new;
+    vec![
+        p(0.0, 0.0, 0.0),
+        p(1.0, 0.0, 0.0),
+        p(1.0, 1.0, 0.0),
+        p(0.0, 1.0, 0.0),
+    ]
+}
+
+#[test]
+fn a_tip_of_four_faces_gets_a_small_face_and_walls_stay_even() {
+    for t in [-0.05, 0.05] {
+        let mut m = pyramid(&square_base(), DVec3::new(0.3, 0.6, 1.0));
+        let v0 = volume(&m);
+        let planes: Vec<_> = m.faces().map(|(_, f)| *f.plane().unwrap()).collect();
+        let all = any_face(&m);
+        shelling::shell(&mut m, &all, &BTreeSet::new(), t).unwrap();
+        sound(&m);
+        // Two shells: the old one and the moved one, with a small face at
+        // the tip.
+        assert_eq!(m.face_count(), 5 + 5 + 1);
+        let v = volume(&m);
+        assert!(
+            v > 0.0 && (if t < 0.0 { v < v0 } else { v > 0.0 }),
+            "{v} {v0}"
+        );
+        // Every old face has a moved copy the thickness from it.
+        for pl in &planes {
+            let moved = m.faces().any(|(_, f)| {
+                f.plane().is_some_and(|q| {
+                    q.normal.dot(pl.normal).abs() > 1.0 - 1e-9
+                        && ((q.origin - pl.origin).dot(pl.normal) - t).abs() < 1e-9
+                })
+            });
+            assert!(moved, "a face moved by {t}");
+        }
+    }
+}
+
+#[test]
+fn a_rim_corner_of_four_faces_is_still_refused() {
+    // A five-sided pyramid with one side open: four faces meet at the tip,
+    // which is on the rim.
+    let p = DVec3::new;
+    let base = [
+        p(0.0, 0.0, 0.0),
+        p(1.0, 0.0, 0.0),
+        p(1.4, 0.8, 0.0),
+        p(0.5, 1.3, 0.0),
+        p(-0.3, 0.7, 0.0),
+    ];
+    let m = pyramid(&base, p(0.3, 0.5, 1.0));
+    let side = m
+        .faces()
+        .find(|(_, f)| f.outer.len() == 3)
+        .map(|(id, _)| id)
+        .unwrap();
+    assert_eq!(
+        shelling::refusal(&m, &any_face(&m), &[side].into(), -0.05),
+        Some(CORNER)
+    );
 }

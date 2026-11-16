@@ -32,7 +32,7 @@ pub const FREEFORM: &str = "Refused: Shell / Thicken takes a freeform face on it
 pub const MIXED: &str =
     "Refused: these faces face different ways. Solid > Heal turns them the same way.";
 pub const BRANCHES: &str = "Refused: more than two faces meet at an edge here.";
-pub const CORNER: &str = "Refused: more than three faces meet at a corner here, and their moved copies do not meet at one point. Not yet.";
+pub const CORNER: &str = "Refused: more than three faces meet at a corner on the rim here, or round a curved face, and their moved copies do not meet at one point. Not yet.";
 pub const TOO_THICK: &str = "Refused: that thickness turns a face inside out. Try a smaller one.";
 
 /// The faces joined to `seeds` by edges: their sheets or bodies.
@@ -69,6 +69,10 @@ struct Plan {
     kept: Vec<FaceId>,
     /// Where each point of a kept face moves to.
     moved: BTreeMap<VertexId, DVec3>,
+    /// Corners of four or more faces whose moved copies miss one point
+    /// (part 3d): where each edge there ends, round the corner in order. A
+    /// small flat face fills the gap between them.
+    splits: BTreeMap<VertexId, Vec<(EdgeId, DVec3)>>,
     /// Each kept face's edges moved with it.
     curves: BTreeMap<EdgeId, Curve>,
     /// Edges with a kept face on one side only: the edge, the way that face
@@ -120,6 +124,25 @@ pub fn slab(
         base.insert(*v, s.add_vertex(model.vertex(*v)));
         up.insert(*v, s.add_vertex(*q));
     }
+    // At a split corner, each edge ends at its own point (or one it
+    // shares with the next).
+    let mut ends: BTreeMap<(VertexId, EdgeId), VertexId> = BTreeMap::new();
+    for (v, fan) in &plan.splits {
+        base.insert(*v, s.add_vertex(model.vertex(*v)));
+        let mut made: Vec<(DVec3, VertexId)> = Vec::new();
+        for (e, q) in fan {
+            let id = match made.iter().find(|(p, _)| tol.same_point(*p, *q)) {
+                Some((_, id)) => *id,
+                None => {
+                    let id = s.add_vertex(*q);
+                    made.push((*q, id));
+                    id
+                }
+            };
+            ends.insert((*v, *e), id);
+        }
+    }
+    let end = |v: VertexId, e: EdgeId| up.get(&v).copied().unwrap_or_else(|| ends[&(v, e)]);
     // Each edge and its moved copy.
     let mut low_e: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
     let mut high_e: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
@@ -131,7 +154,7 @@ pub fn slab(
             .map(|c| *cids.entry(c).or_insert_with(|| s.new_curve_id()));
         let lo = edge(&mut s, base[&e.a], base[&e.b], e.curve.clone(), cid)?;
         let hi_cid = cid.map(|_| s.new_curve_id());
-        let hi = edge(&mut s, up[&e.a], up[&e.b], moved.clone(), hi_cid)?;
+        let hi = edge(&mut s, end(e.a, *id), end(e.b, *id), moved.clone(), hi_cid)?;
         s.set_soft(lo, e.soft, e.smooth);
         s.set_soft(hi, e.soft, e.smooth);
         low_e.insert(*id, lo);
@@ -154,11 +177,45 @@ pub fn slab(
         c.paint = f.paint;
         c
     };
+    // The moved copy of a face: at a split corner it goes from where the
+    // edge in ends to where the edge out ends, by a short edge.
+    let mut shorts: BTreeMap<(VertexId, FaceId), Option<EdgeId>> = BTreeMap::new();
+    let mut high_copy = |s: &mut Model, id: FaceId, f: &Face, surface: Surface| {
+        let mut loops: Vec<Vec<VertexId>> = Vec::new();
+        let mut edges: Vec<Vec<EdgeId>> = Vec::new();
+        for k in 0..=f.holes.len() {
+            let sides: Vec<_> = f.loop_edges(k).collect();
+            let (mut l, mut es) = (Vec::new(), Vec::new());
+            for (i, side) in sides.iter().enumerate() {
+                let v = side.from;
+                if let Some(u) = up.get(&v) {
+                    l.push(*u);
+                } else {
+                    let prev = sides[(i + sides.len() - 1) % sides.len()].edge;
+                    let (a, b) = (ends[&(v, prev)], ends[&(v, side.edge)]);
+                    l.push(a);
+                    let short = (a != b).then(|| s.add_edge(a, b)).flatten();
+                    shorts.insert((v, id), short);
+                    if let Some(x) = short {
+                        es.push(x);
+                        l.push(b);
+                    }
+                }
+                es.push(high_e[&side.edge]);
+            }
+            loops.push(l);
+            edges.push(es);
+        }
+        let outer = loops.remove(0);
+        let mut c = Face::with_edges(outer, loops, surface, edges);
+        c.paint = f.paint;
+        c
+    };
     for id in &plan.kept {
         let f = model.face(*id).ok_or(NOTHING)?;
         let moved = offset_surface(&f.surface, d, &tol).ok_or(TOO_THICK)?;
         let mut low = copy(f, &base, &low_e, f.surface.clone());
-        let mut high = copy(f, &up, &high_e, moved);
+        let mut high = high_copy(&mut s, *id, f, moved);
         // The solid lies between the face and its copy: whichever is
         // behind the other turns round to face out of it.
         if d > 0.0 {
@@ -168,6 +225,39 @@ pub fn slab(
         }
         s.add_face(low);
         s.add_face(high);
+    }
+    // The small face at each split corner, walked against the faces round
+    // it (as a moved copy is, so it turns round with them).
+    for (v, fan) in &plan.splits {
+        let mut l: Vec<VertexId> = Vec::new();
+        let mut es: Vec<EdgeId> = Vec::new();
+        for j in (0..fan.len()).rev() {
+            let (e_in, _) = fan[j];
+            let (e_out, _) = fan[(j + 1) % fan.len()];
+            let Some(f) = plan.kept.iter().copied().find(|f| {
+                model.face(*f).is_some_and(|x| {
+                    let sides: Vec<_> = x.sides().collect();
+                    sides.iter().any(|a| a.to == *v && a.edge == e_in)
+                        && sides.iter().any(|b| b.from == *v && b.edge == e_out)
+                })
+            }) else {
+                return Err(CORNER);
+            };
+            if let Some(Some(x)) = shorts.get(&(*v, f)) {
+                l.push(ends[&(*v, e_out)]);
+                es.push(*x);
+            }
+        }
+        if l.len() >= 3 {
+            let pts: Vec<DVec3> = l.iter().map(|x| s.vertex(*x)).collect();
+            let n = newell(&pts).normalize_or_zero();
+            let mut cap =
+                Face::with_edges(l, vec![], Surface::Plane(Plane::new(pts[0], n)), vec![es]);
+            if d < 0.0 {
+                cap.reverse();
+            }
+            s.add_face(cap);
+        }
     }
     // A line up from each point of a rim.
     let mut rise: BTreeMap<VertexId, EdgeId> = BTreeMap::new();
@@ -444,10 +534,29 @@ fn plan(
             }
         }
     }
+    let on_rim: BTreeSet<VertexId> = rims.iter().flat_map(|r| [r.1, r.2]).collect();
     let mut moved = BTreeMap::new();
+    let mut splits = BTreeMap::new();
     for (v, fs) in &at_vertex {
-        moved.insert(*v, move_point(model, fs, model.vertex(*v), d, &tol)?);
+        match move_point(model, fs, model.vertex(*v), d, &tol) {
+            Ok(p) => {
+                moved.insert(*v, p);
+            }
+            Err(CORNER) if !on_rim.contains(v) => {
+                splits.insert(*v, split_corner(model, *v, fs, d)?);
+            }
+            Err(e) => return Err(e),
+        }
     }
+    // Where an edge's moved copy ends at `v`.
+    let end = |v: VertexId, e: EdgeId| -> DVec3 {
+        moved.get(&v).copied().unwrap_or_else(|| {
+            splits[&v]
+                .iter()
+                .find(|(x, _)| *x == e)
+                .map_or(DVec3::ZERO, |(_, q)| *q)
+        })
+    };
     // Each edge moves to the same kind of curve.
     let mut curves = BTreeMap::new();
     for (e, fs) in &at_edge {
@@ -455,7 +564,7 @@ fn plan(
             continue;
         }
         let x = model.edge(*e).ok_or(NOTHING)?;
-        let (a, b) = (moved[&x.a], moved[&x.b]);
+        let (a, b) = (end(x.a, *e), end(x.b, *e));
         let (pa, pb) = (model.vertex(x.a), model.vertex(x.b));
         let at = |t: f64| move_point(model, fs, x.curve.point(pa, pb, t), d, &tol);
         let c = match &x.curve {
@@ -501,7 +610,13 @@ fn plan(
         {
             continue;
         }
-        let pts: Vec<DVec3> = f.outer.iter().map(|v| moved[v]).collect();
+        let sides: Vec<_> = f.loop_edges(0).collect();
+        let mut pts: Vec<DVec3> = Vec::new();
+        for (i, side) in sides.iter().enumerate() {
+            let prev = sides[(i + sides.len() - 1) % sides.len()].edge;
+            pts.push(end(side.from, prev));
+            pts.push(end(side.from, side.edge));
+        }
         if newell(&pts).dot(plane.normal) <= 0.0 {
             return Err(TOO_THICK);
         }
@@ -510,9 +625,80 @@ fn plan(
         body,
         kept,
         moved,
+        splits,
         curves,
         rims,
     })
+}
+
+/// A corner of four or more flat faces whose moved copies miss one point:
+/// the edges round it in order, each with where its moved copy ends. The
+/// ends lie on one plane across the corner (square to the faces' mean
+/// direction), so a small flat face fills the gap; each face still moves
+/// by the thickness.
+fn split_corner(
+    model: &Model,
+    v: VertexId,
+    fs: &[FaceId],
+    d: f64,
+) -> Result<Vec<(EdgeId, DVec3)>, &'static str> {
+    let p = model.vertex(v);
+    // Each face's edge in to the corner and out of it.
+    let mut out_of: BTreeMap<EdgeId, (EdgeId, DVec3)> = BTreeMap::new();
+    let mut sum = DVec3::ZERO;
+    for f in fs {
+        let face = model.face(*f).ok_or(NOTHING)?;
+        let n = face.plane().ok_or(CORNER)?.normal;
+        sum += n;
+        let sides: Vec<_> = face.sides().collect();
+        let e_in = sides.iter().find(|s| s.to == v).ok_or(CORNER)?.edge;
+        let e_out = sides.iter().find(|s| s.from == v).ok_or(CORNER)?.edge;
+        out_of.insert(e_in, (e_out, n));
+    }
+    let across = sum.normalize_or_zero();
+    let lean: Vec<f64> = fs
+        .iter()
+        .filter_map(|f| {
+            model
+                .face(*f)
+                .and_then(|x| x.plane())
+                .map(|pl| pl.normal.dot(across))
+        })
+        .collect();
+    if lean.iter().any(|c| *c <= ANGLE.sqrt()) {
+        return Err(CORNER);
+    }
+    // As far across as the faces move on average.
+    let h = d * lean.len() as f64 / lean.iter().sum::<f64>();
+    // Round the corner: from each edge, through the face it leads into.
+    let start = *out_of.keys().next().ok_or(CORNER)?;
+    let mut fan = Vec::new();
+    let mut e = start;
+    loop {
+        let (next, n_before) = out_of[&e];
+        let (_, n_after) = *out_of.get(&next).ok_or(CORNER)?;
+        // The edge `next` lies between the face before it and the one after.
+        let x = solve3([n_before, n_after, across], [d, d, h]).ok_or(CORNER)?;
+        fan.push((next, p + x));
+        e = next;
+        if e == start {
+            break;
+        }
+        if fan.len() > fs.len() {
+            return Err(CORNER);
+        }
+    }
+    if fan.len() != fs.len() {
+        return Err(CORNER);
+    }
+    Ok(fan)
+}
+
+/// The point x with a·x, b·x and c·x the given values, if the three
+/// directions are independent.
+fn solve3([a, b, c]: [DVec3; 3], [p, q, r]: [f64; 3]) -> Option<DVec3> {
+    let det = a.dot(b.cross(c));
+    (det.abs() > ANGLE).then(|| (b.cross(c) * p + c.cross(a) * q + a.cross(b) * r) / det)
 }
 
 /// Where `p`, on the faces `fs`, moves to.

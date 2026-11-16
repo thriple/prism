@@ -1,5 +1,5 @@
 **New in this build:**
-- **Shell / Thicken takes curved faces:** cylinders, spheres and faces with arcs (a disc becomes a round slab, a cylinder a cup), and a freeform face on its own. The walls stay the same thickness. Freeform faces joined to other faces come later.
+- **Shell / Thicken at sharp corners where four or more faces meet** (a lopsided pyramid's tip, a mesh): each face still moves by the full thickness, and a small flat face fills the corner. Before, these were refused.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
