@@ -4344,3 +4344,21 @@ tests now expect the picking hint).
   - Two shells crossing each other after the move (an inward corner deeper than a far wall) are not checked beyond the face test.
   - Moved faces keep their paint. Walls are unpainted.
 - **Tests:** `prism-ops/tests/shelling.rs` (slab on both sides, an L, a box hollowed in and grown out, a tray, a face with a hole, every refusal) and `prism-doc/tests/shell.rs` (undo and replay).
+
+## Shell / Thicken part 3b: the tool (brief 42, 2026-11-16)
+- `tool.shell` is built (`prism-tools/src/session/shelling.rs`), so the dock and menu entry are live.
+- **How to use it:**
+  - Click a face: its sheet or body is taken.
+  - Move along the face's normal, out to grow outside or in to go inside, or type a thickness + Enter. A typed thickness goes the way the pointer is: inside until the pointer has moved out.
+  - Shift+click faces to leave them open. They show dashed, before or while sizing.
+  - A click or Enter makes it in one undo step. Esc first stops sizing (the open faces stay), then forgets the open faces.
+- **Feedback:**
+  - a ghost of the whole result (Loft's preview colour);
+  - the Thickness box;
+  - hints for each step;
+  - a refusal in the hint, keeping the sizing;
+  - the closed-group hint, and a guide entry.
+- It works inside an open group: the thickness scales with the group.
+- **Not checked in the app:** the tool was tested through the session only. The app was not run (to save build time); the registry tests cover its menu and dock entry.
+- **Leftovers for 3d:** the window (thickness, inside or outside, open faces), and snapping the thickness to points, as Push/Pull does.
+- **Tests:** `session.rs` `shell_hollows_a_box_into_a_tray_with_a_ghost_first`, `shell_says_why_and_esc_steps_back`, `shell_grows_a_box_outside_inside_a_group`.

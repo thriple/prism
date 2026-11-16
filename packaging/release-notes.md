@@ -1,3 +1,6 @@
+**New in this build:**
+- **Shell / Thicken** (Shapes): click a face and move the pointer, or type a thickness and press Enter. A sheet of faces becomes a slab. A closed body becomes hollow: move out of the face for a new wall outside, into it for one inside. Shift+click faces to leave them open, so a box becomes a tray. A ghost shows the result before you click. It takes flat faces with straight edges for now; curved faces come next.
+
 **Fixed in this build:**
 - Erasing faces now also erases the hidden (soft) lines that were only there between them, such as a loft's rows. Left behind, they could not be seen, yet a new line drawn there was cut where they ended.
 

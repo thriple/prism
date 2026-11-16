@@ -201,6 +201,15 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Shift-click edges to gather them (or select them first), then Enter.",
             ],
         ),
+        s::SHELL => g(
+            "Give faces a thickness: a sheet becomes a slab, a closed body hollow.",
+            &[
+                "Click a face: its sheet or body is taken.",
+                "Move out of the face to grow the wall outside, into it to make it inside, or type a thickness + Enter.",
+                "Shift+click faces of a closed body to leave them open (a box becomes a tray).",
+                "Click or Enter makes it. Esc steps back.",
+            ],
+        ),
         s::LOFT => g(
             "Fill a ring of sides, or loft through separate ones.",
             &[

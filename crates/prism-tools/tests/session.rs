@@ -6105,3 +6105,99 @@ fn union_runs_at_once_on_two_selected_groups() {
         .0;
     assert!((group_volume(&d, g) - 12.0).abs() < 1e-9);
 }
+
+// ---------- Shell / Thicken (brief 42, part 3b) ----------
+
+use prism_tools::session::SHELL;
+
+/// A 2 m box at the origin, at the root.
+fn box_2m(d: &mut Driver) {
+    rect_on_ground(d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    assert_eq!(d.faces(), 6);
+}
+
+fn model_volume(m: &prism_topo::Model) -> f64 {
+    m.faces()
+        .map(|(id, _)| prism_ops::health::face_volume(m, id))
+        .sum()
+}
+
+#[test]
+fn shell_hollows_a_box_into_a_tray_with_a_ghost_first() {
+    let mut d = Driver::empty();
+    box_2m(&mut d);
+    d.tool(SHELL);
+    assert!(d.s.hint().starts_with("Click a face to shell"));
+    // Shift+click the top to leave it open, then click a side.
+    d.hover(DVec3::new(1.0, 1.0, 2.0));
+    d.send(Input::Press {
+        button: Button::Left,
+        x: d.screen(DVec3::new(1.0, 1.0, 2.0)).x,
+        y: d.screen(DVec3::new(1.0, 1.0, 2.0)).y,
+        shift: true,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    assert!(d.s.shell_sizing().is_some_and(|t| t.abs() < 1e-9), "sizing");
+    assert!(d.s.hint().starts_with("Move to set the thickness"));
+    // Into the box: a ghost of the tray.
+    d.hover(DVec3::new(1.0, 0.3, 1.2));
+    assert!(d.s.shell_sizing().is_some_and(|t| t < 0.0));
+    let ghost = d.s.overlay().lines.len();
+    assert!(ghost >= 14 * 2, "the ghost shows: {ghost} lines");
+    assert_eq!(d.faces(), 6, "nothing made yet");
+    d.typed("0.1");
+    assert_eq!(d.s.shell_sizing(), None);
+    assert_eq!(d.faces(), 5 + 5 + 4, "a tray");
+    let v = model_volume(d.s.model());
+    assert!((v - (8.0 - 1.8 * 1.8 * 1.9)).abs() < 1e-6, "{v}");
+    assert_eq!(d.s.document().undo_name(), Some("Shell / Thicken"));
+    valid(&d);
+}
+
+#[test]
+fn shell_says_why_and_esc_steps_back() {
+    let mut d = Driver::empty();
+    box_2m(&mut d);
+    d.tool(SHELL);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    d.hover(DVec3::new(1.0, 1.0, 1.0));
+    d.typed("1.5");
+    assert_eq!(d.s.hint(), prism_ops::shelling::TOO_THICK);
+    assert_eq!(d.faces(), 6);
+    assert!(d.s.shell_sizing().is_some(), "still sizing");
+    key(&mut d, Key::Escape);
+    assert_eq!(d.s.shell_sizing(), None);
+    assert_eq!(d.faces(), 6);
+    assert!(d.s.hint().starts_with("Click a face to shell"));
+}
+
+#[test]
+fn shell_grows_a_box_outside_inside_a_group() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    act(&mut d, "edit.desel");
+    double_click(&mut d, DVec3::new(1.0, 0.0, 1.0));
+    assert_eq!(d.s.open_path(), [g]);
+    d.tool(SHELL);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    d.hover(DVec3::new(1.0, 1.0, 2.5));
+    assert!(
+        d.s.shell_sizing().is_some_and(|t| t > 0.0),
+        "out of the top"
+    );
+    d.typed("0.1");
+    let asm = d.s.document().assembly();
+    let m = &asm.def(asm.context_def(&[g]).unwrap()).unwrap().model;
+    assert_eq!(m.face_count(), 12, "two shells");
+    let v = model_volume(m);
+    assert!((v - (2.2f64.powi(3) - 8.0)).abs() < 1e-6, "{v}");
+    assert_eq!(d.faces(), 0, "nothing at the root");
+}

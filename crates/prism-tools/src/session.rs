@@ -43,6 +43,7 @@ mod paint;
 mod round;
 mod scalebox;
 mod shapes;
+mod shelling;
 mod smart;
 mod solids;
 mod surfacing;
@@ -67,6 +68,7 @@ pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
+pub use shelling::SHELL;
 pub use smart::BUDGET_MS as SMART_BUDGET_MS;
 pub use solids::{SolidOf, SolidRow};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
@@ -86,7 +88,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 38] = [
+pub const TOOLS: [&str; 39] = [
     SELECT,
     LINE,
     RECT,
@@ -110,6 +112,8 @@ pub const TOOLS: [&str; 38] = [
     arcs::ARC_CENTRE,
     arcs::PIE,
     round::FILLET,
+    // Shell / Thicken (brief 42, part 3b).
+    shelling::SHELL,
     follow::FOLLOW,
     // The Loft tool (brief 34).
     lofting::LOFT,
@@ -438,6 +442,9 @@ pub struct Session {
     loft_last_sections: usize,
     /// The faces the last loft made (drawn while a preset can change it).
     loft_last_faces: Vec<prism_topo::FaceId>,
+    /// Shell / Thicken: the shell being sized, and the faces left open.
+    shell_op: Option<shelling::ShellOp>,
+    shell_open: BTreeSet<prism_topo::FaceId>,
     /// Draw > Surface's command waiting for its curves.
     surface_pick: Option<surfacing::SurfacePick>,
     /// The pointer is over a closed group with a tool that cannot change it.
@@ -642,6 +649,8 @@ impl Session {
             loft_last: None,
             loft_last_sections: 0,
             loft_last_faces: Vec::new(),
+            shell_op: None,
+            shell_open: BTreeSet::new(),
             surface_pick: None,
             over_closed_group: false,
             loft_notice: None,
@@ -773,6 +782,7 @@ impl Session {
             || self.cage_start().is_some()
             || self.boxing.is_some()
             || self.edit.is_some()
+            || self.shell_op.is_some()
             || self.texpos_active()
             || self.pasting()
     }
@@ -1220,6 +1230,7 @@ impl Session {
         self.round_notice = None;
         self.round_clear();
         self.loft_clear();
+        self.shell_clear();
         self.follow_notice = None;
         self.follow_perimeter = false;
         self.texpos_cancel();
@@ -1243,7 +1254,7 @@ impl Session {
                     let back = self.before_nav.clone();
                     self.set_tool(&back);
                     resp.tool = Some(back);
-                } else if self.surface_escape() || self.loft_escape(resp) {
+                } else if self.surface_escape() || self.shell_escape() || self.loft_escape(resp) {
                 } else if self.in_operation() {
                     self.cancel();
                     self.refresh();
@@ -2295,6 +2306,7 @@ impl Session {
             || self.shape_enter(&text)
             || self.arc_enter(&text)
             || self.round_enter(&text)
+            || self.shell_enter(&text)
             || (text.is_empty() && self.loft_enter())
             || self.curve_enter()
             || self.cage_enter(&text)
@@ -2414,6 +2426,7 @@ impl Session {
         self.round_overlay(&mut o);
         self.loft_overlay(&mut o);
         self.surface_overlay(&mut o);
+        self.shell_overlay(&mut o);
         self.window_overlay(&mut o);
         if !self.wants_inference() {
             return o;

@@ -19,6 +19,7 @@ use super::follow::FOLLOW;
 use super::lofting::LOFT;
 use super::paint::PAINT;
 use super::round::FILLET;
+use super::shelling::SHELL;
 use super::texpos::TEXTURE;
 use super::{LastOp, Session, rect_basis};
 
@@ -143,6 +144,7 @@ pub(super) fn is_edit(t: &str) -> bool {
             | TAPE
             | PROTRACTOR
             | FILLET
+            | SHELL
             | LOFT
             | FOLLOW
             | PAINT
@@ -275,6 +277,7 @@ impl Session {
             t if super::booleans::is_solid_tool(t) => self.solid_hover(s, view),
             TEXTURE => self.texpos_hover(s, view),
             FILLET => self.round_hover(s, view),
+            SHELL => self.shell_hover(s, view),
             LOFT => self.loft_hover(s, view),
             FOLLOW => self.follow_hover(s, view),
             PUSH => {
@@ -367,7 +370,7 @@ impl Session {
         }
         // A closed group's faces and edges are not these tools' to change:
         // say how to get at them (tool pass part 2).
-        let over = matches!(self.tool.as_str(), PUSH | OFFSET | FILLET | FOLLOW)
+        let over = matches!(self.tool.as_str(), PUSH | OFFSET | FILLET | FOLLOW | SHELL)
             && self.edit.is_none()
             && self.hover.is_none()
             && self
@@ -820,6 +823,7 @@ impl Session {
             t if super::booleans::is_solid_tool(t) => self.solid_press(s),
             TEXTURE => self.texpos_press(s),
             FILLET => self.round_press(s, n_clicks, shift, ctrl),
+            SHELL => self.shell_press(shift),
             LOFT => self.loft_press(shift),
             FOLLOW => self.follow_press(s),
             PUSH => self.push_press(s, n_clicks),
@@ -1362,6 +1366,7 @@ impl Session {
             }
             (None, Some(LastOp::Edit(EditOp::Scale { k, .. }))) => ("Scale", show_factor(*k)),
             (None, _) if self.tool == FILLET => self.round_measurement(),
+            (None, _) if self.tool == SHELL => self.shell_measurement(),
             (None, _) if self.tool == PUSH => (
                 "Distance",
                 self.last_push.map_or(String::new(), |(d, _)| nf.show(d)),
@@ -1409,6 +1414,7 @@ impl Session {
                 "Drag a grip: corners scale evenly, edges two ways, faces one way · Alt toggles scaling about the centre · click something to pick it"
             }
             (FILLET, _) => self.round_hint(),
+            (SHELL, _) => self.shell_hint(),
             (LOFT, _) => self.loft_hint(),
             (PAINT, _) => self.paint_hint(),
             (FOLLOW, _) => self.follow_hint(),
