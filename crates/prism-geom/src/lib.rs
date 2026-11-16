@@ -185,16 +185,10 @@ impl Curve {
                 let th = self.sweep(a, b);
                 radius * radius * 0.5 * (th - th.sin()) * axis.dot(normal).signum()
             }
-            Curve::Spline(s) => {
-                // The area of the drawn polygon closed by the chord.
-                let mut pts = vec![a];
-                pts.extend(s.inner_points());
-                pts.push(b);
-                pts.windows(2)
-                    .map(|w| (w[0] - a).cross(w[1] - a).dot(normal))
-                    .sum::<f64>()
-                    * 0.5
-            }
+            // Exactly: half the integral of (C - a) × C' · n, by Gauss
+            // points on each knot span (Solids & CAD part 3; it was the
+            // drawn polygon's).
+            Curve::Spline(s) => s.swept_area(a, normal),
         }
     }
 

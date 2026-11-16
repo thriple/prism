@@ -350,13 +350,13 @@ pub(crate) fn interior(m: &Model, id: FaceId) -> Vec<(DVec3, DVec3)> {
             .map(|q| (fr.to_3d(q), pl.normal))
             .collect();
     }
-    let Some((rev, polys)) = crate::cut::layout(m, id) else {
+    let Some(laid) = Laid::new(m, id) else {
         return Vec::new();
     };
-    crate::regions::interior_points(&polys)
+    crate::regions::interior_points(&laid.polys)
         .into_iter()
         .map(|q| {
-            let p = rev.point(q.x, q.y);
+            let p = laid.point(q);
             (p, f.surface.normal_at(p))
         })
         .collect()

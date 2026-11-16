@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::TAU;
 
-use prism_geom::{Curve, Profile, Revolution, Surface, arc_through, circle_distance};
+use prism_geom::{Curve, Nurbs, Patch, Profile, Revolution, Surface, arc_through, circle_distance};
 use prism_math::predicates::{Inside, point_in_polygon};
 use prism_math::{DVec2, DVec3, Plane, Tol};
 use prism_topo::{EdgeId, FaceId, Model};
@@ -23,7 +23,7 @@ use crate::cut::layout;
 use crate::intersect::Flat;
 
 /// What a crossing is.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Line,
     /// An exact arc: `sweep` counter-clockwise about `normal` from the
@@ -34,6 +34,9 @@ pub enum Shape {
         radius: f64,
         sweep: f64,
     },
+    /// A cubic curve through the points, on both faces within the
+    /// tolerance (a crossing with a freeform face, Solids & CAD part 3).
+    Spline(std::sync::Arc<Nurbs>),
     /// Fine segments through every point.
     Approx,
 }
@@ -62,22 +65,37 @@ fn grid_step() -> f64 {
     (1.0 - 1e-3f64).acos()
 }
 
-/// A curved face laid out in (θ, s).
+/// How a curved face is laid out: a turned surface in (θ, s), or a
+/// freeform one in its patch's (u, v) (Solids & CAD part 3).
+#[derive(Clone)]
+pub(crate) enum Param {
+    Turned { rev: Revolution, circle: bool },
+    Free(Patch),
+}
+
+/// A curved face laid out flat: in (θ, s) or in (u, v).
 pub(crate) struct Laid {
     pub(crate) face: FaceId,
     pub(crate) surface: Surface,
-    pub(crate) rev: Revolution,
+    pub(crate) param: Param,
     pub(crate) polys: Vec<Vec<DVec2>>,
-    circle: bool,
-    /// How long a step in θ and in s is, near the face (to measure
-    /// distances in (θ, s) as lengths).
+    /// How long a step in each direction is, near the face (to measure
+    /// distances in the layout as lengths).
     pub(crate) scale: DVec2,
+    /// The whole periods a place may be moved by, along each direction.
+    shifts: [Vec<f64>; 2],
+    /// A freeform face's size, for the chord rule.
+    size: f64,
 }
 
 impl Laid {
     pub(crate) fn new(m: &Model, face: FaceId) -> Option<Laid> {
+        let f = m.face(face)?;
+        if let Some(patch) = f.surface.patch() {
+            return Self::free(m, face, patch.clone());
+        }
         let (rev, polys) = layout(m, face)?;
-        let surface = m.face(face)?.surface.clone();
+        let surface = f.surface.clone();
         let circle = matches!(rev.profile, Profile::Circle { .. });
         let (lo, hi) = bounds(&polys[0]);
         let r = |s: f64| rev.at(s).0.abs();
@@ -90,25 +108,146 @@ impl Laid {
                 DVec2::new(rr, radius)
             }
         };
+        let turns = |k: &[f64]| k.iter().map(|x| x * TAU).collect::<Vec<_>>();
+        let shifts = [
+            turns(&[0.0, -1.0, 1.0, -2.0, 2.0]),
+            turns(if circle { &[0.0, -1.0, 1.0] } else { &[0.0] }),
+        ];
         Some(Laid {
             face,
             surface,
-            rev,
+            param: Param::Turned { rev, circle },
             polys,
-            circle,
             scale,
+            shifts,
+            size: 0.0,
         })
+    }
+
+    /// A freeform face laid out in its patch's (u, v), holes moved by
+    /// whole periods into the outer loop.
+    fn free(m: &Model, face: FaceId, patch: Patch) -> Option<Laid> {
+        let f = m.face(face)?;
+        let mut polys: Vec<Vec<DVec2>> = (0..=f.holes.len())
+            .map(|k| m.patch_loop(f, k).into_iter().map(|x| x.1).collect())
+            .collect();
+        if polys.iter().any(|l| l.len() < 3) {
+            return None;
+        }
+        let dom = patch.surface.domain();
+        let shifts: [Vec<f64>; 2] = [0, 1].map(|d| {
+            if patch.surface.periodic()[d] {
+                let p = dom[d].1 - dom[d].0;
+                vec![0.0, -p, p]
+            } else {
+                vec![0.0]
+            }
+        });
+        for h in 1..polys.len() {
+            let d = shifts[0].iter().find_map(|a| {
+                shifts[1].iter().find_map(|b| {
+                    let d = DVec2::new(*a, *b);
+                    polys[h]
+                        .iter()
+                        .any(|p| point_in_polygon(*p + d, &polys[0]) == Inside::Inside)
+                        .then_some(d)
+                })
+            });
+            if let Some(d) = d {
+                for p in &mut polys[h] {
+                    *p += d;
+                }
+            }
+        }
+        let (lo, hi) = bounds(&polys[0]);
+        let mut scale = DVec2::ZERO;
+        for i in 0..=4 {
+            for j in 0..=4 {
+                let q = lo + (hi - lo) * DVec2::new(i as f64, j as f64) / 4.0;
+                let (_, du, dv) = patch.surface.eval_d(q.x, q.y);
+                scale = scale.max(DVec2::new(du.length(), dv.length()));
+            }
+        }
+        let span = (hi - lo) * scale;
+        let size = span.x.max(span.y);
+        Some(Laid {
+            face,
+            surface: f.surface.clone(),
+            param: Param::Free(patch),
+            polys,
+            scale,
+            shifts,
+            size,
+        })
+    }
+
+    /// The turned form, for a turned face.
+    pub(crate) fn rev(&self) -> Option<&Revolution> {
+        match &self.param {
+            Param::Turned { rev, .. } => Some(rev),
+            Param::Free(_) => None,
+        }
+    }
+
+    /// The point at a place of the layout.
+    pub(crate) fn point(&self, q: DVec2) -> DVec3 {
+        match &self.param {
+            Param::Turned { rev, .. } => rev.point(q.x, q.y),
+            Param::Free(p) => p.surface.eval(q.x, q.y),
+        }
+    }
+
+    /// A point's place, before moving by whole periods.
+    fn param(&self, p: DVec3) -> DVec2 {
+        let (a, b) = match &self.param {
+            Param::Turned { rev, .. } => rev.param(p),
+            Param::Free(x) => x.param(p),
+        };
+        DVec2::new(a, b)
+    }
+
+    /// The place moved by every allowed pair of whole periods.
+    fn shifted(&self, q: DVec2) -> impl Iterator<Item = DVec2> + '_ {
+        self.shifts[0]
+            .iter()
+            .flat_map(move |a| self.shifts[1].iter().map(move |b| q + DVec2::new(*a, *b)))
+    }
+
+    /// The squared lengths of a unit step in each direction at `q`, kept
+    /// off zero.
+    fn units(&self, q: DVec2) -> DVec2 {
+        let k = self.scale;
+        match &self.param {
+            Param::Turned { rev, .. } => {
+                let (r, _, dr, dh) = rev.at(q.y);
+                DVec2::new(
+                    (r * r).max((k.x * 1e-6).powi(2)),
+                    (dr * dr + dh * dh).max(f64::MIN_POSITIVE),
+                )
+            }
+            Param::Free(p) => {
+                let (_, du, dv) = p.surface.eval_d(q.x, q.y);
+                DVec2::new(
+                    du.length_squared().max((k.x * 1e-6).powi(2)),
+                    dv.length_squared().max((k.y * 1e-6).powi(2)),
+                )
+                .max(DVec2::splat(f64::MIN_POSITIVE))
+            }
+        }
     }
 
     /// The curve's size near (θ, s), for the chord rule.
     fn size_at(&self, q: DVec2) -> f64 {
-        match self.rev.profile {
-            Profile::Line { .. } => self.rev.at(q.y).0.abs(),
-            Profile::Circle { radius, .. } => radius,
+        match &self.param {
+            Param::Turned { rev, .. } => match rev.profile {
+                Profile::Line { .. } => rev.at(q.y).0.abs(),
+                Profile::Circle { radius, .. } => radius,
+            },
+            Param::Free(_) => self.size,
         }
     }
 
-    /// Whether (θ, s), as laid out, is in the face or within `d` of its
+    /// Whether a place, as laid out, is in the face or within `d` of its
     /// outline.
     pub(crate) fn holds_2d(&self, q: DVec2, d: f64) -> bool {
         inside(q, &self.polys) || self.near_outline(q, d)
@@ -129,44 +268,29 @@ impl Laid {
         })
     }
 
-    /// Where a point of the surface falls in the layout: its (θ, s), moved
-    /// by whole turns into the face, if it is in it.
     /// Whether a point of the surface is in the face: None within `d` of
     /// its outline (too close to tell).
     pub(crate) fn classify(&self, p: DVec3, d: f64) -> Option<bool> {
-        let (t, s) = self.rev.param(p);
-        let s_turns: &[f64] = if self.circle {
-            &[0.0, -1.0, 1.0]
-        } else {
-            &[0.0]
-        };
-        for kt in [0.0, -1.0, 1.0, -2.0, 2.0] {
-            for ks in s_turns {
-                let q = DVec2::new(t + kt * TAU, s + ks * TAU);
-                if self.near_outline(q, d) {
-                    return None;
-                }
-                if self.holds_2d(q, 0.0) {
-                    return Some(true);
-                }
+        for q in self.shifted(self.param(p)) {
+            if self.near_outline(q, d) {
+                return None;
+            }
+            if self.holds_2d(q, 0.0) {
+                return Some(true);
             }
         }
         Some(false)
     }
 
+    /// Where a point of the surface falls in the layout, moved by whole
+    /// periods into the face, if it is in it (or within `d` of it).
     pub(crate) fn place(&self, p: DVec3, d: f64) -> Option<DVec2> {
-        let (t, s) = self.rev.param(p);
-        let s_turns: &[f64] = if self.circle {
-            &[0.0, -1.0, 1.0]
-        } else {
-            &[0.0]
-        };
-        [0.0, -1.0, 1.0, -2.0, 2.0].iter().find_map(|kt| {
-            s_turns.iter().find_map(|ks| {
-                let q = DVec2::new(t + kt * TAU, s + ks * TAU);
-                self.holds_2d(q, d).then_some(q)
-            })
-        })
+        self.shifted(self.param(p)).find(|q| self.holds_2d(*q, d))
+    }
+
+    /// Whether a point is within `d` of the face's outline.
+    fn on_outline(&self, p: DVec3, d: f64) -> bool {
+        self.shifted(self.param(p)).any(|q| self.near_outline(q, d))
     }
 }
 
@@ -216,22 +340,16 @@ impl Other {
     fn on_outline(&self, p: DVec3, d: f64) -> bool {
         match self {
             Other::Flat(_, f, _) => f.on_outline_3d(p, d),
-            Other::Curved(l) => {
-                let (t, s) = l.rev.param(p);
-                [0.0, -1.0, 1.0, -2.0, 2.0]
-                    .iter()
-                    .any(|k| l.near_outline(DVec2::new(t + k * TAU, s), d))
-            }
+            Other::Curved(l) => l.on_outline(p, d),
         }
     }
 
     fn size_at(&self, p: DVec3) -> f64 {
         match self {
             Other::Flat(..) => f64::INFINITY,
-            Other::Curved(l) => {
-                let (t, s) = l.rev.param(p);
-                l.size_at(DVec2::new(t, s))
-            }
+            Other::Curved(l) => l
+                .place(p, f64::INFINITY)
+                .map_or(l.scale.x, |q| l.size_at(q)),
         }
     }
 }
@@ -342,25 +460,64 @@ struct Tracer<'a> {
 
 impl Tracer<'_> {
     fn point(&self, q: DVec2) -> DVec3 {
-        self.a.rev.point(q.x, q.y)
+        self.a.point(q)
     }
 
     fn f(&self, q: DVec2) -> f64 {
         self.b.value(self.point(q))
     }
 
+    /// Small steps for slopes, and the largest step taken at once.
+    fn steps(&self) -> (DVec2, DVec2) {
+        match &self.a.param {
+            Param::Turned { circle, .. } => {
+                let s_unit = if *circle {
+                    1.0
+                } else {
+                    self.a.scale.x.max(self.tol.dist)
+                };
+                (
+                    DVec2::new(1e-7, 1e-7 * s_unit),
+                    DVec2::new(0.5, 0.5 * s_unit),
+                )
+            }
+            Param::Free(p) => {
+                let dom = p.surface.domain();
+                let w = DVec2::new(dom[0].1 - dom[0].0, dom[1].1 - dom[1].0);
+                (w * 1e-7, w * 0.25)
+            }
+        }
+    }
+
+    /// The grid's cells across the face's box `lo`..`hi`.
+    fn cells(&self, lo: DVec2, hi: DVec2) -> (usize, usize) {
+        let count = |w: f64, st: f64| ((w / st).ceil() as usize).clamp(2, 600);
+        match &self.a.param {
+            Param::Turned { circle, .. } => {
+                let g = grid_step();
+                let k = self.a.scale;
+                let step_s = if *circle {
+                    g
+                } else {
+                    g * k.x.max(self.tol.dist) / k.y
+                };
+                (count(hi.x - lo.x, g), count(hi.y - lo.y, step_s))
+            }
+            // Twice as fine as the surface is drawn, and at least 32 cells.
+            Param::Free(p) => {
+                let s = &p.surface;
+                let n0 = s.grid(0, lo.x, hi.x, (lo.y, hi.y)).len();
+                let n1 = s.grid(1, lo.y, hi.y, (lo.x, hi.x)).len();
+                ((2 * n0).clamp(32, 600), (2 * n1).clamp(32, 600))
+            }
+        }
+    }
+
     /// Newton steps onto the crossing, shortest in length on the surface.
     fn refine(&self, q: DVec2) -> Option<DVec2> {
         let mut q = q;
-        let k = self.a.scale;
-        // Small steps for the slope, and the largest step taken at once.
-        let s_unit = if self.a.circle {
-            1.0
-        } else {
-            k.x.max(self.tol.dist)
-        };
-        let (ht, hs) = (1e-7, 1e-7 * s_unit);
-        let lim = DVec2::new(0.5, 0.5 * s_unit);
+        let (h, lim) = self.steps();
+        let (ht, hs) = (h.x, h.y);
         let close = self.tol.dist * 1e-4;
         for _ in 0..40 {
             let f0 = self.f(q);
@@ -371,10 +528,9 @@ impl Tracer<'_> {
                 (self.f(q + DVec2::new(ht, 0.0)) - self.f(q - DVec2::new(ht, 0.0))) / (2.0 * ht);
             let fs =
                 (self.f(q + DVec2::new(0.0, hs)) - self.f(q - DVec2::new(0.0, hs))) / (2.0 * hs);
-            // Lengths of a unit step in θ and in s here.
-            let (r, _, dr, dh) = self.a.rev.at(q.y);
-            let wt = (r * r).max((k.x * 1e-6).powi(2));
-            let ws = (dr * dr + dh * dh).max(f64::MIN_POSITIVE);
+            // Lengths of a unit step in each direction here.
+            let w = self.a.units(q);
+            let (wt, ws) = (w.x, w.y);
             let den = ft * ft / wt + fs * fs / ws;
             if den <= f64::MIN_POSITIVE {
                 return None;
@@ -499,16 +655,7 @@ impl Tracer<'_> {
     /// The pieces of the crossing.
     fn pieces(&self) -> Vec<Piece> {
         let (lo, hi) = bounds(&self.a.polys[0]);
-        let g = grid_step();
-        let k = self.a.scale;
-        let step_t = g;
-        let step_s = if self.a.circle {
-            g
-        } else {
-            g * k.x.max(self.tol.dist) / k.y
-        };
-        let count = |w: f64, st: f64| ((w / st).ceil() as usize).clamp(2, 600);
-        let (nx, ny) = (count(hi.x - lo.x, step_t), count(hi.y - lo.y, step_s));
+        let (nx, ny) = self.cells(lo, hi);
         let step = DVec2::new((hi.x - lo.x) / nx as f64, (hi.y - lo.y) / ny as f64);
         // On the same surface (two faces of one torus, say): no crossing,
         // only touching everywhere.
@@ -526,7 +673,10 @@ impl Tracer<'_> {
         let f = |q: DVec2| self.f(q);
         let mut out = Vec::new();
         for (line, closed) in contours(&f, start, step, nx + 1, ny + 1) {
-            let pts: Vec<DVec2> = line.into_iter().filter_map(|q| self.refine(q)).collect();
+            let mut pts: Vec<DVec2> = line.into_iter().filter_map(|q| self.refine(q)).collect();
+            if matches!(self.a.param, Param::Free(_)) {
+                pts = self.fill_gaps(pts, (step * self.a.scale).length() * 1.5, closed);
+            }
             if pts.len() < 2 {
                 continue;
             }
@@ -535,6 +685,37 @@ impl Tracer<'_> {
             }
         }
         out
+    }
+
+    /// Points put between traced places further apart than `gap` (where
+    /// a grid point did not settle onto the crossing), by halving.
+    fn fill_gaps(&self, pts: Vec<DVec2>, gap: f64, closed: bool) -> Vec<DVec2> {
+        let mut out: Vec<DVec2> = Vec::with_capacity(pts.len());
+        let n = pts.len();
+        let pairs = if closed { n } else { n.saturating_sub(1) };
+        if n > 0 {
+            out.push(pts[0]);
+        }
+        for i in 0..pairs {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            self.halve(a, b, gap, 8, &mut out);
+            if i + 1 < n {
+                out.push(b);
+            }
+        }
+        out
+    }
+
+    fn halve(&self, a: DVec2, b: DVec2, gap: f64, depth: u32, out: &mut Vec<DVec2>) {
+        if depth == 0 || self.point(a).distance(self.point(b)) <= gap {
+            return;
+        }
+        let Some(m) = self.refine(a.lerp(b, 0.5)) else {
+            return;
+        };
+        self.halve(a, m, gap, depth - 1, out);
+        out.push(m);
+        self.halve(m, b, gap, depth - 1, out);
     }
 
     /// Cut a traced line into the runs inside both faces, each as places
@@ -658,6 +839,42 @@ impl Tracer<'_> {
             })
     }
 
+    /// Whether either face is freeform.
+    fn freeform(&self) -> bool {
+        let free = |l: &Laid| matches!(l.param, Param::Free(_));
+        free(&self.a) || matches!(&self.b, Other::Curved(l) if free(l))
+    }
+
+    /// A cubic through the traced points (every eighth, fourth, second,
+    /// then all of them), the first whose every place is on both faces'
+    /// surfaces within the tolerance.
+    fn spline_fit(&self, pts: &[DVec3]) -> Option<Nurbs> {
+        let eps = self.tol.dist;
+        let n = pts.len();
+        for stride in [8, 4, 2, 1] {
+            let mut sub: Vec<DVec3> = pts.iter().step_by(stride).copied().collect();
+            if !(n - 1).is_multiple_of(stride) {
+                sub.push(pts[n - 1]);
+            }
+            if sub.len() < 2 {
+                continue;
+            }
+            let Some(c) = Nurbs::through(&sub, false) else {
+                continue;
+            };
+            let (d0, d1) = c.domain();
+            let k = 4 * n;
+            let on = (0..=k).all(|i| {
+                let x = c.eval(d0 + (d1 - d0) * i as f64 / k as f64);
+                self.a.surface.distance(x).abs() <= eps && self.b.value(x).abs() <= eps
+            });
+            if on {
+                return Some(c);
+            }
+        }
+        None
+    }
+
     fn fit(&self, pts: Vec<DVec3>) -> Piece {
         let eps = self.tol.dist;
         let (p, q) = (pts[0], pts[pts.len() - 1]);
@@ -684,6 +901,16 @@ impl Tracer<'_> {
                     radius: spec.radius,
                     sweep: spec.sweep,
                 },
+                points: vec![p, q],
+            };
+        }
+        // With a freeform face: a cubic through the points, if one is on
+        // both faces.
+        if self.freeform()
+            && let Some(c) = self.spline_fit(&pts)
+        {
+            return Piece {
+                shape: Shape::Spline(std::sync::Arc::new(c)),
                 points: vec![p, q],
             };
         }
@@ -813,6 +1040,7 @@ pub fn curved_crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) 
 /// marked approximate and sharing a curve id. Returns the edges added.
 pub fn add_piece(m: &mut Model, p: &Piece) -> Vec<EdgeId> {
     match p.shape {
+        Shape::Spline(ref c) => crate::add_spline(m, c).edges,
         Shape::Line => crate::add_segment(m, p.start(), p.end()).edges,
         Shape::Arc {
             centre,

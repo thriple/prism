@@ -319,7 +319,15 @@ fn move_curved(model: &mut Model, id: FaceId, m: &DAffine3) -> bool {
     }
     // Uneven scales take the nearest even one: the model check reports the
     // face off its surface until the segment fallback (DECISIONS #32).
-    let moved = surface.transformed_loosely(m);
+    let mut moved = surface.transformed_loosely(m);
+    // A mirror has already turned the face round (`Face::reverse`, which
+    // flips the surface too). A turned surface's side is its own (out from
+    // the axis), so the move flips it back; a patch's side is taken along
+    // u crossed with v, which the mirror turns round itself, so it stays
+    // flipped.
+    if m.matrix3.determinant() < 0.0 && matches!(moved, prism_geom::Surface::Nurbs(_)) {
+        moved = moved.flipped();
+    }
     model.edit_face(id, |f| f.surface = moved);
     true
 }

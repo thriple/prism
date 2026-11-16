@@ -991,6 +991,53 @@ impl Spline {
         }
     }
 
+    /// Half the integral of (C - `a`) × C' · `normal` from its start to
+    /// its end: the area between it and the chord from `a`, when `a` is
+    /// its start. Gauss-Legendre (five points) on each knot span, halved.
+    pub fn swept_area(&self, a: DVec3, normal: DVec3) -> f64 {
+        const X: [f64; 5] = [
+            -0.906_179_845_938_664,
+            -0.538_469_310_105_683_1,
+            0.0,
+            0.538_469_310_105_683_1,
+            0.906_179_845_938_664,
+        ];
+        const W: [f64; 5] = [
+            0.236_926_885_056_189_1,
+            0.478_628_670_499_366_5,
+            0.568_888_888_888_888_9,
+            0.478_628_670_499_366_5,
+            0.236_926_885_056_189_1,
+        ];
+        let (lo, hi) = (self.t0.min(self.t1), self.t0.max(self.t1));
+        let mut cuts = vec![lo];
+        cuts.extend(
+            self.curve
+                .knots()
+                .iter()
+                .copied()
+                .filter(|k| *k > lo && *k < hi),
+        );
+        cuts.push(hi);
+        cuts.dedup();
+        let mut sum = 0.0;
+        for w in cuts.windows(2) {
+            for half in 0..2 {
+                let (p, q) = (
+                    w[0] + (w[1] - w[0]) * half as f64 / 2.0,
+                    w[0] + (w[1] - w[0]) * (half + 1) as f64 / 2.0,
+                );
+                let (m, h) = ((p + q) / 2.0, (q - p) / 2.0);
+                for (x, wt) in X.iter().zip(W) {
+                    let (c, d) = self.curve.eval_d(m + h * x);
+                    sum += wt * h * (c - a).cross(d).dot(normal);
+                }
+            }
+        }
+        let sign = if self.t1 < self.t0 { -1.0 } else { 1.0 };
+        sign * sum * 0.5
+    }
+
     /// The fraction of the way whose point is closest to `p`.
     pub fn closest(&self, p: DVec3) -> f64 {
         let (lo, hi) = (self.t0.min(self.t1), self.t0.max(self.t1));

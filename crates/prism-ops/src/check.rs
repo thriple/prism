@@ -173,6 +173,7 @@ pub fn no_duplicates(model: &Model, tol: &Tol) -> Vec<String> {
                 };
                 if same_cycle(fa.loop_edge_ids(0), fb.loop_edge_ids(0))
                     && !(closed(fa) && closed(fb) && !same_way(fa, fb))
+                    && on_one_surface(model, *a, fb, tol)
                 {
                     same.push((*a, *b));
                 }
@@ -184,6 +185,15 @@ pub fn no_duplicates(model: &Model, tol: &Tol) -> Vec<String> {
         out.push(format!("faces {a:?} and {b:?} have the same loop"));
     }
     out
+}
+
+/// Whether face `a` lies on `fb`'s surface (judged at a point inside it):
+/// two faces on different surfaces may share a loop (a lens of two
+/// freeform faces), a face drawn twice may not.
+fn on_one_surface(model: &Model, a: FaceId, fb: &prism_topo::Face, tol: &Tol) -> bool {
+    crate::shell::interior(model, a)
+        .first()
+        .is_none_or(|(c, _)| fb.surface.distance(*c).abs() <= tol.dist * 10.0)
 }
 
 /// On a closed surface (a sphere or a torus), a loop walked one way and the

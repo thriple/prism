@@ -1,6 +1,7 @@
 //! Booleans of two solids (Solids & CAD part 2, brief 39): Union,
 //! Intersect and Subtract, exact for flat faces and the analytic curved
-//! ones, with Prism's own crossings and inside test.
+//! ones, with Prism's own crossings and inside test. Freeform faces cross
+//! along cubics within the tolerance (part 3).
 //!
 //! Each solid is cut where the other crosses it (as Intersect Faces > With
 //! does), each piece is placed against the other solid by testing a point
@@ -10,7 +11,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_geom::Surface;
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
 use crate::Selection;
@@ -30,8 +30,6 @@ pub enum Op {
 /// Said when an input is not a closed solid.
 pub const NOT_SOLID: &str =
     "Refused: one of these is not a solid. Solid > Validate and Heal says why.";
-/// Said for freeform faces.
-pub const FREEFORM: &str = "Refused: booleans on freeform (NURBS) faces come later.";
 /// Said when a piece could not be placed (every test ray grazed an edge).
 pub const UNSURE: &str = "Refused: Prism could not tell inside from outside here.";
 
@@ -58,11 +56,6 @@ pub fn is_solid(m: &Model) -> bool {
 /// (Intersect of solids that do not meet).
 pub fn boolean(a: &Model, b: &Model, op: Op) -> Result<Model, &'static str> {
     for m in [a, b] {
-        if m.faces()
-            .any(|(_, f)| matches!(f.surface, Surface::Nurbs(_)))
-        {
-            return Err(FREEFORM);
-        }
         if !is_solid(m) {
             return Err(NOT_SOLID);
         }

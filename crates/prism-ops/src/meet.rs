@@ -337,7 +337,11 @@ pub(crate) fn first_meeting(m: &Model, mover: &Mover, g: FaceId, reach: f64) -> 
     if let Target::Curved { laid, .. } = &target {
         match mover {
             Mover::Slide { dir, .. } => {
-                for q in facing_points(&laid.rev, *dir) {
+                let facing = laid
+                    .rev()
+                    .map(|r| facing_points(r, *dir))
+                    .unwrap_or_default();
+                for q in facing {
                     if target.holds(q, &tol)
                         && let Some(t) = mover.foot(q, &tol)
                     {
@@ -379,7 +383,7 @@ fn grid_search(laid: &Laid, mover: &Mover, tol: &Tol, best: &mut f64) {
         if !laid.holds_2d(q, 0.0) {
             return f64::INFINITY;
         }
-        match mover.foot(laid.rev.point(q.x, q.y), tol) {
+        match mover.foot(laid.point(q), tol) {
             Some(t) if t > tol.dist => t,
             _ => f64::INFINITY,
         }

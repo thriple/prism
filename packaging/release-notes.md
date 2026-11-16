@@ -1,6 +1,9 @@
+**New in this build:**
+- Intersect Faces and the Solid tools (Union, Subtract, Intersect, Trim, Split) now work with freeform (NURBS) faces, such as lofts: where they cross, Prism traces an exact-enough curve on both.
+
 **Fixed in this build:**
-- Model Health no longer lists every freeform (NURBS) face as having no size: their area is now worked out.
-- Under the hood: a freeform face can now be cut from its surface (the start of cutting lofts and booleans with them).
+- A flat face with a curved (NURBS) side now has its exact area and volume.
+- A mirrored freeform face no longer faces the wrong way.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

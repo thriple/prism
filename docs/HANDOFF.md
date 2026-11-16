@@ -69,9 +69,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   is built** (brief 39: the Solid menu's booleans; NOTES "Solids & CAD
   part 2"). The owner merged the old part 3 into part 4
   (2026-11-16): **part 3 is now cutting freeform faces** (brief 40,
-  steps 3a to 3c). **3a is built** (NOTES "Solids & CAD part 3a").
-  **Next: 3b** (crossings with freeform faces traced in (u, v), so
-  Intersect Faces, sticky lines and the booleans take them). The owner also floated a chat window in Prism (NOTES "Owner idea
+  steps 3a to 3c). **3a and 3b are built** (NOTES "Solids & CAD part
+  3a" and "... 3b"). **Next: 3c** (the bridge sends cut freeform faces,
+  spheres, tori and cone tips, so Validate checks every solid through the
+  kernel; Push/Pull of a freeform face). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no

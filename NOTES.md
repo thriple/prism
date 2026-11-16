@@ -4040,3 +4040,46 @@ old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
   middle are not split where they cross (`split_meetings` is (θ, s)
   only); nothing yet makes edges on a freeform face except by hand (3b's
   crossings); moving trims in cage editing.
+
+## Solids & CAD part 3b: crossings with freeform faces (brief 40, 2026-11-16)
+- **One tracer for every curved face:** `crossing::Laid` now lays out a
+  turned face in (θ, s) or a freeform face in its patch's (u, v)
+  (`Param::Turned` / `Param::Free`), with the moves by whole periods,
+  step lengths and grid in one place. So a plane, a cylinder, cone, sphere,
+  torus or another freeform face crossing a freeform face is traced as
+  turned faces were (marching squares, Newton onto the crossing, cut at
+  both faces' outlines). Gaps where a grid point did not settle are filled
+  by halving (`fill_gaps`, freeform only).
+- **Kept as a cubic:** a crossing with a freeform face that is not a line
+  or a circle becomes a spline (`Shape::Spline`, through every 8th, 4th,
+  2nd or every traced point), accepted only if it is on both surfaces
+  within the tolerance at four times as many places; else fine segments
+  (DECISIONS #32). `add_piece` adds it with `add_spline`.
+- **Used by:** Intersect Faces (and With Context), Model Health's crossing
+  check, and the booleans: the freeform refusal is gone, and the inside
+  test counts ray hits on freeform faces (`ShellFace` takes them through
+  `Laid`; `shell::interior` too).
+- **Fixed on the way:** a flat face with a spline side had the drawn
+  polygon's area; `Spline::swept_area` now integrates it exactly (Gauss on
+  each knot span). A mirrored freeform face pointed the wrong way (the
+  face was turned round, then the patch flipped back): `transform` keeps
+  it flipped. The model check no longer calls two faces on different
+  surfaces with one loop (a lens of two freeform faces) the same face.
+- **Tests:** `prism-ops/tests/freeform_cross.rs`: a plane through a bump
+  (one cubic on both, end to end), Intersect Faces cuts it in two (areas
+  add up), two bumps crossing in a closed loop (each cut into a disc and a
+  ring), a mirrored bump checks clean, a block topped by the bump is a
+  solid of its exact volume, and the block minus a box has the exact
+  volume (within a tenth of the tolerance: the cut's sides are cubics).
+- **Left over:** Validate checks a solid with a cut freeform face through
+  the kernel only once the bridge takes cut faces (3c); a closed flat
+  crossing (a surface and its mirror) also closes a flat face, as drawing
+  a flat loop does; edges crossing in a freeform face's middle are still
+  not split where they cross.
+- **Found, not from this chunk:** the spline property test in
+  `prism-ops/tests/splines.rs` can draw a line that crosses a closed
+  spline at two points 0.007 apart; the sliver between them overlaps the
+  big face (the face keeps the short spline piece, not the line). The
+  same on the code before 3b. Input: a closed cubic through (0, 0),
+  (0, 4.816), (0.865, 5.317), (5.305, 3.734), (4.245, 4.226), (3.586,
+  3.541) and a line from (5.702, 3.424) to (1.008, 5.988).
