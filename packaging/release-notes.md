@@ -1,11 +1,9 @@
-**Fixed in this build:**
-- The Loft tool picks a ring's sides in any order, and a click on an edge that joins the side you are picking adds it to that side.
-- Enter makes a ring as soon as it closes, even while you are still picking its last side.
-- Rows shows live: the preview draws the faces the loft will be cut into, and so does the loft you just made while Rows can still change it.
-- Smooth / Straight is greyed where it changes nothing (a ring, or two sections). It no longer remakes the loft, so Undo no longer takes the whole loft away.
-- The Eraser no longer shows Move's "a face with arcs would fold" message.
-- A line drawn across an arc or circle now cuts it into separate curves, as in SketchUp: hovering, clicking or erasing one piece takes that piece only.
-- In the Loft tool, Alt+click takes just the edge clicked, whatever the "sharpest turn" setting.
+**New in this build:**
+- Draw > Surface's Loft, Revolve, Sweep and Patch no longer just refuse when the right curves are not selected: they say what to click, a click adds a curve (no Shift needed), a ghost shows the surface once the curves make it, and Enter makes it. Esc leaves.
+
+**Changed in this build:**
+- Solid > Outer Shell is gone: Union of three or more groups does the same.
+- Push/Pull, Offset, Fillet and Follow Me say to open a group when you point at one, instead of doing nothing.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

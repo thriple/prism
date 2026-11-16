@@ -55,8 +55,8 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Arrows pick the plane.",
             ],
         ),
-        "solid.union" | "solid.isect" | "solid.split" | "solid.shell" => g(
-            "Join solid groups (Union, Outer Shell), keep what is in both (Intersect), or cut them into pieces (Split).",
+        "solid.union" | "solid.isect" | "solid.split" => g(
+            "Join solid groups (Union: two or more, keeping only the outside), keep what is in both (Intersect), or cut them into pieces (Split).",
             &[
                 "Select two or more solid groups or components, then pick the command: it runs at once.",
                 "Or pick it with nothing selected and click one solid, then the other.",

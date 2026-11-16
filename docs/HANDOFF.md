@@ -75,10 +75,10 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   takes a freeform face (Prism's own offset; a solid whose freeform faces
   meet along many pieces is checked by Prism's rules only, the kernel
   being too slow there). **Part 3 is done; next is part 4** (it needs a
-  brief). **The tool pass** (brief 41, owner request): part 1, the Loft
-  tool from Session 10, is built (NOTES "Tool pass part 1"); next is part
-  2 (select-first Loft, Revolve and Sweep, the Solid menu; ask the owner
-  about the two Lofts; Outer Shell goes, owner 2026-11-16). Part 1b: a
+  brief). **The tool pass** (brief 41, owner request): parts 1 and 2 are
+  built (NOTES "Tool pass part 1", "1b" and "2"); next is part 3, the
+  Shell / Thicken tool (NOTES "Shell / Thicken design"; it may need its
+  own brief). Both Lofts stay (owner). Part 1b: a
   line across an arc parts it into two curves, and Alt+click in Loft
   takes one edge. **Every planned feature has a chunk** now
   (`docs/feature-map.md`, ten new rows in PLAN 6.0, a test): add each

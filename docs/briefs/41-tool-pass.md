@@ -24,7 +24,7 @@ L: three parts, each pushed and tested on its own.
   - Loft, Revolve and Sweep picked with nothing right selected say what to select, then take clicks like the Solid tools, instead of only refusing.
   - Every Solid tool's hint names what to click next. Heal says what it fixed.
   - Outer Shell is removed: Union does it (owner, 2026-11-16).
-  - The two Lofts (the Loft tool and Loft from a selection): the owner decides.
+  - Both Lofts stay (owner, 2026-11-16): the menu Loft gets the visual feedback above.
   - Edit tools on a closed group say "double-click the group to open it" (from the Fillet window's leftovers).
 - **Part 3. Shell / Thicken.** Build the tool as designed in NOTES ("Shell / Thicken design"). It may need its own brief: Part 2 ends by saying.
 

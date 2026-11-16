@@ -1435,6 +1435,21 @@ fn grouped_box(d: &mut Driver) -> prism_doc::InstanceId {
 }
 
 #[test]
+fn tools_that_cannot_change_a_closed_group_say_to_open_it() {
+    // Tool pass part 2 (from the Fillet window's leftovers).
+    use prism_tools::session::{CLOSED_GROUP, FILLET};
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    for t in [PUSH, FILLET] {
+        d.tool(t);
+        d.hover(DVec3::new(1.0, 1.0, 2.0));
+        assert_eq!(d.s.hint(), CLOSED_GROUP, "{t}");
+        d.hover(DVec3::new(6.0, 6.0, 0.0));
+        assert_ne!(d.s.hint(), CLOSED_GROUP, "{t}: off the group");
+    }
+}
+
+#[test]
 fn a_group_is_clicked_moved_opened_and_closed() {
     let mut d = Driver::empty();
     let g = grouped_box(&mut d);
@@ -4312,9 +4327,9 @@ fn three_curves() -> Driver {
 #[test]
 fn a_loft_you_can_pull_into_shape() {
     let mut d = three_curves();
-    // With nothing selected, Loft says what it needs.
+    // With nothing selected, Loft says what to click.
     action(&mut d, "surf.loft");
-    assert_eq!(d.s.hint(), prism_ops::loft::TWO_CURVES);
+    assert!(d.s.hint().starts_with("Loft: click"), "{}", d.s.hint());
     action(&mut d, "edit.selall");
     action(&mut d, "surf.loft");
     assert_eq!(d.faces(), 2);
@@ -4341,6 +4356,64 @@ fn a_loft_you_can_pull_into_shape() {
     undo(&mut d);
     assert_eq!(d.faces(), 0);
     assert_eq!(d.s.model().edge_count(), 3);
+}
+
+#[test]
+fn surface_commands_wait_for_clicks_and_show_a_ghost() {
+    // Tool pass part 2 (owner: "visual feedback to a tool like that is
+    // nice"): Loft with too few curves waits; clicks add curves without
+    // Shift; a ghost shows once they make it; Enter makes it.
+    let mut d = three_curves();
+    d.look(Camera {
+        eye: DVec3::new(2.0, -9.0, 3.0),
+        target: DVec3::new(2.0, 0.0, 2.5),
+    });
+    action(&mut d, "surf.loft");
+    assert_eq!(d.s.tool(), SELECT);
+    assert!(d.s.hint().starts_with("Loft: click"), "{}", d.s.hint());
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    assert_eq!(d.s.surface_waiting().map(|w| w.2), Some(false), "one curve");
+    let lines = d.s.overlay().lines.len();
+    d.click(DVec3::new(2.0, 0.0, 2.0));
+    assert_eq!(
+        d.s.surface_waiting().map(|w| w.2),
+        Some(true),
+        "two make it"
+    );
+    assert!(
+        d.s.hint().starts_with("Enter makes the loft"),
+        "{}",
+        d.s.hint()
+    );
+    assert!(d.s.overlay().lines.len() > lines, "a ghost of the faces");
+    assert_eq!(d.faces(), 0, "only a ghost so far");
+    key(&mut d, Key::Enter);
+    assert_eq!(d.faces(), 1);
+    assert!(d.s.surface_waiting().is_none());
+    valid(&d);
+    // Esc leaves without making anything.
+    undo(&mut d);
+    action(&mut d, "edit.desel");
+    action(&mut d, "surf.loft");
+    assert!(d.s.surface_waiting().is_some());
+    key(&mut d, Key::Escape);
+    assert!(d.s.surface_waiting().is_none());
+    assert_eq!(d.faces(), 0);
+    // It waits in Select; the Loft tool's own action picks the tool again,
+    // even if the app's dock still showed it as active.
+    action(&mut d, "surf.loft");
+    assert_eq!(d.s.tool(), SELECT);
+    action(&mut d, prism_tools::session::LOFT);
+    assert_eq!(d.s.tool(), prism_tools::session::LOFT);
+    // With sides picked in the Loft tool, a Surface command only says what
+    // it needs: the sides stay.
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    let sides = d.s.loft_sides();
+    assert!(!sides.is_empty());
+    action(&mut d, "surf.revolve");
+    assert_eq!(d.s.tool(), prism_tools::session::LOFT);
+    assert_eq!(d.s.loft_sides(), sides);
+    assert_eq!(d.s.hint(), prism_ops::loft::NO_AXIS);
 }
 
 #[test]
@@ -4401,7 +4474,7 @@ fn sweep_and_patch_run_from_the_selection() {
     );
     let mut d = Driver::new(Document::with_model(m));
     action(&mut d, "surf.sweep");
-    assert_eq!(d.s.hint(), prism_ops::sweep::TWO_FOR_SWEEP);
+    assert!(d.s.hint().starts_with("Sweep: click"), "{}", d.s.hint());
     action(&mut d, "edit.selall");
     action(&mut d, "surf.sweep");
     assert_eq!(d.faces(), 1);

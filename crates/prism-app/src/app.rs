@@ -547,6 +547,11 @@ impl App {
             if let Some(resp) = &layout.response {
                 viewport.input(ctx, resp, layout.viewport, chrome);
             }
+            // The session can change tool on its own (Draw > Surface's
+            // commands wait in Select): the dock follows it.
+            if let Some(id) = chrome.tool_id(viewport.session.tool()) {
+                chrome.active_tool = id;
+            }
             *last_tool = chrome.active_tool;
             let now = ctx.input(|i| i.time);
             files.frame(ctx, now, &mut viewport.session, chrome);

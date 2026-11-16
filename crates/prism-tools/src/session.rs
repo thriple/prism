@@ -45,6 +45,7 @@ mod scalebox;
 mod shapes;
 mod smart;
 mod solids;
+mod surfacing;
 mod texpos;
 mod views;
 use crate::units::NumberFormat;
@@ -81,7 +82,11 @@ pub const ZOOM: &str = "cam.zoom";
 
 /// Every tool the session runs. The action registry greys out every other
 /// tool (DECISIONS #20), so this list is the one place that says what is built.
-pub const TOOLS: [&str; 39] = [
+/// Said when a tool that changes faces and edges points at a closed group.
+pub const CLOSED_GROUP: &str =
+    "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
+
+pub const TOOLS: [&str; 38] = [
     SELECT,
     LINE,
     RECT,
@@ -129,7 +134,6 @@ pub const TOOLS: [&str; 39] = [
     booleans::INTERSECT,
     booleans::TRIM,
     booleans::SPLIT,
-    booleans::OUTER_SHELL,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -434,6 +438,10 @@ pub struct Session {
     loft_last_sections: usize,
     /// The faces the last loft made (drawn while a preset can change it).
     loft_last_faces: Vec<prism_topo::FaceId>,
+    /// Draw > Surface's command waiting for its curves.
+    surface_pick: Option<surfacing::SurfacePick>,
+    /// The pointer is over a closed group with a tool that cannot change it.
+    over_closed_group: bool,
     loft_notice: Option<&'static str>,
     follow_notice: Option<&'static str>,
     /// Follow Me follows the selected face's edge (Alt).
@@ -634,6 +642,8 @@ impl Session {
             loft_last: None,
             loft_last_sections: 0,
             loft_last_faces: Vec::new(),
+            surface_pick: None,
+            over_closed_group: false,
             loft_notice: None,
             follow_notice: None,
             follow_perimeter: false,
@@ -872,6 +882,12 @@ impl Session {
         if let Some(h) = self.notice {
             return h;
         }
+        if let Some(h) = self.surface_hint() {
+            return h;
+        }
+        if self.over_closed_group && self.edit.is_none() {
+            return CLOSED_GROUP;
+        }
         if let Some(h) = self.paste_hint() {
             return h;
         }
@@ -1049,7 +1065,9 @@ impl Session {
                 alt,
             } => {
                 self.press_alt = *alt;
-                self.press(*button, DVec2::new(*x, *y), *shift, *ctrl, &mut resp);
+                // Picking curves for a surface: a click adds or takes out.
+                let shift = *shift || self.surface_picking();
+                self.press(*button, DVec2::new(*x, *y), shift, *ctrl, &mut resp);
             }
             Input::Release { button } => self.release(*button),
             Input::Wheel { x, y, notches } => {
@@ -1132,6 +1150,9 @@ impl Session {
                 }
             }
         }
+        if self.surface_pick.is_some() {
+            self.surface_update();
+        }
         resp
     }
 
@@ -1145,6 +1166,7 @@ impl Session {
             self.before_nav = self.tool.clone();
         }
         self.cancel();
+        self.over_closed_group = false;
         self.tool = id.to_owned();
         // A new loop is for one pull at a time, never left on unseen.
         self.alt_loop = false;
@@ -1221,7 +1243,7 @@ impl Session {
                     let back = self.before_nav.clone();
                     self.set_tool(&back);
                     resp.tool = Some(back);
-                } else if self.loft_escape(resp) {
+                } else if self.surface_escape() || self.loft_escape(resp) {
                 } else if self.in_operation() {
                     self.cancel();
                     self.refresh();
@@ -1522,6 +1544,12 @@ impl Session {
         if self.camera_action(id) {
             return;
         }
+        // A tool's action picks it, even when the app thinks it is active
+        // already (the session may have changed tool on its own, as Draw >
+        // Surface's commands do when they wait for curves).
+        if TOOLS.contains(&id) && id != self.tool && !is_nav(id) {
+            self.set_tool(id);
+        }
         match id {
             "cam.extents" => {
                 if let Some((lo, hi)) = self.scene.bounds {
@@ -1559,9 +1587,7 @@ impl Session {
             "tex.reset" => self.texture_reset(),
             "cage.edit" => self.cage_toggle(),
             "cage.add" => self.cage_add(),
-            "surf.loft" | "surf.revolve" | "surf.sweep" | "surf.patch" => {
-                self.surface_from_selection(id)
-            }
+            "surf.loft" | "surf.revolve" | "surf.sweep" | "surf.patch" => self.surface_action(id),
             "edit.group" => self.make_group(),
             "edit.comp" => self.make_component(),
             // Edit > Reverse Faces and Orient Faces (Model Health).
@@ -2239,6 +2265,9 @@ impl Session {
     // ---------- typing ----------
 
     fn enter(&mut self) {
+        if self.surface_enter() {
+            return;
+        }
         if self.texpos_active() {
             self.texpos_commit();
             return;
@@ -2384,6 +2413,7 @@ impl Session {
         self.smart_overlay(&mut o);
         self.round_overlay(&mut o);
         self.loft_overlay(&mut o);
+        self.surface_overlay(&mut o);
         self.window_overlay(&mut o);
         if !self.wants_inference() {
             return o;

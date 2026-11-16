@@ -584,6 +584,11 @@ impl Session {
         self.loft_notice = None;
     }
 
+    /// Whether the Loft tool has sides picked.
+    pub(super) fn loft_busy(&self) -> bool {
+        self.tool == LOFT && !self.lofting.is_empty()
+    }
+
     /// What the Loft window shows, while the tool is active.
     pub fn loft_panel(&self) -> Option<LoftPanel> {
         (self.tool == LOFT).then(|| {
@@ -736,7 +741,10 @@ impl Session {
 }
 
 /// The edges of `faces`, as lines of points.
-fn face_lines(model: &prism_topo::Model, faces: &[prism_topo::FaceId]) -> Vec<Vec<DVec3>> {
+pub(super) fn face_lines(
+    model: &prism_topo::Model,
+    faces: &[prism_topo::FaceId],
+) -> Vec<Vec<DVec3>> {
     let set: BTreeSet<prism_topo::FaceId> = faces.iter().copied().collect();
     model
         .edge_faces()

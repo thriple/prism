@@ -1,6 +1,7 @@
 //! The Solid menu's booleans as a tool (Solids & CAD part 2, brief 39).
-//! With two or more groups selected, Union, Intersect, Outer Shell and
-//! Split (exactly two) run at once on them. Otherwise, as in SketchUp:
+//! With two or more groups selected, Union, Intersect and Split (exactly
+//! two) run at once on them (Union of three or more keeps their outer
+//! shell). Otherwise, as in SketchUp:
 //! click the first solid (for Subtract and Trim, the cutter), then the
 //! second (the solid to cut). Esc starts over.
 
@@ -15,19 +16,18 @@ pub const SUBTRACT: &str = "solid.sub";
 pub const INTERSECT: &str = "solid.isect";
 pub const TRIM: &str = "solid.trim";
 pub const SPLIT: &str = "solid.split";
-pub const OUTER_SHELL: &str = "solid.shell";
 
 /// Said when Intersect is asked of more than two groups.
 pub const TWO_AT_A_TIME: &str = "Intersect takes two solids at a time.";
 
 /// The six, in menu order.
-pub const SOLID_TOOLS: [&str; 6] = [UNION, SUBTRACT, INTERSECT, TRIM, SPLIT, OUTER_SHELL];
+pub const SOLID_TOOLS: [&str; 5] = [UNION, SUBTRACT, INTERSECT, TRIM, SPLIT];
 
 pub(super) fn is_solid_tool(t: &str) -> bool {
     SOLID_TOOLS.contains(&t)
 }
 
-/// The boolean a tool runs (Outer Shell: None).
+/// The boolean a tool runs.
 fn op_of(t: &str) -> Option<SolidOp> {
     Some(match t {
         UNION => SolidOp::Union,
@@ -47,14 +47,15 @@ impl Session {
         let groups = self.groups.clone();
         let n = groups.len();
         let ready = match self.tool.as_str() {
-            UNION | INTERSECT | OUTER_SHELL => n >= 2,
+            UNION | INTERSECT => n >= 2,
             SPLIT => n == 2,
             _ => false,
         };
         if !ready {
             return;
         }
-        // Union of more than two is the Outer Shell; Intersect takes two.
+        // Union of more than two is their outer shell (the old Outer Shell
+        // command, removed 2026-11-16: Union does it); Intersect takes two.
         let c = match op_of(&self.tool) {
             Some(SolidOp::Intersect) if n > 2 => {
                 self.notice = Some(TWO_AT_A_TIME);

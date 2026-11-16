@@ -1182,13 +1182,6 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
-        id: "solid.shell",
-        name: "Outer Shell",
-        key: "",
-        proto_run: "",
-        when: "",
-    },
-    RawAction {
         id: "conv.curve",
         name: "Curve Chain ↔ NURBS Curve",
         key: "",
@@ -1887,7 +1880,6 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("solid.isect"),
             Item::Action("solid.trim"),
             Item::Action("solid.split"),
-            Item::Action("solid.shell"),
             Item::Separator,
             Item::Sub(
                 "Convert",
@@ -2067,7 +2059,6 @@ pub const DOCK: &[(&str, &[&str])] = &[
             "solid.isect",
             "solid.trim",
             "solid.split",
-            "solid.shell",
         ],
     ),
     (
@@ -2289,10 +2280,6 @@ pub const ICONS: &[(&str, &str)] = &[
     (
         "solid.split",
         "<rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"1.5\"/><path d=\"M3 12h18\" stroke-dasharray=\"2 2\"/>",
-    ),
-    (
-        "solid.shell",
-        "<rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\" stroke-dasharray=\"3 2\"/><rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\"/>",
     ),
     (
         "tool.unfold",

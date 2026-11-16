@@ -4284,3 +4284,37 @@ Shell / Thicken moved from Solids & CAD to Tool Pass. A test
 the window is not built and has no chunk, or when the map names a chunk
 the plan does not have. When a chunk writes a new "Left over" list, add
 its items to table C.
+
+## Tool pass part 2: select-first surfaces, closed groups, Outer Shell (brief 41, 2026-11-16)
+- **Draw > Surface's Loft, Revolve, Sweep and Patch** (owner: keep the
+  menu Loft beside the Loft tool; "visual feedback to a tool like that is
+  nice"). With the curves selected they run at once, as before. Otherwise
+  they wait (`session/surfacing.rs`): the tool becomes Select, the hint
+  says what to click ("Loft: click the curves to loft through"), a click
+  on a curve adds it or takes it out with no Shift, and once the curves
+  make the surface a ghost of its faces' edges shows and the hint says
+  Enter makes it. A picked set that cannot make it says why (two closed
+  curves, a curve touching the axis), not only what to select. Esc, or
+  another tool, leaves; the selection stays.
+- **Closed groups:** Push/Pull, Offset, Fillet and Follow Me over a
+  closed group's faces did nothing and said nothing. The hint now says
+  "That is inside a group: double-click it with Select (Space) to open
+  it, then use this tool" (`CLOSED_GROUP`).
+- **Outer Shell removed** (owner): Union of three or more groups already
+  ran it. The command stays in `prism-doc` for old logs and journals, and
+  is named "Union" in the undo menu.
+- **Mid-way through another tool** (sides picked in the Loft tool, a
+  move in progress) a Surface command only says what it needs, as
+  before, so nothing is lost. The owner's recording `pull-beside-loft`
+  clicks Revolve by mistake in the Loft tool; it caught this.
+- **The dock follows the session's tool:** a command that moves the
+  session to Select (these) left the dock showing the old tool, and
+  clicking it then sent only its action. The app now reads the session's
+  tool after every input, and a tool's action picks that tool.
+- **Checked, no change needed:** the Solid tools' hints name the next
+  click; Heal lists what it fixed in the Solids window.
+
+**Tests:** `prism-tools` session
+(`surface_commands_wait_for_clicks_and_show_a_ghost`,
+`tools_that_cannot_change_a_closed_group_say_to_open_it`; the Loft, Sweep
+tests now expect the picking hint).

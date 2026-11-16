@@ -367,7 +367,8 @@ pub enum Command {
         first: InstanceId,
         second: InstanceId,
     },
-    /// Outer Shell: the union of these groups.
+    /// The union of these groups, keeping only their outside (Union of three
+    /// or more; once its own Outer Shell command).
     OuterShell {
         instances: BTreeSet<InstanceId>,
     },
@@ -513,7 +514,7 @@ impl Command {
                 SolidOp::Trim => "Trim",
                 SolidOp::Split => "Split",
             },
-            Command::OuterShell { .. } => "Outer Shell",
+            Command::OuterShell { .. } => "Union",
             // Materials and images added for the step are named by the
             // step (a material on its own by the material).
             Command::Batch { commands } => {

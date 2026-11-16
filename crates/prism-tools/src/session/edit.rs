@@ -365,6 +365,19 @@ impl Session {
             }
             _ => {}
         }
+        // A closed group's faces and edges are not these tools' to change:
+        // say how to get at them (tool pass part 2).
+        let over = matches!(self.tool.as_str(), PUSH | OFFSET | FILLET | FOLLOW)
+            && self.edit.is_none()
+            && self.hover.is_none()
+            && self
+                .scene
+                .ray_face(view.ray(s).0, view.ray(s).1)
+                .is_some_and(|(f, _)| self.scene.face_owner.contains_key(&f));
+        if over != self.over_closed_group {
+            self.over_closed_group = over;
+            self.dirty = true;
+        }
     }
 
     pub(super) fn set_hover_pick(&mut self, h: Option<prism_view::Picked>) {
