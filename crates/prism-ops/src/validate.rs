@@ -67,7 +67,7 @@ pub fn pieces(model: &Model) -> Vec<BTreeSet<FaceId>> {
 pub fn validate(model: &Model) -> Vec<SolidCheck> {
     let r = health::check(model);
     let tol = model.tol().dist;
-    pieces(model)
+    let checks: Vec<SolidCheck> = pieces(model)
         .into_iter()
         .map(|faces| {
             let edges: BTreeSet<EdgeId> = faces
@@ -137,7 +137,12 @@ pub fn validate(model: &Model) -> Vec<SolidCheck> {
                     .sum::<f64>()
             });
             let mut kernel_skipped = None;
-            if reasons.is_empty() && !faces.iter().all(|f| kernel_takes(model, *f)) {
+            // A hollow (a shell facing into itself, which Model Health
+            // found inside another solid) is checked with the solid around
+            // it, below; the kernel takes one shell at a time.
+            let hollow = volume.is_some_and(|v| v < 0.0);
+            if hollow {
+            } else if reasons.is_empty() && !faces.iter().all(|f| kernel_takes(model, *f)) {
                 kernel_skipped = Some(KERNEL_NOT_YET);
             } else if reasons.is_empty() {
                 let found = crate::bridge::region(model, &faces)
@@ -161,7 +166,54 @@ pub fn validate(model: &Model) -> Vec<SolidCheck> {
                 kernel_skipped,
             }
         })
-        .collect()
+        .collect();
+    with_hollows(model, checks)
+}
+
+/// Each hollow joined to the solid around it: the smallest one whose box
+/// holds it.
+fn with_hollows(model: &Model, checks: Vec<SolidCheck>) -> Vec<SolidCheck> {
+    let bounds = |c: &SolidCheck| {
+        let pts: Vec<DVec3> = c
+            .faces
+            .iter()
+            .filter_map(|f| model.face(*f))
+            .flat_map(|f| model.points(&f.outer))
+            .collect();
+        let first = pts.first().copied().unwrap_or(DVec3::ZERO);
+        pts.iter().fold((first, first), |(l, h), p| (l.min(*p), h.max(*p)))
+    };
+    let is_hollow = |c: &SolidCheck| c.volume.is_some_and(|v| v < 0.0);
+    let (hollows, mut out): (Vec<SolidCheck>, Vec<SolidCheck>) =
+        checks.into_iter().partition(|c| is_hollow(c));
+    for h in hollows {
+        let (lo, hi) = bounds(&h);
+        let around = out
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| {
+                let (l, u) = bounds(c);
+                l.cmple(lo).all() && hi.cmple(u).all()
+            })
+            .min_by(|a, b| a.1.volume.unwrap_or(0.0).total_cmp(&b.1.volume.unwrap_or(0.0)))
+            .map(|(i, _)| i);
+        match around {
+            Some(i) => {
+                let c = &mut out[i];
+                c.faces.extend(h.faces);
+                c.volume = c.volume.zip(h.volume).map(|(a, b)| a + b);
+                c.reasons.extend(h.reasons);
+                c.valid = c.valid && h.valid;
+            }
+            None => out.push(SolidCheck {
+                valid: false,
+                reasons: vec!["the whole solid faces inward".to_owned()],
+                ..h
+            }),
+        }
+    }
+    out.sort_by_key(|c| c.faces.first().copied());
+    out
 }
 
 /// Whether the bridge can send this face to the kernel's checker yet.

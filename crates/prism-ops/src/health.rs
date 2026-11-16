@@ -369,7 +369,11 @@ fn reversed(model: &Model) -> BTreeSet<FaceId> {
             } else {
                 right.and_then(|r| faces_inward(model, r, &flats, &tol))
             };
-            if inward == Some(true) {
+            // A shell inside another solid is a hollow in it (Solids & CAD
+            // part 2, a box less a box inside it): it rightly faces into
+            // the hollow, away from the solid around it.
+            let hollow = hollow_in_another(model, &piece, &solid_faces, &tol);
+            if inward.is_some() && inward != Some(hollow) {
                 wrong = piece
                     .iter()
                     .copied()
@@ -380,6 +384,30 @@ fn reversed(model: &Model) -> BTreeSet<FaceId> {
         out.extend(wrong);
     }
     out
+}
+
+/// Whether the closed shell `piece` lies inside another closed shell's
+/// solid (an odd number of them), so it bounds a hollow.
+fn hollow_in_another(
+    model: &Model,
+    piece: &[FaceId],
+    solid_faces: &BTreeSet<FaceId>,
+    tol: &Tol,
+) -> bool {
+    let mine: BTreeSet<FaceId> = piece.iter().copied().collect();
+    let others: Vec<crate::shell::ShellFace> = solid_faces
+        .iter()
+        .filter(|f| !mine.contains(f))
+        .filter_map(|f| crate::shell::ShellFace::of(model, *f))
+        .collect();
+    if others.is_empty() {
+        return false;
+    }
+    piece
+        .iter()
+        .flat_map(|f| crate::shell::interior(model, *f))
+        .find_map(|(c, _)| crate::shell::winding(&others, c, tol))
+        .is_some_and(|w| w.rem_euclid(2) == 1)
 }
 
 /// A face's share of the volume its closed shell encloses (signed, by the

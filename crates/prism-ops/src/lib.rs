@@ -12,6 +12,7 @@
 pub mod approx;
 pub mod bridge;
 pub mod cage;
+pub mod boolean;
 pub mod check;
 pub mod crossing;
 pub mod cut;
