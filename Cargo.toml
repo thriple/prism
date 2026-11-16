@@ -64,9 +64,13 @@ sha2 = "0.10"
 opt-level = 3
 lto = "thin"
 
-# The kernel is heavy numerics: optimised even in test builds, so tests
-# that go through it (Validate on freeform solids) take seconds, not
-# minutes.
+# The kernel and Prism's curves and surfaces are heavy numerics:
+# optimised even in test builds, so tests that go through them (Validate
+# and Push/Pull on freeform solids) take seconds, not minutes.
+[profile.dev.package.prism-geom]
+opt-level = 3
+[profile.dev.package.glam]
+opt-level = 3
 [profile.dev.package.arris-geom]
 opt-level = 3
 [profile.dev.package.arris-math]

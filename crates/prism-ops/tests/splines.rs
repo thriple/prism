@@ -229,20 +229,58 @@ fn pulling_a_face_with_a_curved_edge_makes_freeform_walls() {
 }
 
 #[test]
-fn a_freeform_face_is_not_pushed_or_pulled() {
+fn a_freeform_wall_pulls_out_by_the_distance() {
     let mut m = Model::new();
     add_spline(&mut m, &blob());
     let face = m.faces().next().unwrap().0;
     prism_ops::push_pull(&mut m, face, 2.0, false);
+    let solid = |m: &Model| {
+        let all = prism_ops::validate::validate(m);
+        assert_eq!(all.len(), 1, "{all:?}");
+        assert!(all[0].valid, "{all:?}");
+        all[0].volume.unwrap()
+    };
+    let before = solid(&m);
     let wall = m
         .faces()
         .find(|(_, f)| f.surface.patch().is_some())
         .unwrap()
         .0;
-    assert_eq!(
-        prism_ops::pushpull::refusal(&m, wall, 0.5),
-        Some(prism_ops::radius::FREEFORM)
+    let old = m.face(wall).unwrap().surface.clone();
+    let area = m.face_area(wall);
+    assert_eq!(prism_ops::pushpull::refusal(&m, wall, 0.5), None);
+    assert_ne!(
+        prism_ops::push_pull(&mut m, wall, 0.5, false),
+        prism_ops::pushpull::Pulled::Nothing
     );
+    clean(&m);
+    // A slab about as big as the wall, 0.5 thick, was added.
+    let grown = solid(&m) - before;
+    assert!(
+        (grown - area * 0.5).abs() < area * 0.5 * 0.2,
+        "{grown} vs {area}"
+    );
+    // The new wall is 0.5 out from the old one everywhere.
+    let tol = m.tol();
+    let out = m
+        .faces()
+        .filter_map(|(_, f)| f.surface.patch().map(|p| (f, p.clone())))
+        .find(|(f, _)| {
+            let p = m.vertex(f.outer[0]);
+            (old.distance(p) - 0.5).abs() <= tol.dist
+        })
+        .expect("the moved wall");
+    let s = &out.1.surface;
+    let [(u0, u1), (v0, v1)] = s.domain();
+    for i in 1..8 {
+        for j in 1..8 {
+            let p = s.eval(
+                u0 + (u1 - u0) * i as f64 / 8.0,
+                v0 + (v1 - v0) * j as f64 / 8.0,
+            );
+            assert!((old.distance(p) - 0.5).abs() <= tol.dist, "{p}");
+        }
+    }
 }
 
 /// An open curve that loops over itself, like a written "e".

@@ -306,3 +306,41 @@ fn a_box_subtracted_from_the_bump_block() {
     // the volume is as close as a tenth of the tolerance.
     assert!((v - want).abs() < out.tol().dist * 0.1, "{v} vs {want}");
 }
+
+#[test]
+fn the_bump_blocks_top_pulls_out_by_the_distance() {
+    let mut m = bump_block();
+    let top = m
+        .faces()
+        .find(|(_, f)| f.surface.patch().is_some())
+        .unwrap()
+        .0;
+    let old = m.face(top).unwrap().surface.clone();
+    let area = m.face_area(top);
+    assert_eq!(prism_ops::pushpull::refusal(&m, top, 0.1), None);
+    prism_ops::push_pull(&mut m, top, 0.1, false);
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+    let all = prism_ops::validate::validate(&m);
+    assert_eq!(all.len(), 1, "{all:?}");
+    assert!(all[0].valid, "{all:?}");
+    // About the top's area times 0.1 more.
+    let grown = all[0].volume.unwrap() - BLOCK;
+    assert!(
+        (grown - area * 0.1).abs() < area * 0.1 * 0.1,
+        "{grown} vs {area}"
+    );
+    // The new top is 0.1 out from the old one everywhere.
+    let tol = m.tol();
+    let new = m
+        .faces()
+        .filter_map(|(_, f)| f.surface.patch().map(|p| (f, p.clone())))
+        .find(|(f, _)| (old.distance(m.vertex(f.outer[0])) - 0.1).abs() <= tol.dist)
+        .expect("the moved top")
+        .1;
+    for i in 1..8 {
+        for j in 1..8 {
+            let p = new.surface.eval(i as f64 / 8.0, j as f64 / 8.0);
+            assert!((old.distance(p) - 0.1).abs() <= tol.dist, "{p}");
+        }
+    }
+}

@@ -116,7 +116,7 @@ fn places(m: &Model, other: &Model, tol: &prism_math::Tol) -> Option<BTreeMap<Fa
 /// Add `b`'s faces to `out`, sharing its points and edges where they
 /// coincide. Edges are matched by their middle as well as their ends: the
 /// two halves of a circle join the same two points.
-fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
+pub(crate) fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
     let mut vmap: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     for (id, p) in b.vertices() {
         let at = out

@@ -59,6 +59,9 @@ pub fn refusal_with(
     new_loop: bool,
 ) -> Option<&'static str> {
     let f = model.face(face)?;
+    if f.surface.patch().is_some() {
+        return crate::thicken::slab(model, face, distance).err();
+    }
     let Some(plane) = f.plane() else {
         return crate::radius::refusal(model, face, distance);
     };
@@ -88,6 +91,14 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let Some(f) = model.face(face).cloned() else {
         return Pulled::Nothing;
     };
+    if f.surface.patch().is_some() {
+        // A freeform face moves out along its normal (Solids & CAD 3c).
+        return if crate::thicken::pull(model, face, distance).is_ok() {
+            Pulled::Stretched
+        } else {
+            Pulled::Nothing
+        };
+    }
     if f.is_curved() {
         // A new radius stops where it meets another face (6c-2).
         let distance = crate::reach::limit(model, face, distance);

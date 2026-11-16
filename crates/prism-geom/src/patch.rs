@@ -193,6 +193,61 @@ impl NurbsSurface {
         (s, du, dv)
     }
 
+    /// The bicubic that matches `f`, its slopes and its twist at every
+    /// grid node (`us` by `vs`, each rising from 0 to 1): the tensor
+    /// product of cubic Hermite pieces, smooth across a grid line once (a
+    /// double knot). Derivatives are taken by differences, one way at the
+    /// grid's edges.
+    pub fn hermite(f: &dyn Fn(f64, f64) -> DVec3, us: &[f64], vs: &[f64]) -> Option<NurbsSurface> {
+        // Each control point is the node's value plus a third of a step
+        // along u, along v, and their product times the twist.
+        let steps = |nodes: &[f64]| -> Vec<(usize, f64)> {
+            let n = nodes.len();
+            let mut out = Vec::with_capacity(2 * n);
+            for k in 0..n {
+                if k > 0 {
+                    out.push((k, -(nodes[k] - nodes[k - 1]) / 3.0));
+                } else {
+                    out.push((k, 0.0));
+                }
+                if k + 1 < n {
+                    out.push((k, (nodes[k + 1] - nodes[k]) / 3.0));
+                } else {
+                    out.push((k, 0.0));
+                }
+            }
+            out
+        };
+        let (_, ku) = crate::nurbs::hermite_row(&|_| (DVec3::ZERO, DVec3::ZERO), us)?;
+        let (_, kv) = crate::nurbs::hermite_row(&|_| (DVec3::ZERO, DVec3::ZERO), vs)?;
+        let (su, sv) = (steps(us), steps(vs));
+        use crate::nurbs::{side_of, slope, slope_h};
+        let (lu, lv) = (us.len() - 1, vs.len() - 1);
+        let mut points = Vec::with_capacity(su.len() * sv.len());
+        for &(i, a) in &su {
+            for &(j, b) in &sv {
+                let (u, v) = (us[i], vs[j]);
+                let (iu, iv) = (side_of(us, lu, u), side_of(vs, lv, v));
+                let p = f(u, v);
+                let fu = slope(&|x| f(x, v), u, iu);
+                let fv = slope(&|y| f(u, y), v, iv);
+                // The twist: the slope along u, itself sloped along v
+                // (larger steps, so rounding stays small).
+                let fuv = slope_h(&|y| slope_h(&|x| f(x, y), u, iu, 1e-4), v, iv, 1e-4);
+                points.push(p + fu * a + fv * b + fuv * (a * b));
+            }
+        }
+        let count = [su.len(), sv.len()];
+        NurbsSurface::new(
+            [3, 3],
+            [ku, kv],
+            count,
+            points,
+            vec![1.0; count[0] * count[1]],
+            [false, false],
+        )
+    }
+
     /// The point at (`u`, `v`).
     pub fn eval(&self, u: f64, v: f64) -> DVec3 {
         let (s, _, _) = self.weighted(u, v);
@@ -720,5 +775,33 @@ mod tests {
         // A part that passes the seam.
         assert!(s.eval(1.25, 0.5).distance(s.eval(0.25, 0.5)) < 1e-12);
         assert!(s.grid(0, 0.75, 1.25, (0.0, 1.0)).len() > 3);
+    }
+
+    #[test]
+    fn hermite_pieces_follow_a_surface_with_a_crease() {
+        // Bent once along u = 0.5: smooth on either side.
+        let f = |u: f64, v: f64| {
+            let k = (u - 0.5).max(0.0);
+            DVec3::new(u, v, k * k * 3.0 + (v * 2.0).sin() * 0.2)
+        };
+        let nodes = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let s = NurbsSurface::hermite(&f, &nodes, &nodes).unwrap();
+        for i in 0..=20 {
+            for j in 0..=20 {
+                let (u, v) = (i as f64 / 20.0, j as f64 / 20.0);
+                assert!(s.eval(u, v).distance(f(u, v)) < 2e-4, "{u} {v}");
+            }
+        }
+        // At the nodes, exactly.
+        for u in nodes {
+            for v in nodes {
+                assert!(s.eval(u, v).distance(f(u, v)) < 1e-9);
+            }
+        }
+        let c = crate::Nurbs::hermite(&|t| f(t, 0.3), &nodes).unwrap();
+        for i in 0..=20 {
+            let t = i as f64 / 20.0;
+            assert!(c.eval(t).distance(f(t, 0.3)) < 2e-4);
+        }
     }
 }

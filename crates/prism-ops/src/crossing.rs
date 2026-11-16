@@ -521,12 +521,12 @@ impl Tracer<'_> {
                 };
                 (count(hi.x - lo.x, g), count(hi.y - lo.y, step_s))
             }
-            // Twice as fine as the surface is drawn, and at least 32 cells.
+            // Twice as fine as the surface is drawn, 32 to 64 cells.
             Param::Free(p) => {
                 let s = &p.surface;
                 let n0 = s.grid(0, lo.x, hi.x, (lo.y, hi.y)).len();
                 let n1 = s.grid(1, lo.y, hi.y, (lo.x, hi.x)).len();
-                ((2 * n0).clamp(32, 600), (2 * n1).clamp(32, 600))
+                ((2 * n0).clamp(32, 64), (2 * n1).clamp(32, 64))
             }
         }
     }
@@ -1021,6 +1021,19 @@ pub fn crossings_with(m: &Model, a: FaceId, b: FaceId) -> Vec<Piece> {
     if a == b {
         return Vec::new();
     }
+    // The crossing is traced in one face's layout, measuring the distance
+    // to the other's surface; the larger freeform surface (the slower to
+    // measure to) is the one laid out.
+    let net = |f: FaceId| {
+        m.face(f)
+            .and_then(|x| x.surface.patch())
+            .map_or(0, |p| p.surface.points().len())
+    };
+    let (a, b) = if m.face(b).is_some_and(|x| x.is_curved()) && net(b) > net(a) {
+        (b, a)
+    } else {
+        (a, b)
+    };
     let (Some(ba), Some(bb)) = (face_box(m, a), face_box(m, b)) else {
         return Vec::new();
     };
