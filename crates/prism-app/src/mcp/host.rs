@@ -356,6 +356,19 @@ impl AppHost<'_> {
                                 "faces_along_its_normal": !x.flipped,
                                 "net": s.points().iter().map(|p| point(*p)).collect::<Vec<_>>(),
                             });
+                            // A face cut from its patch (Solids & CAD part
+                            // 3): its loops in (u, v), outer first.
+                            if m.is_trimmed(f) {
+                                let loops: Vec<Vec<[f64; 2]>> = (0..f.loops().count())
+                                    .map(|k| {
+                                        m.patch_loop(f, k)
+                                            .into_iter()
+                                            .map(|x| [round(x.1.x), round(x.1.y)])
+                                            .collect()
+                                    })
+                                    .collect();
+                                j["nurbs"]["trims"] = json!(loops);
+                            }
                         }
                         _ => {}
                     },
@@ -1034,6 +1047,89 @@ mod tests {
             .cloned()
             .expect("the row");
         assert_eq!(row["count"], 1, "one curve: {row}");
+    }
+
+    #[test]
+    fn get_geometry_lists_a_cut_freeform_faces_trims() {
+        use prism_geom::{Curve, NurbsSurface, Patch, Spline, Surface};
+        use prism_math::DVec3;
+        use std::sync::Arc;
+        // A flat bilinear patch over the unit square, cut to an L.
+        let k = vec![0.0, 0.0, 1.0, 1.0];
+        let pts = vec![
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(1.0, 1.0, 0.0),
+        ];
+        let s = Arc::new(
+            NurbsSurface::new(
+                [1, 1],
+                [k.clone(), k],
+                [2, 2],
+                pts,
+                vec![1.0; 4],
+                [false; 2],
+            )
+            .unwrap(),
+        );
+        let uv = [
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 0.5),
+            (0.5, 0.5),
+            (0.5, 1.0),
+            (0.0, 1.0),
+        ];
+        let mut m = prism_topo::Model::new();
+        let vs: Vec<_> = uv
+            .iter()
+            .map(|(u, v)| m.add_vertex(s.eval(*u, *v)))
+            .collect();
+        let mut edges = Vec::new();
+        for i in 0..uv.len() {
+            let (a, b) = (uv[i], uv[(i + 1) % uv.len()]);
+            let (d, at, t0, t1) = if a.1 == b.1 {
+                (0, a.1, a.0, b.0)
+            } else {
+                (1, a.0, a.1, b.1)
+            };
+            let c = Curve::Spline(Spline {
+                curve: Arc::new(s.iso(d, at).unwrap()),
+                t0,
+                t1,
+            });
+            edges.push(
+                m.add_curve_edge(vs[i], vs[(i + 1) % uv.len()], c, None)
+                    .unwrap(),
+            );
+        }
+        let patch = Patch {
+            surface: s.clone(),
+            u: (0.0, 1.0),
+            v: (0.0, 1.0),
+            flipped: false,
+        };
+        m.add_face(prism_topo::Face::with_edges(
+            vs,
+            vec![],
+            Surface::Nurbs(patch),
+            vec![edges],
+        ));
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::with_model(m));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let g = value(h.call("get_geometry", &json!({})));
+        let trims = &g["faces"][0]["nurbs"]["trims"];
+        assert_eq!(trims.as_array().map(Vec::len), Some(1), "{g}");
+        assert_eq!(trims[0][0], json!([0.0, 0.0]));
+        assert!(trims[0].as_array().unwrap().contains(&json!([0.5, 0.5])));
     }
 
     #[test]

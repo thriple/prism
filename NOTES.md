@@ -4002,3 +4002,41 @@ part, before Solids & CAD part 2.
     leaves a clean round hole in a box.
   - The owner's check: a box with a cylinder subtracted shows a clean
     round hole, and Undo brings both back.
+
+## Solids & CAD part 3a: freeform faces cut from their patch (brief 40, 2026-11-16)
+The owner merged the old part 3 (booleans through the kernel) into the
+old part 4 (cutting freeform faces): part 3 is now brief 40, three steps.
+- **A freeform face can be any region of its patch:** its loops are any
+  edges lying on the surface. `Model::patch_loop` lays a loop out in
+  (u, v) through every drawn point (a line gets a few points along it, as
+  it can bend there), unwrapped across a closed direction's seam;
+  `Model::is_trimmed` says whether a face is cut (holes, or an outer loop
+  that is not the patch's four corners).
+- **Area and volume:** `Patch::loop_integrals` (Green's theorem in
+  (u, v): the loop integral of the integrand integrated along u, the loop
+  cut at the surface's grid, Gauss-Legendre 5). `Model::face_area` uses
+  it for every freeform face (**it was 0**, so Model Health called every
+  freeform face "of no size"); `health::face_volume` for cut ones (whole
+  patches keep the grid sum; both agree to 1e-9).
+- **Drawn, picked and exported:** `tess::trimmed` triangulates the (u, v)
+  region and splits edges where the surface bulges (sag 1.2e-3 of the
+  face's size), dropping slivers along straight sides; the scene and mesh
+  export use it for cut faces.
+- **The model check** lays freeform loops out by every drawn point.
+- **Cutting:** `cut::split_face` on a freeform face (`split_patch`): its
+  loops and the edges lying on it inside it, in (u, v), traced into
+  regions by the same code as turned faces (`build_regions`, split out of
+  `split_face`). A line across splits it; a closed loop inside cuts a hole
+  and an island. Each piece keeps the patch, paint and facing.
+- **Cage editing** refuses a surface with a cut face (`cage::TRIMMED`).
+- **Files:** nothing new (loops were stored as edges already); a cut face
+  reads back the same. **MCP:** `get_geometry` gives a cut face's
+  `trims`, its loops in (u, v).
+- **Tests:** `prism-ops/tests/trimmed.rs` (area and volume both ways, an L
+  trim, a cut in two, a hole and an island, the cage refusal),
+  `prism-view/tests/trimmed.rs` (drawn over its area, facing, picked),
+  `prism-file/tests/trimmed.rs`, MCP `get_geometry_lists_a_cut_...`.
+- **Left over (for 3b and later):** edges crossing in a freeform face's
+  middle are not split where they cross (`split_meetings` is (θ, s)
+  only); nothing yet makes edges on a freeform face except by hand (3b's
+  crossings); moving trims in cage editing.

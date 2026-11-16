@@ -166,3 +166,108 @@ fn a_cage_edit_of_a_cut_surface_is_refused() {
     // The model check is clean for the cut face.
     assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
 }
+
+/// An iso line on `s` from (u, v) `a` to `b` (one of them constant), as
+/// an edge between existing vertices.
+fn iso_edge(m: &mut Model, s: &Arc<NurbsSurface>, a: (f64, f64), b: (f64, f64)) {
+    let find = |m: &Model, q: (f64, f64)| {
+        let p = s.eval(q.0, q.1);
+        m.vertices()
+            .find(|(_, x)| x.distance(p) < 1e-9)
+            .map(|(id, _)| id)
+    };
+    let va = find(m, a).unwrap_or_else(|| m.add_vertex(s.eval(a.0, a.1)));
+    let vb = find(m, b).unwrap_or_else(|| m.add_vertex(s.eval(b.0, b.1)));
+    let (d, at, t0, t1) = if a.1 == b.1 {
+        (0, a.1, a.0, b.0)
+    } else {
+        (1, a.0, a.1, b.1)
+    };
+    let spline = Spline {
+        curve: Arc::new(s.iso(d, at).unwrap()),
+        t0,
+        t1,
+    };
+    m.add_curve_edge(va, vb, Curve::Spline(spline), None)
+        .unwrap();
+}
+
+#[test]
+fn a_line_across_a_freeform_face_cuts_it_in_two() {
+    let s = Arc::new(bump());
+    let mut m = Model::new();
+    let whole = part(&s, (0.0, 1.0), (0.0, 1.0));
+    let f = face_by_corners(
+        &mut m,
+        &s,
+        whole,
+        &[
+            (0.0, 0.0),
+            (0.5, 0.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.5, 1.0),
+            (0.0, 1.0),
+        ],
+    );
+    let (area, volume) = (m.face_area(f), prism_ops::health::face_volume(&m, f));
+    iso_edge(&mut m, &s, (0.5, 0.0), (0.5, 1.0));
+    let made = prism_ops::cut::split_face(&mut m, f);
+    assert_eq!(made.len(), 2, "{made:?}");
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+    close(made.iter().map(|g| m.face_area(*g)).sum(), area);
+    close(
+        made.iter()
+            .map(|g| prism_ops::health::face_volume(&m, *g))
+            .sum(),
+        volume,
+    );
+    // Each half is the patch of its half.
+    let mut n = Model::new();
+    let left = face_by_corners(
+        &mut n,
+        &s,
+        part(&s, (0.0, 0.5), (0.0, 1.0)),
+        &[(0.0, 0.0), (0.5, 0.0), (0.5, 1.0), (0.0, 1.0)],
+    );
+    let small = made
+        .iter()
+        .map(|g| m.face_area(*g))
+        .fold(f64::INFINITY, f64::min);
+    close(
+        small.min(area - small),
+        n.face_area(left).min(area - n.face_area(left)),
+    );
+}
+
+#[test]
+fn a_closed_loop_inside_cuts_a_hole_and_an_island() {
+    let s = Arc::new(bump());
+    let mut m = Model::new();
+    let f = face_by_corners(
+        &mut m,
+        &s,
+        part(&s, (0.0, 1.0), (0.0, 1.0)),
+        &[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
+    );
+    let area = m.face_area(f);
+    let sq = [(0.3, 0.3), (0.6, 0.3), (0.6, 0.6), (0.3, 0.6)];
+    for i in 0..4 {
+        iso_edge(&mut m, &s, sq[i], sq[(i + 1) % 4]);
+    }
+    let made = prism_ops::cut::split_face(&mut m, f);
+    assert_eq!(made.len(), 2, "{made:?}");
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+    let holed = made.iter().find(|g| !m.face(**g).unwrap().holes.is_empty());
+    assert!(holed.is_some(), "the outer piece has a hole");
+    close(made.iter().map(|g| m.face_area(*g)).sum(), area);
+    // The island is the patch over the square.
+    let mut n = Model::new();
+    let island = face_by_corners(&mut n, &s, part(&s, (0.3, 0.6), (0.3, 0.6)), &sq);
+    let got = made
+        .iter()
+        .find(|g| m.face(**g).unwrap().holes.is_empty())
+        .map(|g| m.face_area(*g))
+        .unwrap();
+    close(got, n.face_area(island));
+}

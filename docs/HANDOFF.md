@@ -67,9 +67,11 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   too (brief 38, owner request: Rotate snaps an edge parallel to a
   neighbour's edge at any angle; NOTES "Angle Guides"). **Solids & CAD part 2
   is built** (brief 39: the Solid menu's booleans; NOTES "Solids & CAD
-  part 2"). **Next: part 3** (booleans through the kernel; write its
-  brief first, and decide with the owner what it adds now that Prism's
-  own booleans already handle the analytic curved faces). The owner also floated a chat window in Prism (NOTES "Owner idea
+  part 2"). The owner merged the old part 3 into part 4
+  (2026-11-16): **part 3 is now cutting freeform faces** (brief 40,
+  steps 3a to 3c). **3a is built** (NOTES "Solids & CAD part 3a").
+  **Next: 3b** (crossings with freeform faces traced in (u, v), so
+  Intersect Faces, sticky lines and the booleans take them). The owner also floated a chat window in Prism (NOTES "Owner idea
   for later"): not scheduled.
 - **Disk:** `target/debug` grows past the session's allowance after many
   builds. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0` (no

@@ -523,6 +523,9 @@ pub fn split_face(model: &mut Model, id: FaceId) -> Vec<FaceId> {
     let Some(face) = model.face(id).cloned() else {
         return Vec::new();
     };
+    if face.surface.patch().is_some() {
+        return split_patch(model, id, &face);
+    }
     let Some(rev) = face.surface.revolution() else {
         return vec![id];
     };
@@ -645,6 +648,152 @@ pub fn split_face(model: &mut Model, id: FaceId) -> Vec<FaceId> {
             inner: true,
         });
     }
+    build_regions(model, id, &face, segs, &nodes, &at, polys, mirror)
+}
+
+/// Cut a freeform face along the edges that lie on it inside it (Solids &
+/// CAD part 3): its loops and the cuts laid out in its patch's (u, v),
+/// unwrapped across a closed direction's seam, then the regions they
+/// bound, each a face on the same patch.
+fn split_patch(model: &mut Model, id: FaceId, face: &Face) -> Vec<FaceId> {
+    let Some(patch) = face.surface.patch().cloned() else {
+        return vec![id];
+    };
+    let eps = model.tol().dist;
+    let candidates = inner_edges(model, face, eps);
+    if candidates.is_empty() {
+        return vec![id];
+    }
+    let surf = &patch.surface;
+    let [du, dv] = surf.domain();
+    let period = [du.1 - du.0, dv.1 - dv.0];
+    let closed = surf.periodic();
+    let uv = |p: prism_math::DVec3| {
+        let (u, v) = patch.param(p);
+        DVec2::new(u, v)
+    };
+    let unwrap = |mut q: DVec2, last: DVec2| {
+        for d in 0..2 {
+            if closed[d] && period[d] > 0.0 {
+                q[d] -= ((q[d] - last[d]) / period[d]).round() * period[d];
+            }
+        }
+        q
+    };
+    // An edge's drawn points from `from`, in (u, v), each unwrapped near
+    // the one before (the first near `start`).
+    let side_pts = |e: EdgeId, from: VertexId, start: Option<DVec2>| -> Option<Vec<DVec2>> {
+        let x = model.edge(e)?;
+        let to = if x.a == from { x.b } else { x.a };
+        let (p, q) = (model.vertex(from), model.vertex(to));
+        let mut pts3 = vec![p];
+        match x.curve {
+            prism_geom::Curve::Line => pts3.extend((1..8).map(|i| p.lerp(q, i as f64 / 8.0))),
+            _ => pts3.extend(x.curve_from(from).inner_points(p, q)),
+        }
+        pts3.push(q);
+        let mut out: Vec<DVec2> = Vec::with_capacity(pts3.len());
+        for p3 in pts3 {
+            let mut w = uv(p3);
+            if let Some(l) = out.last().copied().or(start) {
+                w = unwrap(w, l);
+            }
+            out.push(w);
+        }
+        Some(out)
+    };
+    let mut loops: Vec<Vec<Seg>> = Vec::new();
+    for k in 0..=face.holes.len() {
+        let mut l = Vec::new();
+        let mut last: Option<DVec2> = None;
+        for side in face.loop_edges(k) {
+            let Some(pts) = side_pts(side.edge, side.from, last) else {
+                return vec![id];
+            };
+            last = pts.last().copied();
+            l.push(Seg {
+                edge: Some(side.edge),
+                from: side.from,
+                to: side.to,
+                pts,
+                inner: false,
+            });
+        }
+        if l.is_empty() {
+            return vec![id];
+        }
+        loops.push(l);
+    }
+    let polys: Vec<Vec<DVec2>> = loops
+        .iter()
+        .map(|l| polygon(&l.iter().collect::<Vec<_>>(), &vec![true; l.len()]))
+        .collect();
+    // Laid out clockwise (a face facing against u × v): the tracing
+    // mirrors u.
+    let mirror = area(&polys[0]) < 0.0;
+    let mut nodes: Vec<DVec2> = Vec::new();
+    let mut at: BTreeMap<VertexId, Vec<usize>> = BTreeMap::new();
+    let mut segs: Vec<Seg> = loops.into_iter().flatten().collect();
+    for sg in &segs {
+        node(&mut nodes, &mut at, sg.from, sg.pts[0]);
+        node(&mut nodes, &mut at, sg.to, sg.pts[sg.pts.len() - 1]);
+    }
+    let boundary_vs: BTreeSet<VertexId> = face.loops().flatten().copied().collect();
+    let shifts = |d: usize| -> &[f64] { if closed[d] { &[0.0, -1.0, 1.0] } else { &[0.0] } };
+    for e in candidates {
+        let Some(x) = model.edge(e).cloned() else {
+            continue;
+        };
+        let Some(raw) = side_pts(e, x.a, None) else {
+            continue;
+        };
+        // Moved by whole periods to lie in the face, judged at its middle.
+        let mid = raw[raw.len() / 2].lerp(raw[(raw.len() - 1) / 2], 0.5);
+        let shift = shifts(0).iter().find_map(|ku| {
+            shifts(1).iter().find_map(|kv| {
+                let d = DVec2::new(ku * period[0], kv * period[1]);
+                inside(mid + d, &polys).then_some(d)
+            })
+        });
+        let Some(d) = shift else { continue };
+        let pts: Vec<DVec2> = raw.iter().map(|p| *p + d).collect();
+        let mut end = |v: VertexId, p: DVec2| {
+            let list = at.get(&v).cloned().unwrap_or_default();
+            if let Some(i) = list.iter().find(|i| nodes[**i].distance(p) < 1e-6) {
+                return Some(*i);
+            }
+            (!boundary_vs.contains(&v) && list.is_empty()).then(|| node(&mut nodes, &mut at, v, p))
+        };
+        if end(x.a, pts[0]).is_none() || end(x.b, pts[pts.len() - 1]).is_none() {
+            continue;
+        }
+        segs.push(Seg {
+            edge: Some(e),
+            from: x.a,
+            to: x.b,
+            pts,
+            inner: true,
+        });
+    }
+    build_regions(model, id, face, segs, &nodes, &at, polys, mirror)
+}
+
+/// The faces the segments `segs` (the face's loops and the cuts inside
+/// it, laid flat) bound, made in place of face `id`: the shared half of
+/// cutting a turned face and a freeform one. `polys` are the face's own
+/// loops flat; `mirror` turns u (or θ) round first, so the outline is
+/// counter-clockwise.
+#[allow(clippy::too_many_arguments)]
+fn build_regions(
+    model: &mut Model,
+    id: FaceId,
+    face: &Face,
+    mut segs: Vec<Seg>,
+    nodes: &[DVec2],
+    at: &BTreeMap<VertexId, Vec<usize>>,
+    polys: Vec<Vec<DVec2>>,
+    mirror: bool,
+) -> Vec<FaceId> {
     // Every segment's end nodes, again (splitting stretches moved some).
     let node_at = |v: VertexId, p: DVec2| -> Option<usize> {
         at.get(&v)?
