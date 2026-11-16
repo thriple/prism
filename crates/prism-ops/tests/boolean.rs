@@ -102,7 +102,11 @@ fn a_box_inside_another_leaves_a_hollow() {
     let b = block(1.0, 1.0, 1.0, 3.0, 3.0, 3.0);
     let s = boolean(&a, &b, Op::Subtract).unwrap();
     close(solid_volume(&s), 64.0 - 8.0);
-    assert_eq!(validate(&s).len(), 1, "the outside and its hollow, one solid");
+    assert_eq!(
+        validate(&s).len(),
+        1,
+        "the outside and its hollow, one solid"
+    );
     assert_eq!(s.faces().count(), 12);
     let u = boolean(&a, &b, Op::Union).unwrap();
     close(solid_volume(&u), 64.0);

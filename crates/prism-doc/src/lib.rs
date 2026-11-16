@@ -13,7 +13,8 @@ pub mod image;
 pub mod material;
 
 pub use assembly::{
-    Assembly, Attributes, DefId, Definition, Instance, InstanceId, Placed, ROOT, Tag, TagId,
+    Assembly, Attributes, DefId, Definition, Instance, InstanceId, NESTED, Placed, ROOT, SolidOp,
+    TWO_SOLIDS, Tag, TagId,
 };
 pub use image::{Image, ImageId, Pixels, Texture};
 pub use material::{FaceSide, Material, Principled};
@@ -360,6 +361,16 @@ pub enum Command {
     Heal {
         faces: Option<BTreeSet<FaceId>>,
     },
+    /// A boolean of two groups in the open one (Solids & CAD part 2).
+    Boolean {
+        op: SolidOp,
+        first: InstanceId,
+        second: InstanceId,
+    },
+    /// Outer Shell: the union of these groups.
+    OuterShell {
+        instances: BTreeSet<InstanceId>,
+    },
 }
 
 /// How groups are moved, turned or scaled.
@@ -495,6 +506,14 @@ impl Command {
             Command::RemoveStray => "Remove Stray Edges",
             Command::RepairArcs => "Repair Arcs",
             Command::Heal { .. } => "Heal",
+            Command::Boolean { op, .. } => match op {
+                SolidOp::Union => "Union",
+                SolidOp::Intersect => "Intersect",
+                SolidOp::Subtract => "Subtract",
+                SolidOp::Trim => "Trim",
+                SolidOp::Split => "Split",
+            },
+            Command::OuterShell { .. } => "Outer Shell",
             // Materials and images added for the step are named by the
             // step (a material on its own by the material).
             Command::Batch { commands } => {
@@ -796,6 +815,12 @@ impl Command {
             Command::Explode { instance } => {
                 asm.explode(ctx, *instance);
             }
+            Command::Boolean { op, first, second } => {
+                let _ = asm.boolean(ctx, *op, *first, *second);
+            }
+            Command::OuterShell { instances } => {
+                let _ = asm.outer_shell(ctx, instances);
+            }
             Command::MakeComponent {
                 selection,
                 instances,
@@ -889,6 +914,10 @@ impl Command {
             Command::Explode { instance } | Command::ChangeAxes { instance, .. } => {
                 asm.is_locked(*instance)
             }
+            Command::Boolean { first, second, .. } => {
+                asm.is_locked(*first) || asm.is_locked(*second)
+            }
+            Command::OuterShell { instances } => any(instances),
             _ => false,
         }
     }
@@ -1132,6 +1161,8 @@ impl Command {
             Command::In { .. }
             | Command::Batch { .. }
             | Command::MakeGroup { .. }
+            | Command::Boolean { .. }
+            | Command::OuterShell { .. }
             | Command::Explode { .. }
             | Command::MakeComponent { .. }
             | Command::MakeUnique { .. }

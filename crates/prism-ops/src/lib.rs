@@ -10,9 +10,9 @@
 //! All of it is pure: no clock, no randomness, ordered iteration.
 
 pub mod approx;
+pub mod boolean;
 pub mod bridge;
 pub mod cage;
-pub mod boolean;
 pub mod check;
 pub mod crossing;
 pub mod cut;

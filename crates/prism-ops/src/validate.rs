@@ -181,7 +181,8 @@ fn with_hollows(model: &Model, checks: Vec<SolidCheck>) -> Vec<SolidCheck> {
             .flat_map(|f| model.points(&f.outer))
             .collect();
         let first = pts.first().copied().unwrap_or(DVec3::ZERO);
-        pts.iter().fold((first, first), |(l, h), p| (l.min(*p), h.max(*p)))
+        pts.iter()
+            .fold((first, first), |(l, h), p| (l.min(*p), h.max(*p)))
     };
     let is_hollow = |c: &SolidCheck| c.volume.is_some_and(|v| v < 0.0);
     let (hollows, mut out): (Vec<SolidCheck>, Vec<SolidCheck>) =
@@ -195,7 +196,11 @@ fn with_hollows(model: &Model, checks: Vec<SolidCheck>) -> Vec<SolidCheck> {
                 let (l, u) = bounds(c);
                 l.cmple(lo).all() && hi.cmple(u).all()
             })
-            .min_by(|a, b| a.1.volume.unwrap_or(0.0).total_cmp(&b.1.volume.unwrap_or(0.0)))
+            .min_by(|a, b| {
+                a.1.volume
+                    .unwrap_or(0.0)
+                    .total_cmp(&b.1.volume.unwrap_or(0.0))
+            })
             .map(|(i, _)| i);
         match around {
             Some(i) => {

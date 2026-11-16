@@ -49,14 +49,18 @@ enum Place {
 /// Whether every edge of `m` has exactly two faces (and there are faces).
 pub fn is_solid(m: &Model) -> bool {
     let ef = m.edge_faces();
-    m.faces().next().is_some() && m.edges().all(|(id, _)| ef.get(&id).is_some_and(|f| f.len() == 2))
+    m.faces().next().is_some()
+        && m.edges()
+            .all(|(id, _)| ef.get(&id).is_some_and(|f| f.len() == 2))
 }
 
 /// `a` op `b`, both solids in one frame. The result may be empty
 /// (Intersect of solids that do not meet).
 pub fn boolean(a: &Model, b: &Model, op: Op) -> Result<Model, &'static str> {
     for m in [a, b] {
-        if m.faces().any(|(_, f)| matches!(f.surface, Surface::Nurbs(_))) {
+        if m.faces()
+            .any(|(_, f)| matches!(f.surface, Surface::Nurbs(_)))
+        {
             return Err(FREEFORM);
         }
         if !is_solid(m) {
@@ -122,7 +126,10 @@ fn places(m: &Model, other: &Model, tol: &prism_math::Tol) -> Option<BTreeMap<Fa
 fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
     let mut vmap: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     for (id, p) in b.vertices() {
-        let at = out.vertices().find(|(_, q)| tol.same_point(p, *q)).map(|(v, _)| v);
+        let at = out
+            .vertices()
+            .find(|(_, q)| tol.same_point(p, *q))
+            .map(|(v, _)| v);
         vmap.insert(id, at.unwrap_or_else(|| out.add_vertex(p)));
     }
     let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
@@ -139,7 +146,9 @@ fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
             .map(|(x, _)| x);
         let made = found.or_else(|| {
             if e.curve.is_curved() {
-                let cid = e.curve_id.map(|c| *cmap.entry(c).or_insert_with(|| out.new_curve_id()));
+                let cid = e
+                    .curve_id
+                    .map(|c| *cmap.entry(c).or_insert_with(|| out.new_curve_id()));
                 out.add_curve_edge(va, vb, e.curve.clone(), cid)
             } else {
                 out.add_edge(va, vb)
@@ -155,10 +164,19 @@ fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
     for (_, f) in b.faces() {
         let map = |l: &Vec<VertexId>| l.iter().map(|v| vmap[v]).collect::<Vec<_>>();
         let edges: Vec<Vec<EdgeId>> = (0..=f.holes.len())
-            .map(|k| f.loop_edges(k).filter_map(|s| emap.get(&s.edge).copied()).collect())
+            .map(|k| {
+                f.loop_edges(k)
+                    .filter_map(|s| emap.get(&s.edge).copied())
+                    .collect()
+            })
             .collect();
-        let mut face = Face::with_edges(map(&f.outer), f.holes.iter().map(map).collect(), f.surface.clone(), edges);
-        face.paint = f.paint.clone();
+        let mut face = Face::with_edges(
+            map(&f.outer),
+            f.holes.iter().map(map).collect(),
+            f.surface.clone(),
+            edges,
+        );
+        face.paint = f.paint;
         out.add_face(face);
     }
 }
@@ -182,7 +200,10 @@ fn merge_seams(m: &mut Model) {
         .into_iter()
         .filter(|(_, fs)| {
             let [f, g] = fs.as_slice() else { return false };
-            match (m.face(*f).and_then(|x| x.plane()), m.face(*g).and_then(|x| x.plane())) {
+            match (
+                m.face(*f).and_then(|x| x.plane()),
+                m.face(*g).and_then(|x| x.plane()),
+            ) {
                 (Some(p), Some(q)) => p.same_surface(q, &tol) && p.normal.dot(q.normal) > 0.0,
                 _ => false,
             }

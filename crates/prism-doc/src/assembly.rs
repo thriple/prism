@@ -40,6 +40,25 @@ pub struct Tag {
     pub visible: bool,
 }
 
+/// Which boolean the Solid menu runs on two groups (Solids & CAD part 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SolidOp {
+    Union,
+    Intersect,
+    /// The second less the first (the first is the cutter); both go.
+    Subtract,
+    /// As Subtract, keeping the cutter.
+    Trim,
+    /// Three groups: each less the other, and what is in both.
+    Split,
+}
+
+/// Said when a boolean has fewer than two groups.
+pub const TWO_SOLIDS: &str = "Pick two different solid groups or components.";
+/// Said for a group with groups inside.
+pub const NESTED: &str =
+    "Refused: a group with groups inside cannot be used yet. Explode them first.";
+
 /// The root definition: the model outside every group.
 pub const ROOT: DefId = DefId(0);
 
@@ -1151,6 +1170,137 @@ impl Assembly {
     }
 
     /// Erase instances from `ctx`.
+    // ---------- booleans (Solids & CAD part 2, brief 39) ----------
+
+    /// A group's own geometry, placed in `ctx`. Refused for a group with
+    /// groups inside (explode them first).
+    fn solid_in(&self, ctx: DefId, id: InstanceId) -> Result<(Instance, Model), &'static str> {
+        let inst = *self
+            .def(ctx)
+            .and_then(|d| d.instances.get(&id))
+            .ok_or(prism_ops::boolean::NOT_SOLID)?;
+        let def = self.def(inst.def).ok_or(prism_ops::boolean::NOT_SOLID)?;
+        if !def.instances.is_empty() {
+            return Err(NESTED);
+        }
+        let mut m = def.model.clone();
+        transform::affine(&mut m, &inst.transform);
+        Ok((inst, m))
+    }
+
+    /// The results of `op` on `first` and `second` (groups in `ctx`), each
+    /// with the instance whose axes it takes, without changing anything.
+    pub fn boolean_results(
+        &self,
+        ctx: DefId,
+        op: SolidOp,
+        first: InstanceId,
+        second: InstanceId,
+    ) -> Result<Vec<(Instance, Model)>, &'static str> {
+        use prism_ops::boolean::{Op, boolean};
+        if first == second {
+            return Err(TWO_SOLIDS);
+        }
+        let (fi, fm) = self.solid_in(ctx, first)?;
+        let (si, sm) = self.solid_in(ctx, second)?;
+        Ok(match op {
+            SolidOp::Union => vec![(si, boolean(&fm, &sm, Op::Union)?)],
+            SolidOp::Intersect => vec![(si, boolean(&fm, &sm, Op::Intersect)?)],
+            // The first is the cutter; the second is cut.
+            SolidOp::Subtract | SolidOp::Trim => vec![(si, boolean(&sm, &fm, Op::Subtract)?)],
+            SolidOp::Split => vec![
+                (si, boolean(&sm, &fm, Op::Subtract)?),
+                (fi, boolean(&fm, &sm, Op::Subtract)?),
+                (si, boolean(&fm, &sm, Op::Intersect)?),
+            ],
+        })
+    }
+
+    /// Run a boolean: the results become groups in `ctx` at their axes, and
+    /// the inputs go (Trim keeps the cutter). Returns the new groups.
+    pub fn boolean(
+        &mut self,
+        ctx: DefId,
+        op: SolidOp,
+        first: InstanceId,
+        second: InstanceId,
+    ) -> Result<Vec<InstanceId>, &'static str> {
+        let results = self.boolean_results(ctx, op, first, second)?;
+        let gone: BTreeSet<InstanceId> = if op == SolidOp::Trim {
+            [second].into()
+        } else {
+            [first, second].into()
+        };
+        Ok(self.replace_with(ctx, &gone, results))
+    }
+
+    /// Outer Shell: the union of all of `instances` (in id order), at the
+    /// first one's axes, without changing anything.
+    pub fn outer_shell_result(
+        &self,
+        ctx: DefId,
+        instances: &BTreeSet<InstanceId>,
+    ) -> Result<(Instance, Model), &'static str> {
+        let mut it = instances.iter();
+        let first = it.next().ok_or(TWO_SOLIDS)?;
+        let (fi, mut acc) = self.solid_in(ctx, *first)?;
+        let mut n = 1;
+        for id in it {
+            let (_, m) = self.solid_in(ctx, *id)?;
+            acc = prism_ops::boolean::boolean(&acc, &m, prism_ops::boolean::Op::Union)?;
+            n += 1;
+        }
+        if n < 2 {
+            return Err(TWO_SOLIDS);
+        }
+        Ok((fi, acc))
+    }
+
+    /// Outer Shell, run. Returns the new group.
+    pub fn outer_shell(
+        &mut self,
+        ctx: DefId,
+        instances: &BTreeSet<InstanceId>,
+    ) -> Result<Vec<InstanceId>, &'static str> {
+        let r = self.outer_shell_result(ctx, instances)?;
+        Ok(self.replace_with(ctx, instances, vec![r]))
+    }
+
+    /// Erase `gone` from `ctx` and add each result with faces as a group
+    /// placed like its instance.
+    fn replace_with(
+        &mut self,
+        ctx: DefId,
+        gone: &BTreeSet<InstanceId>,
+        results: Vec<(Instance, Model)>,
+    ) -> Vec<InstanceId> {
+        self.erase(ctx, gone);
+        let mut made = Vec::new();
+        for (at, mut m) in results {
+            if m.faces().next().is_none() {
+                continue;
+            }
+            transform::affine(&mut m, &at.transform.inverse());
+            let def = self.new_def(Definition {
+                model: m,
+                instances: BTreeMap::new(),
+                name: None,
+            });
+            let id = self.new_instance();
+            if let Some(d) = self.def_mut(ctx) {
+                d.instances.insert(
+                    id,
+                    Instance {
+                        def,
+                        transform: at.transform,
+                    },
+                );
+                made.push(id);
+            }
+        }
+        made
+    }
+
     pub fn erase(&mut self, ctx: DefId, instances: &BTreeSet<InstanceId>) {
         if let Some(d) = self.def_mut(ctx) {
             for i in instances {
