@@ -6286,3 +6286,71 @@ fn shell_window_thickness_makes_a_click_shell_at_once() {
     d.click(DVec3::new(1.0, 1.0, 2.2));
     assert!(d.s.shell_sizing().is_some());
 }
+
+// ---------- Rectangle off the ground (Session 8, owner 2026-11-17) ----------
+
+#[test]
+fn a_rectangle_to_a_point_above_stands_up() {
+    let mut d = Driver::empty();
+    // A post 2 m tall at the origin.
+    d.tool(LINE);
+    d.click(DVec3::ZERO);
+    d.click(DVec3::new(0.0, 0.0, 2.0));
+    key(&mut d, Key::Escape);
+    // From the ground 3 m along green to the post's top: the rectangle
+    // stands in the green-blue plane.
+    d.tool(RECT);
+    d.click(DVec3::new(0.0, 3.0, 0.0));
+    d.click(DVec3::new(0.0, 0.0, 2.0));
+    assert_eq!(d.s.document().undo_name(), Some("Rectangle"));
+    let m = d.s.model();
+    let f = m
+        .faces()
+        .find(|(_, f)| f.plane().is_some_and(|p| p.normal.x.abs() > 0.99))
+        .map(|(id, _)| id)
+        .expect("a face standing in the green-blue plane");
+    assert!((m.face_area(f) - 6.0).abs() < 1e-9, "{}", m.face_area(f));
+    valid(&d);
+}
+
+#[test]
+fn a_corner_in_line_with_the_first_keeps_the_rectangle_going() {
+    let mut d = Driver::empty();
+    d.tool(RECT);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    // The same point again makes nothing: the first corner stays, as in
+    // the other drawing tools.
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    assert_eq!(d.faces(), 0);
+    assert!(d.s.hint().starts_with("Click the opposite corner"));
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    same(&areas(&d), &[2.0]);
+}
+
+#[test]
+fn a_rectangle_to_a_point_off_the_axes_stands_up_toward_it() {
+    let mut d = Driver::empty();
+    // A post at (1, 2), 2 m tall.
+    d.tool(LINE);
+    d.click(DVec3::new(1.0, 2.0, 0.0));
+    d.click(DVec3::new(1.0, 2.0, 2.0));
+    key(&mut d, Key::Escape);
+    // From the origin to the post's top: an upright rectangle along the
+    // diagonal, sqrt(5) wide and 2 tall.
+    d.tool(RECT);
+    d.click(DVec3::ZERO);
+    d.click(DVec3::new(1.0, 2.0, 2.0));
+    assert_eq!(d.s.document().undo_name(), Some("Rectangle"));
+    let m = d.s.model();
+    let f = m
+        .faces()
+        .find(|(_, f)| f.plane().is_some_and(|p| p.normal.z.abs() < 1e-9))
+        .map(|(id, _)| id)
+        .expect("an upright face");
+    assert!(
+        (m.face_area(f) - 2.0 * 5f64.sqrt()).abs() < 1e-9,
+        "{}",
+        m.face_area(f)
+    );
+    valid(&d);
+}

@@ -330,6 +330,11 @@ enum Drag {
 #[derive(Clone, Copy, Debug)]
 struct RectOp {
     start: DVec3,
+    /// The plane it started on. While the far corner snaps to a point off
+    /// it, the rectangle stands up toward that point (`normal` turns), as
+    /// the Rotated Rectangle and the Arc tools follow their points (Session
+    /// 8: a corner straight above the first made no rectangle).
+    base: DVec3,
     normal: DVec3,
     u: DVec3,
     v: DVec3,
@@ -1841,6 +1846,16 @@ impl Session {
                 self.timings.infer_ms = (f() - t0) * 1e3;
             }
             if let Some(r) = &mut self.rect {
+                // A snapped point is used where it is: off the first plane,
+                // the rectangle stands up toward it; back on it otherwise.
+                // A locked axis keeps its plane.
+                if !matches!(self.lock, Lock::Axis(_)) {
+                    let n = stand_up(r.start, r.base, &i, self.scene.tol.dist).unwrap_or(r.base);
+                    if n != r.normal {
+                        r.normal = n;
+                        (r.u, r.v) = rect_basis(n);
+                    }
+                }
                 let q = rect_point(&self.scene, &view, s, &i, r.start, r.normal);
                 let d = q - r.start;
                 r.du = d.dot(r.u);
@@ -2223,6 +2238,7 @@ impl Session {
                 let (u, v) = rect_basis(normal);
                 self.rect = Some(RectOp {
                     start: i.point,
+                    base: normal,
                     normal,
                     u,
                     v,
@@ -2232,7 +2248,14 @@ impl Session {
                 self.last_op = None;
                 self.overlay_dirty = true;
             }
-            Some(op) => self.commit_rect(op),
+            Some(op) => {
+                // A click that makes nothing keeps the first corner, as in
+                // the other drawing tools.
+                let tiny = self.scene.tol.dist.max(op.start.length() * 1e-12);
+                if op.du.abs() > tiny && op.dv.abs() > tiny {
+                    self.commit_rect(op);
+                }
+            }
         }
         self.refresh();
     }
@@ -2667,6 +2690,23 @@ fn remove_all(s: &mut Selection, o: &Selection) {
     s.vertices.retain(|v| !o.vertices.contains(v));
     s.edges.retain(|e| !o.edges.contains(e));
     s.faces.retain(|f| !o.faces.contains(f));
+}
+
+/// The plane a two-corner shape stands on when its far corner snaps to a
+/// point off its first plane `base`: through the start, holding the
+/// first plane's normal and the point (one side square to the first
+/// plane). None on the plane, for a point not snapped, or one straight
+/// along the normal (no plane holds a rectangle there).
+fn stand_up(start: DVec3, base: DVec3, i: &Inference, tol: f64) -> Option<DVec3> {
+    if matches!(i.kind, Kind::OnFace | Kind::OnGround | Kind::Free) {
+        return None;
+    }
+    let d = i.point - start;
+    if d.dot(base).abs() <= tol {
+        return None;
+    }
+    let across = d - base * d.dot(base);
+    (across.length() > tol).then(|| base.cross(across).normalize())
 }
 
 /// Two directions on a rectangle's plane, along the world axes where they

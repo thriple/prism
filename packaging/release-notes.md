@@ -1,5 +1,5 @@
-**New in this build:**
-- **Prism has its own icon on macOS:** the owner's prism image, rounded like the other Dock icons, with no border.
+**Fixed in this build:**
+- **Rectangle:** a second corner snapped to a point off the first corner's plane (such as straight above a corner on the ground) now stands the rectangle up toward it, instead of making nothing. A click that would make no rectangle keeps the first corner, as the other drawing tools do.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

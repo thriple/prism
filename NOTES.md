@@ -4427,3 +4427,16 @@ tests now expect the picking hint).
 - **Not done:**
   - the Windows `.exe` icon (it needs a resource step in the build);
   - the window icon on Windows and Linux.
+
+## Rectangle off the ground (Session 8, owner 2026-11-17)
+- **Report:** a hard time with the Rectangle tool. In the recording, a first corner on the ground and a second corner snapped to a point straight above it (same red coordinate) made nothing, several times, with no word why. The same clicks worked when the first click happened to be over an upright face.
+- **Cause:** the Rectangle fixed its plane at the first click (the face under the pointer, or the ground) and flattened the far corner onto it. A corner above the first flattened onto the same line, so the rectangle had no width, and the click dropped both corners.
+- **Governing rules, checked across the drawing tools (owner: fix with rules, not special cases):**
+  1. *A snapped point is used where it is, and the working plane follows it.* The Rotated Rectangle and the Arc tools already did this (the arc's first two clicks fix its plane). The Rectangle now does too: snapped to a point off its first plane, it stands up toward it, on the plane through the first corner that holds the first plane's normal and the point. Back on the plane, or with an arrow's axis locked, it keeps its plane.
+  2. *A click that would make nothing keeps the operation going.* The Arc, Circle and Rotated Rectangle tools already did. The Rectangle dropped both corners; it now keeps the first. The Line tool's click on its start, which stops the line, is SketchUp's convention and stays.
+  - Not changed: the Circle and Polygon keep their plane, since a radius point fixes only a size (SketchUp does the same).
+- **Tests:** `session.rs`:
+  - `a_rectangle_to_a_point_above_stands_up`;
+  - `a_rectangle_to_a_point_off_the_axes_stands_up_toward_it`;
+  - `a_corner_in_line_with_the_first_keeps_the_rectangle_going`.
+- **Replay:** Session 8's failing clicks (events 3275, 4010, 4118, 6038, 6126) now each make a rectangle. The replay drifts after that, since the owner's later clicks worked around the bug.
