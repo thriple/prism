@@ -139,3 +139,71 @@ fn the_export_note_says_when_a_model_is_not_watertight() {
             .contains("watertight")
     );
 }
+
+/// The owner's session (2026-11-17): a straight edge beside a curve
+/// between the same two points left a lens of a face 0.65 mm wide, and
+/// Model Health said nothing. It is a sliver now, and Merge erases the
+/// straight edge so the face beside it takes the curve.
+#[test]
+fn a_lens_beside_a_curve_is_a_sliver_and_merges_away() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 2.0, 0.0);
+    // From (4, 0) to (4, 2), bowing out 0.1 mm.
+    let bow = prism_geom::Nurbs::open(
+        &[v(4.0, 0.0, 0.0), v(4.0002, 1.0, 0.0), v(4.0, 2.0, 0.0)],
+        2,
+    )
+    .unwrap();
+    prism_ops::add_spline(&mut m, &bow);
+    assert_eq!(m.face_count(), 2, "the rectangle and the lens");
+    // As in the owner's model, the lens faces the other way.
+    let normal = |m: &Model, small: bool| {
+        let mut fs: Vec<_> = m
+            .faces()
+            .map(|(id, f)| (m.face_area(id), id, f.plane().unwrap().normal))
+            .collect();
+        fs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        if small {
+            (fs[0].1, fs[0].2)
+        } else {
+            (fs[1].1, fs[1].2)
+        }
+    };
+    let (lens, n) = normal(&m, true);
+    if n.dot(normal(&m, false).1) > 0.0 {
+        health::reverse(&mut m, &[lens].into());
+    }
+    let r = check(&m);
+    assert_eq!(r.slivers.faces.len(), 1, "{r:?}");
+    assert!(r.degenerate.is_empty());
+    let (turn, edges) = health::sliver_merge(&m);
+    assert_eq!(turn, [lens].into(), "turned to match first");
+    health::reverse(&mut m, &turn);
+    assert_eq!(edges.len(), 1);
+    let e = *edges.iter().next().unwrap();
+    assert!(
+        matches!(m.edge(e).unwrap().curve, prism_geom::Curve::Line),
+        "the straight edge"
+    );
+    prism_ops::select::remove(
+        &mut m,
+        &prism_ops::Selection {
+            edges,
+            ..Default::default()
+        },
+    );
+    assert_eq!(m.face_count(), 1, "merged");
+    assert!(check(&m).slivers.is_empty());
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+    let (id, _) = m.faces().next().unwrap();
+    let want = 8.0 + 2.0 / 3.0 * 2.0 * 0.0001;
+    assert!((m.face_area(id) - want).abs() < 1e-9, "{}", m.face_area(id));
+}
+
+#[test]
+fn a_thin_strip_that_is_not_a_slip_is_no_sliver() {
+    // A 1 cm strip 1 m long beside a 4 m box: thin, but not that thin.
+    let mut m = cube(v(0.0, 0.0, 0.0), 4.0);
+    prism_ops::add_rect(&mut m, 5.0, 0.0, 6.0, 0.01, 0.0);
+    assert!(check(&m).slivers.is_empty());
+}

@@ -12,6 +12,12 @@ pub const RELATIVE: f64 = 1e-6;
 /// The tolerance never goes below or above these (model units).
 pub const MIN: f64 = 1e-12;
 pub const MAX: f64 = 1e-2;
+/// A face thinner than this many tolerances on average, and far longer
+/// than wide, is a sliver (Model Health): almost always a slip, such as a
+/// straight edge drawn beside a curve between the same two points.
+pub const SLIVER: f64 = 100.0;
+/// A sliver is at least this many times longer than it is wide.
+pub const SLIVER_RATIO: f64 = 100.0;
 /// Two directions within this of each other (as 1 - |cos|) count as parallel.
 /// It is an angle, so it does not scale with the model.
 pub const ANGLE: f64 = 1e-9;
@@ -67,6 +73,11 @@ impl Tol {
     /// Whether two unit directions are perpendicular.
     pub fn perpendicular(&self, a: DVec3, b: DVec3) -> bool {
         a.dot(b).abs() < ANGLE.sqrt()
+    }
+
+    /// A sliver is thinner than this on average (see [`SLIVER`]).
+    pub fn sliver(&self) -> f64 {
+        self.dist * SLIVER
     }
 
     /// An area below this counts as zero.

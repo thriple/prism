@@ -144,23 +144,35 @@ impl Session {
                 .map_or(0.0, |(_, d)| view.units_per_px(d))
                 * 8.0;
             // Tangent to an edge at either end (cyan) wins over a half
-            // circle (magenta), within a few pixels. The arc from b to a
-            // with bulge -h is the same arc, so the end works like the start.
+            // circle (magenta), within a few pixels. An end on an edge (at
+            // the edge's end or along it) offers both arcs that touch the
+            // edge there: the one carrying on past it and the one turning
+            // back along it. The arc from b to a with bulge -h is the same
+            // arc, so the end works like the start.
             let tol = self.scene.tol.dist;
+            let normal = op.normal;
             op.tangent = self
                 .scene
                 .edges
                 .iter()
                 .flat_map(|e| [(e, a, b, 1.0), (e, b, a, -1.0)])
-                .filter_map(|(e, from, to, sign)| {
-                    let out = if e.b.distance(from) <= tol {
+                .flat_map(|(e, from, to, sign)| {
+                    let on = e.curve.closest_point(e.a, e.b, from).distance(from) <= tol;
+                    let along = if !on {
+                        DVec3::ZERO
+                    } else if e.b.distance(from) <= tol {
                         e.curve.end_tangent(e.a, e.b)
                     } else if e.a.distance(from) <= tol {
-                        -e.curve.start_tangent(e.a, e.b)
+                        e.curve.start_tangent(e.a, e.b)
                     } else {
-                        return None;
+                        e.curve.tangent_at(e.a, e.b, from)
                     };
-                    tangent_bulge(from, to, op.normal, out).map(|t| sign * t)
+                    [along, -along].into_iter().filter_map(move |out| {
+                        (out != DVec3::ZERO)
+                            .then(|| tangent_bulge(from, to, normal, out))
+                            .flatten()
+                            .map(|t| sign * t)
+                    })
                 })
                 .filter(|t| (t - h).abs() <= near)
                 .min_by(|x, y| (x - h).abs().total_cmp(&(y - h).abs()));

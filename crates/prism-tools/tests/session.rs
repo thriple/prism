@@ -2370,6 +2370,57 @@ fn a_two_point_arc_snaps_tangent_to_the_line_it_ends_on() {
     valid(&d);
 }
 
+/// The owner's session 3 (2026-11-17): arcs from a rectangle's corner
+/// into it, and arcs ending partway along an edge, got no tangent guide.
+/// An arc end on an edge now offers the arc turning back along the edge
+/// as well as the one carrying on past it.
+#[test]
+fn a_two_point_arc_snaps_tangent_back_along_the_line_it_starts_from() {
+    use prism_tools::session::ARC;
+    use std::f64::consts::PI;
+    let mut d = Driver::empty();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    d.tool(LINE);
+    d.click(p(2.0, 0.0));
+    d.click(p(2.0, 2.0));
+    d.send(Input::Key { key: Key::Escape });
+    // From the line's top end down and round to (0, 0): a quarter circle
+    // about (0, 2), leaving straight down along the line.
+    arc_clicks(&mut d, ARC, &[p(2.0, 2.0), p(0.0, 0.0)]);
+    let mid = p(0.0, 2.0) + DVec3::new(0.5f64.sqrt(), -(0.5f64.sqrt()), 0.0) * 2.0;
+    d.hover(mid + DVec3::new(0.03, 0.03, 0.0));
+    let labels: Vec<String> = d.s.overlay().labels.into_iter().map(|l| l.text).collect();
+    assert!(labels.iter().any(|l| l == "Tangent"), "{labels:?}");
+    d.click(mid + DVec3::new(0.03, 0.03, 0.0));
+    has_arc(&d, p(0.0, 2.0), 2.0, PI / 2.0);
+    valid(&d);
+}
+
+#[test]
+fn a_two_point_arc_snaps_tangent_to_a_line_it_ends_partway_along() {
+    use prism_tools::session::ARC;
+    let mut d = Driver::empty();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    d.tool(LINE);
+    d.click(p(0.0, 0.0));
+    d.click(p(4.0, 0.0));
+    d.send(Input::Key { key: Key::Escape });
+    // From (1, 2) down to (2, 0) on the line, touching it there: the
+    // circle about (2, 1.25) of radius 1.25.
+    arc_clicks(&mut d, ARC, &[p(1.0, 2.0), p(2.0, 0.0)]);
+    let c = p(2.0, 1.25);
+    let start = (0.75f64).atan2(-1.0);
+    let end = 1.5 * std::f64::consts::PI;
+    let mid_angle = 0.5 * (start + end);
+    let mid = c + DVec3::new(mid_angle.cos(), mid_angle.sin(), 0.0) * 1.25;
+    d.hover(mid + DVec3::new(0.02, 0.02, 0.0));
+    let labels: Vec<String> = d.s.overlay().labels.into_iter().map(|l| l.text).collect();
+    assert!(labels.iter().any(|l| l == "Tangent"), "{labels:?}");
+    d.click(mid + DVec3::new(0.02, 0.02, 0.0));
+    has_arc(&d, c, 1.25, end - start);
+    valid(&d);
+}
+
 // ---------- Offset with arcs (brief 24, step 3c) ----------
 
 #[test]

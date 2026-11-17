@@ -50,6 +50,9 @@ pub struct Report {
     pub interior: Found,
     /// Faces of almost no area or slivers, and edges shorter than the tolerance.
     pub degenerate: Found,
+    /// Faces far longer than wide and thinner than [`Tol::sliver`]: not
+    /// faults, but almost always a slip (a straight edge beside a curve).
+    pub slivers: Found,
     /// Edges that belong to no face.
     pub stray: Found,
     /// Faces that pass through each other with no edge along the crossing.
@@ -101,6 +104,10 @@ pub fn check(model: &Model) -> Report {
     r.reversed.faces = reversed(model);
     r.interior.faces = interior(model, &tol);
     r.degenerate = degenerate(model, &tol);
+    r.slivers.faces = slivers(model, &tol)
+        .into_iter()
+        .filter(|f| !r.degenerate.faces.contains(f))
+        .collect();
     r.crossing.faces = crossing_faces(model, &tol);
     if let Some((lo, hi)) = model.bbox() {
         let size = (hi - lo).length().max(tol.dist);
@@ -660,6 +667,59 @@ fn degenerate(model: &Model, tol: &Tol) -> Found {
         }
     }
     f
+}
+
+/// Faces thinner than [`Tol::sliver`] on average (twice the area over the
+/// length round it) and [`prism_math::tol::SLIVER_RATIO`] times longer
+/// than wide.
+fn slivers(model: &Model, tol: &Tol) -> BTreeSet<FaceId> {
+    model
+        .faces()
+        .filter(|(id, f)| {
+            let round: f64 = (0..=f.holes.len())
+                .flat_map(|k| f.loop_edges(k))
+                .filter_map(|s| {
+                    let e = model.edge(s.edge)?;
+                    Some(e.curve.length(model.vertex(e.a), model.vertex(e.b)))
+                })
+                .sum();
+            let width = 2.0 * model.face_area(*id) / round.max(tol.dist);
+            width < tol.sliver() && width * prism_math::tol::SLIVER_RATIO < round / 2.0
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// How Model Health's Merge takes slivers away: the slivers that face
+/// the other way from their flat neighbour (to turn round first), and the
+/// edges whose erasing then merges each sliver into that neighbour (the
+/// edge they share, in one plane). A sliver with no such neighbour is left
+/// as it is.
+pub fn sliver_merge(model: &Model) -> (BTreeSet<FaceId>, BTreeSet<EdgeId>) {
+    let tol = model.tol();
+    let edge_faces = model.edge_faces();
+    let mut turn = BTreeSet::new();
+    let mut out = BTreeSet::new();
+    for f in slivers(model, &tol) {
+        let Some(face) = model.face(f) else { continue };
+        let Some(plane) = face.plane() else { continue };
+        let beside = (0..=face.holes.len())
+            .flat_map(|k| face.loop_edges(k))
+            .find_map(|s| {
+                let fs = edge_faces.get(&s.edge)?;
+                let g = *fs.iter().find(|g| **g != f)?;
+                let q = model.face(g)?.plane()?;
+                (fs.len() == 2 && plane.same_surface(q, &tol))
+                    .then_some((s.edge, q.normal.dot(plane.normal) < 0.0))
+            });
+        if let Some((e, opposite)) = beside {
+            out.insert(e);
+            if opposite {
+                turn.insert(f);
+            }
+        }
+    }
+    (turn, out)
 }
 
 /// Faces that cross another with no edge along the crossing. Faces are

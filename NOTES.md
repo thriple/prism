@@ -4553,7 +4553,7 @@ tests now expect the picking hint).
 ## For the cleanup pass after part 6: sliver faces (owner's session, 2026-11-17)
 - **Seen:** on top of a lofted wall, a visible gap between the flat top face and the curved wall, though Model Health said watertight.
 - **Why (from the recording):** the wall's top edge is a piece of the loft's spline, bowing out about 0.65 mm from straight. The top face's edge between the same two points was a straight line. Prism filled the thin lens between the line and the curve with its own tiny flat face, so there was no hole, only a sliver face 0.65 mm wide.
-- **To do in the cleanup pass:** Model Health lists sliver faces (much thinner than they are long) with a fix that erases the straight edge, so the face takes the curve. Also look at why the top face kept a straight line where the wall's edge was a curve.
+- **Done in the cleanup pass (below).** Model Health lists sliver faces (much thinner than they are long) with a fix that erases the straight edge, so the face takes the curve. Also look at why the top face kept a straight line where the wall's edge was a curve.
 - **Owner:** do a cleanup pass after Solids & CAD part 6 to look for bugs to squash.
 
 ## Solids & CAD part 6a: File > Export > DXF / SVG (brief 45, 2026-11-17)
@@ -4587,3 +4587,19 @@ tests now expect the picking hint).
 - **Failed:** its writer (archive 50 to 80) writes **one Brep per file**: one body, one shell, faces that are planes or NURBS patches only, edges that are lines or NURBS, a 2D trim curve on every edge use; no layers, groups, block instances or names of other objects. A model with two groups, a component and tags cannot go out, and cylinders, cones, spheres and tori would have to be turned into NURBS first. Its reader is broader, but a round trip cannot be tested without its writer, and there is no Rhino file here to read.
 - **Stopped, as the brief says.** Options put to the owner: (a) STEP for Rhino in the meantime (Rhino reads STEP AP214 with solids, surfaces, names, colours and assemblies; only layers are lost), and come back when the library writes whole models; (b) 3DM import only, through the library, if the owner has Rhino files to test with; (c) our own 3DM writer for a smaller set (a large job: the openNURBS archive, Breps with trims, layers and blocks).
 - **Owner's choice (2026-11-17):** STEP for Rhino for now; 3DM comes back when the library can write whole models (worth checking its new versions now and then: it releases often). `exp.3dm` stays greyed. Part 6 is done without 3DM; next is the cleanup pass.
+
+## Cleanup pass (owner, 2026-11-17)
+
+### Arc tangent guides gone (owner's session 3)
+- **Reported:** no tangent guides with the 2-point Arc.
+- **Why:** the guide only offered the arc carrying straight on past the end of an edge. In the recording, arcs start on a rectangle's corners and bend into it, and end partway along an edge: neither was ever offered.
+- **The rule now:** an arc end that lies on an edge, at the edge's end or anywhere along it, offers both arcs that touch the edge there: the one carrying on past it and the one turning back along it. The nearest within a few pixels wins, as before.
+- **Note:** old recordings with arcs may now replay differently (their bulge clicks can snap where they did not).
+- **Tests:** `prism-tools/tests/session.rs` `a_two_point_arc_snaps_tangent_back_along_the_line_it_starts_from`, `..._to_a_line_it_ends_partway_along`.
+
+### Sliver faces (the lens beside the loft's wall)
+- **Built:** Model Health's "Slivers" row: faces thinner on average than 100 tolerances (1/10,000 of the model's size, `prism_math::tol::SLIVER`) and 100 times longer than wide. They are not faults (the model stays watertight), but almost always a slip. Its fix, **Merge**, turns each sliver to face the way its flat neighbour in the same plane faces, then erases the edge they share, so they become one face (one undo step). In the owner's model the lens faced the other way, which is why a plain erase took both faces.
+- **Checked** on the owner's model (rebuilt with the old arc rule): the lens is found and merged, the top face takes the curve, nothing is left open.
+- **Why the straight line was there** is not a bug: a line drawn between two points already joined by a curve closes a face, as in SketchUp.
+- **Tests:** `prism-ops/tests/health.rs` `a_lens_beside_a_curve_is_a_sliver_and_merges_away`, `a_thin_strip_that_is_not_a_slip_is_no_sliver`.
+- **STEP export with a group open:** passed on for now (owner).

@@ -62,6 +62,15 @@ impl Session {
                 Some("Clean Envelope"),
             ),
             row("degenerate", "Degenerate", &r.degenerate, None),
+            row(
+                "slivers",
+                "Slivers",
+                &r.slivers,
+                (!prism_ops::health::sliver_merge(self.work_model())
+                    .1
+                    .is_empty())
+                .then_some("Merge"),
+            ),
             row("stray", "Stray edges", &r.stray, Some("Remove")),
             row(
                 "crossing",
@@ -155,6 +164,7 @@ impl Session {
             "nonmanifold" => r.non_manifold,
             "interior" => r.interior,
             "degenerate" => r.degenerate,
+            "slivers" => r.slivers,
             "stray" => r.stray,
             "crossing" => r.crossing,
             "tiny" => r.tiny,
@@ -193,6 +203,22 @@ impl Session {
             // Clean Envelope works on the selection when there is one (PLAN 1.10).
             "interior" => Command::CleanEnvelope { faces: only },
             "stray" => Command::RemoveStray,
+            // Erasing the edge a sliver shares with its flat neighbour
+            // merges the two, once they face the same way.
+            "slivers" => {
+                let (turn, edges) = prism_ops::health::sliver_merge(self.work_model());
+                Command::Batch {
+                    commands: vec![
+                        Command::ReverseFaces { faces: turn },
+                        Command::Erase {
+                            selection: Selection {
+                                edges,
+                                ..Default::default()
+                            },
+                        },
+                    ],
+                }
+            }
             "arcs" => Command::RepairArcs,
             "crossing" => Command::IntersectFaces { faces: None },
             "materials" => Command::PurgeMaterials,
