@@ -14,6 +14,7 @@ pub mod boolean;
 pub mod bridge;
 pub mod cage;
 pub mod check;
+pub mod convert;
 pub mod crossing;
 pub mod curves;
 pub mod cut;

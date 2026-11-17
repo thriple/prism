@@ -1,4 +1,5 @@
 **New in this build:**
+- **Solid > Convert > Curve Chain ↔ NURBS Curve:** a selected chain of lines and arcs becomes one smooth-editable NURBS curve, exactly (corners kept); one NURBS curve becomes lines and arcs again (a free curve as fine marked segments).
 - **Edit > Weld:** select edges joined end to end and Weld them into one curve, picked, moved and erased as one.
 
 **Changed in this build:**

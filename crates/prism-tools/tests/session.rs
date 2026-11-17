@@ -6377,3 +6377,26 @@ fn welded_edges_are_picked_and_erased_as_one() {
     d.click(DVec3::new(2.0, 0.5, 0.0));
     assert_eq!(d.s.model().edge_count(), 0, "erased as one");
 }
+
+#[test]
+fn convert_turns_a_selected_chain_into_one_curve_and_undo_restores_it() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    let before = d.s.model().geometry_json();
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "conv.curve");
+    assert_eq!(d.s.document().undo_name(), Some("Convert Curve"));
+    let m = d.s.model();
+    assert_eq!(m.edge_count(), 2, "one closed curve in two halves");
+    assert!(m.edges().all(|(_, e)| e.curve.is_spline()));
+    assert!((areas(&d)[0] - 2.0).abs() < 1e-9);
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.model().geometry_json(), before);
+    // A face alone is not a chain: said until the next click.
+    act(&mut d, "edit.desel");
+    act(&mut d, "conv.curve");
+    assert_eq!(d.s.hint(), prism_ops::convert::NOTHING);
+    d.click(DVec3::new(1.0, 0.5, 0.0));
+    assert_ne!(d.s.hint(), prism_ops::convert::NOTHING);
+}

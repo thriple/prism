@@ -172,6 +172,11 @@ pub enum Command {
     OrientFaces {
         faces: Option<BTreeSet<FaceId>>,
     },
+    /// Solid > Convert > Curve Chain ↔ NURBS Curve (brief 43): a chain of
+    /// lines and arcs becomes one NURBS curve, or one NURBS curve a chain.
+    ConvertCurve {
+        edges: BTreeSet<prism_topo::EdgeId>,
+    },
     /// Edit > Weld (brief 43): these edges, joined end to end, become one
     /// curve.
     Weld {
@@ -516,6 +521,7 @@ impl Command {
             Command::OrientFaces { .. } => "Orient Faces",
             Command::ReverseFaces { .. } => "Reverse Faces",
             Command::Weld { .. } => "Weld",
+            Command::ConvertCurve { .. } => "Convert Curve",
             Command::Soften { soft: true, .. } => "Soften/Smooth",
             Command::Soften { .. } => "Unsoften",
             Command::CleanEnvelope { .. } => "Clean Envelope",
@@ -968,6 +974,7 @@ impl Command {
             Command::Sweep { edges } => prism_ops::sweep::swept(m, edges).err(),
             Command::Patch { edges } => prism_ops::sweep::patched(m, edges).err(),
             Command::Weld { edges } => prism_ops::curves::weld_refusal(m, edges),
+            Command::ConvertCurve { edges } => prism_ops::convert::refusal(m, edges),
             Command::Shell {
                 faces,
                 open,
@@ -1180,6 +1187,9 @@ impl Command {
             Command::ReverseFaces { faces } => prism_ops::health::reverse(m, faces),
             Command::Weld { edges } => {
                 let _ = prism_ops::curves::weld(m, edges);
+            }
+            Command::ConvertCurve { edges } => {
+                let _ = prism_ops::convert::convert(m, edges);
             }
             Command::Soften { edges, soft } => {
                 for e in edges {

@@ -1089,6 +1089,12 @@ impl Session {
                     prism_ops::curves::NOTHING,
                     prism_ops::curves::NOT_A_CHAIN,
                     prism_ops::curves::ALREADY,
+                    prism_ops::convert::NOTHING,
+                    prism_ops::convert::NOT_A_CHAIN,
+                    prism_ops::convert::MIXED,
+                    prism_ops::convert::MEETS,
+                    prism_ops::convert::CURVED,
+                    prism_ops::convert::FAILED,
                 ]
                 .contains(&n)
             })
@@ -1659,11 +1665,15 @@ impl Session {
                     self.run(Command::Soften { edges, soft });
                 }
             }
-            // Edit > Weld (brief 43): the selected edges become one curve,
-            // or the status line says why not.
-            "edit.weld" => {
-                let c = Command::Weld {
-                    edges: self.selection.edges.clone(),
+            // Edit > Weld and Solid > Convert > Curve Chain ↔ NURBS Curve
+            // (brief 43): on the selected edges, or the status line says
+            // why not.
+            "edit.weld" | "conv.curve" => {
+                let edges = self.selection.edges.clone();
+                let c = if id == "edit.weld" {
+                    Command::Weld { edges }
+                } else {
+                    Command::ConvertCurve { edges }
                 };
                 if let Some(why) = c.refusal(self.work_model()) {
                     self.notice = Some(why);

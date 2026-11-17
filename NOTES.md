@@ -4459,3 +4459,22 @@ tests now expect the picking hint).
   - `prism-ops/tests/weld.rs`: a chain, a closed loop, a branch and edges apart refused, a run past a box's corners;
   - `session.rs` `welded_edges_are_picked_and_erased_as_one`.
 - **Leftover:** Explode Curve, to take a welded curve apart (out of the brief's scope; a line drawn across it already parts it).
+
+## Solids & CAD part 4b: Curve Chain ↔ NURBS Curve (brief 43, 2026-11-17)
+- **Built:** Solid > Convert > Curve Chain ↔ NURBS Curve (`prism_ops::convert`, `Command::ConvertCurve`, "Convert Curve"). It works on the selected edges, whichever way they go.
+- **A chain of lines and arcs** (one chain, no branches) becomes one NURBS curve, exactly.
+  - Each line and arc is a rational piece (`Nurbs::line`, `Nurbs::arc`), joined with `Nurbs::joined`, with a corner allowed at each join.
+  - An open chain becomes one edge. A closed one becomes two edges sharing a curve id, meeting at its start and its middle point, as a circle's halves do.
+  - The points between go, and flat faces along it keep it as their side (loops relinked; face ids kept).
+- **One NURBS curve** becomes a chain again. Split at its knots:
+  - a piece that is a line or an arc comes back as one, and arcs on one circle merge, so a converted chain comes back as it was;
+  - the rest become fine straight segments by the segment fallback's rule (1/1000 of the radius, DECISIONS #32), marked approximate.
+  - The new chain is one curve (welded).
+- **Refused:** branches or pieces apart; lines and a curve mixed; other edges meeting the chain partway (its points between must go); a curved face along the chain (its outline is tied to its edges). Refusals show until the next click or command.
+- **Tests:**
+  - `prism-ops/tests/convert.rs`: a "D" there and back with its face area kept, an open zigzag, a free curve to marked steps, every refusal;
+  - `session.rs` `convert_turns_a_selected_chain_into_one_curve_and_undo_restores_it`.
+- **Leftovers:**
+  - curved faces along the chain;
+  - a chain that already holds spline pieces (only whole single curves convert back);
+  - collinear lines that came from one long line are not merged back.

@@ -223,6 +223,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "edit.soften"
         // Solids & CAD part 4 (brief 43).
         || id == "edit.weld"
+        || id == "conv.curve"
         // Part 3: hiding.
         || matches!(
             id,
@@ -311,6 +312,7 @@ impl Registry {
                                 | "edit.revface"
                                 | "edit.soften"
                                 | "edit.weld"
+                                | "conv.curve"
                         ) =>
                         {
                             When::HasSelection
@@ -846,8 +848,8 @@ mod tests {
     fn greyed_actions_cannot_run_and_say_why() {
         let reg = Registry::new();
         let ctx = Context::default();
-        assert!(!reg.enabled("conv.curve", &ctx));
-        assert_eq!(reg.why_disabled("conv.curve", &ctx), Some("Not built yet"));
+        assert!(!reg.enabled("exp.step", &ctx));
+        assert_eq!(reg.why_disabled("exp.step", &ctx), Some("Not built yet"));
         assert!(!reg.enabled("edit.undo", &ctx));
         assert_eq!(reg.why_disabled("edit.undo", &ctx), Some("Nothing to undo"));
         let ctx = Context {
