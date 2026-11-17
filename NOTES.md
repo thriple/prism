@@ -4549,3 +4549,9 @@ tests now expect the picking hint).
 - **Leftovers:** the window shows the size, not the file's own unit name; the tolerance used to read is a new model's (fine for parts of everyday size).
 - **Tests:** `prism-file/tests/step.rs` (an exported document back as the same groups, names, component, volumes and place; a painted face comes back painted; a refused faceted solid counted and the rest imported; not STEP refused); `mcp/host.rs` (export then import a box, one undo takes it away).
 - **Part 5 is done** (brief 44). Next in the plan: part 6, 3DM, DXF and SVG (it needs a brief).
+
+## For the cleanup pass after part 6: sliver faces (owner's session, 2026-11-17)
+- **Seen:** on top of a lofted wall, a visible gap between the flat top face and the curved wall, though Model Health said watertight.
+- **Why (from the recording):** the wall's top edge is a piece of the loft's spline, bowing out about 0.65 mm from straight. The top face's edge between the same two points was a straight line. Prism filled the thin lens between the line and the curve with its own tiny flat face, so there was no hole, only a sliver face 0.65 mm wide.
+- **To do in the cleanup pass:** Model Health lists sliver faces (much thinner than they are long) with a fix that erases the straight edge, so the face takes the curve. Also look at why the top face kept a straight line where the wall's edge was a curve.
+- **Owner:** do a cleanup pass after Solids & CAD part 6 to look for bugs to squash.
