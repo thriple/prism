@@ -250,3 +250,122 @@ fn the_golden_part_writes_the_same_bytes_and_reads_back() {
     let got = volume_read(&golden);
     assert!((got - want).abs() < 1e-9, "{got} vs {want}");
 }
+
+// ---------- Import (part 5c) ----------
+
+/// The volumes of every solid in `asm` (loose ones and those placed),
+/// sorted.
+fn volumes(asm: &Assembly) -> Vec<f64> {
+    let mut defs = vec![prism_doc::ROOT];
+    defs.extend(asm.placed().iter().map(|p| p.def));
+    let mut v: Vec<f64> = defs
+        .iter()
+        .flat_map(|d| {
+            let m = asm.def(*d).unwrap().model.clone();
+            prism_ops::validate::validate(&m)
+                .into_iter()
+                .filter_map(|c| c.volume)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    v.sort_by(f64::total_cmp);
+    v
+}
+
+#[test]
+fn an_exported_document_imports_as_the_same_groups_and_component() {
+    let (d, _) = document();
+    let e = export(d.assembly(), "Workshop", LengthUnit::Millimetres, None).unwrap();
+    let i = prism_file::step::import(&e.text, 1e-9).unwrap();
+    // Each product once: the loose box, two chunks, the post, the mirrored
+    // post.
+    assert_eq!((i.solids, i.sheets), (5, 0));
+    assert!(i.refused.is_empty(), "{:?}", i.refused);
+    let asm = &i.assembly;
+    // The two posts placed as they are share one component.
+    let posts: Vec<_> = asm
+        .placed()
+        .into_iter()
+        .filter(|p| asm.def(p.def).unwrap().name.as_deref() == Some("Post"))
+        .collect();
+    assert_eq!(posts.len(), 2);
+    assert_eq!(posts[0].def, posts[1].def);
+    // Names come back on the groups.
+    let named = |n: &str| {
+        asm.placed()
+            .iter()
+            .filter(|p| asm.name_of(*p.path.last().unwrap()) == Some(n))
+            .count()
+    };
+    assert_eq!(named("Workshop"), 1);
+    assert_eq!(named("Wall"), 1);
+    assert_eq!(named("Chunk"), 2);
+    // The same solids, at the same places.
+    let want = volumes(d.assembly());
+    let got = volumes(asm);
+    assert_eq!(want.len(), got.len(), "{want:?} vs {got:?}");
+    for (a, b) in want.iter().zip(&got) {
+        assert!((a - b).abs() < 1e-9, "{want:?} vs {got:?}");
+    }
+    let (lo, hi) = asm.flattened().bbox().unwrap();
+    let (wlo, whi) = d.assembly().flattened().bbox().unwrap();
+    assert!(lo.distance(wlo) < 1e-9 && hi.distance(whi) < 1e-9);
+}
+
+#[test]
+fn a_painted_face_comes_back_painted() {
+    let mut d = Document::new();
+    box_at(&mut d, 0.0, 0.0, 1.0);
+    let mut asm = d.assembly().clone();
+    let red = asm.add_material(prism_doc::Material::colour("Red", [255, 0, 0]));
+    let top = prism_ops::face_at(
+        &asm.def(prism_doc::ROOT).unwrap().model,
+        DVec3::new(0.5, 0.5, 1.0),
+    )
+    .unwrap();
+    asm.def_mut(prism_doc::ROOT)
+        .unwrap()
+        .model
+        .edit_face(top, |f| f.paint.front = Some(red));
+    let e = export(&asm, "W", LengthUnit::Millimetres, None).unwrap();
+    let i = prism_file::step::import(&e.text, 1e-9).unwrap();
+    let back = &i.assembly;
+    let painted: Vec<_> = back
+        .placed()
+        .iter()
+        .flat_map(|p| {
+            let m = &back.def(p.def).unwrap().model;
+            m.faces()
+                .filter_map(|(_, f)| f.paint.front)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(painted.len(), 1, "one face painted");
+    assert_eq!(back.material(painted[0]).unwrap().srgba()[..3], [255, 0, 0]);
+}
+
+#[test]
+fn a_refused_solid_is_counted_and_the_rest_comes_in() {
+    // The golden part (millimetres), with a faceted solid the reader
+    // refuses added to it.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/acceptance/files/part.step");
+    let text = std::fs::read_to_string(path).unwrap();
+    let text = text.replace(
+        "ENDSEC;\nEND-ISO",
+        "#99999 = FACETED_BREP('',#1);\nENDSEC;\nEND-ISO",
+    );
+    let i = prism_file::step::import(&text, 1e-9).unwrap();
+    assert_eq!(i.solids, 1);
+    assert_eq!(i.refused.len(), 1, "{:?}", i.refused);
+    assert!(
+        i.summary().starts_with("1 solid. Left out 1: "),
+        "{}",
+        i.summary()
+    );
+}
+
+#[test]
+fn text_that_is_not_step_is_not_imported() {
+    assert!(prism_file::step::import("solid cube\nendsolid", 1e-9).is_err());
+}

@@ -49,11 +49,19 @@ struct StepExporting {
     selection_only: bool,
 }
 
+/// A STEP file read and waiting in its Import window (Solids & CAD part
+/// 5c, brief 44).
+struct StepImporting {
+    name: String,
+    read: prism_file::step::Imported,
+}
+
 #[derive(Default)]
 pub struct Transfer {
     importing: Option<Importing>,
     exporting: Option<Exporting>,
     step: Option<StepExporting>,
+    step_in: Option<StepImporting>,
 }
 
 const PRINT: [Format; 2] = [Format::ThreeMf, Format::Stl];
@@ -69,7 +77,10 @@ const UNITS: [LengthUnit; 4] = [
 
 impl Transfer {
     pub fn modal(&self) -> bool {
-        self.importing.is_some() || self.exporting.is_some() || self.step.is_some()
+        self.importing.is_some()
+            || self.exporting.is_some()
+            || self.step.is_some()
+            || self.step_in.is_some()
     }
 
     /// File > Import… and the export presets.
@@ -119,11 +130,25 @@ impl Transfer {
         });
     }
 
-    /// A mesh file, picked or dropped: read it and show the Import dialog.
+    /// A mesh or STEP file, picked or dropped: read it and show its Import
+    /// dialog.
     pub fn open(&mut self, o: Opened, chrome: &mut Chrome) {
+        let lower = o.name.to_ascii_lowercase();
+        if lower.ends_with(".step") || lower.ends_with(".stp") {
+            let text = String::from_utf8_lossy(&o.bytes);
+            // Read at the tolerance of a new model; it is pasted in like a
+            // copied group.
+            match prism_file::step::import(&text, prism_topo::Model::new().tol().dist) {
+                Ok(read) => {
+                    self.step_in = Some(StepImporting { name: o.name, read });
+                }
+                Err(e) => chrome.status_note(format!("Could not import {}: {e}", o.name)),
+            }
+            return;
+        }
         let Some(format) = Format::of(&o.name) else {
             chrome.status_note(format!(
-                "{} is not a format Prism imports (STL, OBJ, 3MF, glTF, PLY)",
+                "{} is not a format Prism imports (STEP, STL, OBJ, 3MF, glTF, PLY)",
                 o.name
             ));
             return;
@@ -184,6 +209,52 @@ impl Transfer {
         self.import_dialog(ctx, s, chrome);
         self.export_dialog(ctx, s, chrome);
         self.step_dialog(ctx, s, chrome);
+        self.step_import_dialog(ctx, s, chrome);
+    }
+
+    /// File > Import of a STEP file: what it holds and its size, then
+    /// Import (one undo step) or Cancel.
+    fn step_import_dialog(&mut self, ctx: &Context, s: &mut Session, chrome: &mut Chrome) {
+        let open = self.step_in.is_some();
+        let mut go = None;
+        let r = SoftDialog::new("Import STEP")
+            .subtitle("Exact solids and surfaces from another CAD program")
+            .show(ctx, open, |ui| {
+                let Some(i) = &self.step_in else { return };
+                ui.label(format!("{}: {}", i.name, i.read.summary()));
+                if let Some((lo, hi)) = i.read.assembly.flattened().bbox() {
+                    let size = hi - lo;
+                    ui.label(format!(
+                        "Size: {} × {} × {}",
+                        s.number.show(size.x),
+                        s.number.show(size.y),
+                        s.number.show(size.z)
+                    ));
+                }
+                ui.label("Each part comes in as a group named after it; a part used more than once is a component.");
+                ui.horizontal(|ui| {
+                    if ui.add(SoftButton::new("Import")).clicked() {
+                        go = Some(true);
+                    }
+                    if ui.add(SoftButton::new("Cancel")).clicked() {
+                        go = Some(false);
+                    }
+                });
+            });
+        if r.close && go.is_none() && open {
+            go = Some(false);
+        }
+        if let Some(yes) = go
+            && let Some(i) = self.step_in.take()
+            && yes
+        {
+            let summary = i.read.summary();
+            if s.import_assembly(i.read.assembly) {
+                chrome.status_note(format!("Imported {} ({summary})", i.name));
+            } else {
+                chrome.status_note(format!("{} had nothing to import", i.name));
+            }
+        }
     }
 
     /// File > Export > STEP: the unit, and the selection only.

@@ -5,7 +5,7 @@
 use crate::doc_files::Opened;
 
 /// The extensions File > Import offers (and drops accept).
-pub const IMPORTS: [&str; 6] = ["stl", "obj", "3mf", "glb", "gltf", "ply"];
+pub const IMPORTS: [&str; 8] = ["step", "stp", "stl", "obj", "3mf", "glb", "gltf", "ply"];
 
 /// The images the Materials window loads (Basic Materials part 2).
 pub const IMAGES: [&str; 3] = ["png", "jpg", "jpeg"];
@@ -45,7 +45,7 @@ mod imp {
     /// Ask for a mesh file. `Ok(None)` if the user cancelled.
     pub fn pick() -> Result<Option<Opened>, String> {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Meshes", &IMPORTS)
+            .add_filter("Models and meshes", &IMPORTS)
             .pick_file()
         else {
             return Ok(None);

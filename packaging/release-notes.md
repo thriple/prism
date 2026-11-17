@@ -1,5 +1,5 @@
-**Fixed in this build:**
-- **Draw > Surface > Patch** fills any ring of curves now, not just four. A side drawn in pieces, or split by a leftover point, counts as one side, and a ring with three corners gets a smooth three-sided fill. A bend gentler than 30° is no longer treated as a corner, which caused the lip (a fold) next to where a curve ran on almost straight. A curve with a piece erased now counts as the part that's left.
+**New in this build:**
+- **File > Import of STEP files** (`.step`, `.stp`, or drop one on the window): solids and surfaces from other CAD programs come in exact (flat, round and freeform faces stay what they are). Each part is a group named after it, a part used more than once is a component, and colours become materials. The window shows what is in the file and its size before you import, and one Undo takes it all away. Anything Prism cannot take is counted, with why.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

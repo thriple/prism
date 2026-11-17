@@ -4535,3 +4535,17 @@ tests now expect the picking hint).
 - **The rule now (one rule with the Loft tool):** Patch orders the selected edges round their ring and cuts it into sides where it turns 30° or more (`sides::TURN_DEG`, where the Loft tool's sides break). A ring with fewer than three such corners is cut where its curves meet. It is filled as the Loft tool fills a ring: four sides make one Coons patch; three, five or more are split from a centre into four-sided patches, smooth across. Patch's own Coons code is gone.
 - **Sections are what is left of a spline:** a spline whose edges cover only part of it is the stretch they cover (Loft, Sweep, Patch).
 - **Tests:** `prism-ops/tests/sweep.rs` (a side in two pieces; a joint that is no corner, three sides, no fold; a broken ring refused; a spline cut short lofts as the piece left), `prism-tools/tests/curved.rs` `patch_closes_the_lofts_end_in_the_recorded_session` (the owner's recording, cut to the Patch).
+
+## Solids & CAD part 5c: STEP import (brief 44, 2026-11-17)
+- **Built:** File > Import (and dropping a `.step` or `.stp` file) reads STEP AP214 and AP242 B-rep files through the kernel's reader (`prism_file::step::import`). A window shows what is in the file and its size; Import brings it in as one undo step (pasted like a copied group), Cancel leaves it.
+- **What comes in:**
+  - each product placed in the file is a group named after it, nested as in the file; a file exported from Prism comes back as one group named after the document, holding its groups and components;
+  - a product placed more than once is one component (its definition from the first placement, moved back to its own axes) placed at each;
+  - planes, cylinders, cones, spheres and tori come in as Prism's own surfaces, NURBS as freeform faces (cut ones as cut faces), elliptic cylinders as exact NURBS; lines, arcs and splines stay exact;
+  - colours become materials ("STEP #RRGGBB"), one per colour; a face's own colour wins over its part's;
+  - the file's unit is converted (the reader returns metres).
+- **Refused solids are counted by reason** ("Left out 1: unsupported entity"); one refused solid never stops the rest. Nothing usable at all is refused with the first reason.
+- **MCP:** `import_step { text }`.
+- **Leftovers:** the window shows the size, not the file's own unit name; the tolerance used to read is a new model's (fine for parts of everyday size).
+- **Tests:** `prism-file/tests/step.rs` (an exported document back as the same groups, names, component, volumes and place; a painted face comes back painted; a refused faceted solid counted and the rest imported; not STEP refused); `mcp/host.rs` (export then import a box, one undo takes it away).
+- **Part 5 is done** (brief 44). Next in the plan: part 6, 3DM, DXF and SVG (it needs a brief).

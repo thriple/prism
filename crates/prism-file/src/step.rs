@@ -1,6 +1,8 @@
-//! STEP export (Solids & CAD part 5b, brief 44): the document's solids
-//! and sheets as one STEP AP214 file, groups and components kept as
-//! products, through the kernel's writer (`prism_kernel::step`).
+//! STEP export and import (Solids & CAD parts 5b and 5c, brief 44): the
+//! document's solids and sheets as one STEP AP214 file, groups and
+//! components kept as products, through the kernel's writer and reader
+//! (`prism_kernel::step`); and a STEP file's products back as groups and
+//! components.
 //!
 //! What is shown is exported (hidden groups are left out, PLAN 1.14).
 //! Each closed body is a solid and each open one a sheet; a component is
@@ -10,10 +12,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_doc::{Assembly, DefId, InstanceId, ROOT};
+use prism_doc::{Assembly, DefId, Definition, Instance, InstanceId, ROOT};
 use prism_kernel::step::{self, Node, Shape};
 use prism_math::{DAffine3, LengthUnit};
-use prism_ops::bridge::region;
+use prism_ops::bridge::{put_back, region};
 use prism_ops::validate::validate;
 use prism_topo::{FaceId, MaterialId, Model};
 
@@ -285,5 +287,245 @@ impl Walk<'_> {
             }
         }
         out
+    }
+}
+
+/// A STEP file read as an assembly to bring in, and what it held.
+#[derive(Clone, Debug)]
+pub struct Imported {
+    pub assembly: Assembly,
+    pub solids: usize,
+    pub sheets: usize,
+    /// Why each solid left out was refused (the kernel's words, or
+    /// Prism's).
+    pub refused: Vec<String>,
+}
+
+impl Imported {
+    /// What came in and what did not, in a sentence or two.
+    pub fn summary(&self) -> String {
+        let count = |n: usize, one: &str, many: &str| match n {
+            1 => format!("1 {one}"),
+            n => format!("{n} {many}"),
+        };
+        let mut s = match (self.solids, self.sheets) {
+            (n, 0) => count(n, "solid", "solids"),
+            (0, k) => count(k, "sheet", "sheets"),
+            (n, k) => format!(
+                "{} and {}",
+                count(n, "solid", "solids"),
+                count(k, "sheet", "sheets")
+            ),
+        };
+        if !self.refused.is_empty() {
+            let mut why: BTreeMap<&str, usize> = BTreeMap::new();
+            for w in &self.refused {
+                *why.entry(plain(w)).or_default() += 1;
+            }
+            let reasons: Vec<String> = why
+                .into_iter()
+                .map(|(w, n)| {
+                    if n == 1 {
+                        w.to_owned()
+                    } else {
+                        format!("{w} ({n})")
+                    }
+                })
+                .collect();
+            s.push_str(&format!(
+                ". Left out {}: {}",
+                self.refused.len(),
+                reasons.join("; ")
+            ));
+        }
+        s
+    }
+}
+
+/// The STEP text `text` as an assembly: each product placed in the file a
+/// group named after it, nested as in the file; a product placed more
+/// than once one component, placed at each; colours as materials. `tol`
+/// is the tolerance (in metres) of the model it comes into. Errs when the
+/// text is not STEP, or holds nothing Prism can take.
+pub fn import(text: &str, tol: f64) -> Result<Imported, String> {
+    let read = step::read(text, tol)?;
+    let mut b = Builder {
+        read: &read,
+        defs: BTreeMap::from([(ROOT, Definition::default())]),
+        next_def: 1,
+        next_instance: 0,
+        names: Vec::new(),
+        shared: BTreeMap::new(),
+        colours: Vec::new(),
+        solids: 0,
+        sheets: 0,
+    };
+    let mut refused: Vec<String> = read
+        .shapes
+        .iter()
+        .filter_map(|s| s.as_ref().err().cloned())
+        .collect();
+    for r in &read.roots {
+        if let Some((id, inst)) = b.node(r, &DAffine3::IDENTITY, &mut refused) {
+            b.defs
+                .get_mut(&ROOT)
+                .expect("a root")
+                .instances
+                .insert(id, inst);
+        }
+    }
+    if b.solids + b.sheets == 0 {
+        return Err(match refused.first() {
+            Some(why) => format!("Nothing Prism can take: {why}"),
+            None => "Nothing to import: the file holds no solids or surfaces.".to_owned(),
+        });
+    }
+    let mut asm = Assembly::from_parts(b.defs, b.next_def, b.next_instance)?;
+    for (id, name) in &b.names {
+        asm.set_name(*id, name);
+    }
+    // Each colour once, as a material, on the faces it colours.
+    let mut made: BTreeMap<[u8; 3], MaterialId> = BTreeMap::new();
+    for (def, face, c) in b.colours {
+        let srgb = c.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
+        let m = *made.entry(srgb).or_insert_with(|| {
+            let name = format!("STEP #{:02X}{:02X}{:02X}", srgb[0], srgb[1], srgb[2]);
+            asm.add_material(prism_doc::Material::colour(&name, srgb))
+        });
+        if let Some(d) = asm.def_mut(def) {
+            d.model.edit_face(face, |f| {
+                f.paint.front = Some(m);
+                f.paint.back = Some(m);
+            });
+        }
+    }
+    Ok(Imported {
+        assembly: asm,
+        solids: b.solids,
+        sheets: b.sheets,
+        refused,
+    })
+}
+
+struct Builder<'a> {
+    read: &'a step::Imported,
+    defs: BTreeMap<DefId, Definition>,
+    next_def: u32,
+    next_instance: u32,
+    names: Vec<(InstanceId, String)>,
+    /// A product placed more than once: its component's definition.
+    shared: BTreeMap<u64, DefId>,
+    /// Faces to colour: the definition, the face, red, green and blue.
+    colours: Vec<(DefId, FaceId, [f64; 3])>,
+    solids: usize,
+    sheets: usize,
+}
+
+/// How many times each product is placed in `nodes` and below.
+fn uses(nodes: &[Node], out: &mut BTreeMap<u64, usize>) {
+    for n in nodes {
+        if let Some(p) = n.product {
+            *out.entry(p).or_default() += 1;
+        }
+        uses(&n.children, out);
+    }
+}
+
+impl Builder<'_> {
+    /// Node `n`, whose parent stands at `world`, as an instance placed in
+    /// its parent: a group, or the component its product is. None when it
+    /// holds nothing Prism could take.
+    fn node(
+        &mut self,
+        n: &Node,
+        world: &DAffine3,
+        refused: &mut Vec<String>,
+    ) -> Option<(InstanceId, Instance)> {
+        let at = *world * n.place;
+        let mut counts = BTreeMap::new();
+        uses(&self.read.roots, &mut counts);
+        let component = n
+            .product
+            .filter(|p| counts.get(p).copied().unwrap_or(0) > 1);
+        let def = match component.and_then(|p| self.shared.get(&p).copied()) {
+            Some(d) => d,
+            None => {
+                let d = self.definition(n, &at, refused)?;
+                if let Some(p) = component {
+                    self.shared.insert(p, d);
+                    if let Some(x) = self.defs.get_mut(&d) {
+                        x.name = Some(if n.name.is_empty() {
+                            "Part".to_owned()
+                        } else {
+                            n.name.clone()
+                        });
+                    }
+                }
+                d
+            }
+        };
+        let id = InstanceId(self.next_instance);
+        self.next_instance += 1;
+        if component.is_none() && !n.name.is_empty() {
+            self.names.push((id, n.name.clone()));
+        }
+        Some((
+            id,
+            Instance {
+                def,
+                transform: n.place,
+            },
+        ))
+    }
+
+    /// Node `n`'s own shapes (read where it stands, at `at`, and moved back
+    /// into its own coordinates) and its children, as a new definition.
+    fn definition(&mut self, n: &Node, at: &DAffine3, refused: &mut Vec<String>) -> Option<DefId> {
+        let back = at.inverse();
+        let mut model = Model::new();
+        let mut colours = Vec::new();
+        for &i in &n.shapes {
+            let Some(Ok(shape)) = self.read.shapes.get(i) else {
+                continue;
+            };
+            let Some(r) = shape.region.transformed(&back) else {
+                refused.push(prism_kernel::solid::CURVE_NOT_YET.to_owned());
+                continue;
+            };
+            match put_back(&mut model, &BTreeSet::new(), &r) {
+                Ok(faces) => {
+                    if shape.open {
+                        self.sheets += 1;
+                    } else {
+                        self.solids += 1;
+                    }
+                    let own: BTreeMap<usize, [f64; 3]> = shape.colours.iter().copied().collect();
+                    for (k, f) in faces.iter().enumerate() {
+                        if let Some(c) = own.get(&k).copied().or(n.colour) {
+                            colours.push((*f, c));
+                        }
+                    }
+                }
+                Err(why) => refused.push(why.to_owned()),
+            }
+        }
+        let def = DefId(self.next_def);
+        self.next_def += 1;
+        let mut d = Definition {
+            model,
+            ..Definition::default()
+        };
+        for c in &n.children {
+            if let Some((id, inst)) = self.node(c, at, refused) {
+                d.instances.insert(id, inst);
+            }
+        }
+        if d.model.face_count() == 0 && d.instances.is_empty() {
+            return None;
+        }
+        self.colours
+            .extend(colours.into_iter().map(|(f, c)| (def, f, c)));
+        self.defs.insert(def, d);
+        Some(def)
     }
 }

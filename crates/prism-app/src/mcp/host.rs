@@ -55,6 +55,7 @@ impl Host for AppHost<'_> {
                 json!({"healed": did, "solids": self.solids()})
             }
             "export_step" => self.export_step(args)?,
+            "import_step" => self.import_step(args)?,
             "list_actions" => self.actions(args.get("query").and_then(Value::as_str)),
             "get_geometry" => self.geometry(
                 args.get("limit")
@@ -236,6 +237,27 @@ impl AppHost<'_> {
             "sheets": e.sheets,
             "left_out": e.left_out,
             "text": e.text,
+        }))
+    }
+
+    /// File > Import of STEP text (Solids & CAD part 5c).
+    fn import_step(&mut self, args: &Value) -> Result<Value, String> {
+        let text = args
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or("import_step needs the STEP text")?;
+        let s = &mut self.viewport.session;
+        let read = prism_file::step::import(text, s.model().tol().dist)?;
+        let summary = read.summary();
+        let (solids, sheets, refused) = (read.solids, read.sheets, read.refused.clone());
+        if !s.import_assembly(read.assembly) {
+            return Err("Nothing to import".into());
+        }
+        Ok(json!({
+            "summary": summary,
+            "solids": solids,
+            "sheets": sheets,
+            "refused": refused,
         }))
     }
 
@@ -806,6 +828,20 @@ mod tests {
         assert_eq!(r["summary"], "1 solid");
         assert!(r["text"].as_str().unwrap().starts_with("ISO-10303-21;"));
         assert!(h.call("export_step", &json!({"unit": "ft"})).is_err());
+        // Its own STEP back in: a second box, as a group, one undo step.
+        let text = r["text"].as_str().unwrap().to_owned();
+        let r = value(h.call("import_step", &json!({"text": text})));
+        assert_eq!(r["solids"], 1, "{r}");
+        assert!(h.call("import_step", &json!({"text": "not STEP"})).is_err());
+        assert_eq!(viewport.session.document().assembly().placed().len(), 1);
+        // One undo takes the import away.
+        viewport.session.handle(&prism_tools::Event {
+            t: 1.0,
+            input: Input::Action {
+                id: "edit.undo".into(),
+            },
+        });
+        assert_eq!(viewport.session.document().assembly().placed().len(), 0);
     }
 
     #[test]

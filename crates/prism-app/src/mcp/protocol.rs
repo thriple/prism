@@ -119,6 +119,18 @@ pub fn tools() -> Value {
             },
         },
         {
+            "name": "import_step",
+            "title": "Import STEP",
+            "description": "File > Import of STEP AP214 or AP242 text: each part comes in as a group named after it, a part used more than once as a component, colours as materials, in one undo step. Returns what came in and what was refused, with why.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The STEP file's text."}
+                },
+                "required": ["text"],
+            },
+        },
+        {
             "name": "list_actions",
             "title": "List actions",
             "description": "Prism's actions (the same ones as the menus, toolbars and keys): id, name, menu path, key, and whether it can run now (and why not). Filter with an optional query matched against id, name and menu path.",
@@ -414,6 +426,7 @@ mod tests {
                 "validate_solids",
                 "heal",
                 "export_step",
+                "import_step",
                 "list_actions",
                 "get_geometry",
                 "use_tool",

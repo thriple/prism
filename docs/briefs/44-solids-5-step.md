@@ -77,6 +77,6 @@ Both replay through the command log, like the other imports.
   - a drop of a `.stp` file imports.
 
 ## Acceptance
-- [ ] A Prism part exports to STEP and reads back exactly; a STEP part from elsewhere imports as exact faces.
-- [ ] STEP import and export tick themselves in Planned Features.
-- [ ] PLAN, NOTES and HANDOFF are updated after each part.
+- [x] A Prism part exports to STEP and reads back exactly; a STEP part from elsewhere imports as exact faces.
+- [x] STEP import and export tick themselves in Planned Features.
+- [x] PLAN, NOTES and HANDOFF are updated after each part.
