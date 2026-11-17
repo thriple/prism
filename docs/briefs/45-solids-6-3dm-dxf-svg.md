@@ -71,7 +71,7 @@ XL: three parts, each pushed and tested on its own.
 - **6c:** the trial above; then a model with two groups, a component used twice, two tags and a painted face goes to 3DM and back with the same names, layers, components, colours and volumes.
 
 ## Acceptance
-- [ ] A flat part exports to DXF and SVG with true arcs and the right size; a drawing from elsewhere imports as edges and faces.
-- [ ] A model goes to 3DM and back with its curves, surfaces, layers and names (or the trial's result is reported to the owner).
-- [ ] The DXF / SVG and 3DM rows tick themselves in Planned Features.
-- [ ] PLAN, NOTES and HANDOFF are updated after each part.
+- [x] A flat part exports to DXF and SVG with true arcs and the right size; a drawing from elsewhere imports as edges and faces.
+- [x] A model goes to 3DM and back with its curves, surfaces, layers and names (or the trial's result is reported to the owner). The trial failed and was reported; the owner chose STEP for Rhino for now.
+- [x] The DXF / SVG row ticks itself in Planned Features (3DM stays greyed).
+- [x] PLAN, NOTES and HANDOFF are updated after each part.
