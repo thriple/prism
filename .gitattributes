@@ -1,2 +1,5 @@
 # Prism files are zips: never touch their line endings.
 *.prism binary
+# STEP files are compared byte for byte (golden files): never touch their
+# line endings either.
+*.step -text
