@@ -55,6 +55,8 @@ impl Host for AppHost<'_> {
                 json!({"healed": did, "solids": self.solids()})
             }
             "export_step" => self.export_step(args)?,
+            "export_dxf" => self.export_drawing(args, prism_file::drawing::Format::Dxf)?,
+            "export_svg" => self.export_drawing(args, prism_file::drawing::Format::Svg)?,
             "import_step" => self.import_step(args)?,
             "list_actions" => self.actions(args.get("query").and_then(Value::as_str)),
             "get_geometry" => self.geometry(
@@ -236,6 +238,49 @@ impl AppHost<'_> {
             "solids": e.solids,
             "sheets": e.sheets,
             "left_out": e.left_out,
+            "text": e.text,
+        }))
+    }
+
+    /// File > Export > DXF / SVG's text (Solids & CAD part 6a).
+    fn export_drawing(
+        &self,
+        args: &Value,
+        format: prism_file::drawing::Format,
+    ) -> Result<Value, String> {
+        use prism_file::drawing::{self, View};
+        let unit = match args.get("unit").and_then(Value::as_str).unwrap_or("mm") {
+            "mm" => prism_math::LengthUnit::Millimetres,
+            "cm" => prism_math::LengthUnit::Centimetres,
+            "m" => prism_math::LengthUnit::Metres,
+            "in" => prism_math::LengthUnit::Inches,
+            u => return Err(format!("Unknown unit {u}: use mm, cm, m or in")),
+        };
+        let name = args.get("view").and_then(Value::as_str).unwrap_or("flat");
+        let view =
+            View::of(name).ok_or(format!("Unknown view {name}: use flat, top, front or side"))?;
+        let s = &self.viewport.session;
+        let only = args
+            .get("selection_only")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let none_f = Default::default();
+        let none_e = Default::default();
+        let none_g = Default::default();
+        let scope = drawing::Scope {
+            path: s.open_path(),
+            faces: if only { &s.selection().faces } else { &none_f },
+            edges: if only { &s.selection().edges } else { &none_e },
+            groups: if only { s.selected_groups() } else { &none_g },
+        };
+        let e = drawing::export(s.document().assembly(), scope, view, unit, format)
+            .map_err(str::to_owned)?;
+        Ok(json!({
+            "summary": e.summary(),
+            "parts": e.parts,
+            "paths": e.paths,
+            "left_out": e.left_out,
+            "close": e.close,
             "text": e.text,
         }))
     }

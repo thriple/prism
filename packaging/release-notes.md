@@ -1,5 +1,8 @@
 **New in this build:**
-- **File > Import of STEP files** (`.step`, `.stp`, or drop one on the window): solids and surfaces from other CAD programs come in exact (flat, round and freeform faces stay what they are). Each part is a group named after it, a part used more than once is a component, and colours become materials. The window shows what is in the file and its size before you import, and one Undo takes it all away. Anything Prism cannot take is counted, with why.
+- **File > Export > DXF / SVG**, for routers, lasers and CNC programs. Arcs and circles go out as true arcs (so CAM makes smooth G2/G3 moves), splines as splines. Pick a view:
+  - **Laid flat** (for sheet parts): each part's largest flat face, or each flat face you select, laid outside up in a row, holes and all;
+  - **Top, Front or Side**: the edges seen straight on (hidden lines are not removed yet).
+- The file is at its true size in mm, cm or inches. In DXF, a run of lines and arcs is one closed polyline, and each group is its own layer.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 pub mod clip;
+pub mod drawing;
 mod geometry;
 pub mod mesh;
 mod migrate;

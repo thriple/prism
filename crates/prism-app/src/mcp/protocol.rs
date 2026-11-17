@@ -73,6 +73,18 @@ const INSTRUCTIONS: &str = "Prism is a 3D modeler. get_model describes the open 
     and every change can be undone with run_action edit.undo.";
 
 /// The tools, in a fixed order.
+/// The options of `export_dxf` and `export_svg`.
+fn drawing_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "view": {"type": "string", "enum": ["flat", "top", "front", "side"], "description": "flat (default): each part's largest flat face, or each selected flat face, laid flat in a row; top, front or side: the edges seen straight on (hidden lines are not removed)."},
+            "unit": {"type": "string", "enum": ["mm", "cm", "m", "in"], "description": "The file's unit (default mm)."},
+            "selection_only": {"type": "boolean", "description": "Only the selected faces, edges and groups (default false)."}
+        },
+    })
+}
+
 pub fn tools() -> Value {
     let none = json!({"type": "object", "properties": {}});
     json!([
@@ -117,6 +129,18 @@ pub fn tools() -> Value {
                     "selection_only": {"type": "boolean", "description": "Only the selected loose faces (default false)."}
                 },
             },
+        },
+        {
+            "name": "export_dxf",
+            "title": "Export DXF",
+            "description": "File > Export > DXF / SVG as DXF (AutoCAD 2000 text) for routers, lasers and CNC: lines, arcs, circles, ellipses and splines as themselves, a chain of lines and arcs as one polyline with bulges, each part a layer. Returns the text, how many paths and parts went, and why anything was left out.",
+            "inputSchema": drawing_schema(),
+        },
+        {
+            "name": "export_svg",
+            "title": "Export SVG",
+            "description": "File > Export > DXF / SVG as SVG, at its true size in mm, cm or inches: one path per chain, arcs as arcs, splines as quadratic or cubic curves, each part a group. Returns the text, how many paths and parts went, what was left out and what is only close.",
+            "inputSchema": drawing_schema(),
         },
         {
             "name": "import_step",
@@ -426,6 +450,8 @@ mod tests {
                 "validate_solids",
                 "heal",
                 "export_step",
+                "export_dxf",
+                "export_svg",
                 "import_step",
                 "list_actions",
                 "get_geometry",

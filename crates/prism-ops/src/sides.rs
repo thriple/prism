@@ -176,7 +176,7 @@ pub fn chain(model: &Model, start: EdgeId, max_turn: f64) -> Vec<EdgeId> {
 }
 
 /// An edge as a curve of its own, walked from `v`.
-fn piece(model: &Model, e: EdgeId, v: VertexId) -> Result<Nurbs, &'static str> {
+pub fn piece(model: &Model, e: EdgeId, v: VertexId) -> Result<Nurbs, &'static str> {
     let x = model.edge(e).ok_or(NOT_JOINED)?;
     let (a, b) = (model.vertex(v), model.vertex(x.other(v)));
     let c = x.curve_from(v);

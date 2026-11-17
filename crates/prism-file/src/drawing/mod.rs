@@ -1,0 +1,803 @@
+//! DXF and SVG (Solids & CAD part 6, brief 45): flat drawings for routers,
+//! lasers and CNC programs.
+//!
+//! The model is turned into a [`Drawing`]: named parts, each a list of
+//! paths of lines, conics (arcs, circles and ellipses) and splines, in the
+//! file's unit on a flat sheet. Curves stay exact: every view is a flat
+//! (affine) map, so a circle maps to a circle or an ellipse and a spline
+//! to the spline of its mapped control points. The DXF and SVG writers
+//! then only spell the drawing out.
+
+pub mod dxf;
+pub mod svg;
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::f64::consts::{PI, TAU};
+
+use prism_doc::{Assembly, DefId, InstanceId, ROOT};
+use prism_geom::{Curve, Nurbs};
+use prism_math::{DAffine3, DMat3, DVec2, DVec3, LengthUnit};
+use prism_ops::validate::validate;
+use prism_topo::{EdgeId, FaceId, Model, VertexId};
+
+/// Said when nothing could go into the drawing.
+pub const NOTHING: &str = "Nothing to export: no flat face or edge to draw.";
+/// Said for a curved face chosen to be laid flat.
+pub const CURVED: &str = "a curved face cannot be laid flat";
+/// Said for a piece of a closed spline the drawing cannot cut out.
+pub const PERIODIC: &str = "a piece of a closed spline";
+
+/// How the model is seen on the sheet.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum View {
+    /// Each part's flat face laid on the sheet, outside up, in a row.
+    #[default]
+    Flat,
+    /// Seen from above (x right, y up the sheet).
+    Top,
+    /// Seen from the front (x right, z up the sheet).
+    Front,
+    /// Seen from the right side (y right, z up the sheet).
+    Side,
+}
+
+impl View {
+    pub const ALL: [View; 4] = [View::Flat, View::Top, View::Front, View::Side];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            View::Flat => "Laid flat",
+            View::Top => "Top",
+            View::Front => "Front",
+            View::Side => "Side",
+        }
+    }
+
+    /// The view by its MCP name ("flat", "top", "front", "side").
+    pub fn of(name: &str) -> Option<View> {
+        View::ALL
+            .into_iter()
+            .find(|v| v.name().eq_ignore_ascii_case(name) || (*v == View::Flat && name == "flat"))
+    }
+
+    /// From the world to the sheet (x, y), depth in z, as rows.
+    fn axes(self) -> DMat3 {
+        match self {
+            View::Flat | View::Top => DMat3::IDENTITY,
+            View::Front => DMat3::from_cols(DVec3::X, DVec3::Z, -DVec3::Y).transpose(),
+            View::Side => DMat3::from_cols(DVec3::Y, DVec3::Z, DVec3::X).transpose(),
+        }
+    }
+}
+
+/// One piece of a path on the sheet.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Seg {
+    Line(DVec2, DVec2),
+    /// The points `c + u cos t + v sin t` for t from 0 to `sweep` (above
+    /// 0): an arc of a circle when `u` and `v` are square and as long, of
+    /// an ellipse otherwise.
+    Conic {
+        c: DVec2,
+        u: DVec2,
+        v: DVec2,
+        sweep: f64,
+    },
+    /// A NURBS curve on the sheet (z is 0), walked from its start.
+    Spline(Nurbs),
+}
+
+/// Pieces joined end to end.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Path {
+    pub segs: Vec<Seg>,
+    pub closed: bool,
+}
+
+/// A named part of the drawing (a DXF layer, an SVG group).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Part {
+    pub name: String,
+    pub paths: Vec<Path>,
+}
+
+/// A drawing on a flat sheet, in `unit`. `eps` is the model's tolerance
+/// in that unit (what counts as the same point, or a circle).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Drawing {
+    pub parts: Vec<Part>,
+    pub unit: LengthUnit,
+    pub eps: f64,
+}
+
+/// What is chosen: faces, edges and groups inside the group at `path`
+/// (the one open for editing; empty for the top). All empty: everything
+/// shown.
+#[derive(Clone, Copy, Debug)]
+pub struct Scope<'a> {
+    pub path: &'a [InstanceId],
+    pub faces: &'a BTreeSet<FaceId>,
+    pub edges: &'a BTreeSet<EdgeId>,
+    pub groups: &'a BTreeSet<InstanceId>,
+}
+
+impl Scope<'_> {
+    fn is_empty(&self) -> bool {
+        self.faces.is_empty() && self.edges.is_empty() && self.groups.is_empty()
+    }
+}
+
+/// The unit a drawing is written in (feet and inches write inches).
+pub fn file_unit(u: LengthUnit) -> LengthUnit {
+    match u {
+        LengthUnit::FeetInches => LengthUnit::Inches,
+        u => u,
+    }
+}
+
+/// Metres in one `unit`.
+pub fn metres(unit: LengthUnit) -> f64 {
+    match unit {
+        LengthUnit::Millimetres => 1e-3,
+        LengthUnit::Centimetres => 1e-2,
+        LengthUnit::Metres => 1.0,
+        LengthUnit::Inches | LengthUnit::FeetInches => 0.0254,
+    }
+}
+
+/// The parts laid out apart on the sheet, in metres.
+const GAP: f64 = 0.01;
+
+/// The drawing of what `scope` chooses in `asm`, seen as `view`, in
+/// `unit`; and why anything was left out.
+pub fn make(
+    asm: &Assembly,
+    scope: Scope,
+    view: View,
+    unit: LengthUnit,
+) -> Result<(Drawing, Vec<&'static str>), &'static str> {
+    let unit = file_unit(unit);
+    let k = 1.0 / metres(unit);
+    let tol = asm.def(ROOT).map_or(1e-6, |d| d.model.tol().dist);
+    let mut w = Walk {
+        asm,
+        k,
+        eps: tol * k,
+        left_out: Vec::new(),
+        loose: 0,
+    };
+    let parts = match view {
+        View::Flat => w.flat(scope),
+        _ => w.seen(scope, view),
+    };
+    let parts: Vec<Part> = parts.into_iter().filter(|p| !p.paths.is_empty()).collect();
+    if parts.is_empty() {
+        return Err(NOTHING);
+    }
+    Ok((
+        Drawing {
+            parts,
+            unit,
+            eps: tol * k,
+        },
+        w.left_out,
+    ))
+}
+
+struct Walk<'a> {
+    asm: &'a Assembly,
+    /// File units in a metre.
+    k: f64,
+    eps: f64,
+    left_out: Vec<&'static str>,
+    /// Loose bodies named so far ("Body 1", "Body 2").
+    loose: usize,
+}
+
+/// A model and where it stands in the world, with the name of the part
+/// its drawing goes in.
+struct Placed<'a> {
+    model: &'a Model,
+    world: DAffine3,
+    name: String,
+}
+
+impl<'a> Walk<'a> {
+    fn name(&self, id: InstanceId, def: DefId) -> String {
+        self.asm
+            .def(def)
+            .and_then(|d| d.name.clone())
+            .or_else(|| self.asm.name_of(id).map(str::to_owned))
+            .unwrap_or_else(|| "Group".to_owned())
+    }
+
+    /// The group open for editing: its definition and where it stands.
+    fn open(&self, path: &[InstanceId]) -> (DefId, DAffine3) {
+        let mut def = ROOT;
+        for id in path {
+            match self.asm.def(def).and_then(|d| d.instances.get(id)) {
+                Some(i) => def = i.def,
+                None => return (ROOT, DAffine3::IDENTITY),
+            }
+        }
+        (def, self.asm.world_of(path).unwrap_or(DAffine3::IDENTITY))
+    }
+
+    /// `def`'s own model and every shown group inside it, moved by `at`.
+    fn placed(&self, def: DefId, at: DAffine3, name: String, out: &mut Vec<Placed<'a>>) {
+        let Some(d) = self.asm.def(def) else { return };
+        out.push(Placed {
+            model: &d.model,
+            world: at,
+            name,
+        });
+        for (id, inst) in &d.instances {
+            if self.asm.is_shown(*id) {
+                self.placed(inst.def, at * inst.transform, self.name(*id, inst.def), out);
+            }
+        }
+    }
+
+    /// The chosen groups (or all shown ones) inside the open group.
+    fn groups(&self, scope: Scope, def: DefId, at: DAffine3) -> Vec<Placed<'a>> {
+        let mut out = Vec::new();
+        let Some(d) = self.asm.def(def) else {
+            return out;
+        };
+        for (id, inst) in &d.instances {
+            let chosen = if scope.is_empty() {
+                self.asm.is_shown(*id)
+            } else {
+                scope.groups.contains(id)
+            };
+            if chosen {
+                self.placed(
+                    inst.def,
+                    at * inst.transform,
+                    self.name(*id, inst.def),
+                    &mut out,
+                );
+            }
+        }
+        out
+    }
+
+    // ---- Laid flat ----
+
+    fn flat(&mut self, scope: Scope) -> Vec<Part> {
+        let (def, at) = self.open(scope.path);
+        let mut faces: Vec<(String, &Model, DAffine3, FaceId)> = Vec::new();
+        if let Some(d) = self.asm.def(def) {
+            let all = scope.is_empty();
+            for c in validate(&d.model) {
+                let chosen: Vec<FaceId> = if all {
+                    c.faces.iter().copied().collect()
+                } else {
+                    c.faces.intersection(scope.faces).copied().collect()
+                };
+                if chosen.is_empty() {
+                    continue;
+                }
+                let whole = chosen.len() == c.faces.len();
+                let name = match scope.path.last() {
+                    None => {
+                        self.loose += 1;
+                        format!("Body {}", self.loose)
+                    }
+                    Some(id) => self.name(*id, def),
+                };
+                self.chosen_faces(&d.model, &chosen, whole, &name, at, &mut faces);
+            }
+        }
+        for p in self.groups(scope, def, at) {
+            for c in validate(p.model) {
+                let chosen: Vec<FaceId> = c.faces.iter().copied().collect();
+                self.chosen_faces(p.model, &chosen, true, &p.name, p.world, &mut faces);
+            }
+        }
+        // Each face laid on the sheet, then set out in a row.
+        let mut parts: Vec<Part> = Vec::new();
+        let mut x = 0.0;
+        for (name, model, world, f) in faces {
+            let Some(map) = lay_flat(model, f, &world) else {
+                continue;
+            };
+            let map = DAffine3::from_scale(DVec3::splat(self.k)) * map;
+            let mut paths = Vec::new();
+            let Some(face) = model.face(f) else { continue };
+            for l in 0..=face.holes.len() {
+                let sides: Vec<(EdgeId, VertexId)> =
+                    face.loop_edges(l).map(|s| (s.edge, s.from)).collect();
+                if let Some(p) = self.path(model, &sides, true, &map) {
+                    paths.push(p);
+                }
+            }
+            let Some((lo, hi)) = bounds(&paths) else {
+                continue;
+            };
+            let shift = DVec2::new(x - lo.x, -lo.y);
+            for p in &mut paths {
+                p.moved(shift);
+            }
+            x += hi.x - lo.x + GAP * self.k;
+            match parts.iter_mut().find(|p| p.name == name) {
+                Some(p) => p.paths.extend(paths),
+                None => parts.push(Part { name, paths }),
+            }
+        }
+        parts
+    }
+
+    /// The faces of one body to lay flat: chosen whole, its largest flat
+    /// face (facing up most, on a tie); otherwise each chosen flat face.
+    fn chosen_faces<'m>(
+        &mut self,
+        model: &'m Model,
+        chosen: &[FaceId],
+        whole: bool,
+        name: &str,
+        world: DAffine3,
+        out: &mut Vec<(String, &'m Model, DAffine3, FaceId)>,
+    ) {
+        let flat: Vec<FaceId> = chosen
+            .iter()
+            .copied()
+            .filter(|f| model.face(*f).is_some_and(|x| x.plane().is_some()))
+            .collect();
+        if whole {
+            let up = |f: FaceId| {
+                model.face(f).and_then(|x| x.plane()).map_or(0.0, |p| {
+                    world.transform_vector3(p.normal).normalize_or_zero().z
+                })
+            };
+            let area = |f: FaceId| model.face_area(f);
+            let best = flat.iter().copied().reduce(|a, b| {
+                let (aa, ab) = (area(a), area(b));
+                let same = (aa - ab).abs() <= 1e-9 * aa.max(ab);
+                if (same && up(b) > up(a) + 1e-9) || (!same && ab > aa) {
+                    b
+                } else {
+                    a
+                }
+            });
+            match best {
+                Some(f) => out.push((name.to_owned(), model, world, f)),
+                None => self.left_out.push(CURVED),
+            }
+        } else {
+            for _ in flat.len()..chosen.len() {
+                self.left_out.push(CURVED);
+            }
+            for f in flat {
+                out.push((name.to_owned(), model, world, f));
+            }
+        }
+    }
+
+    // ---- Seen from a side ----
+
+    fn seen(&mut self, scope: Scope, view: View) -> Vec<Part> {
+        let (def, at) = self.open(scope.path);
+        let to_sheet =
+            DAffine3::from_scale(DVec3::splat(self.k)) * DAffine3::from_mat3(view.axes());
+        let mut parts: Vec<Part> = Vec::new();
+        let add = |parts: &mut Vec<Part>, name: String, paths: Vec<Path>| match parts
+            .iter_mut()
+            .find(|p| p.name == name)
+        {
+            Some(p) => p.paths.extend(paths),
+            None => parts.push(Part { name, paths }),
+        };
+        if let Some(d) = self.asm.def(def) {
+            let m = &d.model;
+            let edges: BTreeSet<EdgeId> = if scope.is_empty() {
+                m.edges()
+                    .filter(|(_, e)| !e.soft)
+                    .map(|(id, _)| id)
+                    .collect()
+            } else {
+                let mut s: BTreeSet<EdgeId> = scope.edges.clone();
+                for f in scope.faces {
+                    if let Some(face) = m.face(*f) {
+                        for l in 0..=face.holes.len() {
+                            s.extend(face.loop_edges(l).map(|x| x.edge));
+                        }
+                    }
+                }
+                s.into_iter()
+                    .filter(|e| m.edge(*e).is_some_and(|x| !x.soft))
+                    .collect()
+            };
+            let name = match scope.path.last() {
+                None => "Model".to_owned(),
+                Some(id) => self.name(*id, def),
+            };
+            let paths = self.chains(m, &edges, &(to_sheet * at));
+            add(&mut parts, name, paths);
+        }
+        for p in self.groups(scope, def, at) {
+            let edges: BTreeSet<EdgeId> = p
+                .model
+                .edges()
+                .filter(|(_, e)| !e.soft)
+                .map(|(id, _)| id)
+                .collect();
+            let paths = self.chains(p.model, &edges, &(to_sheet * p.world));
+            add(&mut parts, p.name, paths);
+        }
+        parts
+    }
+
+    /// `edges` joined into chains where exactly two of them meet.
+    fn chains(&mut self, m: &Model, edges: &BTreeSet<EdgeId>, map: &DAffine3) -> Vec<Path> {
+        let mut at: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+        for e in edges {
+            if let Some(x) = m.edge(*e) {
+                at.entry(x.a).or_default().push(*e);
+                at.entry(x.b).or_default().push(*e);
+            }
+        }
+        let next = |v: VertexId, from: EdgeId, used: &BTreeSet<EdgeId>| -> Option<EdgeId> {
+            let here = at.get(&v)?;
+            (here.len() == 2)
+                .then(|| here.iter().copied().find(|e| *e != from))
+                .flatten()
+                .filter(|e| !used.contains(e))
+        };
+        let mut used = BTreeSet::new();
+        let mut out = Vec::new();
+        for e in edges {
+            if used.contains(e) {
+                continue;
+            }
+            let Some(x) = m.edge(*e) else { continue };
+            used.insert(*e);
+            // Back from its start, then on from its end.
+            let mut back = Vec::new();
+            let (mut v, mut from) = (x.a, *e);
+            while let Some(n) = next(v, from, &used) {
+                used.insert(n);
+                let o = m.edge(n).map_or(v, |y| y.other(v));
+                back.push((n, o));
+                v = o;
+                from = n;
+            }
+            let mut sides: Vec<(EdgeId, VertexId)> = back.into_iter().rev().collect();
+            sides.push((*e, x.a));
+            let (mut v, mut from) = (x.b, *e);
+            while let Some(n) = next(v, from, &used) {
+                used.insert(n);
+                sides.push((n, v));
+                v = m.edge(n).map_or(v, |y| y.other(v));
+                from = n;
+            }
+            let first = sides[0].1;
+            let last = sides
+                .last()
+                .and_then(|(e, v)| m.edge(*e).map(|y| y.other(*v)));
+            let closed = last == Some(first) && sides.len() > 1 || (sides.len() == 1 && x.a == x.b);
+            if let Some(p) = self.path(m, &sides, closed, map) {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    /// Edges walked from the given vertices, mapped to the sheet.
+    fn path(
+        &mut self,
+        m: &Model,
+        sides: &[(EdgeId, VertexId)],
+        closed: bool,
+        map: &DAffine3,
+    ) -> Option<Path> {
+        let mut segs = Vec::new();
+        for (e, from) in sides {
+            let Some(x) = m.edge(*e) else { continue };
+            let (a, b) = (m.vertex(*from), m.vertex(x.other(*from)));
+            let flat = |p: DVec3| map.transform_point3(p).truncate();
+            match x.curve_from(*from) {
+                Curve::Line => {
+                    if flat(a).distance(flat(b)) > self.eps {
+                        segs.push(Seg::Line(flat(a), flat(b)));
+                    }
+                }
+                c @ Curve::Arc { centre, axis, .. } => {
+                    let u = a - centre;
+                    let v = axis.cross(u);
+                    let to = |d: DVec3| map.transform_vector3(d).truncate();
+                    segs.extend(conic(flat(centre), to(u), to(v), c.sweep(a, b), self.eps));
+                }
+                Curve::Spline(_) => match prism_ops::sides::piece(m, *e, *from) {
+                    Ok(n) => {
+                        let mut n = n.transformed(map);
+                        for i in 0..n.points().len() {
+                            let p = n.points()[i];
+                            n.set_control(i, p.with_z(0.0));
+                        }
+                        segs.push(Seg::Spline(n));
+                    }
+                    Err(_) => self.left_out.push(PERIODIC),
+                },
+            }
+        }
+        (!segs.is_empty()).then_some(Path { segs, closed })
+    }
+}
+
+/// A conic on the sheet; seen edge on (flat), the lines it folds into.
+fn conic(c: DVec2, u: DVec2, v: DVec2, sweep: f64, eps: f64) -> Vec<Seg> {
+    if u.perp_dot(v).abs() > eps * u.length().max(v.length()) {
+        return vec![Seg::Conic { c, u, v, sweep }];
+    }
+    let at = |t: f64| c + u * t.cos() + v * t.sin();
+    // Where it turns back: the ends of its (now flat) major axis.
+    let t0 = 0.5 * (2.0 * u.dot(v)).atan2(u.dot(u) - v.dot(v));
+    let mut ts = vec![0.0, sweep];
+    for n in -2..=4 {
+        let t = t0 + f64::from(n) * PI;
+        if t > 0.0 && t < sweep {
+            ts.push(t);
+        }
+    }
+    ts.sort_by(f64::total_cmp);
+    ts.windows(2)
+        .map(|w| (at(w[0]), at(w[1])))
+        .filter(|(a, b)| a.distance(*b) > eps)
+        .map(|(a, b)| Seg::Line(a, b))
+        .collect()
+}
+
+/// From the world to a sheet lying on face `f`'s plane, its front up,
+/// x along its longest straight outer edge.
+fn lay_flat(model: &Model, f: FaceId, world: &DAffine3) -> Option<DAffine3> {
+    let face = model.face(f)?;
+    let plane = face.plane()?;
+    let n = world
+        .matrix3
+        .inverse()
+        .transpose()
+        .mul_vec3(plane.normal)
+        .try_normalize()?;
+    let o = world.transform_point3(plane.origin);
+    let longest = face
+        .loop_edges(0)
+        .filter(|s| {
+            model
+                .edge(s.edge)
+                .is_some_and(|e| matches!(e.curve, Curve::Line))
+        })
+        .map(|s| {
+            world.transform_point3(model.vertex(s.to))
+                - world.transform_point3(model.vertex(s.from))
+        })
+        .reduce(|a, b| {
+            if b.length() > a.length() + 1e-12 {
+                b
+            } else {
+                a
+            }
+        });
+    let x = longest
+        .map(|d| d - n * d.dot(n))
+        .and_then(DVec3::try_normalize)
+        .unwrap_or_else(|| n.any_orthonormal_vector());
+    let y = n.cross(x);
+    let rows = DMat3::from_cols(x, y, n).transpose();
+    Some(DAffine3::from_mat3(rows) * DAffine3::from_translation(-o) * *world)
+}
+
+/// The smallest box round the paths' points.
+fn bounds(paths: &[Path]) -> Option<(DVec2, DVec2)> {
+    let mut lo = DVec2::splat(f64::MAX);
+    let mut hi = DVec2::splat(f64::MIN);
+    for p in paths {
+        for s in &p.segs {
+            for q in s.samples() {
+                lo = lo.min(q);
+                hi = hi.max(q);
+            }
+        }
+    }
+    (lo.x <= hi.x).then_some((lo, hi))
+}
+
+impl Seg {
+    pub fn start(&self) -> DVec2 {
+        match self {
+            Seg::Line(a, _) => *a,
+            Seg::Conic { c, u, .. } => *c + *u,
+            Seg::Spline(n) => n.eval(n.domain().0).truncate(),
+        }
+    }
+
+    pub fn end(&self) -> DVec2 {
+        match self {
+            Seg::Line(_, b) => *b,
+            Seg::Conic { c, u, v, sweep } => *c + *u * sweep.cos() + *v * sweep.sin(),
+            Seg::Spline(n) => n.eval(n.domain().1).truncate(),
+        }
+    }
+
+    /// Points along it, for its bounds.
+    fn samples(&self) -> Vec<DVec2> {
+        match self {
+            Seg::Line(a, b) => vec![*a, *b],
+            Seg::Conic { c, u, v, sweep } => (0..=64)
+                .map(|i| {
+                    let t = sweep * f64::from(i) / 64.0;
+                    *c + *u * t.cos() + *v * t.sin()
+                })
+                .collect(),
+            Seg::Spline(n) => {
+                let (t0, t1) = n.domain();
+                (0..=64)
+                    .map(|i| n.eval(t0 + (t1 - t0) * f64::from(i) / 64.0).truncate())
+                    .collect()
+            }
+        }
+    }
+
+    fn moved(&mut self, d: DVec2) {
+        match self {
+            Seg::Line(a, b) => {
+                *a += d;
+                *b += d;
+            }
+            Seg::Conic { c, .. } => *c += d,
+            Seg::Spline(n) => {
+                *n = n.transformed(&DAffine3::from_translation(d.extend(0.0)));
+            }
+        }
+    }
+
+    /// As a circle or an arc of one, when it is: its centre, radius, start
+    /// angle and signed sweep (above 0 counter-clockwise).
+    pub fn circle(&self, eps: f64) -> Option<(DVec2, f64, f64, f64)> {
+        let Seg::Conic { c, u, v, sweep } = self else {
+            return None;
+        };
+        let r = u.length();
+        if (v.length() - r).abs() > eps || u.dot(*v).abs() > eps * r {
+            return None;
+        }
+        let turn = if u.perp_dot(*v) > 0.0 { *sweep } else { -sweep };
+        Some((*c, r, u.y.atan2(u.x), turn))
+    }
+
+    /// As an ellipse going counter-clockwise: its centre, major axis (from
+    /// the centre), the minor axis's length over the major's, and the start
+    /// and end parameters (end above start).
+    pub fn ellipse(&self) -> Option<(DVec2, DVec2, f64, f64, f64)> {
+        let Seg::Conic { c, u, v, sweep } = self else {
+            return None;
+        };
+        let (u, mut v) = (*u, *v);
+        let (mut t0, mut t1) = (0.0, *sweep);
+        if u.perp_dot(v) < 0.0 {
+            // Walked the other way: the same points for t from -sweep to 0.
+            v = -v;
+            (t0, t1) = (-sweep, 0.0);
+        }
+        let mut a = 0.5 * (2.0 * u.dot(v)).atan2(u.dot(u) - v.dot(v));
+        let mut major = u * a.cos() + v * a.sin();
+        let minor = -u * a.sin() + v * a.cos();
+        if minor.length() > major.length() {
+            major = minor;
+            a += PI / 2.0;
+        }
+        let ratio = (u.perp_dot(v) / major.length_squared()).clamp(0.0, 1.0);
+        let start = (t0 - a).rem_euclid(TAU);
+        Some((*c, major, ratio, start, start + (t1 - t0)))
+    }
+}
+
+impl Path {
+    fn moved(&mut self, d: DVec2) {
+        for s in &mut self.segs {
+            s.moved(d);
+        }
+    }
+}
+
+/// A file format for drawings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Format {
+    #[default]
+    Dxf,
+    Svg,
+}
+
+impl Format {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Format::Dxf => "dxf",
+            Format::Svg => "svg",
+        }
+    }
+}
+
+/// A drawing written out, and what went into it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Exported {
+    pub text: String,
+    pub parts: usize,
+    pub paths: usize,
+    /// Why each thing left out was left out.
+    pub left_out: Vec<&'static str>,
+    /// What was written only closely, not exactly.
+    pub close: Vec<&'static str>,
+}
+
+impl Exported {
+    /// What was exported and what was left out, in a sentence or two.
+    pub fn summary(&self) -> String {
+        let count = |n: usize, one: &str, many: &str| match n {
+            1 => format!("1 {one}"),
+            n => format!("{n} {many}"),
+        };
+        let mut s = format!(
+            "{} in {}",
+            count(self.paths, "path", "paths"),
+            count(self.parts, "part", "parts")
+        );
+        for (head, list) in [
+            ("Left out", &self.left_out),
+            ("Close, not exact", &self.close),
+        ] {
+            if list.is_empty() {
+                continue;
+            }
+            let mut why: BTreeMap<&str, usize> = BTreeMap::new();
+            for w in list {
+                *why.entry(w).or_default() += 1;
+            }
+            let reasons: Vec<String> = why
+                .into_iter()
+                .map(|(w, n)| {
+                    if n == 1 {
+                        w.to_owned()
+                    } else {
+                        format!("{w} ({n})")
+                    }
+                })
+                .collect();
+            s.push_str(&format!(". {head} {}: {}", list.len(), reasons.join("; ")));
+        }
+        s
+    }
+}
+
+/// What `scope` chooses in `asm`, seen as `view`, as a `format` file in
+/// `unit`.
+pub fn export(
+    asm: &Assembly,
+    scope: Scope,
+    view: View,
+    unit: LengthUnit,
+    format: Format,
+) -> Result<Exported, &'static str> {
+    let (d, left_out) = make(asm, scope, view, unit)?;
+    let (text, close) = match format {
+        Format::Dxf => (dxf::write(&d), Vec::new()),
+        Format::Svg => svg::write(&d),
+    };
+    Ok(Exported {
+        text,
+        parts: d.parts.len(),
+        paths: d.parts.iter().map(|p| p.paths.len()).sum(),
+        left_out,
+        close,
+    })
+}
+
+/// Numbers as written: at most six places, no trailing zeros, no "-0".
+pub(crate) fn num(x: f64) -> String {
+    let s = format!("{x:.6}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" || s.is_empty() {
+        "0".to_owned()
+    } else {
+        s.to_owned()
+    }
+}

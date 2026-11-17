@@ -49,6 +49,14 @@ struct StepExporting {
     selection_only: bool,
 }
 
+/// The DXF / SVG export window (Solids & CAD part 6a, brief 45).
+struct DrawingExporting {
+    format: prism_file::drawing::Format,
+    unit: LengthUnit,
+    view: prism_file::drawing::View,
+    selection_only: bool,
+}
+
 /// A STEP file read and waiting in its Import window (Solids & CAD part
 /// 5c, brief 44).
 struct StepImporting {
@@ -62,6 +70,7 @@ pub struct Transfer {
     exporting: Option<Exporting>,
     step: Option<StepExporting>,
     step_in: Option<StepImporting>,
+    drawing: Option<DrawingExporting>,
 }
 
 const PRINT: [Format; 2] = [Format::ThreeMf, Format::Stl];
@@ -81,6 +90,7 @@ impl Transfer {
             || self.exporting.is_some()
             || self.step.is_some()
             || self.step_in.is_some()
+            || self.drawing.is_some()
     }
 
     /// File > Import… and the export presets.
@@ -101,6 +111,14 @@ impl Transfer {
                 self.step = Some(StepExporting {
                     unit,
                     selection_only: !s.selection().faces.is_empty(),
+                });
+            }
+            "exp.dxf" => {
+                self.drawing = Some(DrawingExporting {
+                    format: prism_file::drawing::Format::Dxf,
+                    unit: prism_file::drawing::file_unit(s.number.units.length),
+                    view: prism_file::drawing::View::Flat,
+                    selection_only: has_choice(s),
                 });
             }
             "exp.gltf" => self.start_export(&MEDIA, "Export for media and the web", s),
@@ -210,6 +228,82 @@ impl Transfer {
         self.export_dialog(ctx, s, chrome);
         self.step_dialog(ctx, s, chrome);
         self.step_import_dialog(ctx, s, chrome);
+        self.drawing_dialog(ctx, s, chrome);
+    }
+
+    /// File > Export > DXF / SVG: the format, the unit, the view and the
+    /// selection only.
+    fn drawing_dialog(&mut self, ctx: &Context, s: &mut Session, chrome: &mut Chrome) {
+        use prism_file::drawing::{self, Format as DFormat, View};
+        let open = self.drawing.is_some();
+        let has_selection = has_choice(s);
+        let mut go = None;
+        let r = SoftDialog::new("Export DXF / SVG")
+            .subtitle("For routers, lasers and CNC programs")
+            .show(ctx, open, |ui| {
+                let Some(e) = &mut self.drawing else { return };
+                let formats = [DFormat::Dxf, DFormat::Svg];
+                let mut k = formats.iter().position(|f| *f == e.format).unwrap_or(0);
+                ui.add(SoftSelect::new(&mut k, &["DXF", "SVG"], "Format"));
+                e.format = formats[k];
+                let unames: Vec<&str> = UNITS.iter().map(|u| u.name()).collect();
+                let mut k = UNITS.iter().position(|u| *u == e.unit).unwrap_or(0);
+                ui.add(SoftSelect::new(&mut k, &unames, "Unit"));
+                e.unit = UNITS[k];
+                let vnames: Vec<&str> = View::ALL.iter().map(|v| v.name()).collect();
+                let mut k = View::ALL.iter().position(|v| *v == e.view).unwrap_or(0);
+                ui.add(SoftSelect::new(&mut k, &vnames, "View"));
+                e.view = View::ALL[k];
+                if has_selection {
+                    ui.add(SoftToggle::new(&mut e.selection_only, "Only the selection"));
+                }
+                ui.label(match e.view {
+                    View::Flat => "Each part's largest flat face (or each selected flat face) laid flat, outside up, in a row. Arcs stay arcs.",
+                    _ => "The edges seen straight on from this side. Hidden lines are not removed yet. Arcs stay arcs.",
+                });
+                ui.horizontal(|ui| {
+                    if ui.add(SoftButton::new("Export…")).clicked() {
+                        go = Some(true);
+                    }
+                    if ui.add(SoftButton::new("Cancel")).clicked() {
+                        go = Some(false);
+                    }
+                });
+            });
+        if r.close && go.is_none() && open {
+            go = Some(false);
+        }
+        if let Some(yes) = go
+            && let Some(e) = self.drawing.take()
+            && yes
+        {
+            let none_f = Default::default();
+            let none_e = Default::default();
+            let none_g = Default::default();
+            let only = e.selection_only && has_selection;
+            let scope = drawing::Scope {
+                path: s.open_path(),
+                faces: if only { &s.selection().faces } else { &none_f },
+                edges: if only { &s.selection().edges } else { &none_e },
+                groups: if only { s.selected_groups() } else { &none_g },
+            };
+            let made = drawing::export(s.document().assembly(), scope, e.view, e.unit, e.format);
+            let made = match made {
+                Ok(m) => m,
+                Err(why) => {
+                    chrome.status_note(format!("Not exported. {why}"));
+                    return;
+                }
+            };
+            let ext = e.format.extension();
+            let text = made.text.clone();
+            let make = |stem: &str| vec![(format!("{stem}.{ext}"), text.clone().into_bytes())];
+            match crate::mesh_files::save_all("Prism drawing", ext, &make) {
+                Ok(Some(to)) => chrome.status_note(format!("Exported {} to {to}", made.summary())),
+                Ok(None) => {}
+                Err(err) => chrome.status_note(format!("Not exported: {err}")),
+            }
+        }
     }
 
     /// File > Import of a STEP file: what it holds and its size, then
@@ -520,4 +614,10 @@ impl Transfer {
             }
         }
     }
+}
+
+/// Whether anything is selected that a drawing can be made of.
+fn has_choice(s: &Session) -> bool {
+    let sel = s.selection();
+    !sel.faces.is_empty() || !sel.edges.is_empty() || !s.selected_groups().is_empty()
 }

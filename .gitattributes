@@ -3,3 +3,5 @@
 # STEP files are compared byte for byte (golden files): never touch their
 # line endings either.
 *.step -text
+docs/acceptance/files/*.dxf -text
+docs/acceptance/files/*.svg -text

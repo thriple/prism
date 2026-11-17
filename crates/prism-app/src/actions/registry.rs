@@ -186,6 +186,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "exp.game"
         // Solids & CAD part 5b (brief 44).
         || id == "exp.step"
+        // Solids & CAD part 6a (brief 45).
+        || id == "exp.dxf"
         || id == "isect.model"
         || id == "isect.sel"
         // Everyday Commands part 2 (brief 33): the Camera menu.
@@ -853,6 +855,7 @@ mod tests {
         let reg = Registry::new();
         let ctx = Context::default();
         assert!(reg.enabled("exp.step", &ctx), "built (brief 44)");
+        assert!(reg.enabled("exp.dxf", &ctx), "built (brief 45)");
         assert!(!reg.enabled("exp.3dm", &ctx));
         assert_eq!(reg.why_disabled("exp.3dm", &ctx), Some("Not built yet"));
         assert!(!reg.enabled("edit.undo", &ctx));
