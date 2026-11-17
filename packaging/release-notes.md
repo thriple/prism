@@ -1,13 +1,5 @@
-**New in this build:**
-- **Solid > Convert > Faces ↔ Smooth Patch:** a grid of four-sided faces (rows and columns, such as a loft's rows) becomes one smooth freeform face through all their points; a freeform face becomes a grid of flat faces with soft edges between them.
-- **Solid > Convert > Curve Chain ↔ NURBS Curve:** a selected chain of lines and arcs becomes one smooth-editable NURBS curve, exactly (corners kept); one NURBS curve becomes lines and arcs again (a free curve as fine marked segments).
-- **Edit > Weld:** select edges joined end to end and Weld them into one curve, picked, moved and erased as one.
-
-**Changed in this build:**
-- A line that only touches one of a curve's own points (a circle's point, the corner of a welded run) no longer splits the curve. A line drawn across a curve still parts it.
-
 **Fixed in this build:**
-- **Rectangle:** a second corner snapped to a point off the first corner's plane (such as straight above a corner on the ground) now stands the rectangle up toward it, instead of making nothing. A click that would make no rectangle keeps the first corner, as the other drawing tools do.
+- **Arc (2-point):** the tangent snap (cyan, "Tangent") now works at both ends of the arc, so it shows whether you start the arc on a line or arc, or end it there.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

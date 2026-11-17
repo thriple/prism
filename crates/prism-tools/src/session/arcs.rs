@@ -43,7 +43,7 @@ pub(super) struct ArcOp {
     pub sweep: f64,
     /// The 2-point arc's bulge is snapped to a half circle.
     pub half: bool,
-    /// The 2-point arc's bulge is snapped tangent to an edge at its start.
+    /// The 2-point arc's bulge is snapped tangent to an edge at either end.
     pub tangent: Option<f64>,
 }
 
@@ -143,22 +143,24 @@ impl Session {
                 .to_screen(op.at)
                 .map_or(0.0, |(_, d)| view.units_per_px(d))
                 * 8.0;
-            // Tangent to an edge at the start (cyan) wins over a half circle
-            // (magenta), within a few pixels.
+            // Tangent to an edge at either end (cyan) wins over a half
+            // circle (magenta), within a few pixels. The arc from b to a
+            // with bulge -h is the same arc, so the end works like the start.
             let tol = self.scene.tol.dist;
             op.tangent = self
                 .scene
                 .edges
                 .iter()
-                .filter_map(|e| {
-                    let out = if e.b.distance(a) <= tol {
+                .flat_map(|e| [(e, a, b, 1.0), (e, b, a, -1.0)])
+                .filter_map(|(e, from, to, sign)| {
+                    let out = if e.b.distance(from) <= tol {
                         e.curve.end_tangent(e.a, e.b)
-                    } else if e.a.distance(a) <= tol {
+                    } else if e.a.distance(from) <= tol {
                         -e.curve.start_tangent(e.a, e.b)
                     } else {
                         return None;
                     };
-                    tangent_bulge(a, b, op.normal, out)
+                    tangent_bulge(from, to, op.normal, out).map(|t| sign * t)
                 })
                 .filter(|t| (t - h).abs() <= near)
                 .min_by(|x, y| (x - h).abs().total_cmp(&(y - h).abs()));

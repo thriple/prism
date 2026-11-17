@@ -2349,6 +2349,27 @@ fn a_two_point_arc_snaps_tangent_to_the_line_it_starts_from() {
     valid(&d);
 }
 
+#[test]
+fn a_two_point_arc_snaps_tangent_to_the_line_it_ends_on() {
+    use prism_tools::session::ARC;
+    use std::f64::consts::PI;
+    let mut d = Driver::empty();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    d.tool(LINE);
+    d.click(p(0.0, 1.0));
+    d.click(p(2.0, 1.0));
+    d.send(Input::Key { key: Key::Escape });
+    // The same quarter circle, drawn from (3, 2) to the line's end.
+    arc_clicks(&mut d, ARC, &[p(3.0, 2.0), p(2.0, 1.0)]);
+    let tangent_mid = p(2.0, 2.0) + DVec3::new(0.5f64.sqrt(), -(0.5f64.sqrt()), 0.0);
+    d.hover(tangent_mid + DVec3::new(0.03, 0.03, 0.0));
+    let labels: Vec<String> = d.s.overlay().labels.into_iter().map(|l| l.text).collect();
+    assert!(labels.iter().any(|l| l == "Tangent"), "{labels:?}");
+    d.click(tangent_mid + DVec3::new(0.03, 0.03, 0.0));
+    has_arc(&d, p(2.0, 2.0), 1.0, PI / 2.0);
+    valid(&d);
+}
+
 // ---------- Offset with arcs (brief 24, step 3c) ----------
 
 #[test]

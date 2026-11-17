@@ -4496,3 +4496,8 @@ tests now expect the picking hint).
   - grids whose sides border other faces (the neighbours would need the new curved side);
   - grids with three-sided cells;
   - cut (trimmed) patches back to faces.
+
+## Arc tangent at either end (owner, 2026-11-17)
+- **Asked:** the 2-point arc's tangent snap only showed when the arc started on the edge, not when it ended on it.
+- **Rule:** the arc is snapped tangent to an edge at either of its two ends. The arc from b to a with bulge -h is the same arc as a to b with bulge h, so the end is found the same way as the start.
+- **Test:** `session.rs` `a_two_point_arc_snaps_tangent_to_the_line_it_ends_on` (checks the "Tangent" label).
