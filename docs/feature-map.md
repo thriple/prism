@@ -93,6 +93,7 @@ Done since and left out: the camera items (Everyday Commands), Intersect within 
 |---|---|
 | A spatial index and an edge map: drawing, picking, inference and Intersect Faces scan everything (Core Model, Viewport, Inference, Edit Tools 3) | Performance & Scale |
 | Previews and edits rebuild the whole scene; draw a moving part by a GPU transform; incremental rebuilds (Edit Tools 1, Move on a big STL) | Performance & Scale |
+| A Push/Pull drag on a lofted (NURBS) face runs at about 7 fps: each move redoes the pull and re-tessellates every trimmed NURBS face. Cache tessellation per face, skip an unchanged distance, coarser preview while dragging (NOTES "Other leads from replaying the owner's recordings", session 9) | Performance & Scale |
 | GPU instancing, one draw per component definition (Groups & Components 2) | Performance & Scale |
 | Kernel calls and Validate off the interface thread (DECISIONS #39; Solids & CAD 1 and 3c) | Performance & Scale |
 | Loops that touch themselves at one corner ("pinched"), and the property test's rare failures (Core Model, the solid rule) | Drawing & Edit Polish |
