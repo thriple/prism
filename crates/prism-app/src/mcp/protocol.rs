@@ -85,6 +85,18 @@ fn drawing_schema() -> Value {
     })
 }
 
+/// The options of `import_dxf` and `import_svg`.
+fn drawing_in_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "The file's text."},
+            "unit": {"type": "string", "enum": ["mm", "cm", "m", "in"], "description": "The file's unit when it does not give one (default mm)."}
+        },
+        "required": ["text"],
+    })
+}
+
 pub fn tools() -> Value {
     let none = json!({"type": "object", "properties": {}});
     json!([
@@ -141,6 +153,18 @@ pub fn tools() -> Value {
             "title": "Export SVG",
             "description": "File > Export > DXF / SVG as SVG, at its true size in mm, cm or inches: one path per chain, arcs as arcs, splines as quadratic or cubic curves, each part a group. Returns the text, how many paths and parts went, what was left out and what is only close.",
             "inputSchema": drawing_schema(),
+        },
+        {
+            "name": "import_dxf",
+            "title": "Import DXF",
+            "description": "File > Import of DXF text: lines, arcs, circles, ellipses, polylines (with bulges), splines and blocks placed come in on the ground as a group, closed loops as faces, points as guide points, in one undo step. Text, dimensions and hatches are left out and counted.",
+            "inputSchema": drawing_in_schema(),
+        },
+        {
+            "name": "import_svg",
+            "title": "Import SVG",
+            "description": "File > Import of SVG text: paths, lines, polylines, polygons, rectangles, circles and ellipses, through their transforms, come in on the ground as a group at the page's true size, closed loops as faces, in one undo step. Text and images are left out and counted.",
+            "inputSchema": drawing_in_schema(),
         },
         {
             "name": "import_step",
@@ -452,6 +476,8 @@ mod tests {
                 "export_step",
                 "export_dxf",
                 "export_svg",
+                "import_dxf",
+                "import_svg",
                 "import_step",
                 "list_actions",
                 "get_geometry",

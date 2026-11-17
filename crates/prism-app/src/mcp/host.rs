@@ -57,6 +57,8 @@ impl Host for AppHost<'_> {
             "export_step" => self.export_step(args)?,
             "export_dxf" => self.export_drawing(args, prism_file::drawing::Format::Dxf)?,
             "export_svg" => self.export_drawing(args, prism_file::drawing::Format::Svg)?,
+            "import_dxf" => self.import_drawing(args, prism_file::drawing::Format::Dxf)?,
+            "import_svg" => self.import_drawing(args, prism_file::drawing::Format::Svg)?,
             "import_step" => self.import_step(args)?,
             "list_actions" => self.actions(args.get("query").and_then(Value::as_str)),
             "get_geometry" => self.geometry(
@@ -282,6 +284,39 @@ impl AppHost<'_> {
             "left_out": e.left_out,
             "close": e.close,
             "text": e.text,
+        }))
+    }
+
+    /// File > Import of DXF or SVG text (Solids & CAD part 6b).
+    fn import_drawing(
+        &mut self,
+        args: &Value,
+        format: prism_file::drawing::Format,
+    ) -> Result<Value, String> {
+        use prism_file::drawing;
+        let text = args
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or("This tool needs the file's text")?;
+        let unit = match args.get("unit").and_then(Value::as_str).unwrap_or("mm") {
+            "mm" => prism_math::LengthUnit::Millimetres,
+            "cm" => prism_math::LengthUnit::Centimetres,
+            "m" => prism_math::LengthUnit::Metres,
+            "in" => prism_math::LengthUnit::Inches,
+            u => return Err(format!("Unknown unit {u}: use mm, cm, m or in")),
+        };
+        let read = drawing::read(text.as_bytes(), format)?;
+        let metres = read.stated.unwrap_or(drawing::metres(unit));
+        let made = drawing::import(&read, metres, "Drawing")?;
+        let (summary, edges, faces) = (made.summary(), made.edges, made.faces);
+        if !self.viewport.session.import_assembly(made.assembly) {
+            return Err("Nothing to import".into());
+        }
+        Ok(json!({
+            "summary": summary,
+            "edges": edges,
+            "faces": faces,
+            "left_out": read.skipped,
         }))
     }
 

@@ -1,8 +1,6 @@
 **New in this build:**
-- **File > Export > DXF / SVG**, for routers, lasers and CNC programs. Arcs and circles go out as true arcs (so CAM makes smooth G2/G3 moves), splines as splines. Pick a view:
-  - **Laid flat** (for sheet parts): each part's largest flat face, or each flat face you select, laid outside up in a row, holes and all;
-  - **Top, Front or Side**: the edges seen straight on (hidden lines are not removed yet).
-- The file is at its true size in mm, cm or inches. In DXF, a run of lines and arcs is one closed polyline, and each group is its own layer.
+- **File > Import of DXF and SVG drawings** (or drop one on the window). Lines, arcs, circles, ellipses, polylines and splines come in on the ground as a group named after the file, at their true size, and closed loops become faces, ready to Push/Pull. Blocks in a DXF come in where they are placed. Arcs stay true arcs and curves stay exact. Text, dimensions and hatches are not imported yet; the window and the status line say how many were left out.
+- Also new recently: **File > Export > DXF / SVG** for routers, lasers and CNC programs (laid flat, or seen from the top, front or side, with true arcs).
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

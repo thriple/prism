@@ -377,3 +377,201 @@ fn the_golden_plate_writes_the_same_bytes() {
         assert_eq!(e.text, golden, "the {f:?} writer's output changed");
     }
 }
+
+// ---------- Import (part 6b) ----------
+
+use prism_file::drawing::{Read, import, read};
+
+/// The group's model in an imported assembly.
+fn group_model(asm: &prism_doc::Assembly) -> &prism_topo::Model {
+    let placed = asm.placed();
+    assert_eq!(placed.len(), 1, "one group");
+    &asm.def(placed[0].def).unwrap().model
+}
+
+fn areas(m: &prism_topo::Model) -> Vec<f64> {
+    let mut a: Vec<f64> = m.faces().map(|(f, _)| m.face_area(f)).collect();
+    a.sort_by(f64::total_cmp);
+    a
+}
+
+fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1e-12)
+}
+
+#[test]
+fn the_golden_plate_comes_back_as_the_same_faces() {
+    let d = plate();
+    let top = prism_ops::face_at(d.model(), DVec3::new(0.05, 0.01, 0.006)).unwrap();
+    let r = 0.005;
+    let mut want = vec![
+        d.model().face_area(top),
+        PI * r * r,
+        0.02 * 0.01 + PI * r * r,
+    ];
+    want.sort_by(f64::total_cmp);
+    for f in [Format::Dxf, Format::Svg] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../docs/acceptance/files/plate.{}",
+            f.extension()
+        ));
+        let r = read(&std::fs::read(path).unwrap(), f).unwrap();
+        let stated = r.stated.expect("the file's unit");
+        assert!(near(stated, 1e-3), "mm: {stated}");
+        let i = import(&r, stated, "plate").unwrap();
+        let m = group_model(&i.assembly);
+        assert_eq!(prism_ops::check::problems(m), Vec::<String>::new());
+        let got = areas(m);
+        assert_eq!(
+            got.len(),
+            3,
+            "{f:?}: the plate, the hole's disc and the slot"
+        );
+        for (g, w) in got.iter().zip(&want) {
+            assert!((g - w).abs() < 1e-9, "{f:?}: {got:?} vs {want:?}");
+        }
+        assert!(
+            m.edges().any(|(_, e)| e.curve.spline().is_some()),
+            "the spline edge"
+        );
+        assert_eq!(
+            i.assembly.name_of(i.assembly.placed()[0].path[0]),
+            Some("plate")
+        );
+    }
+}
+
+/// A DXF by hand, in inches: a square block placed twice (once turned and
+/// doubled), a polyline with a half-circle bulge, a spline, and a text.
+const HAND: &str = "  0\nSECTION\n  2\nHEADER\n  9\n$INSUNITS\n 70\n1\n  0\nENDSEC\n  0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\nSQ\n 10\n0\n 20\n0\n  0\nLWPOLYLINE\n 90\n4\n 70\n1\n 10\n0\n 20\n0\n 10\n1\n 20\n0\n 10\n1\n 20\n1\n 10\n0\n 20\n1\n  0\nENDBLK\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  2\nSQ\n 10\n10\n 20\n0\n  0\nINSERT\n  2\nSQ\n 10\n20\n 20\n0\n 41\n2\n 42\n2\n 50\n90\n  0\nLWPOLYLINE\n 90\n3\n 70\n1\n 10\n0\n 20\n10\n 42\n0\n 10\n4\n 20\n10\n 42\n1\n 10\n4\n 20\n14\n  0\nSPLINE\n 71\n2\n 72\n6\n 73\n3\n 40\n0\n 40\n0\n 40\n0\n 40\n1\n 40\n1\n 40\n1\n 10\n0\n 20\n20\n 30\n0\n 10\n2\n 20\n24\n 30\n0\n 10\n4\n 20\n20\n 30\n0\n  0\nTEXT\n  1\nHello\n 10\n0\n 20\n0\n  0\nENDSEC\n  0\nEOF\n";
+
+#[test]
+fn a_dxf_by_hand_in_inches_imports_its_blocks_bulges_and_spline() {
+    let r = read(HAND.as_bytes(), Format::Dxf).unwrap();
+    assert_eq!(r.stated, Some(0.0254));
+    assert_eq!(r.skipped, vec!["text".to_owned()]);
+    let i = import(&r, 0.0254, "hand").unwrap();
+    assert!(
+        i.summary()
+            .ends_with("Left out 1: text (1) (not imported yet)"),
+        "{}",
+        i.summary()
+    );
+    let m = group_model(&i.assembly);
+    let a = areas(m);
+    let inch2 = 0.0254 * 0.0254;
+    // The bulged polyline: a triangle (0,10) (4,10) (4,14) with a half
+    // circle on its (4,10)-(4,14) side, out to the right.
+    let tri = 8.0 + PI * 2.0 * 2.0 / 2.0;
+    let want = [1.0, 4.0, tri].map(|x| x * inch2);
+    assert_eq!(a.len(), 3, "{a:?}");
+    for (g, w) in a.iter().zip(&want) {
+        assert!((g - w).abs() < 1e-9, "{a:?} vs {want:?}");
+    }
+    // The second square turned a quarter: from x 18 to 20 inches.
+    let xs: Vec<f64> = m.vertices().map(|(_, p)| p.x / 0.0254).collect();
+    assert!(xs.iter().any(|x| (x - 18.0).abs() < 1e-9), "{xs:?}");
+    // The spline stays a spline.
+    assert!(m.edges().any(|(_, e)| e.curve.spline().is_some()));
+}
+
+#[test]
+fn an_svg_with_transforms_and_every_command_imports_the_right_way_up() {
+    let svg = r#"<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="50mm" viewBox="0 0 200 100">
+  <g transform="translate(10,10)">
+    <g transform="scale(2)">
+      <path d="M0 0 H10 V10 h-10 z"/>
+    </g>
+    <path d="m40 0 l10 0 c5 0 5 10 0 10 s-5 -10 -10 -10 q0 0 0 0 t0 0 Z"/>
+    <path d="M70 5 a5 5 0 1 0 10 0 A5 5 0 1 0 70 5"/>
+  </g>
+  <circle cx="150" cy="50" r="10"/>
+  <text x="0" y="0">Hi</text>
+  <rect x="0" y="80" width="20" height="10" rx="2"/>
+</svg>"#;
+    let r = read(svg.as_bytes(), Format::Svg).unwrap();
+    // 100 mm across 200 units.
+    assert!(near(r.stated.unwrap(), 0.0005));
+    assert_eq!(r.skipped, vec!["text".to_owned()]);
+    let i = import(&r, r.stated.unwrap(), "page").unwrap();
+    let m = group_model(&i.assembly);
+    let world = i.assembly.placed()[0].world;
+    let k2 = 0.0005 * 0.0005;
+    let a = areas(m);
+    // The scaled square (20 by 20 units); the circle of radius 5 drawn by
+    // two arcs; the circle of radius 10; the rounded rectangle.
+    let has = |x: f64| {
+        a.iter()
+            .any(|g| (g - x * k2).abs() < 1e-9 * x * k2.max(1.0))
+    };
+    assert!(has(400.0), "{a:?}");
+    assert!(has(PI * 25.0), "{a:?}");
+    assert!(has(PI * 100.0), "{a:?}");
+    assert!(has(200.0 - (4.0 - PI) * 4.0), "{a:?}");
+    // y up: the circle (at y 50 down the page) is above the rectangle (at
+    // y 80 to 90 down the page).
+    let circle_y = m
+        .faces()
+        .find(|(f, _)| (m.face_area(*f) - PI * 100.0 * k2).abs() < 1e-12)
+        .map(|(_, f)| world.transform_point3(m.vertex(f.outer[0])).y)
+        .unwrap();
+    // Its vertices are its top and bottom, at y 40 and 60 down the page.
+    assert!(
+        near(circle_y, -40.0 * 0.0005) || near(circle_y, -60.0 * 0.0005),
+        "{circle_y}"
+    );
+    let lowest = m
+        .vertices()
+        .map(|(_, p)| world.transform_point3(p).y)
+        .fold(f64::MAX, f64::min);
+    assert!(
+        near(lowest, -90.0 * 0.0005),
+        "the rectangle's bottom: {lowest}"
+    );
+}
+
+#[test]
+fn text_that_is_neither_is_refused() {
+    assert!(read(b"hello", Format::Dxf).is_err());
+    assert!(read(b"<html></html>", Format::Svg).is_err());
+    let empty = Read {
+        paths: Vec::new(),
+        points: Vec::new(),
+        stated: None,
+        skipped: Vec::new(),
+    };
+    assert!(import(&empty, 1.0, "x").is_err());
+}
+
+#[test]
+fn an_ellipse_goes_out_and_comes_back_with_its_area() {
+    let mut d = Document::new();
+    let n = DVec3::new(0.3, 0.5, 0.8).normalize();
+    d.run(Command::Circle {
+        centre: DVec3::new(0.02, 0.01, 0.0),
+        normal: n,
+        radius: 0.01,
+    });
+    // Seen from above: an ellipse of half-axes r and r n.z.
+    let want = PI * 0.01 * 0.01 * n.z;
+    for f in [Format::Dxf, Format::Svg] {
+        let e = export(
+            d.assembly(),
+            everything(),
+            View::Top,
+            LengthUnit::Millimetres,
+            f,
+        )
+        .unwrap();
+        let r = read(e.text.as_bytes(), f).unwrap();
+        let i = import(&r, r.stated.unwrap(), "e").unwrap();
+        let a = areas(group_model(&i.assembly));
+        assert_eq!(a.len(), 1, "{f:?}");
+        assert!(
+            (a[0] - want).abs() < 1e-6 * want,
+            "{f:?}: {} vs {want}",
+            a[0]
+        );
+    }
+}

@@ -16,7 +16,7 @@ use std::f64::consts::{PI, TAU};
 
 use prism_doc::{Assembly, DefId, InstanceId, ROOT};
 use prism_geom::{Curve, Nurbs};
-use prism_math::{DAffine3, DMat3, DVec2, DVec3, LengthUnit};
+use prism_math::{DAffine2, DAffine3, DMat3, DVec2, DVec3, LengthUnit};
 use prism_ops::validate::validate;
 use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
@@ -638,6 +638,30 @@ impl Seg {
         }
     }
 
+    /// The same piece sent through `m`.
+    pub fn mapped(&self, m: &DAffine2) -> Seg {
+        match self {
+            Seg::Line(a, b) => Seg::Line(m.transform_point2(*a), m.transform_point2(*b)),
+            Seg::Conic { c, u, v, sweep } => Seg::Conic {
+                c: m.transform_point2(*c),
+                u: m.transform_vector2(*u),
+                v: m.transform_vector2(*v),
+                sweep: *sweep,
+            },
+            Seg::Spline(n) => {
+                let a = m.matrix2;
+                let t = m.translation;
+                let m3 = DAffine3::from_cols(
+                    a.x_axis.extend(0.0),
+                    a.y_axis.extend(0.0),
+                    DVec3::Z,
+                    t.extend(0.0),
+                );
+                Seg::Spline(n.transformed(&m3))
+            }
+        }
+    }
+
     fn moved(&mut self, d: DVec2) {
         match self {
             Seg::Line(a, b) => {
@@ -788,6 +812,182 @@ pub fn export(
         paths: d.parts.iter().map(|p| p.paths.len()).sum(),
         left_out,
         close,
+    })
+}
+
+// ---------- Import (part 6b) ----------
+
+/// A drawing read from a file, in the file's own unit, before it comes in.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Read {
+    pub paths: Vec<Path>,
+    /// Points (DXF POINT): guide points.
+    pub points: Vec<DVec2>,
+    /// Metres in the file's unit, when the file says.
+    pub stated: Option<f64>,
+    /// What was left out, by kind ("text", "dimensions").
+    pub skipped: Vec<String>,
+}
+
+impl Read {
+    /// The width and height of what it holds, in the file's unit.
+    pub fn size(&self) -> DVec2 {
+        let pts: Vec<DVec2> = self
+            .paths
+            .iter()
+            .flat_map(|p| p.segs.iter().flat_map(Seg::samples))
+            .chain(self.points.iter().copied())
+            .collect();
+        let lo = pts.iter().fold(DVec2::splat(f64::MAX), |a, p| a.min(*p));
+        let hi = pts.iter().fold(DVec2::splat(f64::MIN), |a, p| a.max(*p));
+        if lo.x <= hi.x { hi - lo } else { DVec2::ZERO }
+    }
+}
+
+/// The drawing in `bytes`, read as `format`.
+pub fn read(bytes: &[u8], format: Format) -> Result<Read, String> {
+    let text = String::from_utf8_lossy(bytes);
+    match format {
+        Format::Dxf => dxf::read(&text),
+        Format::Svg => svg::read(&text),
+    }
+}
+
+/// A drawing made into an assembly to bring in, and what it held.
+#[derive(Clone, Debug)]
+pub struct Imported {
+    pub assembly: Assembly,
+    pub edges: usize,
+    pub faces: usize,
+    pub skipped: Vec<String>,
+}
+
+impl Imported {
+    /// What came in and what was left out, in a sentence or two.
+    pub fn summary(&self) -> String {
+        let count = |n: usize, one: &str, many: &str| match n {
+            1 => format!("1 {one}"),
+            n => format!("{n} {many}"),
+        };
+        let mut s = format!(
+            "{} and {}",
+            count(self.edges, "edge", "edges"),
+            count(self.faces, "face", "faces")
+        );
+        if !self.skipped.is_empty() {
+            let mut why: BTreeMap<&str, usize> = BTreeMap::new();
+            for w in &self.skipped {
+                *why.entry(w.as_str()).or_default() += 1;
+            }
+            let reasons: Vec<String> = why.into_iter().map(|(w, n)| format!("{w} ({n})")).collect();
+            s.push_str(&format!(
+                ". Left out {}: {} (not imported yet)",
+                self.skipped.len(),
+                reasons.join(", ")
+            ));
+        }
+        s
+    }
+}
+
+/// Said when a drawing holds nothing to bring in.
+pub const EMPTY: &str = "Nothing to import: the drawing has no lines, arcs or curves.";
+
+/// `read` on the ground, `metres` to its unit, as a group named `name`:
+/// its lines, arcs and curves as edges, faces where they close (the
+/// usual drawing rule), its points as guide points. One command, so one
+/// undo step when it comes in.
+pub fn import(read: &Read, metres: f64, name: &str) -> Result<Imported, String> {
+    let to = DAffine2::from_scale(DVec2::splat(metres));
+    let at = |p: DVec2| to.transform_point2(p).extend(0.0);
+    let mut commands = Vec::new();
+    for p in &read.paths {
+        for s in &p.segs {
+            match s.mapped(&to) {
+                Seg::Line(a, b) => commands.push(prism_doc::Command::Segment {
+                    p: a.extend(0.0),
+                    q: b.extend(0.0),
+                }),
+                Seg::Conic { c, u, v, sweep } => {
+                    let turn = u.perp_dot(v);
+                    let r = u.length();
+                    let round =
+                        (v.length() - r).abs() <= 1e-9 * r && u.dot(v).abs() <= 1e-9 * r * r;
+                    let full = sweep >= TAU - 1e-9;
+                    if round && full {
+                        commands.push(prism_doc::Command::Circle {
+                            centre: c.extend(0.0),
+                            normal: DVec3::Z,
+                            radius: r,
+                        });
+                    } else if round {
+                        commands.push(prism_doc::Command::Arc {
+                            centre: c.extend(0.0),
+                            normal: if turn > 0.0 { DVec3::Z } else { -DVec3::Z },
+                            radius: r,
+                            start: (c + u).extend(0.0),
+                            sweep,
+                            pie: false,
+                        });
+                    } else {
+                        // An ellipse: the unit circle sent onto it, exactly,
+                        // in halves at most (a spline is not a whole loop).
+                        let m = DAffine3::from_cols(
+                            u.extend(0.0),
+                            v.extend(0.0),
+                            DVec3::Z,
+                            c.extend(0.0),
+                        );
+                        let n = if full { 2 } else { 1 };
+                        for k in 0..n {
+                            let t0 = sweep * f64::from(k) / f64::from(n);
+                            let start = DVec3::new(t0.cos(), t0.sin(), 0.0);
+                            if let Some(arc) =
+                                Nurbs::arc(DVec3::ZERO, DVec3::Z, start, sweep / f64::from(n))
+                            {
+                                commands.push(prism_doc::Command::Spline {
+                                    curve: arc.transformed(&m),
+                                });
+                            }
+                        }
+                    }
+                }
+                Seg::Spline(n) => commands.push(prism_doc::Command::Spline { curve: n }),
+            }
+        }
+    }
+    for p in &read.points {
+        commands.push(prism_doc::Command::AddGuide {
+            guide: prism_topo::Guide::Point { at: at(*p) },
+        });
+    }
+    if commands.is_empty() {
+        return Err(EMPTY.to_owned());
+    }
+    let mut d = prism_doc::Document::new();
+    d.run(prism_doc::Command::Batch { commands });
+    let m = d.model();
+    let (edges, faces) = (m.edges().count(), m.faces().count());
+    let selection = prism_ops::Selection {
+        vertices: m.vertices().map(|(id, _)| id).collect(),
+        edges: m.edges().map(|(id, _)| id).collect(),
+        faces: m.faces().map(|(id, _)| id).collect(),
+        guides: m.guides().map(|(id, _)| id).collect(),
+    };
+    let group = d.assembly().next_instance();
+    d.run(prism_doc::Command::MakeGroup {
+        selection,
+        instances: Default::default(),
+    });
+    d.run(prism_doc::Command::NameInstance {
+        instance: group,
+        name: name.to_owned(),
+    });
+    Ok(Imported {
+        assembly: d.assembly().clone(),
+        edges,
+        faces,
+        skipped: read.skipped.clone(),
     })
 }
 

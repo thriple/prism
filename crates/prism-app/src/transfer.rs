@@ -57,6 +57,15 @@ struct DrawingExporting {
     selection_only: bool,
 }
 
+/// A DXF or SVG file read and waiting in its Import window (Solids & CAD
+/// part 6b, brief 45).
+struct DrawingImporting {
+    name: String,
+    read: prism_file::drawing::Read,
+    /// The file's unit, when it does not say.
+    unit: LengthUnit,
+}
+
 /// A STEP file read and waiting in its Import window (Solids & CAD part
 /// 5c, brief 44).
 struct StepImporting {
@@ -71,6 +80,7 @@ pub struct Transfer {
     step: Option<StepExporting>,
     step_in: Option<StepImporting>,
     drawing: Option<DrawingExporting>,
+    drawing_in: Option<DrawingImporting>,
 }
 
 const PRINT: [Format; 2] = [Format::ThreeMf, Format::Stl];
@@ -91,6 +101,7 @@ impl Transfer {
             || self.step.is_some()
             || self.step_in.is_some()
             || self.drawing.is_some()
+            || self.drawing_in.is_some()
     }
 
     /// File > Import… and the export presets.
@@ -164,9 +175,29 @@ impl Transfer {
             }
             return;
         }
+        let drawing = if lower.ends_with(".dxf") {
+            Some(prism_file::drawing::Format::Dxf)
+        } else if lower.ends_with(".svg") {
+            Some(prism_file::drawing::Format::Svg)
+        } else {
+            None
+        };
+        if let Some(f) = drawing {
+            match prism_file::drawing::read(&o.bytes, f) {
+                Ok(read) => {
+                    self.drawing_in = Some(DrawingImporting {
+                        name: o.name,
+                        read,
+                        unit: LengthUnit::Millimetres,
+                    });
+                }
+                Err(e) => chrome.status_note(format!("Could not import {}: {e}", o.name)),
+            }
+            return;
+        }
         let Some(format) = Format::of(&o.name) else {
             chrome.status_note(format!(
-                "{} is not a format Prism imports (STEP, STL, OBJ, 3MF, glTF, PLY)",
+                "{} is not a format Prism imports (STEP, DXF, SVG, STL, OBJ, 3MF, glTF, PLY)",
                 o.name
             ));
             return;
@@ -229,6 +260,76 @@ impl Transfer {
         self.step_dialog(ctx, s, chrome);
         self.step_import_dialog(ctx, s, chrome);
         self.drawing_dialog(ctx, s, chrome);
+        self.drawing_import_dialog(ctx, s, chrome);
+    }
+
+    /// File > Import of a DXF or SVG file: what it holds, its unit and
+    /// size, then Import (one undo step) or Cancel.
+    fn drawing_import_dialog(&mut self, ctx: &Context, s: &mut Session, chrome: &mut Chrome) {
+        let open = self.drawing_in.is_some();
+        let mut go = None;
+        let r = SoftDialog::new("Import drawing")
+            .subtitle("Lines, arcs and curves from a DXF or SVG file")
+            .show(ctx, open, |ui| {
+                let Some(i) = &mut self.drawing_in else { return };
+                let n: usize = i.read.paths.iter().map(|p| p.segs.len()).sum();
+                ui.label(format!("{}: {n} lines, arcs and curves", i.name));
+                if !i.read.skipped.is_empty() {
+                    ui.label(format!(
+                        "{} items (text, dimensions and the like) are not imported yet.",
+                        i.read.skipped.len()
+                    ));
+                }
+                let metres = match i.read.stated {
+                    Some(m) => {
+                        ui.label("The file gives its own unit.");
+                        m
+                    }
+                    None => {
+                        let names: Vec<&str> = UNITS.iter().map(|u| u.name()).collect();
+                        let mut k = UNITS.iter().position(|u| *u == i.unit).unwrap_or(0);
+                        ui.add(SoftSelect::new(&mut k, &names, "The file's unit"));
+                        i.unit = UNITS[k];
+                        prism_file::drawing::metres(i.unit)
+                    }
+                };
+                let size = i.read.size() * metres;
+                ui.label(format!(
+                    "Size: {} × {}",
+                    s.number.show(size.x),
+                    s.number.show(size.y)
+                ));
+                ui.label("It comes in on the ground as a group named after the file. Closed loops become faces.");
+                ui.horizontal(|ui| {
+                    if ui.add(SoftButton::new("Import")).clicked() {
+                        go = Some(true);
+                    }
+                    if ui.add(SoftButton::new("Cancel")).clicked() {
+                        go = Some(false);
+                    }
+                });
+            });
+        if r.close && go.is_none() && open {
+            go = Some(false);
+        }
+        if let Some(yes) = go
+            && let Some(i) = self.drawing_in.take()
+            && yes
+        {
+            let metres = i.read.stated.unwrap_or(prism_file::drawing::metres(i.unit));
+            let stem = i.name.rsplit_once('.').map_or(i.name.as_str(), |(a, _)| a);
+            match prism_file::drawing::import(&i.read, metres, stem) {
+                Ok(made) => {
+                    let summary = made.summary();
+                    if s.import_assembly(made.assembly) {
+                        chrome.status_note(format!("Imported {} ({summary})", i.name));
+                    } else {
+                        chrome.status_note(format!("{} had nothing to import", i.name));
+                    }
+                }
+                Err(e) => chrome.status_note(format!("Could not import {}: {e}", i.name)),
+            }
+        }
     }
 
     /// File > Export > DXF / SVG: the format, the unit, the view and the

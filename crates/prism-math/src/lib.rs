@@ -10,7 +10,7 @@ pub mod sun;
 pub mod tol;
 pub mod units;
 
-pub use glam::{DAffine3, DMat3, DMat4, DQuat, DVec2, DVec3};
+pub use glam::{DAffine2, DAffine3, DMat3, DMat4, DQuat, DVec2, DVec3};
 pub use plane::{Plane, newell};
 pub use tol::Tol;
 pub use units::{DisplayUnits, LengthUnit};
