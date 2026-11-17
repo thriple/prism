@@ -309,8 +309,7 @@ impl Nurbs {
         if n < 3 {
             return Nurbs::open(points, 1);
         }
-        let p = 3.min(n - 1);
-        // Chord-length parameters, and knots from their averages.
+        // Chord-length parameters.
         let total: f64 = points.windows(2).map(|w| w[0].distance(w[1])).sum();
         if total <= 0.0 {
             return None;
@@ -321,6 +320,19 @@ impl Nurbs {
             ts.push(last + w[0].distance(w[1]) / total);
         }
         ts[n - 1] = 1.0;
+        Nurbs::through_at(points, &ts)
+    }
+
+    /// The open curve (cubic, or lower with fewer than four points) through
+    /// `points` at the parameters `ts` (rising from 0 to 1), on knots from
+    /// their averages. Curves through rows of points at the same `ts` share
+    /// their knots, so a surface can be fitted from them.
+    pub fn through_at(points: &[DVec3], ts: &[f64]) -> Option<Nurbs> {
+        let n = points.len();
+        if n < 2 || ts.len() != n {
+            return None;
+        }
+        let p = 3.min(n - 1);
         let mut knots = vec![0.0; n + p + 1];
         for j in 1..n - p {
             knots[j + p] = ts[j..j + p].iter().sum::<f64>() / p as f64;

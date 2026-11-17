@@ -528,3 +528,401 @@ fn relink(
     model.edit_face(f, |x| *x = new);
     Ok(())
 }
+
+// ---------- Faces ↔ Smooth Patch (part 4c) ----------
+
+pub const NO_FACES: &str = "Select a grid of four-sided faces, or one freeform face, then Convert.";
+pub const NOT_A_GRID: &str = "Refused: Convert takes four-sided flat faces joined edge to edge in rows and columns, or one freeform face.";
+pub const BORDERS: &str = "Refused: other faces or edges meet this grid's sides; Convert takes a grid standing on its own.";
+pub const TRIMMED: &str =
+    "Refused: this freeform face is cut from its patch; Convert takes a whole one.";
+
+/// Why `convert_faces` would refuse, if it would.
+pub fn faces_refusal(model: &Model, faces: &BTreeSet<FaceId>) -> Option<&'static str> {
+    let mut m = model.clone();
+    convert_faces(&mut m, faces).err()
+}
+
+/// A grid of four-sided faces becomes one freeform face through their
+/// points, or one freeform face a grid of flat faces.
+pub fn convert_faces(model: &mut Model, faces: &BTreeSet<FaceId>) -> Result<(), &'static str> {
+    let fs: Vec<FaceId> = faces
+        .iter()
+        .copied()
+        .filter(|f| model.face(*f).is_some())
+        .collect();
+    match fs.as_slice() {
+        [] => Err(NO_FACES),
+        [f] if model.face(*f).is_some_and(|x| x.surface.patch().is_some()) => {
+            patch_to_faces(model, *f)
+        }
+        _ => grid_to_patch(model, faces),
+    }
+}
+
+/// The grid's points, [i][j] with i along u and j along v, and its cells.
+fn grid_of(model: &Model, faces: &BTreeSet<FaceId>) -> Result<Vec<Vec<VertexId>>, &'static str> {
+    for f in faces {
+        let x = model.face(*f).ok_or(NOT_A_GRID)?;
+        let straight = x
+            .edge_ids()
+            .all(|e| model.edge(e).is_some_and(|y| !y.curve.is_curved()));
+        if x.plane().is_none() || !x.holes.is_empty() || x.outer.len() != 4 || !straight {
+            return Err(NOT_A_GRID);
+        }
+    }
+    let ef = model.edge_faces();
+    let inside = |e: EdgeId| -> Vec<FaceId> {
+        ef.get(&e)
+            .map(|v| v.iter().copied().filter(|f| faces.contains(f)).collect())
+            .unwrap_or_default()
+    };
+    // The face across the side a-b of `from`, and the points it carries on
+    // from a and from b.
+    let across = |from: FaceId, a: VertexId, b: VertexId| -> Option<(FaceId, VertexId, VertexId)> {
+        let e = model.line_between(a, b)?;
+        let other = inside(e).into_iter().find(|f| *f != from)?;
+        let l = &model.face(other)?.outer;
+        let n = l.len();
+        let ia = l.iter().position(|v| *v == a)?;
+        let ib = l.iter().position(|v| *v == b)?;
+        let next_of = |i: usize, not: usize| {
+            let (p, q) = ((i + 1) % n, (i + n - 1) % n);
+            if p == not { l[q] } else { l[p] }
+        };
+        Some((other, next_of(ia, ib), next_of(ib, ia)))
+    };
+    // A corner face: its sides shared within the grid meet at one point
+    // at most, and the corner opposite is on none of them.
+    let corner = faces
+        .iter()
+        .copied()
+        .find_map(|f| {
+            let l = model.face(f)?.outer.clone();
+            let shared: Vec<usize> = (0..4)
+                .filter(|i| {
+                    model
+                        .line_between(l[*i], l[(i + 1) % 4])
+                        .is_some_and(|e| inside(e).len() == 2)
+                })
+                .collect();
+            let ok = match shared.as_slice() {
+                [] => Some(0),
+                // One shared side (a strip's end): a corner across from it.
+                [s] => Some((s + 2) % 4),
+                // Two shared sides meeting at a point: the corner opposite.
+                [s, t] if (t + 4 - s) % 4 == 1 => Some((t + 2) % 4),
+                [s, t] if (s + 4 - t) % 4 == 1 => Some((s + 2) % 4),
+                _ => None,
+            }?;
+            Some((f, l, ok))
+        })
+        .ok_or(NOT_A_GRID)?;
+    let (c, l, k) = corner;
+    // l[k] is the outer corner: u runs to l[k+1], v to l[k+3].
+    let v0 = l[k];
+    let v1 = l[(k + 1) % 4];
+    let v2 = l[(k + 2) % 4];
+    let v3 = l[(k + 3) % 4];
+    // Along u when the side v1-v2 is shared, else swap u and v.
+    let shared = |a: VertexId, b: VertexId| {
+        model
+            .line_between(a, b)
+            .is_some_and(|e| inside(e).len() == 2)
+    };
+    let (u1, v_1, u1v1) = if shared(v1, v2) || !shared(v3, v2) {
+        (v1, v3, v2)
+    } else {
+        (v3, v1, v2)
+    };
+    // The first row of cells, along u.
+    let mut cols: Vec<[VertexId; 2]> = vec![[v0, v_1], [u1, u1v1]];
+    let mut cells: Vec<Vec<FaceId>> = vec![vec![c]];
+    while let Some((f, a, b)) = {
+        let n = cols.len();
+        across(cells[0][n - 2], cols[n - 1][0], cols[n - 1][1])
+    } {
+        if cells[0].contains(&f) {
+            return Err(NOT_A_GRID);
+        }
+        cells[0].push(f);
+        cols.push([a, b]);
+    }
+    let nu = cells[0].len();
+    let mut g: Vec<Vec<VertexId>> = cols.iter().map(|c| c.to_vec()).collect();
+    // Each next row, cell by cell, across the row's top side.
+    loop {
+        let j = g[0].len() - 1;
+        let mut row = Vec::new();
+        let mut tops: Vec<VertexId> = Vec::new();
+        for i in 0..nu {
+            match across(cells[j - 1][i], g[i][j], g[i + 1][j]) {
+                Some((f, a, b)) => {
+                    if i == 0 {
+                        tops.push(a);
+                    } else if tops[i] != a {
+                        return Err(NOT_A_GRID);
+                    }
+                    tops.push(b);
+                    row.push(f);
+                }
+                None if i == 0 => break,
+                None => return Err(NOT_A_GRID),
+            }
+        }
+        if row.is_empty() {
+            break;
+        }
+        if row.len() != nu {
+            return Err(NOT_A_GRID);
+        }
+        for (i, t) in tops.into_iter().enumerate() {
+            g[i].push(t);
+        }
+        cells.push(row);
+    }
+    let all: BTreeSet<FaceId> = cells.iter().flatten().copied().collect();
+    if all.len() != faces.len() || all.len() != cells.iter().map(|r| r.len()).sum::<usize>() {
+        return Err(NOT_A_GRID);
+    }
+    // Standing on its own: its sides border no other face, and nothing
+    // else meets its points.
+    let used: BTreeSet<EdgeId> = faces
+        .iter()
+        .filter_map(|f| model.face(*f))
+        .flat_map(|f| f.edge_ids().collect::<Vec<_>>())
+        .collect();
+    if used.iter().any(|e| {
+        ef.get(e)
+            .is_some_and(|v| v.iter().any(|f| !faces.contains(f)))
+    }) {
+        return Err(BORDERS);
+    }
+    let points: BTreeSet<VertexId> = g.iter().flatten().copied().collect();
+    if model
+        .edges()
+        .any(|(id, e)| !used.contains(&id) && (points.contains(&e.a) || points.contains(&e.b)))
+    {
+        return Err(BORDERS);
+    }
+    Ok(g)
+}
+
+/// Chord-length parameters along each line of points, averaged.
+fn params(lines: &[Vec<DVec3>]) -> Option<Vec<f64>> {
+    let n = lines.first()?.len();
+    let mut ts = vec![0.0; n];
+    for l in lines {
+        let total: f64 = l.windows(2).map(|w| w[0].distance(w[1])).sum();
+        if total <= 0.0 {
+            return None;
+        }
+        let mut acc = 0.0;
+        for i in 1..n {
+            acc += l[i - 1].distance(l[i]);
+            ts[i] += acc / total / lines.len() as f64;
+        }
+    }
+    ts[n - 1] = 1.0;
+    Some(ts)
+}
+
+fn grid_to_patch(model: &mut Model, faces: &BTreeSet<FaceId>) -> Result<(), &'static str> {
+    let g = grid_of(model, faces)?;
+    let (nu, nv) = (g.len(), g[0].len());
+    let p: Vec<Vec<DVec3>> = g
+        .iter()
+        .map(|col| col.iter().map(|v| model.vertex(*v)).collect())
+        .collect();
+    // Along u for each j, along v for each i.
+    let rows_u: Vec<Vec<DVec3>> = (0..nv)
+        .map(|j| (0..nu).map(|i| p[i][j]).collect())
+        .collect();
+    let tu = params(&rows_u).ok_or(FAILED)?;
+    let tv = params(&p).ok_or(FAILED)?;
+    // Fit each row along u, then each column of their control points
+    // along v: the surface passes through every point of the grid.
+    let fits_u: Vec<Nurbs> = rows_u
+        .iter()
+        .map(|r| Nurbs::through_at(r, &tu))
+        .collect::<Option<_>>()
+        .ok_or(FAILED)?;
+    let ku = fits_u[0].knots().to_vec();
+    let cu = fits_u[0].points().len();
+    let mut ctrl = vec![DVec3::ZERO; cu * nv];
+    let mut kv = Vec::new();
+    for i in 0..cu {
+        let col: Vec<DVec3> = fits_u.iter().map(|c| c.points()[i]).collect();
+        let fit = Nurbs::through_at(&col, &tv).ok_or(FAILED)?;
+        kv = fit.knots().to_vec();
+        for (j, q) in fit.points().iter().enumerate() {
+            ctrl[i * nv + j] = *q;
+        }
+    }
+    let du = fits_u[0].degree();
+    let dv = Nurbs::through_at(&p[0], &tv).ok_or(FAILED)?.degree();
+    let n = ctrl.len();
+    let surface = prism_geom::NurbsSurface::new(
+        [du, dv],
+        [ku, kv],
+        [cu, nv],
+        ctrl,
+        vec![1.0; n],
+        [false, false],
+    )
+    .ok_or(FAILED)?;
+    let iso = |d: usize, t: f64| surface.iso(d, t).map(Arc::new);
+    let (c00, c10, c11, c01) = (g[0][0], g[nu - 1][0], g[nu - 1][nv - 1], g[0][nv - 1]);
+    let (b0, b1) = (iso(0, 0.0).ok_or(FAILED)?, iso(0, 1.0).ok_or(FAILED)?);
+    let (l0, l1) = (iso(1, 0.0).ok_or(FAILED)?, iso(1, 1.0).ok_or(FAILED)?);
+    // Which way the old faces looked, at the first cell.
+    let look = faces
+        .iter()
+        .filter_map(|f| model.face(*f))
+        .find(|f| f.outer.contains(&c00))
+        .and_then(|f| f.plane())
+        .map(|pl| pl.normal)
+        .ok_or(FAILED)?;
+    // Out with the grid, in with the patch.
+    let inner: BTreeSet<VertexId> = g
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|v| ![c00, c10, c11, c01].contains(v))
+        .collect();
+    let old: BTreeSet<EdgeId> = faces
+        .iter()
+        .filter_map(|f| model.face(*f))
+        .flat_map(|f| f.edge_ids().collect::<Vec<_>>())
+        .collect();
+    for f in faces {
+        model.remove_face(*f);
+    }
+    for e in old {
+        model.remove_edge(e);
+    }
+    for v in inner {
+        model.remove_vertex(v);
+    }
+    let e0 = spline_edge(model, c00, c10, &b0, 0.0, 1.0, None)?;
+    let e1 = spline_edge(model, c10, c11, &l1, 0.0, 1.0, None)?;
+    let e2 = spline_edge(model, c11, c01, &b1, 1.0, 0.0, None)?;
+    let e3 = spline_edge(model, c01, c00, &l0, 1.0, 0.0, None)?;
+    let mut face = Face::with_edges(
+        vec![c00, c10, c11, c01],
+        vec![],
+        prism_geom::Surface::Nurbs(prism_geom::Patch::whole(surface)),
+        vec![vec![e0, e1, e2, e3]],
+    );
+    let at = model.vertex(c00);
+    if face.surface.normal_at(at).dot(look) < 0.0 {
+        face.reverse();
+    }
+    model.add_face(face);
+    Ok(())
+}
+
+fn patch_to_faces(model: &mut Model, f: FaceId) -> Result<(), &'static str> {
+    let face = model.face(f).ok_or(NO_FACES)?.clone();
+    if model.is_trimmed(&face) {
+        return Err(TRIMMED);
+    }
+    let patch = face.surface.patch().ok_or(NO_FACES)?.clone();
+    let rim: BTreeSet<EdgeId> = face.edge_ids().collect();
+    let ef = model.edge_faces();
+    if rim.iter().any(|e| ef.get(e).is_some_and(|v| v.len() > 1))
+        || model
+            .edges()
+            .any(|(id, e)| !rim.contains(&id) && face.outer.iter().any(|v| e.has(*v)))
+    {
+        return Err(BORDERS);
+    }
+    let [u, v] = patch.range();
+    let us = patch.surface.grid(0, u.0, u.1, v);
+    let vs = patch.surface.grid(1, v.0, v.1, u);
+    if us.len() < 2 || vs.len() < 2 {
+        return Err(FAILED);
+    }
+    let tol = model.tol();
+    for e in &rim {
+        model.remove_edge(*e);
+    }
+    model.remove_face(f);
+    // The points: the old corners where they fall, new ones elsewhere.
+    let corners: Vec<(VertexId, DVec3)> =
+        face.outer.iter().map(|v| (*v, model.vertex(*v))).collect();
+    let mut g: Vec<Vec<VertexId>> = Vec::new();
+    for su in &us {
+        let mut col = Vec::new();
+        for sv in &vs {
+            let q = patch.surface.eval(*su, *sv);
+            let id = corners
+                .iter()
+                .find(|(_, c)| tol.same_point(*c, q))
+                .map(|(id, _)| *id)
+                .unwrap_or_else(|| model.add_vertex(q));
+            col.push(id);
+        }
+        g.push(col);
+    }
+    let (nu, nv) = (us.len(), vs.len());
+    let id = model.new_curve_id();
+    let line = |model: &mut Model, a: VertexId, b: VertexId, rim: bool| {
+        let e = model.add_edge(a, b);
+        if let Some(e) = e {
+            if rim {
+                model.set_approx(e, true);
+                model.set_curve_id(e, Some(id));
+            } else {
+                model.set_soft(e, true, true);
+            }
+        }
+    };
+    for i in 0..nu {
+        for j in 0..nv {
+            if i + 1 < nu {
+                line(model, g[i][j], g[i + 1][j], j == 0 || j + 1 == nv);
+            }
+            if j + 1 < nv {
+                line(model, g[i][j], g[i][j + 1], i == 0 || i + 1 == nu);
+            }
+        }
+    }
+    for i in 0..nu - 1 {
+        for j in 0..nv - 1 {
+            let (a, b, c, d) = (g[i][j], g[i + 1][j], g[i + 1][j + 1], g[i][j + 1]);
+            let mid = patch
+                .surface
+                .eval((us[i] + us[i + 1]) / 2.0, (vs[j] + vs[j + 1]) / 2.0);
+            let look = patch.normal_at(mid);
+            let pts = [a, b, c, d].map(|x| model.vertex(x));
+            let n = prism_math::newell(&pts).normalize_or_zero();
+            let flat = pts.iter().all(|p| tol.is_zero((*p - pts[0]).dot(n)));
+            let loops: Vec<Vec<VertexId>> = if flat {
+                vec![vec![a, b, c, d]]
+            } else {
+                line(model, a, c, false);
+                vec![vec![a, b, c], vec![a, c, d]]
+            };
+            for mut l in loops {
+                let q: Vec<DVec3> = l.iter().map(|x| model.vertex(*x)).collect();
+                let mut n = prism_math::newell(&q).normalize_or_zero();
+                if n == DVec3::ZERO {
+                    continue;
+                }
+                if n.dot(look) < 0.0 {
+                    l.reverse();
+                    n = -n;
+                }
+                let mut nf = Face::new(
+                    l,
+                    vec![],
+                    prism_geom::Surface::Plane(prism_math::Plane::new(q[0], n)),
+                );
+                nf.paint = face.paint;
+                model.add_face(nf);
+            }
+        }
+    }
+    Ok(())
+}

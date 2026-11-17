@@ -75,8 +75,9 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   takes a freeform face (Prism's own offset; a solid whose freeform faces
   meet along many pieces is checked by Prism's rules only, the kernel
   being too slow there). **Part 3 is done; part 4** has its brief
-  (43: Weld, then the two Converts); 4a, Weld, and 4b, Curve Chain ↔ NURBS Curve, are built;
-  next 4c, Faces ↔ Smooth Patch. **The tool pass** (brief 41, owner request): parts 1 and 2 are
+  (43: Weld, then the two Converts); all three parts are built (Weld,
+  Curve Chain ↔ NURBS Curve, Faces ↔ Smooth Patch). Next is part 5,
+  STEP import and export (it needs a brief). **The tool pass** (brief 41, owner request): parts 1 and 2 are
   built (NOTES "Tool pass part 1", "1b" and "2"); part 3 is the
   Shell / Thicken tool, with its own brief (42, four parts): 3a, the
   operation for flat faces (`prism_ops::shelling`, `Command::Shell`), is

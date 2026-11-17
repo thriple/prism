@@ -173,3 +173,120 @@ fn convert_says_why_it_cannot() {
     assert_eq!(rim.len(), 2);
     assert_eq!(convert::refusal(&m, &rim), Some(CURVED));
 }
+
+// ---------- Part 4c: Faces ↔ Smooth Patch ----------
+
+use prism_geom::Surface;
+use prism_math::Plane;
+use prism_ops::convert::{BORDERS, NOT_A_GRID};
+use prism_topo::{Face, FaceId, VertexId};
+
+/// A wavy sheet of `nu` by `nv` flat four-sided faces: it bends along x
+/// only, so each face is flat.
+fn wavy(nu: usize, nv: usize) -> (Model, Vec<DVec3>) {
+    let mut m = Model::new();
+    let at = |i: usize, j: usize| DVec3::new(i as f64, j as f64, 0.4 * (i as f64 * 1.3).sin());
+    let mut g: Vec<Vec<VertexId>> = Vec::new();
+    let mut pts = Vec::new();
+    for i in 0..=nu {
+        g.push((0..=nv).map(|j| m.add_vertex(at(i, j))).collect());
+        pts.extend((0..=nv).map(|j| at(i, j)));
+    }
+    for i in 0..=nu {
+        for j in 0..=nv {
+            if i < nu {
+                m.add_edge(g[i][j], g[i + 1][j]);
+            }
+            if j < nv {
+                m.add_edge(g[i][j], g[i][j + 1]);
+            }
+        }
+    }
+    for i in 0..nu {
+        for j in 0..nv {
+            let l = vec![g[i][j], g[i + 1][j], g[i + 1][j + 1], g[i][j + 1]];
+            let q: Vec<DVec3> = l.iter().map(|v| m.vertex(*v)).collect();
+            let n = prism_math::newell(&q).normalize();
+            m.add_face(Face::new(l, vec![], Surface::Plane(Plane::new(q[0], n))));
+        }
+    }
+    (m, pts)
+}
+
+fn all_faces(m: &Model) -> BTreeSet<FaceId> {
+    m.faces().map(|(id, _)| id).collect()
+}
+
+#[test]
+fn a_grid_of_faces_becomes_one_patch_through_its_points_and_back() {
+    let (mut m, pts) = wavy(3, 2);
+    sound(&m);
+    let look = m.faces().next().unwrap().1.plane().unwrap().normal;
+    let faces = all_faces(&m);
+    convert::convert_faces(&mut m, &faces).unwrap();
+    sound(&m);
+    assert_eq!(m.face_count(), 1);
+    assert_eq!(m.vertices().count(), 4, "its corners");
+    let (_, f) = m.faces().next().unwrap();
+    let patch = f.surface.patch().expect("a freeform face").clone();
+    for p in &pts {
+        assert!(
+            patch.distance(*p) < 1e-9,
+            "through {p}: {}",
+            patch.distance(*p)
+        );
+    }
+    // It faces the way the faces did.
+    assert!(f.surface.normal_at(pts[0]).dot(look) > 0.0);
+    // And back: flat faces along it, soft between them.
+    let faces = all_faces(&m);
+    convert::convert_faces(&mut m, &faces).unwrap();
+    sound(&m);
+    assert!(m.face_count() >= 6, "{}", m.face_count());
+    assert!(m.faces().all(|(_, f)| f.plane().is_some()));
+    let ef = m.edge_faces();
+    for (id, e) in m.edges() {
+        let inner = ef.get(&id).is_some_and(|v| v.len() == 2);
+        assert_eq!(e.soft, inner, "soft between faces, plain round the rim");
+    }
+}
+
+#[test]
+fn faces_that_are_not_a_grid_on_their_own_are_refused() {
+    // Five of a three-by-two grid: not rows and columns.
+    let (m, _) = wavy(3, 2);
+    let mut five = all_faces(&m);
+    let last = *five.iter().next_back().unwrap();
+    five.remove(&last);
+    assert_eq!(convert::faces_refusal(&m, &five), Some(NOT_A_GRID));
+    // A triangle.
+    let mut t = Model::new();
+    let p = DVec3::new;
+    add_segment(&mut t, p(0.0, 0.0, 0.0), p(1.0, 0.0, 0.0));
+    add_segment(&mut t, p(1.0, 0.0, 0.0), p(0.0, 1.0, 0.0));
+    add_segment(&mut t, p(0.0, 1.0, 0.0), p(0.0, 0.0, 0.0));
+    assert_eq!(convert::faces_refusal(&t, &all_faces(&t)), Some(NOT_A_GRID));
+    // A box's top: its sides border the box's other faces.
+    let mut b = Model::new();
+    for (a, c) in [
+        (p(0.0, 0.0, 0.0), p(1.0, 0.0, 0.0)),
+        (p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0)),
+        (p(1.0, 1.0, 0.0), p(0.0, 1.0, 0.0)),
+        (p(0.0, 1.0, 0.0), p(0.0, 0.0, 0.0)),
+    ] {
+        add_segment(&mut b, a, c);
+    }
+    let base = b.faces().next().map(|(id, _)| id).unwrap();
+    let up = b.face(base).unwrap().plane().unwrap().normal.z.signum();
+    prism_ops::pushpull::push_pull(&mut b, base, up, false);
+    let top: BTreeSet<FaceId> = b
+        .faces()
+        .filter(|(_, f)| {
+            f.plane()
+                .is_some_and(|pl| pl.normal.z > 0.99 && pl.origin.z > 0.5)
+        })
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(top.len(), 1);
+    assert_eq!(convert::faces_refusal(&b, &top), Some(BORDERS));
+}

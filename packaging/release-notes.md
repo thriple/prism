@@ -1,4 +1,5 @@
 **New in this build:**
+- **Solid > Convert > Faces ↔ Smooth Patch:** a grid of four-sided faces (rows and columns, such as a loft's rows) becomes one smooth freeform face through all their points; a freeform face becomes a grid of flat faces with soft edges between them.
 - **Solid > Convert > Curve Chain ↔ NURBS Curve:** a selected chain of lines and arcs becomes one smooth-editable NURBS curve, exactly (corners kept); one NURBS curve becomes lines and arcs again (a free curve as fine marked segments).
 - **Edit > Weld:** select edges joined end to end and Weld them into one curve, picked, moved and erased as one.
 

@@ -50,5 +50,5 @@ XL: three parts, each pushed and tested on its own.
 - **4c:** a lofted grid converts to one patch through its points, and back to a grid.
 
 ## Acceptance
-- [ ] Weld and both Converts are built and tick themselves in Planned Features.
-- [ ] PLAN, NOTES and HANDOFF are updated after each part.
+- [x] Weld and both Converts are built and tick themselves in Planned Features.
+- [x] PLAN, NOTES and HANDOFF are updated after each part.

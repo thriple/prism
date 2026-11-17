@@ -177,6 +177,12 @@ pub enum Command {
     ConvertCurve {
         edges: BTreeSet<prism_topo::EdgeId>,
     },
+    /// Solid > Convert > Faces ↔ Smooth Patch (brief 43): a grid of
+    /// four-sided faces becomes one freeform face, or one a grid of flat
+    /// faces.
+    ConvertFaces {
+        faces: BTreeSet<FaceId>,
+    },
     /// Edit > Weld (brief 43): these edges, joined end to end, become one
     /// curve.
     Weld {
@@ -522,6 +528,7 @@ impl Command {
             Command::ReverseFaces { .. } => "Reverse Faces",
             Command::Weld { .. } => "Weld",
             Command::ConvertCurve { .. } => "Convert Curve",
+            Command::ConvertFaces { .. } => "Convert Faces",
             Command::Soften { soft: true, .. } => "Soften/Smooth",
             Command::Soften { .. } => "Unsoften",
             Command::CleanEnvelope { .. } => "Clean Envelope",
@@ -975,6 +982,7 @@ impl Command {
             Command::Patch { edges } => prism_ops::sweep::patched(m, edges).err(),
             Command::Weld { edges } => prism_ops::curves::weld_refusal(m, edges),
             Command::ConvertCurve { edges } => prism_ops::convert::refusal(m, edges),
+            Command::ConvertFaces { faces } => prism_ops::convert::faces_refusal(m, faces),
             Command::Shell {
                 faces,
                 open,
@@ -1190,6 +1198,9 @@ impl Command {
             }
             Command::ConvertCurve { edges } => {
                 let _ = prism_ops::convert::convert(m, edges);
+            }
+            Command::ConvertFaces { faces } => {
+                let _ = prism_ops::convert::convert_faces(m, faces);
             }
             Command::Soften { edges, soft } => {
                 for e in edges {

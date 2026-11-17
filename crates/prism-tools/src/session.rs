@@ -1095,6 +1095,10 @@ impl Session {
                     prism_ops::convert::MEETS,
                     prism_ops::convert::CURVED,
                     prism_ops::convert::FAILED,
+                    prism_ops::convert::NO_FACES,
+                    prism_ops::convert::NOT_A_GRID,
+                    prism_ops::convert::BORDERS,
+                    prism_ops::convert::TRIMMED,
                 ]
                 .contains(&n)
             })
@@ -1668,12 +1672,14 @@ impl Session {
             // Edit > Weld and Solid > Convert > Curve Chain ↔ NURBS Curve
             // (brief 43): on the selected edges, or the status line says
             // why not.
-            "edit.weld" | "conv.curve" => {
+            "edit.weld" | "conv.curve" | "conv.patch" => {
                 let edges = self.selection.edges.clone();
-                let c = if id == "edit.weld" {
-                    Command::Weld { edges }
-                } else {
-                    Command::ConvertCurve { edges }
+                let c = match id {
+                    "edit.weld" => Command::Weld { edges },
+                    "conv.curve" => Command::ConvertCurve { edges },
+                    _ => Command::ConvertFaces {
+                        faces: self.selection.faces.clone(),
+                    },
                 };
                 if let Some(why) = c.refusal(self.work_model()) {
                     self.notice = Some(why);

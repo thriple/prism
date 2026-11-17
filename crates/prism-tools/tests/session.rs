@@ -6400,3 +6400,35 @@ fn convert_turns_a_selected_chain_into_one_curve_and_undo_restores_it() {
     d.click(DVec3::new(1.0, 0.5, 0.0));
     assert_ne!(d.s.hint(), prism_ops::convert::NOTHING);
 }
+
+#[test]
+fn convert_turns_a_selected_freeform_face_into_flat_faces() {
+    let mut d = Driver::empty();
+    // A lofted surface between two curves: one freeform face.
+    let mut doc = d.s.document().clone();
+    for y in [0.0, 2.0] {
+        doc.run(prism_doc::Command::Spline {
+            curve: prism_geom::Nurbs::open(
+                &[
+                    DVec3::new(0.0, y, 0.0),
+                    DVec3::new(1.0, y, 0.6),
+                    DVec3::new(2.0, y, -0.4),
+                    DVec3::new(3.0, y, 0.0),
+                ],
+                3,
+            )
+            .unwrap(),
+        });
+    }
+    let edges = doc.model().edges().map(|(id, _)| id).collect();
+    doc.run(prism_doc::Command::Loft { edges });
+    d.s.open_document(doc, Some(d.s.camera()));
+    assert_eq!(d.faces(), 1);
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "conv.patch");
+    assert_eq!(d.s.document().undo_name(), Some("Convert Faces"));
+    assert!(d.faces() > 4);
+    assert!(d.s.model().faces().all(|(_, f)| f.plane().is_some()));
+    valid(&d);
+}

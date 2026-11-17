@@ -4478,3 +4478,21 @@ tests now expect the picking hint).
   - curved faces along the chain;
   - a chain that already holds spline pieces (only whole single curves convert back);
   - collinear lines that came from one long line are not merged back.
+
+## Solids & CAD part 4c: Faces ↔ Smooth Patch (brief 43, 2026-11-17)
+- **Built:** Solid > Convert > Faces ↔ Smooth Patch (`prism_ops::convert::convert_faces`, `Command::ConvertFaces`, "Convert Faces"), on the selected faces.
+- **A grid of faces → one freeform face:**
+  - Input: four-sided flat faces with straight sides, in rows and columns, standing on their own (no other face on their sides, nothing else meeting their points). The grid is found from a corner face and walked row by row.
+  - The surface passes through every grid point. Each row is fitted along u at shared averaged chord-length parameters (so they share knots), then each column of their control points along v. `Nurbs::through_at` was added for this (`through` now uses it).
+  - The face's sides are the surface's four edge curves, it faces the way the old faces did, and the in-between points go.
+- **One freeform face → flat faces:**
+  - Input: a whole patch (not cut) standing on its own.
+  - It is sampled at the surface's drawing grid (every knot, finer where it bends). A cell that is not flat becomes two triangles. Edges between faces are soft and smooth; the rim is fine marked segments (one curve).
+- **Part 4 is done:** Weld, and both Converts. Next in the plan: part 5, STEP import and export (it needs a brief).
+- **Tests:**
+  - `prism-ops/tests/convert.rs`: a wavy 3 by 2 grid to a patch through all its points and back, and the refusals (not a grid, a triangle, a box's top bordering other faces);
+  - `session.rs` `convert_turns_a_selected_freeform_face_into_flat_faces` (a loft).
+- **Leftovers:**
+  - grids whose sides border other faces (the neighbours would need the new curved side);
+  - grids with three-sided cells;
+  - cut (trimmed) patches back to faces.

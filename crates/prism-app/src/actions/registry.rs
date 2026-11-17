@@ -224,6 +224,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Solids & CAD part 4 (brief 43).
         || id == "edit.weld"
         || id == "conv.curve"
+        || id == "conv.patch"
         // Part 3: hiding.
         || matches!(
             id,
@@ -313,6 +314,7 @@ impl Registry {
                                 | "edit.soften"
                                 | "edit.weld"
                                 | "conv.curve"
+                                | "conv.patch"
                         ) =>
                         {
                             When::HasSelection
