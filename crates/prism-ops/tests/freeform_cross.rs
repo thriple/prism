@@ -4,6 +4,9 @@
 
 use std::sync::Arc;
 
+#[path = "common/step.rs"]
+mod common;
+
 use prism_geom::{Curve, NurbsSurface, Patch, Spline, Surface};
 use prism_math::DVec3;
 use prism_ops::crossing::{Shape, crossings_with};
@@ -349,4 +352,25 @@ fn the_bump_blocks_top_pulls_out_by_the_distance() {
             assert!((old.distance(p) - 0.1).abs() <= tol.dist, "{p}");
         }
     }
+}
+
+#[test]
+fn the_bump_block_and_a_cut_one_go_through_step() {
+    // Its freeform top comes back exact: the same surface kinds and volume.
+    let m = bump_block();
+    let back = common::same_through_step(&m, prism_math::LengthUnit::Millimetres);
+    assert!((common::volumes(&back)[0] - BLOCK).abs() < 1e-9);
+    // With a box cut from it, the top is a cut freeform face.
+    let mut b = Model::new();
+    prism_ops::add_rect(&mut b, 0.25, 0.25, 0.75, 0.75, 0.0);
+    let f = prism_ops::face_at(&b, DVec3::new(0.5, 0.5, 0.0)).unwrap();
+    let up = b.face(f).unwrap().plane().unwrap().normal.z;
+    prism_ops::push_pull(&mut b, f, 2.0 * up, false);
+    let out = prism_ops::boolean::boolean(&m, &b, prism_ops::boolean::Op::Subtract).unwrap();
+    let back = common::same_through_step(&out, prism_math::LengthUnit::Inches);
+    assert!(
+        back.faces().any(|(_, f)| back.is_trimmed(f)),
+        "a cut freeform face"
+    );
+    assert_eq!(prism_ops::check::problems(&back), Vec::<String>::new());
 }

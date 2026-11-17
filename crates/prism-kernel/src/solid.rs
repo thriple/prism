@@ -26,7 +26,7 @@ use arris_topo::entity::EdgeGeometry;
 use arris_topo::provenance::ConsumerKey;
 use arris_topo::{Body, Model, Orientation, Origin, Role, Shape};
 use prism_geom::{Cone, Curve, Cylinder, Nurbs, Sphere, Spline, Surface, Torus};
-use prism_math::{DVec3, Plane};
+use prism_math::{DAffine3, DVec3, Plane};
 
 use crate::{back, point};
 
@@ -98,6 +98,44 @@ pub struct Region {
     pub faces: Vec<Face>,
 }
 
+impl Region {
+    /// The region moved by `m`: its corners, curves and surfaces. None if
+    /// a curve or surface cannot take the move (an arc scaled unevenly).
+    pub fn transformed(&self, m: &DAffine3) -> Option<Region> {
+        Some(Region {
+            vertices: self
+                .vertices
+                .iter()
+                .map(|v| Vertex {
+                    key: v.key,
+                    at: m.transform_point3(v.at),
+                })
+                .collect(),
+            edges: self
+                .edges
+                .iter()
+                .map(|e| {
+                    Some(Edge {
+                        curve: e.curve.transformed(m)?,
+                        ..e.clone()
+                    })
+                })
+                .collect::<Option<_>>()?,
+            faces: self
+                .faces
+                .iter()
+                .map(|f| {
+                    Some(Face {
+                        surface: f.surface.transformed(m)?,
+                        inside: f.inside.map(|p| m.transform_point3(p)),
+                        ..f.clone()
+                    })
+                })
+                .collect::<Option<_>>()?,
+        })
+    }
+}
+
 /// A solid in the kernel.
 pub struct Solid {
     model: Model,
@@ -111,7 +149,7 @@ const NAMESPACE: u32 = 1;
 /// A key carries its kind above its id, so a new face made from an edge
 /// (a round) is never read back as the face with that edge's number.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
+pub(crate) enum Kind {
     Vertex = 1,
     Edge = 2,
     Face = 3,
@@ -131,7 +169,7 @@ fn tagged(kind: Kind, key: Option<u64>) -> u64 {
 
 /// The kernel's precision for a model whose tolerance is `tol` (Prism's
 /// relative tolerance, set at the boundary in this one place).
-fn precision(tol: f64) -> Precision {
+pub(crate) fn precision(tol: f64) -> Precision {
     let tol = if tol.is_finite() && tol > 0.0 {
         tol
     } else {
@@ -309,6 +347,160 @@ fn face_surface(s: &Surface, middle: DVec3) -> Result<(ASurface, bool), &'static
     }
 }
 
+/// The kernel's specs for `region`: its geometry added to `model`, its
+/// corners, edges and faces as one shell, in the region's order (the
+/// edges of no length at poles and tips after the region's own).
+pub(crate) fn specs(
+    model: &mut Model,
+    region: &Region,
+    prec: Precision,
+) -> Result<Assembly, &'static str> {
+    let t = prec.default_tolerance;
+    let mut meter = Meter::default();
+    let vertices = region
+        .vertices
+        .iter()
+        .map(|v| VertexSpec::New {
+            point: point(v.at),
+            tolerance: t,
+        })
+        .collect();
+    let mut curves = Vec::with_capacity(region.edges.len());
+    let mut edges = Vec::with_capacity(region.edges.len());
+    for e in &region.edges {
+        let (pa, pb) = (
+            region.vertices.get(e.a).ok_or(NOT_CLOSED)?.at,
+            region.vertices.get(e.b).ok_or(NOT_CLOSED)?.at,
+        );
+        let (c, range) = edge_curve(&e.curve, pa, pb)?;
+        edges.push(EdgeSpec::New {
+            geometry: EdgeGeometry::Curve {
+                curve: model.add_curve(c.clone()),
+                range,
+            },
+            start: VertexKey::New(e.a),
+            end: VertexKey::New(e.b),
+            tolerance: t,
+        });
+        curves.push((c, range));
+    }
+    let mut faces = Vec::with_capacity(region.faces.len());
+    for f in &region.faces {
+        // The middles of the outer loop's edges (not its corners: a
+        // half cylinder's corners average onto the axis).
+        let mids: Vec<DVec3> = f
+            .loops
+            .first()
+            .ok_or(NOT_CLOSED)?
+            .iter()
+            .filter_map(|(e, _)| curves.get(*e))
+            .map(|(c, r)| back(&c.point(0.5 * (r.lo() + r.hi()))))
+            .collect();
+        let middle = f
+            .inside
+            .unwrap_or(mids.iter().copied().sum::<DVec3>() / mids.len().max(1) as f64);
+        let (surface, out) = face_surface(&f.surface, middle)?;
+        let period = surface.period();
+        let singular = !surface.singularities().is_empty();
+        // The face's middle in (u, v): each side is moved by whole
+        // periods to lie within half a period of it.
+        let anchor = surface
+            .project(point(middle))
+            .ok()
+            .map(|x| [x.uv.x, x.uv.y]);
+        let mut loops = Vec::with_capacity(f.loops.len());
+        for l in &f.loops {
+            // Each side's curve in (u, v), moved by whole periods to
+            // start where the one before ended (a face across a seam).
+            let mut sides: Vec<Side> = Vec::new();
+            for &(e, forward) in l {
+                let (c, range) = curves.get(e).ok_or(NOT_CLOSED)?;
+                let mut pc = pcurve_on(c, *range, &surface, prec.tolerance(), &mut meter)
+                    .map_err(|_| OFF_FACE)?;
+                let at = |pc: &Curve2, t: f64| {
+                    let q = pc.point(t);
+                    [q.x, q.y]
+                };
+                let (t0, t1) = if forward {
+                    (range.lo(), range.hi())
+                } else {
+                    (range.hi(), range.lo())
+                };
+                // Judged at the side's middle, near the face's middle;
+                // else its start, at the last side's end.
+                let target = match (anchor, sides.last()) {
+                    (Some(a), _) => Some((at(&pc, 0.5 * (t0 + t1)), a)),
+                    (None, Some(last)) => Some((at(&pc, t0), last.4)),
+                    (None, None) => None,
+                };
+                if let Some((from, to)) = target {
+                    let mut by = [0.0; 2];
+                    for d in 0..2 {
+                        if let Some(p) = period[d] {
+                            by[d] = ((to[d] - from[d]) / p).round() * p;
+                        }
+                    }
+                    if by != [0.0; 2] {
+                        pc = pc.translated(arris_math::Vec2::new(by[0], by[1]));
+                    }
+                }
+                let (a, b) = (at(&pc, t0), at(&pc, t1));
+                sides.push((e, forward, pc, a, b));
+            }
+            let mut uses = Vec::with_capacity(sides.len() + 2);
+            let n = sides.len();
+            for i in 0..n {
+                let (e, forward, pc, _, end) = sides[i].clone();
+                uses.push(UseSpec {
+                    edge: EdgeKey::New(e),
+                    orientation: orientation(forward),
+                    pcurve: model.add_curve2(pc),
+                });
+                // Where the next side starts elsewhere in (u, v) at one
+                // point of the surface (a sphere's pole, a cone's tip):
+                // an edge of no length across it.
+                let next = sides[(i + 1) % n].3;
+                let gap = arris_math::Vec2::new(next[0] - end[0], next[1] - end[1]);
+                let len = gap.norm();
+                if singular && len > 1e-6 {
+                    let re = &region.edges[e];
+                    let corner = if forward { re.b } else { re.a };
+                    let k = edges.len();
+                    edges.push(EdgeSpec::New {
+                        geometry: EdgeGeometry::Degenerate {
+                            range: Interval::new(0.0, len).map_err(|_| NOT_CLOSED)?,
+                        },
+                        start: VertexKey::New(corner),
+                        end: VertexKey::New(corner),
+                        tolerance: t,
+                    });
+                    let line = Curve2::Line {
+                        origin: arris_math::Point2::new(end[0], end[1]),
+                        direction: arris_math::UnitVec2::new_normalize(gap),
+                    };
+                    uses.push(UseSpec {
+                        edge: EdgeKey::New(k),
+                        orientation: Orientation::Forward,
+                        pcurve: model.add_curve2(line),
+                    });
+                }
+            }
+            loops.push(uses);
+        }
+        faces.push(FaceSpec::New {
+            surface: model.add_surface(surface),
+            orientation: orientation(out),
+            loops,
+            tolerance: t,
+        });
+    }
+    Ok(Assembly {
+        vertices,
+        edges,
+        shells: vec![faces],
+    })
+}
+
 impl Solid {
     /// The kernel's solid for `region`, checked by the kernel's checker.
     /// `tol` is Prism's tolerance for the model.
@@ -337,149 +529,7 @@ impl Solid {
         let prec = precision(tol);
         let mut model = Model::new(prec).map_err(|_| no(NOT_CLOSED))?;
         let t = prec.default_tolerance;
-        let mut meter = Meter::default();
-        let vertices = region
-            .vertices
-            .iter()
-            .map(|v| VertexSpec::New {
-                point: point(v.at),
-                tolerance: t,
-            })
-            .collect();
-        let mut curves = Vec::with_capacity(region.edges.len());
-        let mut edges = Vec::with_capacity(region.edges.len());
-        for e in &region.edges {
-            let (pa, pb) = (
-                region.vertices.get(e.a).ok_or(no(NOT_CLOSED))?.at,
-                region.vertices.get(e.b).ok_or(no(NOT_CLOSED))?.at,
-            );
-            let (c, range) = edge_curve(&e.curve, pa, pb).map_err(no)?;
-            edges.push(EdgeSpec::New {
-                geometry: EdgeGeometry::Curve {
-                    curve: model.add_curve(c.clone()),
-                    range,
-                },
-                start: VertexKey::New(e.a),
-                end: VertexKey::New(e.b),
-                tolerance: t,
-            });
-            curves.push((c, range));
-        }
-        let mut faces = Vec::with_capacity(region.faces.len());
-        for f in &region.faces {
-            // The middles of the outer loop's edges (not its corners: a
-            // half cylinder's corners average onto the axis).
-            let mids: Vec<DVec3> = f
-                .loops
-                .first()
-                .ok_or(no(NOT_CLOSED))?
-                .iter()
-                .filter_map(|(e, _)| curves.get(*e))
-                .map(|(c, r)| back(&c.point(0.5 * (r.lo() + r.hi()))))
-                .collect();
-            let middle = f
-                .inside
-                .unwrap_or(mids.iter().copied().sum::<DVec3>() / mids.len().max(1) as f64);
-            let (surface, out) = face_surface(&f.surface, middle).map_err(no)?;
-            let period = surface.period();
-            let singular = !surface.singularities().is_empty();
-            // The face's middle in (u, v): each side is moved by whole
-            // periods to lie within half a period of it.
-            let anchor = surface
-                .project(point(middle))
-                .ok()
-                .map(|x| [x.uv.x, x.uv.y]);
-            let mut loops = Vec::with_capacity(f.loops.len());
-            for l in &f.loops {
-                // Each side's curve in (u, v), moved by whole periods to
-                // start where the one before ended (a face across a seam).
-                let mut sides: Vec<Side> = Vec::new();
-                for &(e, forward) in l {
-                    let (c, range) = curves.get(e).ok_or(no(NOT_CLOSED))?;
-                    let mut pc = pcurve_on(c, *range, &surface, prec.tolerance(), &mut meter)
-                        .map_err(|_| no(OFF_FACE))?;
-                    let at = |pc: &Curve2, t: f64| {
-                        let q = pc.point(t);
-                        [q.x, q.y]
-                    };
-                    let (t0, t1) = if forward {
-                        (range.lo(), range.hi())
-                    } else {
-                        (range.hi(), range.lo())
-                    };
-                    // Judged at the side's middle, near the face's middle;
-                    // else its start, at the last side's end.
-                    let target = match (anchor, sides.last()) {
-                        (Some(a), _) => Some((at(&pc, 0.5 * (t0 + t1)), a)),
-                        (None, Some(last)) => Some((at(&pc, t0), last.4)),
-                        (None, None) => None,
-                    };
-                    if let Some((from, to)) = target {
-                        let mut by = [0.0; 2];
-                        for d in 0..2 {
-                            if let Some(p) = period[d] {
-                                by[d] = ((to[d] - from[d]) / p).round() * p;
-                            }
-                        }
-                        if by != [0.0; 2] {
-                            pc = pc.translated(arris_math::Vec2::new(by[0], by[1]));
-                        }
-                    }
-                    let (a, b) = (at(&pc, t0), at(&pc, t1));
-                    sides.push((e, forward, pc, a, b));
-                }
-                let mut uses = Vec::with_capacity(sides.len() + 2);
-                let n = sides.len();
-                for i in 0..n {
-                    let (e, forward, pc, _, end) = sides[i].clone();
-                    uses.push(UseSpec {
-                        edge: EdgeKey::New(e),
-                        orientation: orientation(forward),
-                        pcurve: model.add_curve2(pc),
-                    });
-                    // Where the next side starts elsewhere in (u, v) at one
-                    // point of the surface (a sphere's pole, a cone's tip):
-                    // an edge of no length across it.
-                    let next = sides[(i + 1) % n].3;
-                    let gap = arris_math::Vec2::new(next[0] - end[0], next[1] - end[1]);
-                    let len = gap.norm();
-                    if singular && len > 1e-6 {
-                        let re = &region.edges[e];
-                        let corner = if forward { re.b } else { re.a };
-                        let k = edges.len();
-                        edges.push(EdgeSpec::New {
-                            geometry: EdgeGeometry::Degenerate {
-                                range: Interval::new(0.0, len).map_err(|_| no(NOT_CLOSED))?,
-                            },
-                            start: VertexKey::New(corner),
-                            end: VertexKey::New(corner),
-                            tolerance: t,
-                        });
-                        let line = Curve2::Line {
-                            origin: arris_math::Point2::new(end[0], end[1]),
-                            direction: arris_math::UnitVec2::new_normalize(gap),
-                        };
-                        uses.push(UseSpec {
-                            edge: EdgeKey::New(k),
-                            orientation: Orientation::Forward,
-                            pcurve: model.add_curve2(line),
-                        });
-                    }
-                }
-                loops.push(uses);
-            }
-            faces.push(FaceSpec::New {
-                surface: model.add_surface(surface),
-                orientation: orientation(out),
-                loops,
-                tolerance: t,
-            });
-        }
-        let assembly = Assembly {
-            vertices,
-            edges,
-            shells: vec![faces],
-        };
+        let assembly = specs(&mut model, region, prec).map_err(no)?;
         let (builder, slots) =
             Builder::assemble(&model, t, assembly).map_err(|_| no(NOT_CLOSED))?;
         let mut keys = BuildKeys {
@@ -572,170 +622,207 @@ impl Solid {
 
     /// The solid read back as a region.
     pub fn region(&self) -> Result<Region, &'static str> {
-        let m = &self.model;
-        let mut out = Region::default();
-        let mut vmap: BTreeMap<arris_topo::VertexId, usize> = BTreeMap::new();
-        let mut emap: BTreeMap<arris_topo::EdgeId, usize> = BTreeMap::new();
-        let mut vertex =
-            |out: &mut Region, id: arris_topo::VertexId| -> Result<usize, &'static str> {
-                if let Some(i) = vmap.get(&id) {
-                    return Ok(*i);
-                }
-                let at = back(&m.vertex(id).map_err(|_| CANNOT_STORE)?.point());
-                out.vertices.push(Vertex {
-                    key: self.key(Kind::Vertex, id),
-                    at,
-                });
-                vmap.insert(id, out.vertices.len() - 1);
-                Ok(out.vertices.len() - 1)
-            };
-        for fu in m.faces(self.body).map_err(|_| CANNOT_STORE)? {
-            let face = m.face(fu.id).map_err(|_| CANNOT_STORE)?;
-            let forward = !fu.orientation.is_reversed();
-            let surface = match m.surface(face.surface()).map_err(|_| CANNOT_STORE)? {
-                ASurface::Plane { frame } => {
-                    let n = dvec(&frame.z());
-                    Surface::Plane(Plane::new(
-                        back(&frame.origin()),
-                        if forward { n } else { -n },
-                    ))
-                }
-                ASurface::Cylinder { frame, radius } => Surface::Cylinder(Cylinder {
-                    origin: back(&frame.origin()),
-                    axis: dvec(&frame.z()),
-                    radius: *radius,
-                    outward: forward,
-                }),
-                ASurface::Cone {
-                    frame,
-                    radius,
-                    half_angle,
-                } => {
-                    // P = O + (R + v sin a)(radial) + v cos a Z: the apex
-                    // is R / tan a below O along Z.
-                    let z = dvec(&frame.z());
-                    let (z, a) = if *half_angle < 0.0 {
-                        (-z, -half_angle)
-                    } else {
-                        (z, *half_angle)
-                    };
-                    if a <= 0.0 || a >= std::f64::consts::FRAC_PI_2 {
-                        return Err(CANNOT_STORE);
-                    }
-                    let o = back(&frame.origin());
-                    Surface::Cone(Cone {
-                        apex: o - z * (radius / a.tan()),
-                        axis: z,
-                        half_angle: a,
-                        outward: forward,
-                    })
-                }
-                ASurface::Sphere { frame, radius } => Surface::Sphere(Sphere {
-                    centre: back(&frame.origin()),
-                    axis: dvec(&frame.z()),
-                    radius: *radius,
-                    outward: forward,
-                }),
-                ASurface::Torus {
-                    frame,
-                    major_radius,
-                    minor_radius,
-                } => Surface::Torus(Torus {
-                    centre: back(&frame.origin()),
-                    axis: dvec(&frame.z()),
-                    major: *major_radius,
-                    minor: *minor_radius,
-                    outward: forward,
-                }),
-                _ => return Err(CANNOT_STORE),
-            };
-            let mut loops: Vec<(f64, Vec<(usize, bool)>)> = Vec::new();
-            for l in face.loops() {
-                let uses = effective_uses(
-                    fu.orientation,
-                    l.coedges()
-                        .iter()
-                        .map(|c| (c.edge(), c.orientation(), c.pcurve())),
-                );
-                let mut lp = Vec::with_capacity(uses.len());
-                let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
-                for (eid, o, pc) in uses {
-                    // A degenerate edge (a sphere's pole, where a ball
-                    // corner meets) has no curve: Prism's loops just pass
-                    // through the point.
-                    if m.edge(eid).is_ok_and(|e| e.is_degenerate()) {
-                        continue;
-                    }
-                    let i = match emap.get(&eid) {
-                        Some(i) => *i,
-                        None => {
-                            let e = m.edge(eid).map_err(|_| CANNOT_STORE)?;
-                            let (cid, _) = e.curve().ok_or(CANNOT_STORE)?;
-                            let curve = match m.curve(cid).map_err(|_| CANNOT_STORE)? {
-                                ACurve::Line { .. } => Curve::Line,
-                                ACurve::Circle { frame, radius } => Curve::Arc {
-                                    centre: back(&frame.origin()),
-                                    axis: dvec(&frame.z()),
-                                    radius: *radius,
-                                },
-                                // An ellipse (a mitre between two rounds)
-                                // is stored exactly as a NURBS curve
-                                // (DECISIONS #38).
-                                ACurve::Ellipse {
-                                    frame,
-                                    major_radius,
-                                    minor_radius,
-                                } => {
-                                    let n = arris_geom::NurbsCurve::ellipse(
-                                        frame,
-                                        *major_radius,
-                                        *minor_radius,
-                                        e.range(),
-                                    )
-                                    .map_err(|_| CANNOT_STORE)?;
-                                    spline(&n, None)?
-                                }
-                                ACurve::Nurbs(n) => {
-                                    let r = e.range();
-                                    spline(n, Some((r.lo(), r.hi())))?
-                                }
-                            };
-                            let a = vertex(&mut out, e.start())?;
-                            let b = vertex(&mut out, e.end())?;
-                            out.edges.push(Edge {
-                                key: self.key(Kind::Edge, eid),
-                                a,
-                                b,
-                                curve,
-                            });
-                            emap.insert(eid, out.edges.len() - 1);
-                            out.edges.len() - 1
-                        }
-                    };
-                    // The loop's extent in the face's coordinates: the
-                    // outer loop is the widest.
-                    if let (Ok(p), Ok(e)) = (m.curve2(pc), m.edge(eid)) {
-                        let r = e.range();
-                        for k in 0..=4 {
-                            let q = curve2_point(p, r.lo() + (r.hi() - r.lo()) * k as f64 / 4.0);
-                            lo = [lo[0].min(q[0]), lo[1].min(q[1])];
-                            hi = [hi[0].max(q[0]), hi[1].max(q[1])];
-                        }
-                    }
-                    lp.push((i, !o.is_reversed()));
-                }
-                loops.push(((hi[0] - lo[0]) * (hi[1] - lo[1]), lp));
-            }
-            loops.sort_by(|a, b| b.0.total_cmp(&a.0));
-            out.faces.push(Face {
-                key: self.key(Kind::Face, fu.id),
-                surface,
-                loops: loops.into_iter().map(|(_, l)| l).collect(),
-                inside: None,
-            });
-        }
-        Ok(out)
+        read_region(&self.model, self.body, &|kind, id| self.key(kind, id))
     }
+}
+
+/// Body `body` of `m` read back as a region, each entity keyed by `key`.
+pub(crate) fn read_region(
+    m: &Model,
+    body: Body,
+    key: &dyn Fn(Kind, arris_topo::EntityId) -> Option<u64>,
+) -> Result<Region, &'static str> {
+    let mut out = Region::default();
+    let mut vmap: BTreeMap<arris_topo::VertexId, usize> = BTreeMap::new();
+    let mut emap: BTreeMap<arris_topo::EdgeId, usize> = BTreeMap::new();
+    let mut vertex = |out: &mut Region, id: arris_topo::VertexId| -> Result<usize, &'static str> {
+        if let Some(i) = vmap.get(&id) {
+            return Ok(*i);
+        }
+        let at = back(&m.vertex(id).map_err(|_| CANNOT_STORE)?.point());
+        out.vertices.push(Vertex {
+            key: key(Kind::Vertex, id.into()),
+            at,
+        });
+        vmap.insert(id, out.vertices.len() - 1);
+        Ok(out.vertices.len() - 1)
+    };
+    for fu in m.faces(body).map_err(|_| CANNOT_STORE)? {
+        let face = m.face(fu.id).map_err(|_| CANNOT_STORE)?;
+        let forward = !fu.orientation.is_reversed();
+        let mut loops: Vec<(f64, Vec<(usize, bool)>)> = Vec::new();
+        let (mut face_lo, mut face_hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+        for l in face.loops() {
+            let uses = effective_uses(
+                fu.orientation,
+                l.coedges()
+                    .iter()
+                    .map(|c| (c.edge(), c.orientation(), c.pcurve())),
+            );
+            let mut lp = Vec::with_capacity(uses.len());
+            let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+            for (eid, o, pc) in uses {
+                // A degenerate edge (a sphere's pole, where a ball
+                // corner meets) has no curve: Prism's loops just pass
+                // through the point.
+                if m.edge(eid).is_ok_and(|e| e.is_degenerate()) {
+                    continue;
+                }
+                let i = match emap.get(&eid) {
+                    Some(i) => *i,
+                    None => {
+                        let e = m.edge(eid).map_err(|_| CANNOT_STORE)?;
+                        let (cid, _) = e.curve().ok_or(CANNOT_STORE)?;
+                        let curve = match m.curve(cid).map_err(|_| CANNOT_STORE)? {
+                            ACurve::Line { .. } => Curve::Line,
+                            ACurve::Circle { frame, radius } => Curve::Arc {
+                                centre: back(&frame.origin()),
+                                axis: dvec(&frame.z()),
+                                radius: *radius,
+                            },
+                            // An ellipse (a mitre between two rounds)
+                            // is stored exactly as a NURBS curve
+                            // (DECISIONS #38).
+                            ACurve::Ellipse {
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            } => {
+                                let n = arris_geom::NurbsCurve::ellipse(
+                                    frame,
+                                    *major_radius,
+                                    *minor_radius,
+                                    e.range(),
+                                )
+                                .map_err(|_| CANNOT_STORE)?;
+                                spline(&n, None)?
+                            }
+                            ACurve::Nurbs(n) => {
+                                let r = e.range();
+                                spline(n, Some((r.lo(), r.hi())))?
+                            }
+                        };
+                        let a = vertex(&mut out, e.start())?;
+                        let b = vertex(&mut out, e.end())?;
+                        out.edges.push(Edge {
+                            key: key(Kind::Edge, eid.into()),
+                            a,
+                            b,
+                            curve,
+                        });
+                        emap.insert(eid, out.edges.len() - 1);
+                        out.edges.len() - 1
+                    }
+                };
+                // The loop's extent in the face's coordinates: the
+                // outer loop is the widest.
+                if let (Ok(p), Ok(e)) = (m.curve2(pc), m.edge(eid)) {
+                    let r = e.range();
+                    for k in 0..=4 {
+                        let q = curve2_point(p, r.lo() + (r.hi() - r.lo()) * k as f64 / 4.0);
+                        lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+                        hi = [hi[0].max(q[0]), hi[1].max(q[1])];
+                    }
+                }
+                lp.push((i, !o.is_reversed()));
+            }
+            loops.push(((hi[0] - lo[0]) * (hi[1] - lo[1]), lp));
+            face_lo = [face_lo[0].min(lo[0]), face_lo[1].min(lo[1])];
+            face_hi = [face_hi[0].max(hi[0]), face_hi[1].max(hi[1])];
+        }
+        let (lo, hi) = (face_lo, face_hi);
+        let surface = match m.surface(face.surface()).map_err(|_| CANNOT_STORE)? {
+            ASurface::Plane { frame } => {
+                let n = dvec(&frame.z());
+                Surface::Plane(Plane::new(
+                    back(&frame.origin()),
+                    if forward { n } else { -n },
+                ))
+            }
+            ASurface::Cylinder { frame, radius } => Surface::Cylinder(Cylinder {
+                origin: back(&frame.origin()),
+                axis: dvec(&frame.z()),
+                radius: *radius,
+                outward: forward,
+            }),
+            ASurface::Cone {
+                frame,
+                radius,
+                half_angle,
+            } => {
+                // P = O + (R + v sin a)(radial) + v cos a Z: the apex
+                // is R / tan a below O along Z.
+                let z = dvec(&frame.z());
+                let (z, a) = if *half_angle < 0.0 {
+                    (-z, -half_angle)
+                } else {
+                    (z, *half_angle)
+                };
+                if a <= 0.0 || a >= std::f64::consts::FRAC_PI_2 {
+                    return Err(CANNOT_STORE);
+                }
+                let o = back(&frame.origin());
+                Surface::Cone(Cone {
+                    apex: o - z * (radius / a.tan()),
+                    axis: z,
+                    half_angle: a,
+                    outward: forward,
+                })
+            }
+            ASurface::Sphere { frame, radius } => Surface::Sphere(Sphere {
+                centre: back(&frame.origin()),
+                axis: dvec(&frame.z()),
+                radius: *radius,
+                outward: forward,
+            }),
+            ASurface::Torus {
+                frame,
+                major_radius,
+                minor_radius,
+            } => Surface::Torus(Torus {
+                centre: back(&frame.origin()),
+                axis: dvec(&frame.z()),
+                major: *major_radius,
+                minor: *minor_radius,
+                outward: forward,
+            }),
+            ASurface::Nurbs(n) => Surface::Nurbs(patch(n, forward)?),
+            // An elliptic cylinder: exactly NURBS over the face.
+            other => {
+                let span = |d: usize| Interval::new(lo[d], hi[d]).map_err(|_| CANNOT_STORE);
+                let n = other
+                    .to_nurbs([span(0)?, span(1)?])
+                    .map_err(|_| CANNOT_STORE)?;
+                Surface::Nurbs(patch(&n, forward)?)
+            }
+        };
+        loops.sort_by(|a, b| b.0.total_cmp(&a.0));
+        out.faces.push(Face {
+            key: key(Kind::Face, fu.id.into()),
+            surface,
+            loops: loops.into_iter().map(|(_, l)| l).collect(),
+            inside: None,
+        });
+    }
+    Ok(out)
+}
+
+/// A kernel NURBS surface as one of Prism's patches, all of it, facing
+/// along the surface's own normal when `forward`.
+fn patch(n: &arris_geom::NurbsSurface, forward: bool) -> Result<prism_geom::Patch, &'static str> {
+    let [ku, kv] = n.knots();
+    let s = prism_geom::NurbsSurface::new(
+        n.degree(),
+        [ku.to_vec(), kv.to_vec()],
+        n.counts(),
+        n.control_points().iter().map(back).collect(),
+        n.weights().to_vec(),
+        [false; 2],
+    )
+    .ok_or(CANNOT_STORE)?;
+    let mut p = prism_geom::Patch::whole(s);
+    p.flipped = !forward;
+    Ok(p)
 }
 
 /// A kernel NURBS curve as one of Prism's splines, over `range` of it (all

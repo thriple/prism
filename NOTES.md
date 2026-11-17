@@ -4501,3 +4501,11 @@ tests now expect the picking hint).
 - **Asked:** the 2-point arc's tangent snap only showed when the arc started on the edge, not when it ended on it.
 - **Rule:** the arc is snapped tangent to an edge at either of its two ends. The arc from b to a with bulge -h is the same arc as a to b with bulge h, so the end is found the same way as the start.
 - **Test:** `session.rs` `a_two_point_arc_snaps_tangent_to_the_line_it_ends_on` (checks the "Tangent" label).
+
+## Solids & CAD part 5a: the STEP bridge (brief 44, 2026-11-17)
+- **Built:** `prism_kernel::step::{write, read}` over arris-io 0.10.0 (the kernel's own STEP AP214 reader and writer). Nothing outside `prism-kernel` sees arris types: shapes are `Region`s, assemblies a tree of `Node`s (name, product, placement, colour, shapes, children).
+- **Write:** each shape is built into one kernel model, as a solid or (when `open`) a sheet, and checked. A shape the kernel refuses is left out and named in `left_out`; a node left holding nothing goes too. Prism's metres are scaled to the file's unit (Feet and inches write inches). Deterministic: two writes are byte-identical.
+- **Read:** in metres, one shape per placed solid (a part placed twice is two shapes, each already at its place: arris "bakes" placements). Face colours come back by face index. A refused solid comes back as its reason in arris's words (for 5c's counts).
+- **Changes in the bridge:** `solid.rs` was split so the specs (geometry to the kernel) and the read-back (`read_region`) are shared. The read-back now takes NURBS faces (as whole patches) and elliptic cylinders (as exact NURBS over the face). `Region::transformed` moves and scales a region.
+- **Tests:** `prism-ops/tests/step.rs` (box in mm, inches and metres; cylinder, ball, torus and cone; an assembly of one product placed twice with names, placements and colours; a refused shape left out; an open sheet; not a STEP file), and `freeform_cross.rs` (the bump block, and the same with a box cut out, so a cut freeform face). Shared helpers in `tests/common/step.rs`.
+- **Next:** 5b, File > Export > STEP.

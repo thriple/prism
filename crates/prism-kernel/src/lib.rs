@@ -14,6 +14,7 @@ use prism_geom::{Nurbs, NurbsSurface};
 use prism_math::DVec3;
 
 pub mod solid;
+pub mod step;
 
 /// Said when the kernel cannot make the surface.
 pub const NO_SURFACE: &str = "Refused: no surface could be made from these curves.";

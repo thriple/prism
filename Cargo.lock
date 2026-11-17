@@ -205,6 +205,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "arris-io"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2f821173e8bd6145aafdbb907b1ed912c92bd9d213556f06058b3456826fb4f"
+dependencies = [
+ "arris-check",
+ "arris-geom",
+ "arris-math",
+ "arris-mesh",
+ "arris-topo",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "arris-math"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -213,6 +227,19 @@ dependencies = [
  "libm",
  "nalgebra",
  "robust",
+]
+
+[[package]]
+name = "arris-mesh"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "685f68cf46220e8eb541f85f80ea6cb0403cdf6f88818ac56e62a61bf3bdc4e1"
+dependencies = [
+ "arris-check",
+ "arris-geom",
+ "arris-math",
+ "arris-topo",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2499,7 +2526,9 @@ dependencies = [
 name = "prism-kernel"
 version = "0.0.1"
 dependencies = [
+ "arris-check",
  "arris-geom",
+ "arris-io",
  "arris-math",
  "arris-ops",
  "arris-topo",

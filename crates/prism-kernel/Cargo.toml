@@ -17,3 +17,6 @@ arris-math = { version = "=0.10.0", default-features = false }
 # Solids (Fillet Joins step A): topology, the builder and the operations.
 arris-topo = { version = "=0.10.0", default-features = false }
 arris-ops = { version = "=0.10.0", default-features = false }
+# STEP AP214 in and out (Solids & CAD part 5, brief 44).
+arris-io = { version = "=0.10.0", default-features = false }
+arris-check = { version = "=0.10.0", default-features = false }
