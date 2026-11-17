@@ -4603,3 +4603,9 @@ tests now expect the picking hint).
 - **Why the straight line was there** is not a bug: a line drawn between two points already joined by a curve closes a face, as in SketchUp.
 - **Tests:** `prism-ops/tests/health.rs` `a_lens_beside_a_curve_is_a_sliver_and_merges_away`, `a_thin_strip_that_is_not_a_slip_is_no_sliver`.
 - **STEP export with a group open:** passed on for now (owner).
+
+### Found, not fixed yet: Push/Pull left the old face inside (owner's session 4)
+- **Seen:** pulling a box's side out left a copy of the old side inside the box, facing in (Model Health: reversed and interior). It is in the recording's own saved result, so it happened in the real session.
+- **Why:** the command ran with `new_loop: true` (Alt's "keep the original face"), though Alt was not held. Just before the pull the recording has `CtrlTap` then `AltTap` (events 1573-1574): the app sends both for an Alt tap with Ctrl down (`viewport.rs` `tap_inputs`), and the AltTap switched New Loop on for the next pull. The hint line said so, but it is easy to miss.
+- **To decide next session:** whether a Ctrl+Alt tap should toggle New Loop at all (probably not), and whether New Loop should show more plainly than the hint.
+- **Other leads from replaying the owner's recordings:** drawing a rectangle or line through faces leaves "crossing" faces (sessions 5 and 8; may be expected, as in SketchUp); an Erase leaves a reversed face (session 8, event 5169); session 9's replay takes about 12 s even in release (worth profiling).
