@@ -459,6 +459,7 @@ impl App {
                     brush: s.brush(),
                     default_colour: s.style.face_front.0,
                     round: s.round_panel(),
+                    shell: s.shell_panel(),
                     loft: s.loft_panel(),
                 };
             }
@@ -477,6 +478,8 @@ impl App {
                     crate::chrome::PanelOp::View(v) => s.set_view_style(v),
                     crate::chrome::PanelOp::Round(op) => s.round_input(op),
                     crate::chrome::PanelOp::RoundSize(text) => s.round_text(&text),
+                    crate::chrome::PanelOp::Shell(op) => s.shell_input(op),
+                    crate::chrome::PanelOp::ShellSize(text) => s.shell_text(&text),
                     crate::chrome::PanelOp::Loft(op) => s.loft_input(op),
                     crate::chrome::PanelOp::Material(op) => {
                         // A swatch picks the Paint Bucket with it.

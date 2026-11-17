@@ -68,7 +68,7 @@ pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
-pub use shelling::SHELL;
+pub use shelling::{SHELL, ShellPanel, ShellSet};
 pub use smart::BUDGET_MS as SMART_BUDGET_MS;
 pub use solids::{SolidOf, SolidRow};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
@@ -233,6 +233,10 @@ pub enum Input {
     Round {
         op: RoundOp,
     },
+    /// A change from the Shell / Thicken window.
+    Shell {
+        op: ShellSet,
+    },
     /// A change from the Loft window.
     Loft {
         op: LoftOp,
@@ -284,6 +288,12 @@ pub struct Recording {
     pub round_size: Option<f64>,
     #[serde(default)]
     pub round_chamfer: bool,
+    /// The Shell / Thicken window's thickness and direction when recording
+    /// started.
+    #[serde(default)]
+    pub shell_size: Option<f64>,
+    #[serde(default)]
+    pub shell_outside: bool,
 }
 
 impl Recording {
@@ -445,6 +455,9 @@ pub struct Session {
     /// Shell / Thicken: the shell being sized, and the faces left open.
     shell_op: Option<shelling::ShellOp>,
     shell_open: BTreeSet<prism_topo::FaceId>,
+    /// The Shell / Thicken window's thickness and direction.
+    shell_size: Option<f64>,
+    shell_outside: bool,
     /// Draw > Surface's command waiting for its curves.
     surface_pick: Option<surfacing::SurfacePick>,
     /// The pointer is over a closed group with a tool that cannot change it.
@@ -651,6 +664,8 @@ impl Session {
             loft_last_faces: Vec::new(),
             shell_op: None,
             shell_open: BTreeSet::new(),
+            shell_size: None,
+            shell_outside: false,
             surface_pick: None,
             over_closed_group: false,
             loft_notice: None,
@@ -1008,6 +1023,8 @@ impl Session {
                 .collect(),
             round_size: self.round_size,
             round_chamfer: self.round_chamfer,
+            shell_size: self.shell_size,
+            shell_outside: self.shell_outside,
         });
     }
 
@@ -1037,6 +1054,8 @@ impl Session {
         s.brush_copy = r.brush_copy.clone();
         s.round_size = r.round_size;
         s.round_chamfer = r.round_chamfer;
+        s.shell_size = r.shell_size;
+        s.shell_outside = r.shell_outside;
         for e in &r.events {
             s.handle(e);
         }
@@ -1138,6 +1157,7 @@ impl Session {
                 self.round_preview();
             }
             Input::Round { op } => self.round_set(*op),
+            Input::Shell { op } => self.shell_set(*op),
             Input::Loft { op } => self.loft_set(*op),
             Input::AltTap => self.toggle_loop(),
             Input::ShiftUp => {

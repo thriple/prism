@@ -53,5 +53,5 @@ XL: four parts, each pushed and tested on its own.
 - **3b:** click, move and type; Shift+click opens a face; the ghost shows; Esc steps back; it works inside a group.
 
 ## Acceptance
-- [ ] A box becomes a tray, and a face becomes a slab, the way the owner described.
-- [ ] PLAN, NOTES and HANDOFF are updated after each part.
+- [x] A box becomes a tray, and a face becomes a slab, the way the owner described.
+- [x] PLAN, NOTES and HANDOFF are updated after each part.

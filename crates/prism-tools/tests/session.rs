@@ -54,6 +54,8 @@ impl Driver {
             materials: Vec::new(),
             round_size: None,
             round_chamfer: false,
+            shell_size: None,
+            shell_outside: false,
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -6231,4 +6233,56 @@ fn shell_takes_a_curved_face() {
     let want = std::f64::consts::PI * (1.21 * 1.2 - 1.0);
     assert!((v - want).abs() < 1e-6, "{v} is not {want}");
     valid(&d);
+}
+
+#[test]
+fn shell_window_thickness_makes_a_click_shell_at_once() {
+    use prism_tools::session::ShellSet;
+    let mut d = Driver::empty();
+    box_2m(&mut d);
+    d.tool(SHELL);
+    let panel = d.s.shell_panel().expect("the window");
+    assert!(panel.size.is_empty() && !panel.outside && panel.open == 0);
+    d.s.shell_text("0.1");
+    assert!(
+        d.s.hint()
+            .starts_with("Click a face to shell or thicken it by the window")
+    );
+    // Hovering shows the ghost; nothing is made until the click.
+    d.hover(DVec3::new(1.0, 1.0, 2.0));
+    assert!(d.s.overlay().lines.len() >= 12 * 2, "the ghost shows");
+    assert_eq!(d.faces(), 6);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.faces(), 12, "hollow at once");
+    let v = model_volume(d.s.model());
+    assert!((v - (8.0 - 1.8f64.powi(3))).abs() < 1e-6, "inside: {v}");
+    // Outside, and an open face counted and closed again.
+    act(&mut d, "edit.undo");
+    d.s.shell_input(ShellSet::Outside(true));
+    let shift_click = |d: &mut Driver, p: DVec3| {
+        let s = d.screen(p);
+        d.send(Input::Move { x: s.x, y: s.y });
+        d.send(Input::Press {
+            button: Button::Left,
+            x: s.x,
+            y: s.y,
+            shift: true,
+            ctrl: false,
+            alt: false,
+        });
+        d.send(Input::Release {
+            button: Button::Left,
+        });
+    };
+    shift_click(&mut d, DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.shell_panel().unwrap().open, 1);
+    d.s.shell_input(ShellSet::CloseAll);
+    assert_eq!(d.s.shell_panel().unwrap().open, 0);
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    let v = model_volume(d.s.model());
+    assert!((v - (2.2f64.powi(3) - 8.0)).abs() < 1e-6, "outside: {v}");
+    // Cleared, the pointer sizes it again.
+    d.s.shell_text("");
+    d.click(DVec3::new(1.0, 1.0, 2.2));
+    assert!(d.s.shell_sizing().is_some());
 }

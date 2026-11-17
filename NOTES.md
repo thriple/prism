@@ -4396,3 +4396,21 @@ tests now expect the picking hint).
   - Push/Pull changes a cylinder's or sphere's radius, and makes a slab of a freeform face along its normals. Shell / Thicken does the same for any curved face.
   - Not built: moving a curved face in a straight direction or along a path into a solid. Follow Me takes only flat profiles; Sweep makes surfaces from curves.
   - Leftover for Loft & Sweep Controls.
+
+## Shell / Thicken part 3d, step 2: the window (brief 42, 2026-11-17)
+- **Built:** the Shell / Thicken window (`prism-app/src/chrome/shell.rs`). It opens with the tool and shows only while the tool is active, like the Fillet window.
+  - **Thickness:** empty sizes by the pointer, as before. A thickness typed there makes a click on a face shell it at once, with a ghost on the face under the pointer first. Typed while sizing by the pointer, it finishes that shell, as the measurement box does.
+  - **Inside / Outside:** the way a typed thickness goes. Greyed with no thickness, with a tip to move the pointer out or in instead.
+  - **Open faces:** "N faces left open" and Close all.
+  - The refusal for the face under the pointer, and the tool's hint lines.
+- `ShellSet` changes are recorded as `Input::Shell` and replay. Recordings save the window's thickness and direction (`shell_size`, `shell_outside`, both default when missing).
+- **Checked in the app** (a screenshot under Xvfb): the window shows in the side column with the tool chosen from Tools > Shell / Thicken, along with the hint and the Thickness box.
+- **Tests:**
+  - `session.rs` `shell_window_thickness_makes_a_click_shell_at_once`: inside, outside, open faces counted and closed, cleared back to the pointer;
+  - `chrome` `the_shell_tool_opens_its_window_only_while_active`.
+- **Brief 42 is done.** Leftovers, all in NOTES above:
+  - freeform faces joined to others;
+  - spline edges;
+  - corners of four or more faces on a rim;
+  - cones and tori untested;
+  - snapping the pointer's thickness to points.

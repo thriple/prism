@@ -35,6 +35,9 @@ pub enum PanelOp {
     /// The Fillet window: its kind, or its size as typed.
     Round(prism_tools::session::RoundOp),
     RoundSize(String),
+    /// The Shell / Thicken window: a change, or its thickness as typed.
+    Shell(prism_tools::session::ShellSet),
+    ShellSize(String),
     /// The Loft window.
     Loft(prism_tools::session::LoftOp),
 }
@@ -59,6 +62,8 @@ pub struct PanelData {
     pub default_colour: [u8; 4],
     /// The Fillet window (while its tool is active).
     pub round: Option<prism_tools::session::RoundPanel>,
+    /// The Shell / Thicken window (while its tool is active).
+    pub shell: Option<prism_tools::session::ShellPanel>,
     /// The Loft window (while its tool is active).
     pub loft: Option<prism_tools::session::LoftPanel>,
 }
@@ -93,6 +98,10 @@ pub struct Panels {
     /// while it is being typed in.
     pub fillet: bool,
     pub fillet_size: Option<String>,
+    /// The Shell / Thicken window (shown only with its tool), and its
+    /// thickness field while it is being typed in.
+    pub shell: bool,
+    pub shell_size: Option<String>,
     /// The Loft window (shown only with its tool).
     pub loft: bool,
     /// Model Health's problems not drawn in the model (its switch off).
@@ -140,6 +149,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     ui.set_width(rect.width());
                     if chrome.active_tool == prism_tools::session::FILLET {
                         super::fillet::card(ui, &mut p, &data, &mut ops);
+                    }
+                    if chrome.active_tool == prism_tools::session::SHELL {
+                        super::shell::card(ui, &mut p, &data, &mut ops);
                     }
                     if chrome.active_tool == prism_tools::session::LOFT {
                         super::loft::card(ui, &mut p, &data, &mut ops);

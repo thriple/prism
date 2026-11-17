@@ -8,6 +8,7 @@ mod hints;
 mod loft;
 mod materials;
 mod panels;
+mod shell;
 pub use materials::image_loaded;
 pub use panels::{PanelData, PanelOp};
 mod dock;
@@ -287,7 +288,13 @@ impl Chrome {
     /// Whether the Outliner, Entity Info or Tags is open (their data is
     /// only gathered then).
     pub fn panels_open(&self) -> bool {
-        self.panels.any_open() || self.fillet_shown() || self.loft_shown()
+        self.panels.any_open() || self.fillet_shown() || self.loft_shown() || self.shell_shown()
+    }
+
+    /// Whether the Shell / Thicken window shows: open, and only with its
+    /// tool.
+    pub(crate) fn shell_shown(&self) -> bool {
+        self.panels.shell && self.active_tool == prism_tools::session::SHELL
     }
 
     /// Whether the Loft window shows: open, and only with its tool.
@@ -411,6 +418,11 @@ impl Chrome {
                     self.panels.fillet = true;
                     self.panels.folded.remove("Fillet");
                 }
+                // So does Shell / Thicken (brief 42).
+                if id == prism_tools::session::SHELL {
+                    self.panels.shell = true;
+                    self.panels.folded.remove("Shell / Thicken");
+                }
                 // So does the Loft tool (brief 34).
                 if id == prism_tools::session::LOFT {
                     self.panels.loft = true;
@@ -497,6 +509,7 @@ impl Chrome {
             || self.panels.any_open()
             || self.fillet_shown()
             || self.loft_shown()
+            || self.shell_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -841,6 +854,18 @@ mod tests {
         assert!(!c.fillet_shown() && !c.side_open(), "not with another tool");
         c.run("tool.fillet", Source::Key);
         assert!(c.fillet_shown());
+    }
+
+    /// Shell / Thicken brings its window the same way (brief 42).
+    #[test]
+    fn the_shell_tool_opens_its_window_only_while_active() {
+        let mut c = chrome();
+        c.panels.folded.insert("Shell / Thicken");
+        c.run("tool.shell", Source::Key);
+        assert!(c.shell_shown() && c.side_open() && c.panels_open());
+        assert!(!c.panels.folded.contains("Shell / Thicken"));
+        c.run("tool.select", Source::Key);
+        assert!(!c.shell_shown() && !c.side_open(), "not with another tool");
     }
 
     /// The Loft tool brings its window the same way (brief 34).

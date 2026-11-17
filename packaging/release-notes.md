@@ -1,5 +1,5 @@
 **New in this build:**
-- **Shell / Thicken at sharp corners where four or more faces meet** (a lopsided pyramid's tip, a mesh): each face still moves by the full thickness, and a small flat face fills the corner. Before, these were refused.
+- **The Shell / Thicken window** opens with the tool. Type a thickness there and a click on a face shells it at once, with a ghost first; choose Inside or Outside. It counts the faces left open and can close them all. Leave the thickness empty to size by the pointer, as before.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
