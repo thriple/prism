@@ -43,10 +43,17 @@ struct Exporting {
     merge: bool,
 }
 
+/// The STEP export window (Solids & CAD part 5b, brief 44).
+struct StepExporting {
+    unit: LengthUnit,
+    selection_only: bool,
+}
+
 #[derive(Default)]
 pub struct Transfer {
     importing: Option<Importing>,
     exporting: Option<Exporting>,
+    step: Option<StepExporting>,
 }
 
 const PRINT: [Format; 2] = [Format::ThreeMf, Format::Stl];
@@ -62,7 +69,7 @@ const UNITS: [LengthUnit; 4] = [
 
 impl Transfer {
     pub fn modal(&self) -> bool {
-        self.importing.is_some() || self.exporting.is_some()
+        self.importing.is_some() || self.exporting.is_some() || self.step.is_some()
     }
 
     /// File > Import… and the export presets.
@@ -74,6 +81,17 @@ impl Transfer {
                 Err(e) => chrome.status_note(format!("Could not import: {e}")),
             },
             "exp.3mf" => self.start_export(&PRINT, "Export for 3D printing", s),
+            "exp.step" => {
+                // The model's own unit (feet and inches write inches).
+                let unit = match s.number.units.length {
+                    LengthUnit::FeetInches => LengthUnit::Inches,
+                    u => u,
+                };
+                self.step = Some(StepExporting {
+                    unit,
+                    selection_only: !s.selection().faces.is_empty(),
+                });
+            }
             "exp.gltf" => self.start_export(&MEDIA, "Export for media and the web", s),
             "exp.game" => {
                 self.start_export(&GAME, "Export for a game engine (Beverly, Godot, Unity)", s);
@@ -165,6 +183,67 @@ impl Transfer {
         }
         self.import_dialog(ctx, s, chrome);
         self.export_dialog(ctx, s, chrome);
+        self.step_dialog(ctx, s, chrome);
+    }
+
+    /// File > Export > STEP: the unit, and the selection only.
+    fn step_dialog(&mut self, ctx: &Context, s: &mut Session, chrome: &mut Chrome) {
+        let open = self.step.is_some();
+        let has_selection = !s.selection().faces.is_empty();
+        let mut go = None;
+        // Its own title: windows are told apart by it.
+        let r = SoftDialog::new("Export STEP")
+            .subtitle("For machining, CAM and other CAD programs")
+            .show(ctx, open, |ui| {
+                let Some(e) = &mut self.step else { return };
+                let unames: Vec<&str> = UNITS.iter().map(|u| u.name()).collect();
+                let mut k = UNITS.iter().position(|u| *u == e.unit).unwrap_or(0);
+                ui.add(SoftSelect::new(&mut k, &unames, "Unit"));
+                e.unit = UNITS[k];
+                if has_selection {
+                    ui.add(SoftToggle::new(&mut e.selection_only, "Only the selected faces"));
+                }
+                ui.label(
+                    "STEP keeps exact curves and solids. Each group and component is a named part; hidden ones are left out.",
+                );
+                ui.horizontal(|ui| {
+                    if ui.add(SoftButton::new("Export…")).clicked() {
+                        go = Some(true);
+                    }
+                    if ui.add(SoftButton::new("Cancel")).clicked() {
+                        go = Some(false);
+                    }
+                });
+            });
+        if r.close && go.is_none() && open {
+            go = Some(false);
+        }
+        if let Some(yes) = go
+            && let Some(e) = self.step.take()
+            && yes
+        {
+            let faces = (e.selection_only && has_selection).then(|| s.selection().faces.clone());
+            let made = prism_file::step::export(
+                s.document().assembly(),
+                "Prism model",
+                e.unit,
+                faces.as_ref(),
+            );
+            let made = match made {
+                Ok(m) => m,
+                Err(why) => {
+                    chrome.status_note(format!("Not exported. {why}"));
+                    return;
+                }
+            };
+            let text = made.text.clone();
+            let make = |stem: &str| vec![(format!("{stem}.step"), text.clone().into_bytes())];
+            match crate::mesh_files::save_all("Prism model", "step", &make) {
+                Ok(Some(to)) => chrome.status_note(format!("Exported {} to {to}", made.summary())),
+                Ok(None) => {}
+                Err(err) => chrome.status_note(format!("Not exported: {err}")),
+            }
+        }
     }
 
     fn import_dialog(&mut self, ctx: &Context, s: &mut Session, chrome: &mut Chrome) {

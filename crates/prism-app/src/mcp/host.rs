@@ -54,6 +54,7 @@ impl Host for AppHost<'_> {
                 let did = self.viewport.session.heal_solids();
                 json!({"healed": did, "solids": self.solids()})
             }
+            "export_step" => self.export_step(args)?,
             "list_actions" => self.actions(args.get("query").and_then(Value::as_str)),
             "get_geometry" => self.geometry(
                 args.get("limit")
@@ -209,6 +210,33 @@ impl AppHost<'_> {
             })
             .collect();
         json!(rows)
+    }
+
+    /// File > Export > STEP's text (Solids & CAD part 5b).
+    fn export_step(&self, args: &Value) -> Result<Value, String> {
+        let unit = match args.get("unit").and_then(Value::as_str).unwrap_or("mm") {
+            "mm" => prism_math::LengthUnit::Millimetres,
+            "cm" => prism_math::LengthUnit::Centimetres,
+            "m" => prism_math::LengthUnit::Metres,
+            "in" => prism_math::LengthUnit::Inches,
+            u => return Err(format!("Unknown unit {u}: use mm, cm, m or in")),
+        };
+        let s = &self.viewport.session;
+        let only = args
+            .get("selection_only")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let faces = only.then(|| s.selection().faces.clone());
+        let e =
+            prism_file::step::export(s.document().assembly(), "Prism model", unit, faces.as_ref())
+                .map_err(str::to_owned)?;
+        Ok(json!({
+            "summary": e.summary(),
+            "solids": e.solids,
+            "sheets": e.sheets,
+            "left_out": e.left_out,
+            "text": e.text,
+        }))
     }
 
     fn solids(&self) -> Value {
@@ -760,6 +788,26 @@ mod tests {
 
     /// Validate and Heal over MCP (brief 37): a box is valid; with its top
     /// gone it is not, and `heal` fills it in one undo step.
+    #[test]
+    fn export_step_gives_the_text_of_a_box() {
+        let doc = prism_tools::scenes::cube();
+        let (mut chrome, mut viewport, mut files) =
+            parts(prism_doc::Document::with_model(doc.model().clone()));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let r = value(h.call("export_step", &json!({"unit": "in"})));
+        assert_eq!(r["solids"], 1, "{r}");
+        assert_eq!(r["summary"], "1 solid");
+        assert!(r["text"].as_str().unwrap().starts_with("ISO-10303-21;"));
+        assert!(h.call("export_step", &json!({"unit": "ft"})).is_err());
+    }
+
     #[test]
     fn validate_solids_and_heal_a_box() {
         let doc = prism_tools::scenes::cube();

@@ -4509,3 +4509,18 @@ tests now expect the picking hint).
 - **Changes in the bridge:** `solid.rs` was split so the specs (geometry to the kernel) and the read-back (`read_region`) are shared. The read-back now takes NURBS faces (as whole patches) and elliptic cylinders (as exact NURBS over the face). `Region::transformed` moves and scales a region.
 - **Tests:** `prism-ops/tests/step.rs` (box in mm, inches and metres; cylinder, ball, torus and cone; an assembly of one product placed twice with names, placements and colours; a refused shape left out; an open sheet; not a STEP file), and `freeform_cross.rs` (the bump block, and the same with a box cut out, so a cut freeform face). Shared helpers in `tests/common/step.rs`.
 - **Next:** 5b, File > Export > STEP.
+
+## Solids & CAD part 5b: File > Export > STEP (brief 44, 2026-11-17)
+- **Built:** File > Export > STEP (machining, CAM) (`exp.step`, renamed from "STEP / IGES"; IGES is not planned in part 5). A small window: the unit (the model's own; Feet and inches write inches) and, with faces selected, "Only the selected faces". The status line says what went and what was left out, with why.
+- **What goes out** (`prism_file::step::export`):
+  - every closed valid body is a solid, every open one a sheet; a closed body that is not a valid solid is left out (Solid > Validate says why), and so is one with an approximate edge;
+  - the top product is the document; each shown group is a product placed in its parent, named as in Prism; a component is one product placed at each instance;
+  - an instance that is scaled or mirrored is written where it stands (its own product); `Region::transformed` turns loops round under a mirror;
+  - a face's paint goes out as its colour; a group's paint as its product's colour. A component's instances' paint is not carried (its instances must agree, as one product).
+- **MCP:** `export_step` (unit, selection only) returns the text, the counts and the reasons.
+- **Golden file:** `docs/acceptance/files/part.step` (a block with a pocket and a round hole, mm); the test checks the bytes and the volume read back. PRISM_WRITE_GOLDEN=1 writes it afresh.
+- **Found on the way:** two windows with the same title share one egui id, so the second never shows. The STEP window is "Export STEP" for this reason. Rule: every window's title is its own.
+- **The action table:** `scripts/import_prototype.js` would now drop actions added by hand to `table.rs` (Game engine export, Select by material and others), so its "generated" header is out of date. Renames are made in both the prototype and `table.rs` by hand.
+- **Leftovers:** the file names "Arris" as the program that wrote it (the kernel's header); loose edges (wires) are not exported.
+- **Tests:** `prism-file/tests/step.rs` (groups and a shared component as products; the same bytes twice; a hidden group left out; only the selection; approximate and invalid bodies left out and counted; an open box as a sheet; nothing to export; the golden part); `mcp/host.rs` `export_step_gives_the_text_of_a_box`; `registry.rs` (`exp.step` enabled).
+- **Next:** 5c, STEP import.

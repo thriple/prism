@@ -2489,6 +2489,7 @@ dependencies = [
  "postcard",
  "prism-doc",
  "prism-geom",
+ "prism-kernel",
  "prism-math",
  "prism-ops",
  "prism-tools",

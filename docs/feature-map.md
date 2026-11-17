@@ -6,7 +6,7 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 
 | Id | Feature | Chunk |
 |---|---|---|
-| `exp.step` | STEP / IGES (machining, CAM) | Solids & CAD |
+| `exp.step` | STEP (machining, CAM) | Solids & CAD |
 | `exp.3dm` | 3DM (Rhino) | Solids & CAD |
 | `exp.dxf` | DXF / SVG (routing, laser, CNC) | Solids & CAD |
 | `edit.weld` | Weld | Solids & CAD |

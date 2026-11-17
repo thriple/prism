@@ -43,7 +43,7 @@ pub const ACTIONS: &[RawAction] = &[
     },
     RawAction {
         id: "exp.step",
-        name: "STEP / IGES (machining, CAM)",
+        name: "STEP (machining, CAM)",
         key: "",
         proto_run: "",
         when: "",

@@ -107,6 +107,18 @@ pub fn tools() -> Value {
             "inputSchema": none,
         },
         {
+            "name": "export_step",
+            "title": "Export STEP",
+            "description": "File > Export > STEP: the document's solids and sheets as STEP AP214 text, groups and components as named products, hidden ones left out. Returns the text, how many solids and sheets went, and why any were left out.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "unit": {"type": "string", "enum": ["mm", "cm", "m", "in"], "description": "The file's unit (default mm)."},
+                    "selection_only": {"type": "boolean", "description": "Only the selected loose faces (default false)."}
+                },
+            },
+        },
+        {
             "name": "list_actions",
             "title": "List actions",
             "description": "Prism's actions (the same ones as the menus, toolbars and keys): id, name, menu path, key, and whether it can run now (and why not). Filter with an optional query matched against id, name and menu path.",
@@ -401,6 +413,7 @@ mod tests {
                 "get_health",
                 "validate_solids",
                 "heal",
+                "export_step",
                 "list_actions",
                 "get_geometry",
                 "use_tool",

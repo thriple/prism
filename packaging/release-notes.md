@@ -1,5 +1,5 @@
-**Fixed in this build:**
-- **Arc (2-point):** the tangent snap (cyan, "Tangent") now works at both ends of the arc, so it shows whether you start the arc on a line or arc, or end it there.
+**New in this build:**
+- **File > Export > STEP (machining, CAM):** your solids go out as a STEP file with exact curves and surfaces, which Fusion CAM and other CAD and CAM programs open as solids. Each group and component is a named part (a component is one part, placed at each copy), colours go with them, and hidden groups are left out. Pick the unit, or export only the selected faces. The status line says what went out and what was left out, and why.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

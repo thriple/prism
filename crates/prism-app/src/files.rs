@@ -246,7 +246,7 @@ impl Files {
             "file.save" => self.save(false, None, s, chrome),
             "file.saveas" => self.save(true, None, s, chrome),
             "file.docsettings" => self.settings_open = true,
-            "file.import" | "exp.3mf" | "exp.gltf" | "exp.game" => {
+            "file.import" | "exp.3mf" | "exp.gltf" | "exp.game" | "exp.step" => {
                 self.transfer.action(id, s, chrome)
             }
             _ => {

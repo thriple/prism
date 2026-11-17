@@ -33,6 +33,7 @@ pub mod clip;
 mod geometry;
 pub mod mesh;
 mod migrate;
+pub mod step;
 
 #[doc(hidden)]
 pub use migrate::schema_0_for_tests;

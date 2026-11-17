@@ -78,7 +78,7 @@ Written 2026-11-06, updated 2026-11-09 and 2026-11-10 (Guam). Read `CLAUDE.md` f
   (43: Weld, then the two Converts); all three parts are built (Weld,
   Curve Chain ↔ NURBS Curve, Faces ↔ Smooth Patch). **Part 5**, STEP import
   and export, has its brief (44: 5a the bridge through arris-io, 5b
-  export, 5c import); 5a is built (NOTES "Solids & CAD part 5a"). **The tool pass** (brief 41, owner request): parts 1 and 2 are
+  export, 5c import); 5a and 5b (File > Export > STEP) are built (NOTES "Solids & CAD part 5a", "5b"). **The tool pass** (brief 41, owner request): parts 1 and 2 are
   built (NOTES "Tool pass part 1", "1b" and "2"); part 3 is the
   Shell / Thicken tool, with its own brief (42, four parts): 3a, the
   operation for flat faces (`prism_ops::shelling`, `Command::Shell`), is

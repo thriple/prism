@@ -99,9 +99,19 @@ pub struct Region {
 }
 
 impl Region {
-    /// The region moved by `m`: its corners, curves and surfaces. None if
-    /// a curve or surface cannot take the move (an arc scaled unevenly).
+    /// The region moved by `m`: its corners, curves and surfaces. A mirror
+    /// turns each loop round, so it still runs counter-clockwise seen from
+    /// outside. None if a curve or surface cannot take the move (an arc
+    /// scaled unevenly).
     pub fn transformed(&self, m: &DAffine3) -> Option<Region> {
+        let mirror = m.matrix3.determinant() < 0.0;
+        let turn = |l: &Vec<(usize, bool)>| -> Vec<(usize, bool)> {
+            if mirror {
+                l.iter().rev().map(|(e, f)| (*e, !f)).collect()
+            } else {
+                l.clone()
+            }
+        };
         Some(Region {
             vertices: self
                 .vertices
@@ -128,7 +138,8 @@ impl Region {
                     Some(Face {
                         surface: f.surface.transformed(m)?,
                         inside: f.inside.map(|p| m.transform_point3(p)),
-                        ..f.clone()
+                        loops: f.loops.iter().map(turn).collect(),
+                        key: f.key,
                     })
                 })
                 .collect::<Option<_>>()?,
