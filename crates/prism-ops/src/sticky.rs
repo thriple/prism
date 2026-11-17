@@ -135,6 +135,7 @@ pub fn insert_point(model: &mut Model, p: DVec3, tol: &Tol) -> VertexId {
 /// Add the segment `p`–`q`, splitting it at every vertex it passes and every
 /// edge it crosses, then make the faces it closes or splits.
 pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
+    let fresh = model.counters().vertex;
     let tol = tol_with(model, &[p, q]);
     let a = insert_point(model, p, &tol);
     let b = insert_point(model, q, &tol);
@@ -239,7 +240,7 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     // splits it too.
     faces.extend(crate::cut::split_along(model, &added));
     faces.retain(|f| model.face(*f).is_some());
-    break_curves(model, &chain);
+    break_curves(model, &chain, fresh, &added);
     Added {
         edges: added,
         faces,
@@ -361,6 +362,7 @@ fn add_arc_from(
     if radius.is_nan() || radius <= 0.0 || !centre.is_finite() || !radius.is_finite() {
         return Added::default();
     }
+    let fresh = model.counters().vertex;
     let full = sweep >= TAU;
     // Almost on an existing arc's circle (same centre and axis, radius
     // within ten tolerances, a near miss): on it exactly, as a point near
@@ -518,7 +520,7 @@ fn add_arc_from(
     // sphere), it splits it too.
     faces.extend(crate::cut::split_along(model, &added));
     faces.retain(|f| model.face(*f).is_some());
-    break_curves_along(model, &added);
+    break_curves_along(model, &added, fresh);
     Added {
         edges: added,
         faces,
@@ -736,6 +738,7 @@ fn self_crossings(curve: &prism_geom::Nurbs, tol: &Tol) -> Vec<(f64, f64)> {
 /// circle is. A curve that crosses itself is cut at the crossing, and the
 /// loop it makes closes a face when it lies in a plane.
 pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
+    let fresh = model.counters().vertex;
     let (d0, d1) = curve.domain();
     let closed = curve.is_closed();
     let shared = std::sync::Arc::new(curve.clone());
@@ -856,7 +859,7 @@ pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
         faces = rebuild_plane(model, &plane, &new, &tol, Fill::Drawn, 0.0);
     }
     faces.retain(|f| model.face(*f).is_some());
-    break_curves_along(model, &added);
+    break_curves_along(model, &added, fresh);
     Added {
         edges: added,
         faces,
@@ -864,21 +867,36 @@ pub fn add_spline(model: &mut Model, curve: &prism_geom::Nurbs) -> Added {
 }
 
 /// [`break_curves`] at the ends of `edges`.
-fn break_curves_along(model: &mut Model, edges: &[EdgeId]) {
+fn break_curves_along(model: &mut Model, edges: &[EdgeId], fresh: u32) {
     let at: Vec<VertexId> = edges
         .iter()
         .filter_map(|e| model.edge(*e))
         .flat_map(|x| [x.a, x.b])
         .collect();
-    break_curves(model, &at);
+    break_curves(model, &at, fresh, edges);
 }
 
-/// Where a drawn edge (not a soft seam) meets a curve partway, at one of
-/// `at`, the curve parts there: each run between such points becomes a
-/// curve of its own, picked, moved and erased alone (as in SketchUp, where
-/// a line across an arc leaves two arcs).
-pub fn break_curves(model: &mut Model, at: &[VertexId]) {
-    let at: BTreeSet<VertexId> = at.iter().copied().collect();
+/// Where a drawing cuts into a curve partway (not a soft seam), the curve
+/// parts there: each run between such points becomes a curve of its own,
+/// picked, moved and erased alone (as in SketchUp, where a line across an
+/// arc leaves two arcs). A drawing cuts a curve at one of `at` that is
+/// new (made from vertex id `fresh` on: a point partway along it), or
+/// that two of the drawing's new edges (`new`) pass through. A line that
+/// only touches one of a curve's own points from one side leaves it whole
+/// (a welded run past a box's corners, a circle's seam), and drawing
+/// again makes nothing new, so it changes nothing.
+pub fn break_curves(model: &mut Model, at: &[VertexId], fresh: u32, new: &[EdgeId]) {
+    let through = |v: VertexId| {
+        new.iter()
+            .filter(|e| model.edge(**e).is_some_and(|x| x.has(v) && !x.soft))
+            .count()
+            >= 2
+    };
+    let at: BTreeSet<VertexId> = at
+        .iter()
+        .copied()
+        .filter(|v| v.0 >= fresh || through(*v))
+        .collect();
     let mut by_vertex: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
     for (id, e) in model.edges() {
         for v in [e.a, e.b] {
@@ -892,10 +910,12 @@ pub fn break_curves(model: &mut Model, at: &[VertexId]) {
         .flatten()
         .filter_map(|e| model.edge(*e).and_then(|x| x.curve_id))
         .collect();
-    // Each one's points where another hard edge meets it partway, all along
-    // it (not only those drawn at), so drawing again changes nothing.
+    // Each one's new points where another hard edge meets it partway.
     let mut breaks: BTreeMap<prism_topo::CurveId, BTreeSet<VertexId>> = BTreeMap::new();
-    for (v, ids) in &by_vertex {
+    for v in &at {
+        let Some(ids) = by_vertex.get(v) else {
+            continue;
+        };
         let edges: Vec<_> = ids.iter().filter_map(|e| model.edge(*e)).collect();
         for c in edges.iter().filter_map(|e| e.curve_id) {
             if !curves.contains(&c) {

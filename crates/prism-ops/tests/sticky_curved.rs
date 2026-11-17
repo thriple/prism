@@ -209,3 +209,33 @@ fn drawing_again_does_not_part_curves_again() {
     add_rect(&mut m, 0.0, 0.0, 3.0, 1.0, 0.0);
     assert_eq!(m.geometry_json(), once);
 }
+
+/// A line that only touches one of a curve's own points leaves it whole:
+/// only a drawing's new points part a curve (owner, 2026-11-17: rules
+/// over special cases; Weld's runs pass through other edges' ends).
+#[test]
+fn a_line_from_a_circles_own_point_leaves_it_whole() {
+    let mut m = Model::new();
+    prism_ops::sticky::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    let ids = |m: &Model| {
+        m.edges()
+            .filter_map(|(_, e)| e.curve_id)
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(ids(&m).len(), 1);
+    // From one of the circle's points straight out.
+    let p = m
+        .edges()
+        .find(|(_, e)| e.curve.is_arc())
+        .map(|(_, e)| m.vertex(e.a))
+        .unwrap();
+    prism_ops::add_segment(&mut m, p, p * 2.0);
+    assert_eq!(ids(&m).len(), 1, "still one circle");
+    // A line across it, through new points, parts it.
+    prism_ops::add_segment(
+        &mut m,
+        DVec3::new(0.3, -2.0, 0.0),
+        DVec3::new(0.3, 2.0, 0.0),
+    );
+    assert_eq!(ids(&m).len(), 2, "two arcs");
+}

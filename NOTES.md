@@ -4440,3 +4440,10 @@ tests now expect the picking hint).
   - `a_rectangle_to_a_point_off_the_axes_stands_up_toward_it`;
   - `a_corner_in_line_with_the_first_keeps_the_rectangle_going`.
 - **Replay:** Session 8's failing clicks (events 3275, 4010, 4118, 6038, 6126) now each make a rectangle. The replay drifts after that, since the owner's later clicks worked around the bug.
+
+## Curves part where a drawing cuts them, not where it touches (rule check, owner 2026-11-17)
+- **Before:** a curve parted wherever another hard edge met it partway, all along it. So a line drawn out from a circle's own point split the circle, and a Weld run through a box's corners would split the next time anything was drawn there.
+- **Rule now (`sticky::break_curves`):** a drawing cuts a curve at a point that is new (made partway along it), or that the drawing passes straight through (two of its new edges meet there). A line that only touches one of the curve's own points from one side leaves it whole. Drawing again makes nothing new, so it changes nothing; the property test `adding_again_changes_nothing` passes at 2,000 cases.
+- **Tests:**
+  - `sticky_curved.rs` `a_line_from_a_circles_own_point_leaves_it_whole` (and a line across it still parts it);
+  - the session tests where a line crosses a circle exactly at the circle's own points still part it.
