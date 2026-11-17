@@ -1,5 +1,5 @@
 **New in this build:**
-- **The Shell / Thicken window** opens with the tool. Type a thickness there and a click on a face shells it at once, with a ghost first; choose Inside or Outside. It counts the faces left open and can close them all. Leave the thickness empty to size by the pointer, as before.
+- **Prism has its own icon on macOS:** the owner's prism image, edge to edge with no border.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

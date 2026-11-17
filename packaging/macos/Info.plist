@@ -6,6 +6,7 @@
   <key>CFBundleDisplayName</key><string>Prism</string>
   <key>CFBundleIdentifier</key><string>io.github.thriple.prism</string>
   <key>CFBundleExecutable</key><string>Prism</string>
+  <key>CFBundleIconFile</key><string>Prism</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>__VERSION__</string>
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>

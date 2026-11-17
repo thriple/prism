@@ -4414,3 +4414,16 @@ tests now expect the picking hint).
   - corners of four or more faces on a rim;
   - cones and tori untested;
   - snapping the pointer's thickness to points.
+
+## The app icon (owner, 2026-11-17)
+- The owner made Prism's icon: a 2048 px square image of a prism. It came as a JPEG named `prism.ico`, zipped.
+- **macOS:**
+  - `packaging/macos/Prism.icns` holds 16 to 1024 px, made with Pillow from the image cropped square.
+  - `make-app.sh` copies it into `Contents/Resources`, and `Info.plist` names it (`CFBundleIconFile`).
+- **No border (owner):**
+  - The image fills the whole square, with no margin.
+  - Forum reports say macOS 26 (Tahoe) puts an icon that does not fill its rounded shape on a grey plate, and fills the shape with one that does. Earlier macOS shows it as a square.
+  - Not checked on a Mac yet: confirm with the next release. If Tahoe still shows a plate, the next step is an `Assets.car` made with Icon Composer and `actool` (beside the `.icns` for older macOS).
+- **Not done:**
+  - the Windows `.exe` icon (it needs a resource step in the build);
+  - the window icon on Windows and Linux.
