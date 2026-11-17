@@ -1082,6 +1082,20 @@ impl Session {
             }
         }
         let mut resp = Response::default();
+        // A Weld refusal lasts until the next click or command.
+        if matches!(e.input, Input::Press { .. } | Input::Action { .. })
+            && self.notice.is_some_and(|n| {
+                [
+                    prism_ops::curves::NOTHING,
+                    prism_ops::curves::NOT_A_CHAIN,
+                    prism_ops::curves::ALREADY,
+                ]
+                .contains(&n)
+            })
+        {
+            self.notice = None;
+            self.overlay_dirty = true;
+        }
         match &e.input {
             Input::Resize { w, h } => {
                 if (*w, *h) != self.size {
@@ -1643,6 +1657,21 @@ impl Session {
                     let soft = !edges.iter().all(|e| m.edge(*e).is_some_and(|x| x.soft));
                     self.cancel();
                     self.run(Command::Soften { edges, soft });
+                }
+            }
+            // Edit > Weld (brief 43): the selected edges become one curve,
+            // or the status line says why not.
+            "edit.weld" => {
+                let c = Command::Weld {
+                    edges: self.selection.edges.clone(),
+                };
+                if let Some(why) = c.refusal(self.work_model()) {
+                    self.notice = Some(why);
+                    self.overlay_dirty = true;
+                    self.dirty = true;
+                } else {
+                    self.cancel();
+                    self.run(c);
                 }
             }
             "edit.orient" => {

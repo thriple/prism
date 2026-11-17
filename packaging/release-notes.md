@@ -1,3 +1,9 @@
+**New in this build:**
+- **Edit > Weld:** select edges joined end to end and Weld them into one curve, picked, moved and erased as one.
+
+**Changed in this build:**
+- A line that only touches one of a curve's own points (a circle's point, the corner of a welded run) no longer splits the curve. A line drawn across a curve still parts it.
+
 **Fixed in this build:**
 - **Rectangle:** a second corner snapped to a point off the first corner's plane (such as straight above a corner on the ground) now stands the rectangle up toward it, instead of making nothing. A click that would make no rectangle keeps the first corner, as the other drawing tools do.
 

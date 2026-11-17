@@ -4447,3 +4447,15 @@ tests now expect the picking hint).
 - **Tests:**
   - `sticky_curved.rs` `a_line_from_a_circles_own_point_leaves_it_whole` (and a line across it still parts it);
   - the session tests where a line crosses a circle exactly at the circle's own points still part it.
+
+## Solids & CAD part 4a: Weld (brief 43, 2026-11-17)
+- Owner: "do whatever is next in the plan". That was Solids & CAD part 4 (Convert and Weld; Shell / Thicken had moved to the Tool Pass). It has its own brief, `docs/briefs/43-solids-4-convert-weld.md`, in three parts.
+- **Built: Edit > Weld** (also on the right-click menu with edges selected).
+  - The selected edges must join end to end in one chain, open or closed, without branches. They get one curve id, so a click picks them all, Move moves them, and the Eraser takes them as one.
+  - `prism_ops::curves::weld` and `weld_refusal`; `Command::Weld` ("Weld", one undo step).
+  - Refusals (nothing selected, not one chain, already one curve) show in the status line until the next click or command.
+- **Depends on the rule change before it** (NOTES "Curves part where a drawing cuts them"): a welded run past a box's corners stays whole when lines are drawn from those corners.
+- **Tests:**
+  - `prism-ops/tests/weld.rs`: a chain, a closed loop, a branch and edges apart refused, a run past a box's corners;
+  - `session.rs` `welded_edges_are_picked_and_erased_as_one`.
+- **Leftover:** Explode Curve, to take a welded curve apart (out of the brief's scope; a line drawn across it already parts it).

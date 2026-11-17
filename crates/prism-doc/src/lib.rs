@@ -172,6 +172,11 @@ pub enum Command {
     OrientFaces {
         faces: Option<BTreeSet<FaceId>>,
     },
+    /// Edit > Weld (brief 43): these edges, joined end to end, become one
+    /// curve.
+    Weld {
+        edges: BTreeSet<prism_topo::EdgeId>,
+    },
     /// Soften and smooth these edges, or (with `soft` false) make them
     /// plain again (Exact Curves 4c).
     Soften {
@@ -510,6 +515,7 @@ impl Command {
             Command::In { command, .. } => command.name(),
             Command::OrientFaces { .. } => "Orient Faces",
             Command::ReverseFaces { .. } => "Reverse Faces",
+            Command::Weld { .. } => "Weld",
             Command::Soften { soft: true, .. } => "Soften/Smooth",
             Command::Soften { .. } => "Unsoften",
             Command::CleanEnvelope { .. } => "Clean Envelope",
@@ -961,6 +967,7 @@ impl Command {
             Command::Revolve { edges } => prism_ops::loft::revolved(m, edges).err(),
             Command::Sweep { edges } => prism_ops::sweep::swept(m, edges).err(),
             Command::Patch { edges } => prism_ops::sweep::patched(m, edges).err(),
+            Command::Weld { edges } => prism_ops::curves::weld_refusal(m, edges),
             Command::Shell {
                 faces,
                 open,
@@ -1171,6 +1178,9 @@ impl Command {
                 prism_ops::health::orient(m, faces.as_ref());
             }
             Command::ReverseFaces { faces } => prism_ops::health::reverse(m, faces),
+            Command::Weld { edges } => {
+                let _ = prism_ops::curves::weld(m, edges);
+            }
             Command::Soften { edges, soft } => {
                 for e in edges {
                     m.set_soft(*e, *soft, *soft);

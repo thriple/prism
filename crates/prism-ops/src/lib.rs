@@ -15,6 +15,7 @@ pub mod bridge;
 pub mod cage;
 pub mod check;
 pub mod crossing;
+pub mod curves;
 pub mod cut;
 pub mod fillet;
 pub mod follow;

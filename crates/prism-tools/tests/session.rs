@@ -6354,3 +6354,26 @@ fn a_rectangle_to_a_point_off_the_axes_stands_up_toward_it() {
     );
     valid(&d);
 }
+
+// ---------- Weld (brief 43, part 4a) ----------
+
+#[test]
+fn welded_edges_are_picked_and_erased_as_one() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "edit.weld");
+    assert_eq!(d.s.document().undo_name(), Some("Weld"));
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    assert_eq!(d.s.selection().edges.len(), 4, "one click takes the curve");
+    // Weld again: already one curve, said until the next click.
+    act(&mut d, "edit.weld");
+    assert_eq!(d.s.hint(), prism_ops::curves::ALREADY);
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    assert_ne!(d.s.hint(), prism_ops::curves::ALREADY);
+    d.tool(ERASE);
+    d.click(DVec3::new(2.0, 0.5, 0.0));
+    assert_eq!(d.s.model().edge_count(), 0, "erased as one");
+}
