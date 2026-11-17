@@ -4417,13 +4417,13 @@ tests now expect the picking hint).
 
 ## The app icon (owner, 2026-11-17)
 - The owner made Prism's icon: a 2048 px square image of a prism. It came as a JPEG named `prism.ico`, zipped.
-- **macOS:**
-  - `packaging/macos/Prism.icns` holds 16 to 1024 px, made with Pillow from the image cropped square.
-  - `make-app.sh` copies it into `Contents/Resources`, and `Info.plist` names it (`CFBundleIconFile`).
-- **No border (owner):**
-  - The image fills the whole square, with no margin.
-  - Forum reports say macOS 26 (Tahoe) puts an icon that does not fill its rounded shape on a grey plate, and fills the shape with one that does. Earlier macOS shows it as a square.
-  - Not checked on a Mac yet: confirm with the next release. If Tahoe still shows a plate, the next step is an `Assets.car` made with Icon Composer and `actool` (beside the `.icns` for older macOS).
+- **macOS:** `packaging/macos/Prism.icns` (16 to 1024 px) is made by `packaging/macos/make-icon.py` (Pillow, run by hand). `make-app.sh` copies it into `Contents/Resources`, and `Info.plist` names it (`CFBundleIconFile`).
+- **The shape (owner: no border, and as rounded as the other Dock icons):** Apple's template for Big Sur to Sequoia.
+  - a 1024 canvas, the image in an 824 px shape 100 px in;
+  - continuous corners (a superellipse, n = 5);
+  - a soft shadow (30% black, 10 px down, blurred).
+  - Older macOS draws an icon as it is, so the rounding is baked in. The owner's Dock is pre-Tahoe.
+- **macOS 26 (Tahoe):** forum reports say it puts icons that do not fill its own rounded shape on a grey plate, and this template's margin may count as that. If the owner moves to Tahoe and sees a plate, add an `Assets.car` (Icon Composer and `actool`) beside the `.icns`.
 - **Not done:**
   - the Windows `.exe` icon (it needs a resource step in the build);
   - the window icon on Windows and Linux.

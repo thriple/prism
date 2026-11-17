@@ -1,5 +1,5 @@
 **New in this build:**
-- **Prism has its own icon on macOS:** the owner's prism image, edge to edge with no border.
+- **Prism has its own icon on macOS:** the owner's prism image, rounded like the other Dock icons, with no border.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
