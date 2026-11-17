@@ -24,6 +24,9 @@ pub struct Viewport {
     tap: Option<Tap>,
     /// Ctrl (Cmd) and Alt held, as last sent to the session.
     held_keys: (bool, bool),
+    /// Ctrl, Alt and Cmd (Meta) keys down now, from key events: a
+    /// modifier tapped while another is down is not a tap.
+    mods_down: [bool; 3],
 }
 
 /// A modifier that toggles a tool's mode when tapped on its own.
@@ -31,6 +34,41 @@ pub struct Viewport {
 enum Tap {
     Ctrl,
     Alt,
+}
+
+/// Follow a modifier key going down or up: the tap it makes, if it was
+/// pressed and let go on its own. One pressed while another modifier is
+/// down is not a tap (owner, 2026-11-17: Ctrl held, then an Alt tap,
+/// turned Push/Pull's new loop on unasked). Not a modifier: `None`, and
+/// `down` is unchanged.
+fn tap_step(
+    tap: &mut Option<Tap>,
+    down: &mut [bool; 3],
+    code: &str,
+    pressed: bool,
+) -> Option<Option<Tap>> {
+    let (k, m) = match code {
+        "ControlLeft" | "ControlRight" => (0, Some(Tap::Ctrl)),
+        "AltLeft" | "AltRight" => (1, Some(Tap::Alt)),
+        "MetaLeft" | "MetaRight" | "OSLeft" | "OSRight" => (2, None),
+        _ => return None,
+    };
+    let others = down.iter().enumerate().any(|(j, d)| j != k && *d);
+    down[k] = pressed;
+    if pressed {
+        *tap = if others { None } else { m };
+        return Some(None);
+    }
+    Some(match (*tap, m) {
+        (Some(t), Some(m)) if t == m && !others => {
+            *tap = None;
+            Some(t)
+        }
+        _ => {
+            *tap = None;
+            None
+        }
+    })
 }
 
 /// What tapping a modifier does: Ctrl copies (Move, Rotate) and Alt makes
@@ -130,6 +168,7 @@ impl Viewport {
             wheel: WheelSort::default(),
             tap: None,
             held_keys: (false, false),
+            mods_down: [false; 3],
         }
     }
 
@@ -246,15 +285,8 @@ impl Viewport {
             return false;
         }
         // Ctrl, Alt or Option pressed and let go on their own.
-        let modifier = match code {
-            "ControlLeft" | "ControlRight" => Some(Tap::Ctrl),
-            "AltLeft" | "AltRight" => Some(Tap::Alt),
-            _ => None,
-        };
-        if let Some(m) = modifier {
-            if pressed {
-                self.tap = Some(m);
-            } else if self.tap.take() == Some(m) {
+        if let Some(fired) = tap_step(&mut self.tap, &mut self.mods_down, code, pressed) {
+            if let Some(m) = fired {
                 let mac = matches!(
                     chrome.platform,
                     crate::actions::keymap::Platform::Mac
@@ -332,6 +364,10 @@ impl Viewport {
         let over = resp.hovered() || self.held;
         // Ctrl and Alt held: the Paint Bucket's preview follows them.
         let m = ctx.input(|i| i.modifiers);
+        // A key let go while the window was not looking is up now.
+        for (k, held) in [m.ctrl, m.alt, m.mac_cmd].into_iter().enumerate() {
+            self.mods_down[k] &= held;
+        }
         if (m.command, m.alt) != self.held_keys {
             self.held_keys = (m.command, m.alt);
             self.send(Input::Held {
@@ -545,7 +581,7 @@ fn start() -> web_time::Instant {
 
 #[cfg(test)]
 mod tests {
-    use super::{Step, Tap, WheelSort, is_mouse_wheel, tap_inputs};
+    use super::{Step, Tap, WheelSort, is_mouse_wheel, tap_inputs, tap_step};
     use prism_tools::Input;
 
     #[test]
@@ -571,6 +607,44 @@ mod tests {
         v.cancel_tap();
         v.key("AltLeft", false, &mut chrome);
         assert!(!tapped(&v));
+        // Ctrl held, then an Alt tap (owner's session 4): not a tap.
+        v.key("ControlLeft", true, &mut chrome);
+        v.key("AltLeft", true, &mut chrome);
+        v.key("AltLeft", false, &mut chrome);
+        v.key("ControlLeft", false, &mut chrome);
+        assert!(!tapped(&v));
+        // Cmd held too.
+        v.key("MetaLeft", true, &mut chrome);
+        v.key("AltLeft", true, &mut chrome);
+        v.key("AltLeft", false, &mut chrome);
+        v.key("MetaLeft", false, &mut chrome);
+        assert!(!tapped(&v));
+        // Alt alone still works afterwards.
+        v.key("AltLeft", true, &mut chrome);
+        v.key("AltLeft", false, &mut chrome);
+        assert!(tapped(&v));
+    }
+
+    #[test]
+    fn a_modifier_is_a_tap_only_on_its_own() {
+        let mut tap = None;
+        let mut down = [false; 3];
+        let mut step = |c: &str, p: bool| tap_step(&mut tap, &mut down, c, p).flatten();
+        assert_eq!(step("AltLeft", true), None);
+        assert_eq!(step("AltLeft", false), Some(Tap::Alt));
+        // Ctrl down first, Alt tapped, either let go first.
+        step("ControlLeft", true);
+        step("AltLeft", true);
+        assert_eq!(step("AltLeft", false), None);
+        assert_eq!(step("ControlLeft", false), None);
+        // Alt down first, Ctrl pressed with it: neither taps.
+        step("AltLeft", true);
+        step("ControlRight", true);
+        assert_eq!(step("ControlRight", false), None);
+        assert_eq!(step("AltLeft", false), None);
+        assert_eq!(step("ControlLeft", true), None);
+        assert_eq!(step("ControlLeft", false), Some(Tap::Ctrl));
+        assert!(tap_step(&mut None, &mut [false; 3], "KeyA", true).is_none());
     }
 
     #[test]

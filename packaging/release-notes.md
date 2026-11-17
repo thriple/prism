@@ -1,6 +1,7 @@
-**New in this build:**
-- **File > Import of DXF and SVG drawings** (or drop one on the window). Lines, arcs, circles, ellipses, polylines and splines come in on the ground as a group named after the file, at their true size, and closed loops become faces, ready to Push/Pull. Blocks in a DXF come in where they are placed. Arcs stay true arcs and curves stay exact. Text, dimensions and hatches are not imported yet; the window and the status line say how many were left out.
-- Also new recently: **File > Export > DXF / SVG** for routers, lasers and CNC programs (laid flat, or seen from the top, front or side, with true arcs).
+**New in this build: fixes from the cleanup pass.**
+- **Push/Pull no longer leaves the old face inside a box by surprise.** Tapping Alt while Ctrl (or Cmd) is held no longer turns on New Loop; only Alt (Option on a Mac) tapped on its own does.
+- **New Loop shows at the cursor:** while it is on, a "New loop" label follows the pointer, so it can't be missed before a pull.
+- Also recent: arc tangent guides at any edge, both ways, and Model Health finds and merges sliver faces; DXF and SVG import and export.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

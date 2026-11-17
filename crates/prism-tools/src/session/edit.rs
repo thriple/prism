@@ -1436,6 +1436,22 @@ impl Session {
         let fb = &self.style.feedback;
         let view = self.view();
         let px = |p: DVec3| view.to_screen(p).map_or(0.0, |(_, d)| view.units_per_px(d));
+        // New Loop on before the pull starts: say so at the cursor, not
+        // only in the hint line (owner, 2026-11-17).
+        if self.tool == PUSH
+            && self.alt_loop
+            && self.edit.is_none()
+            && let Some(s) = self.cursor
+        {
+            let (eye, dir) = view.ray(s);
+            let c = self.camera();
+            o.labels.push(Label {
+                at: eye + dir * c.eye.distance(c.target),
+                offset: [14.0, -16.0],
+                text: "New loop".into(),
+                color: fb.pill,
+            });
+        }
         match &self.edit {
             Some(EditOp::Push {
                 p0,

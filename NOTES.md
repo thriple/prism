@@ -4604,8 +4604,10 @@ tests now expect the picking hint).
 - **Tests:** `prism-ops/tests/health.rs` `a_lens_beside_a_curve_is_a_sliver_and_merges_away`, `a_thin_strip_that_is_not_a_slip_is_no_sliver`.
 - **STEP export with a group open:** passed on for now (owner).
 
-### Found, not fixed yet: Push/Pull left the old face inside (owner's session 4)
+### Push/Pull left the old face inside (owner's session 4): fixed
 - **Seen:** pulling a box's side out left a copy of the old side inside the box, facing in (Model Health: reversed and interior). It is in the recording's own saved result, so it happened in the real session.
 - **Why:** the command ran with `new_loop: true` (Alt's "keep the original face"), though Alt was not held. Just before the pull the recording has `CtrlTap` then `AltTap` (events 1573-1574): the app sends both for an Alt tap with Ctrl down (`viewport.rs` `tap_inputs`), and the AltTap switched New Loop on for the next pull. The hint line said so, but it is easy to miss.
-- **To decide next session:** whether a Ctrl+Alt tap should toggle New Loop at all (probably not), and whether New Loop should show more plainly than the hint.
+- **Fixed (owner's choices, 2026-11-17):** a modifier counts as a tap only when pressed and let go on its own. Alt tapped while Ctrl or Cmd is held does nothing now (`viewport.rs` `tap_step`; keys let go while the window was not looking are cleared from egui's modifiers each frame). And while New Loop is on, a **"New loop"** label follows the cursor before the pull starts (during the pull it was already beside the distance).
+- **Still so, by design:** on a Mac, Option tapped alone is both Copy and New Loop (each tool uses its own, as in SketchUp), so a lone Option tap with Push/Pull still turns New Loop on; the label now shows it.
+- **Tests:** `viewport.rs` `a_modifier_is_a_tap_only_on_its_own` and the Ctrl/Cmd cases in the Alt tap test; `prism-tools/tests/session.rs` `new_loop_shows_at_the_cursor_before_the_pull`.
 - **Other leads from replaying the owner's recordings:** drawing a rectangle or line through faces leaves "crossing" faces (sessions 5 and 8; may be expected, as in SketchUp); an Erase leaves a reversed face (session 8, event 5169); session 9's replay takes about 12 s even in release (worth profiling).

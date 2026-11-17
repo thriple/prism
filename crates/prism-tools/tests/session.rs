@@ -6504,3 +6504,18 @@ fn convert_turns_a_selected_freeform_face_into_flat_faces() {
     assert!(d.s.model().faces().all(|(_, f)| f.plane().is_some()));
     valid(&d);
 }
+
+#[test]
+fn new_loop_shows_at_the_cursor_before_the_pull() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    let label = |d: &Driver| d.s.overlay().labels.iter().any(|l| l.text == "New loop");
+    d.hover(DVec3::new(1.0, 1.0, 0.0));
+    assert!(!label(&d));
+    d.send(Input::AltTap);
+    d.hover(DVec3::new(1.5, 1.0, 0.0));
+    assert!(label(&d), "New Loop is shown by the cursor");
+    d.send(Input::AltTap);
+    assert!(!label(&d));
+}

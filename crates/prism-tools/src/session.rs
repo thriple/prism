@@ -1938,6 +1938,11 @@ impl Session {
 
     fn moved(&mut self, s: DVec2) {
         let last = self.cursor.replace(s);
+        // The New Loop label follows the cursor.
+        if self.tool == PUSH && self.alt_loop && self.edit.is_none() {
+            self.overlay_dirty = true;
+            self.dirty = true;
+        }
         if let (Some(drag), Some(last)) = (self.drag, last) {
             let d = s - last;
             let c = match drag {
