@@ -53,7 +53,7 @@ fn how(action: &str) -> &'static str {
         "surf.sweep" => {
             "Sweep: click the profile and the path it runs along · Enter makes it · Esc leaves"
         }
-        _ => "Patch: click four curves joined end to end in a ring · Enter makes it · Esc leaves",
+        _ => "Patch: click curves joined end to end in a ring · Enter makes it · Esc leaves",
     }
 }
 

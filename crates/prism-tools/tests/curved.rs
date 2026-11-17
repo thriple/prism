@@ -62,3 +62,40 @@ fn the_back_of_a_lofted_face_pulls_out_in_the_recorded_session() {
     assert_eq!(m.face_count(), 19, "three pulls, each adding faces");
     assert_eq!(prism_ops::check::problems(m), Vec::<String>::new());
 }
+
+/// The owner's session 9 (2026-11-17): closing a loft's end with Patch.
+/// The ring's bottom was two lines end to end, one side was a spline with
+/// a piece erased, and that spline left the bottom almost straight on (no
+/// real corner). Patch did nothing; now it fills the three-sided ring, with
+/// no fold (the first try, as four sides, had a lip by that joint).
+#[test]
+fn patch_closes_the_lofts_end_in_the_recorded_session() {
+    let r: prism_tools::Recording =
+        serde_json::from_str(include_str!("data/patch-closing-loft.json")).expect("recording");
+    let before: std::collections::BTreeSet<_> = r.model.faces().map(|(id, _)| id).collect();
+    let s = prism_tools::Session::replay(&r);
+    let m = s.model();
+    assert_eq!(prism_ops::check::problems(m), Vec::<String>::new());
+    let new: Vec<_> = m.faces().filter(|(id, _)| !before.contains(id)).collect();
+    assert!(new.len() >= 3, "a three-sided fill: {}", new.len());
+    // All of it faces one way (the end is nearly flat, across x).
+    let mut side = 0.0;
+    for (_, f) in &new {
+        let p = f.surface.patch().expect("freeform");
+        for i in 0..=8 {
+            for j in 0..=8 {
+                let u = p.u.0 + (p.u.1 - p.u.0) * f64::from(i) / 8.0;
+                let v = p.v.0 + (p.v.1 - p.v.0) * f64::from(j) / 8.0;
+                let Some(n) = p.surface.normal(u, v).try_normalize() else {
+                    continue;
+                };
+                let n = if p.flipped { -n } else { n };
+                assert!(n.x.abs() > 0.8, "bent: {n} at {u}, {v}");
+                if side == 0.0 {
+                    side = n.x.signum();
+                }
+                assert_eq!(n.x.signum(), side, "folded at {u}, {v}");
+            }
+        }
+    }
+}

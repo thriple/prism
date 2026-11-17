@@ -86,7 +86,7 @@ pub enum Command {
     Sweep {
         edges: std::collections::BTreeSet<prism_topo::EdgeId>,
     },
-    /// The surface inside a ring of four curves (Patch).
+    /// The surface inside a ring of curves (Patch).
     Patch {
         edges: std::collections::BTreeSet<prism_topo::EdgeId>,
     },

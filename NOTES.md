@@ -4524,3 +4524,14 @@ tests now expect the picking hint).
 - **Leftovers:** the file names "Arris" as the program that wrote it (the kernel's header); loose edges (wires) are not exported.
 - **Tests:** `prism-file/tests/step.rs` (groups and a shared component as products; the same bytes twice; a hidden group left out; only the selection; approximate and invalid bodies left out and counted; an open box as a sheet; nothing to export; the golden part); `mcp/host.rs` `export_step_gives_the_text_of_a_box`; `registry.rs` (`exp.step` enabled).
 - **Next:** 5c, STEP import.
+
+## Patch closes any ring (owner's session 9, 2026-11-17)
+- **Reported:** closing a loft's end, Patch (suggested by the tip) worked once but left a lip by the bottom; after erasing it, Patch did nothing at all.
+- **Why, from the recording:**
+  - the ring's bottom had become two lines end to end (a point left by the erased patch), so it was five curves, and Patch wanted exactly four;
+  - one side was a spline with a piece erased: Patch (and Loft and Sweep, through `loft::sections`) used the whole spline, which no longer met the ring;
+  - that spline leaves the bottom only 7° off straight, so as a four-sided Coons patch that joint was a "corner" of almost 180°, and the patch folded there: the lip;
+  - the waiting hint hides "Select ..." refusals, so it never said why.
+- **The rule now (one rule with the Loft tool):** Patch orders the selected edges round their ring and cuts it into sides where it turns 30° or more (`sides::TURN_DEG`, where the Loft tool's sides break). A ring with fewer than three such corners is cut where its curves meet. It is filled as the Loft tool fills a ring: four sides make one Coons patch; three, five or more are split from a centre into four-sided patches, smooth across. Patch's own Coons code is gone.
+- **Sections are what is left of a spline:** a spline whose edges cover only part of it is the stretch they cover (Loft, Sweep, Patch).
+- **Tests:** `prism-ops/tests/sweep.rs` (a side in two pieces; a joint that is no corner, three sides, no fold; a broken ring refused; a spline cut short lofts as the piece left), `prism-tools/tests/curved.rs` `patch_closes_the_lofts_end_in_the_recorded_session` (the owner's recording, cut to the Patch).

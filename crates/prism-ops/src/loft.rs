@@ -36,8 +36,9 @@ fn same_curve(a: &Arc<Nurbs>, b: &Arc<Nurbs>) -> bool {
     Arc::ptr_eq(a, b) || a == b
 }
 
-/// The selected edges as sections: a spline with every edge on it, the
-/// arcs of one circle together, each line alone.
+/// The selected edges as sections: a spline with every edge on it (the
+/// stretch of it they cover), the arcs of one circle together, each line
+/// alone.
 pub(crate) fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> {
     let tol = model.tol();
     let mut out: Vec<Section> = Vec::new();
@@ -70,8 +71,23 @@ pub(crate) fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> 
                     .map(|(k, _)| k)
                     .collect();
                 done.extend(on.iter().copied());
+                // Only the stretch its edges still cover: a spline cut
+                // short (a piece erased) is not the whole curve.
+                let (lo, hi) = on
+                    .iter()
+                    .filter_map(|k| model.edge(*k)?.curve.spline().map(|x| (x.t0, x.t1)))
+                    .fold((f64::MAX, f64::MIN), |(lo, hi), (a, b)| {
+                        (lo.min(a.min(b)), hi.max(a.max(b)))
+                    });
+                let (d0, d1) = s.curve.domain();
+                let eps = (d1 - d0) * 1e-12;
+                let curve = if lo > d0 + eps || hi < d1 - eps {
+                    s.curve.between(lo.max(d0), hi.min(d1))
+                } else {
+                    None
+                };
                 out.push(Section {
-                    curve: (*s.curve).clone(),
+                    curve: curve.unwrap_or_else(|| (*s.curve).clone()),
                     edges: on,
                     circle: None,
                 });

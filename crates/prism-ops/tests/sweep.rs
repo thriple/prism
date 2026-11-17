@@ -233,3 +233,130 @@ fn a_ring_of_four_curves_is_patched_exactly_along_all_four() {
         assert!(near < 1e-9, "{near}");
     }
 }
+
+/// Every face's normal, sampled across it, close to `up` or to `-up`,
+/// and all the faces facing the same way: none is folded over.
+fn unfolded(m: &Model, faces: &[FaceId], up: DVec3) {
+    let mut side = 0.0;
+    for f in faces {
+        let p = surface(m, *f);
+        for i in 0..=10 {
+            for j in 0..=10 {
+                let u = p.u.0 + (p.u.1 - p.u.0) * f64::from(i) / 10.0;
+                let v = p.v.0 + (p.v.1 - p.v.0) * f64::from(j) / 10.0;
+                // A centre point where patches meet has no normal of its own.
+                let Some(n) = p.surface.normal(u, v).try_normalize() else {
+                    continue;
+                };
+                let d = if p.flipped { -n } else { n }.dot(up);
+                assert!(d.abs() > 0.99, "not flat at {u}, {v}: {n}");
+                if side == 0.0 {
+                    side = d.signum();
+                }
+                assert_eq!(d.signum(), side, "folded at {u}, {v}");
+            }
+        }
+    }
+}
+
+/// The owner's session 9 (2026-11-17): a side drawn in two pieces, and a
+/// side that runs on from the bottom without a real corner, are patched.
+#[test]
+fn a_side_in_pieces_and_a_corner_that_is_not_one_are_patched() {
+    // A square whose bottom is two lines end to end: four sides.
+    let mut m = Model::new();
+    let p = |x: f64, y: f64| DVec3::new(x, y, 0.0);
+    for (a, b) in [
+        (p(0.0, 0.0), p(1.0, 0.0)),
+        (p(1.0, 0.0), p(2.0, 0.0)),
+        (p(2.0, 0.0), p(2.0, 2.0)),
+        (p(2.0, 2.0), p(0.0, 2.0)),
+        (p(0.0, 2.0), p(0.0, 0.0)),
+    ] {
+        add_segment(&mut m, a, b);
+    }
+    let faces = {
+        let edges = all(&m);
+        sweep::patch(&mut m, &edges)
+    }
+    .expect("five edges, four sides");
+    clean(&m);
+    let area: f64 = faces.iter().map(|f| m.face_area(*f)).sum();
+    assert!((area - 4.0).abs() < 1e-9, "{area}");
+    unfolded(&m, &faces, DVec3::Z);
+
+    // A curve leaving the bottom's end straight on, then turning up: that
+    // joint is no corner, so the ring has three sides (it was patched as
+    // four, folding into a lip by the joint).
+    let mut m = Model::new();
+    add_segment(&mut m, p(0.0, 0.0), p(2.0, 0.0));
+    add_spline(
+        &mut m,
+        &open(&[
+            [2.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+            [4.0, 1.0, 0.0],
+            [4.0, 3.0, 0.0],
+        ]),
+    );
+    add_segment(&mut m, p(4.0, 3.0), p(0.0, 3.0));
+    add_segment(&mut m, p(0.0, 3.0), p(0.0, 0.0));
+    let faces = {
+        let edges = all(&m);
+        sweep::patch(&mut m, &edges)
+    }
+    .expect("three sides");
+    clean(&m);
+    assert!(faces.len() >= 3, "split from a centre into three patches");
+    unfolded(&m, &faces, DVec3::Z);
+    // A broken ring is refused.
+    let mut m = Model::new();
+    add_segment(&mut m, p(0.0, 0.0), p(2.0, 0.0));
+    add_segment(&mut m, p(2.0, 0.0), p(2.0, 2.0));
+    add_segment(&mut m, p(2.0, 2.0), p(0.0, 2.0));
+    assert_eq!(
+        {
+            let edges = all(&m);
+            sweep::patch(&mut m, &edges)
+        }
+        .err(),
+        Some(sweep::FOUR_FOR_PATCH)
+    );
+}
+
+/// A spline with a piece erased lofts as the piece that is left.
+#[test]
+fn a_spline_cut_short_lofts_as_what_is_left() {
+    let mut m = Model::new();
+    add_spline(
+        &mut m,
+        &open(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [3.0, 0.0, 1.0],
+            [4.0, 0.0, 0.0],
+        ]),
+    );
+    let (e, x) = m.edges().map(|(id, x)| (id, x.clone())).next().unwrap();
+    let sp = x.curve.spline().unwrap().clone();
+    let mid = m.add_vertex(sp.point(0.5));
+    let (keep, gone) = m.split_edge(e, mid).unwrap();
+    let far = m.edge(gone).unwrap().clone();
+    let far_end = if far.a == mid { far.b } else { far.a };
+    let far_pt = m.vertex(far_end);
+    m.remove_edge(gone);
+    add_segment(&mut m, DVec3::new(0.0, 3.0, 0.0), DVec3::new(4.0, 3.0, 0.0));
+    let edges = all(&m);
+    assert!(edges.contains(&keep));
+    let faces = prism_ops::loft::loft(&mut m, &edges).expect("lofted");
+    clean(&m);
+    // No face reaches the erased piece's far end.
+    for f in &faces {
+        for v in m.face(*f).unwrap().loops().flatten() {
+            assert!(
+                m.vertex(*v).distance(far_pt) > 0.5,
+                "reached the erased piece"
+            );
+        }
+    }
+}

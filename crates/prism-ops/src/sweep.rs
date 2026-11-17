@@ -8,22 +8,24 @@
 //!   about it (rotation-minimising frames), and the kernel skins a surface
 //!   through the copies. It passes through every copy; between them it is
 //!   fitted, not exact.
-//! - **Patch**: the surface inside a ring of four curves (a Coons patch),
-//!   exact along all four.
+//! - **Patch**: the surface inside a ring of curves, exact along it,
+//!   filled as the Loft tool fills a ring (its corners are where it turns
+//!   sharply).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use prism_geom::{Nurbs, NurbsSurface};
 use prism_math::{DAffine3, DMat3, DVec3};
-use prism_topo::{EdgeId, FaceId, Model};
+use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 use crate::loft::{DEGENERATE, Section, lay, middle, sections};
+use crate::sides;
 
 pub const TWO_FOR_SWEEP: &str =
     "Select two curves to sweep: a profile and a path (lines and arcs count as curves).";
 pub const BOTH_CLOSED: &str =
     "Refused: two closed curves cannot be swept. One must be open (the path).";
-pub const FOUR_FOR_PATCH: &str = "Select four curves joined end to end in a ring to patch (three-sided patches are not built yet).";
+pub const FOUR_FOR_PATCH: &str = "Select curves joined end to end in one ring to patch.";
 
 /// The values of a curve's parameter where the edges on it have vertices,
 /// with its two ends, in order.
@@ -259,118 +261,86 @@ pub fn sweep(model: &mut Model, edges: &BTreeSet<EdgeId>) -> Result<Vec<FaceId>,
     Ok(faces)
 }
 
-/// The mean of each run of `degree` knots: where a control point's
-/// influence is centred.
-fn greville(c: &Nurbs) -> Vec<f64> {
-    let p = c.degree();
-    (0..c.points().len())
-        .map(|i| c.knots()[i + 1..=i + p].iter().sum::<f64>() / p as f64)
-        .collect()
-}
-
-/// The surface inside four curves (a bilinearly blended Coons patch):
-/// `bottom` and `top` run the same way along u, `left` and `right` the
-/// same way along v, corners shared.
-fn coons(bottom: &Nurbs, right: &Nurbs, top: &Nurbs, left: &Nurbs) -> Option<NurbsSurface> {
-    let bt = Nurbs::alike(&[bottom.clone(), top.clone()])?;
-    let lr = Nurbs::alike(&[left.clone(), right.clone()])?;
-    let (b, t, l, r) = (&bt[0], &bt[1], &lr[0], &lr[1]);
-    let (gu, gv) = (greville(b), greville(l));
-    let (nu, nv) = (gu.len(), gv.len());
-    // Blended in homogeneous coordinates (each point times its weight), so
-    // arcs and other weighted curves are kept exactly along all four sides.
-    let h = |c: &Nurbs, i: usize| {
-        let w = c.weights()[i];
-        (c.points()[i] * w, w)
-    };
-    let lerp = |a: (DVec3, f64), b: (DVec3, f64), t: f64| (a.0.lerp(b.0, t), a.1 + (b.1 - a.1) * t);
-    let (p00, p10) = (h(b, 0), h(b, nu - 1));
-    let (p01, p11) = (h(t, 0), h(t, nu - 1));
-    let mut points = Vec::with_capacity(nu * nv);
-    let mut weights = Vec::with_capacity(nu * nv);
-    for (i, x) in gu.iter().enumerate() {
-        for (j, y) in gv.iter().enumerate() {
-            let across = lerp(h(b, i), h(t, i), *y);
-            let along = lerp(h(l, j), h(r, j), *x);
-            let flat = lerp(lerp(p00, p10, *x), lerp(p01, p11, *x), *y);
-            let w = across.1 + along.1 - flat.1;
-            if w.is_nan() || w <= 1e-9 {
-                return None;
-            }
-            points.push((across.0 + along.0 - flat.0) / w);
-            weights.push(w);
-        }
-    }
-    NurbsSurface::new(
-        [b.degree(), l.degree()],
-        [b.knots().to_vec(), l.knots().to_vec()],
-        [nu, nv],
-        points,
-        weights,
-        [false, false],
-    )
-}
-
-/// The model with the ring of four selected curves patched, and the faces
-/// made; or why not.
+/// The model with the ring of selected curves patched, and the faces made;
+/// or why not. The ring is split into sides where it turns a corner (as
+/// sharp as the Loft tool's sides break at, [`sides::TURN_DEG`]), so a
+/// side may be drawn in pieces; a ring with fewer than three corners is
+/// split where its curves meet. It is filled as the Loft tool fills a
+/// ring: four sides make one Coons patch, three or five or more are split
+/// from a centre into four-sided patches, smooth across.
 pub fn patched(
     model: &Model,
     edges: &BTreeSet<EdgeId>,
 ) -> Result<(Model, Vec<FaceId>), &'static str> {
-    let mut list = sections(model, edges);
-    if list.len() != 4 || list.iter().any(|s| s.curve.is_closed()) {
-        return Err(FOUR_FOR_PATCH);
-    }
-    let tol = model.tol().dist * 10.0;
-    // Round the ring: each next curve starts where the last one ended.
-    let mut ring = vec![list.remove(0)];
-    while !list.is_empty() {
-        let end = ends(&ring[ring.len() - 1].curve).1;
-        let k = list
-            .iter()
-            .position(|s| {
-                let (a, b) = ends(&s.curve);
-                a.distance(end) <= tol || b.distance(end) <= tol
-            })
-            .ok_or(FOUR_FOR_PATCH)?;
-        let mut next = list.remove(k);
-        if ends(&next.curve).0.distance(end) > tol {
-            next.curve = next.curve.reversed();
-        }
-        ring.push(next);
-    }
-    if ends(&ring[3].curve).1.distance(ends(&ring[0].curve).0) > tol {
-        return Err(FOUR_FOR_PATCH);
-    }
-    let (bottom, right) = (ring[0].curve.clone(), ring[1].curve.clone());
-    let (top, left) = (ring[2].curve.reversed(), ring[3].curve.reversed());
-    let surface = coons(&bottom, &right, &top, &left).ok_or(DEGENERATE)?;
-    // Cut across where the left and right curves have vertices.
-    let [_, (v0, v1)] = surface.domain();
-    let side = |c: &Nurbs, e: &[EdgeId]| -> Vec<f64> {
-        let n = c.normalized();
-        cuts(model, &n, e)
-            .into_iter()
-            .map(|t| v0 + (v1 - v0) * t)
-            .collect()
-    };
-    let mut vs = side(&left, &ring[3].edges);
-    for v in side(&right, &ring[1].edges) {
-        if !vs.iter().any(|k| (k - v).abs() <= (v1 - v0) * 1e-9) {
-            vs.push(v);
-        }
-    }
-    vs.sort_by(f64::total_cmp);
-    let last = vs.len() - 1;
-    let mut rows: Vec<(f64, Vec<EdgeId>)> = vs.into_iter().map(|v| (v, Vec::new())).collect();
-    rows[0].1 = ring[0].edges.clone();
-    rows[last].1 = ring[2].edges.clone();
-    let mut w = model.clone();
-    let faces = lay(&mut w, surface, &rows, false)?;
-    Ok((w, faces))
+    let ring = ring_sides(model, edges).ok_or(FOUR_FOR_PATCH)?;
+    sides::made_from(model, &ring, sides::Preset::default())
 }
 
-/// Patch the ring of four selected curves ([`patched`]). The model is left
+/// The selected edges in order round the one ring they make, cut into
+/// sides at its corners; None if they do not make one ring.
+fn ring_sides(model: &Model, edges: &BTreeSet<EdgeId>) -> Option<Vec<Vec<EdgeId>>> {
+    let mut at: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+    for e in edges {
+        let x = model.edge(*e)?;
+        at.entry(x.a).or_default().push(*e);
+        at.entry(x.b).or_default().push(*e);
+    }
+    if at.values().any(|v| v.len() != 2) {
+        return None;
+    }
+    // Round the ring: each edge, and the vertex it runs on to.
+    let first = *edges.iter().next()?;
+    let mut order = vec![first];
+    let mut joints = Vec::new();
+    let mut v = model.edge(first)?.b;
+    loop {
+        joints.push(v);
+        let last = order[order.len() - 1];
+        let next = *at.get(&v)?.iter().find(|k| **k != last)?;
+        if next == first {
+            break;
+        }
+        order.push(next);
+        v = model.edge(next)?.other(v);
+    }
+    let n = order.len();
+    if n != edges.len() {
+        return None;
+    }
+    // Joint i is where edge i meets edge i + 1.
+    let max = sides::TURN_DEG.to_radians();
+    let turn = |i: usize| {
+        let arrive = -sides::leaving(model, order[i], joints[i])?;
+        let leave = sides::leaving(model, order[(i + 1) % n], joints[i])?;
+        Some(arrive.angle_between(leave))
+    };
+    let mut corners: Vec<usize> = (0..n)
+        .filter(|i| turn(*i).is_some_and(|t| t >= max))
+        .collect();
+    if corners.len() < 3 {
+        corners = (0..n)
+            .filter(|i| !sides::same_curve(model, order[*i], order[(i + 1) % n]))
+            .collect();
+    }
+    if corners.is_empty() {
+        return None;
+    }
+    let k = corners.len();
+    Some(
+        (0..k)
+            .map(|c| {
+                let (from, to) = (corners[c] + 1, corners[(c + 1) % k] + 1);
+                let count = match (to + n - from) % n {
+                    0 => n,
+                    m => m,
+                };
+                (0..count).map(|j| order[(from + j) % n]).collect()
+            })
+            .collect(),
+    )
+}
+
+/// Patch the ring of selected curves ([`patched`]). The model is left
 /// alone when refused.
 pub fn patch(model: &mut Model, edges: &BTreeSet<EdgeId>) -> Result<Vec<FaceId>, &'static str> {
     let (w, faces) = patched(model, edges)?;

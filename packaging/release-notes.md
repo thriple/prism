@@ -1,5 +1,5 @@
-**New in this build:**
-- **File > Export > STEP (machining, CAM):** your solids go out as a STEP file with exact curves and surfaces, which Fusion CAM and other CAD and CAM programs open as solids. Each group and component is a named part (a component is one part, placed at each copy), colours go with them, and hidden groups are left out. Pick the unit, or export only the selected faces. The status line says what went out and what was left out, and why.
+**Fixed in this build:**
+- **Draw > Surface > Patch** fills any ring of curves now, not just four. A side drawn in pieces, or split by a leftover point, counts as one side, and a ring with three corners gets a smooth three-sided fill. A bend gentler than 30° is no longer treated as a corner, which caused the lip (a fold) next to where a curve ran on almost straight. A curve with a piece erased now counts as the part that's left.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

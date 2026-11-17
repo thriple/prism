@@ -82,7 +82,7 @@ impl Side {
 }
 
 /// The unit direction an edge leaves `v` in.
-fn leaving(model: &Model, e: EdgeId, v: VertexId) -> Option<DVec3> {
+pub(crate) fn leaving(model: &Model, e: EdgeId, v: VertexId) -> Option<DVec3> {
     let x = model.edge(e)?;
     let c = x.curve_from(v);
     Some(c.start_tangent(model.vertex(v), model.vertex(x.other(v))))
@@ -90,7 +90,7 @@ fn leaving(model: &Model, e: EdgeId, v: VertexId) -> Option<DVec3> {
 
 /// Whether two edges lie on one curve: the same spline, arcs of one
 /// circle, or edges drawn as one curve.
-fn same_curve(model: &Model, a: EdgeId, b: EdgeId) -> bool {
+pub(crate) fn same_curve(model: &Model, a: EdgeId, b: EdgeId) -> bool {
     let (Some(x), Some(y)) = (model.edge(a), model.edge(b)) else {
         return false;
     };
