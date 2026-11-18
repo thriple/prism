@@ -12,6 +12,7 @@ prism-math.workspace = true
 prism-geom.workspace = true
 prism-kernel.workspace = true
 prism-topo.workspace = true
+prism-text.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
