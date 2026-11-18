@@ -1,10 +1,7 @@
-**New in this build: Effects.**
-- When you finish an edit, the shape answers with a short line animation in the accent colour: a new shape flashes and echoes outward, a line or arc is traced along, a Push/Pull outline rises from where the face was, and things you erase fade where they were.
-- Lofts, revolves and other curved faces roll their surface grid across them. Moved, rotated and scaled things travel from where they were. Follow Me carries its profile along the path, Offset grows from the face's edge, a new group's box draws in, and new section planes, construction planes and dimensions trace themselves.
-- Turn it on or off with **Effects** in the menu bar (after Help), **View > Effects**, or **Edit > Preferences > Effects**, which also sets how long it lasts (1 second by default).
-- **Section planes:** an arrow-key lock now sets a new plane's direction, and moving a plane (in the tool, or picked up with Alt + click) snaps level with corners, midpoints, edges and guides.
-- **Fillet / Chamfer:** clicks now collect edges (a double-click collects a face's edges) and show them rounded as a preview; drag from an edge or type a size to set the size; Enter rounds them all together, so rounds that meet at a corner join. Esc clears; nothing is made without Enter.
-- **Snap to origin:** where the red, green and blue axes cross is now a snap point ("Origin") while the axes are shown.
+**New in this build: the Inspector.**
+- **Window > Inspector** shows what is selected and lets you change it. For a group or component: its name, tag, hidden and locked, and the position and size of its box. Type a length with units or a simple sum, such as `1.5m`, `2*25.4mm` or `(1m+20cm)/2`, and press Enter; each change is one undo step.
+- Select several groups and a field they differ on shows "—"; an edit applies to all of them. It also shows faces, edges and volume, and the area of selected faces.
+- Editable fillets, chamfers and booleans come in the next parts.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

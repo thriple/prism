@@ -4719,3 +4719,12 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - Right after a round, a typed size or the window's size / kind still change it, until an edge is collected again.
 - Tests: two edges meeting at a corner collected and rounded together (one undo), a click taking one out, a drag setting 0.3, a typed size rounding the set, Esc and leaving the tool making nothing; the older Fillet tests now press Enter after their clicks; MCP `use_tool` steps add the key Enter.
 - Not seen in the app yet (tests only).
+
+## Inspector, part 1 (brief 48, owner choice 2026-11-18: panel first)
+
+- **Built:** `session/inspector.rs`. `Session::inspector()` returns sections of fields; `inspector_set(key, text)` is the only way in, used by the window (`chrome/inspector.rs`), MCP (`get_inspector`, `set_inspector`) and the tests. Keys: `name`, `tag`, `hidden`, `locked`, `x y z` (low corner of the selection's world box), `w d h` (its size).
+- **Sizing** scales about the low corner with `Change::Scale` in world axes, as the Scale tool does. On a group turned off the axes this shears it; a typed size on such a group is exact on the box, not on the group's own axes. Local terms are left for later.
+- **A bare number is metres,** as in the measurement box. It follows the box so the two stay the same; both change together when "typed values in the document's unit" is done (Drawing & Edit Polish).
+- **Expressions:** `NumberFormat::expression` (units.rs) handles `+ - * /` and brackets over lengths. A plain number may multiply or divide a length; two lengths cannot be multiplied. It is not used by the measurement box yet (Drawing & Edit Polish owns that).
+- **Volume** is worked out once per selection and model version (`inspector_volume`), because it runs the solid checks.
+- **Left for later parts:** rotation, scale as a factor, pivot, local terms, scrubbing, ghosts, pick-in-viewport references, the modifier stack, editable features, named parameters.

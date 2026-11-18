@@ -7726,3 +7726,145 @@ fn a_typed_size_rounds_the_set_and_esc_or_leaving_makes_nothing() {
     assert_eq!(d.s.display_scene().faces.len(), 6, "no preview left");
     let _ = FILLET;
 }
+
+// ---------- Inspector, part 1 (brief 48) ----------
+
+fn inspector_text(d: &Driver, key: &str) -> (String, bool) {
+    let i = d.s.inspector();
+    let f = i
+        .sections
+        .iter()
+        .flat_map(|s| &s.fields)
+        .find(|f| f.key == key)
+        .unwrap_or_else(|| panic!("no field {key}"));
+    (f.text.clone(), f.mixed)
+}
+
+fn group_min(d: &Driver, g: prism_doc::InstanceId) -> DVec3 {
+    d.s.group_box(g)
+        .expect("a box")
+        .iter()
+        .fold(DVec3::splat(f64::MAX), |m, p| m.min(*p))
+}
+
+#[test]
+fn the_inspector_shows_a_group_and_edits_it_in_one_undo_step_each() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let i = d.s.inspector();
+    assert_eq!(i.summary, "Group");
+    let titles: Vec<_> = i.sections.iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["General", "Position", "Size"]);
+    assert_eq!(inspector_text(&d, "w").0, "2.000 m");
+    assert_eq!(inspector_text(&d, "volume").0, "8.000 m³");
+    assert_eq!(inspector_text(&d, "faces").0, "6");
+    // Position: a typed expression, the box moves, undo puts it back.
+    d.s.inspector_set("x", "1m+50cm").expect("moves");
+    assert!((group_min(&d, g).x - 1.5).abs() < 1e-9);
+    assert_eq!(inspector_text(&d, "x").0, "1.500 m");
+    undo(&mut d);
+    assert!(group_min(&d, g).x.abs() < 1e-9);
+    // Size: scaled about the low corner, so the position stays.
+    d.s.inspector_set("w", "4").expect("scales");
+    assert_eq!(inspector_text(&d, "w").0, "4.000 m");
+    assert_eq!(inspector_text(&d, "d").0, "2.000 m");
+    assert_eq!(inspector_text(&d, "volume").0, "16.000 m³");
+    assert!(group_min(&d, g).x.abs() < 1e-9);
+    undo(&mut d);
+    assert_eq!(inspector_text(&d, "w").0, "2.000 m");
+}
+
+#[test]
+fn the_inspector_names_tags_hides_and_locks() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.s.inspector_set("name", "Shed").expect("names");
+    assert_eq!(d.s.document().assembly().name_of(g), Some("Shed"));
+    d.s.tag_command(prism_tools::TagOp::Add);
+    let tag = d.s.tag_rows()[0].1.clone();
+    d.s.inspector_set("tag", &tag).expect("tags");
+    assert_eq!(inspector_text(&d, "tag").0, tag);
+    d.s.inspector_set("tag", "None").expect("untags");
+    assert_eq!(inspector_text(&d, "tag").0, "None");
+    assert!(d.s.inspector_set("tag", "Nope").is_err());
+    d.s.inspector_set("locked", "true").expect("locks");
+    assert!(d.s.document().assembly().is_locked(g));
+    // Locked: edits are refused, unlocking is not.
+    assert!(d.s.inspector_set("x", "1").is_err());
+    d.s.inspector_set("locked", "false").expect("unlocks");
+    d.s.inspector_set("hidden", "true").expect("hides");
+    assert!(d.s.document().assembly().is_hidden(g));
+}
+
+#[test]
+fn the_inspector_refuses_bad_input_and_changes_nothing() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let before = group_min(&d, g);
+    for (k, t) in [
+        ("x", "abc"),
+        ("w", "0"),
+        ("w", "-1"),
+        ("hidden", "maybe"),
+        ("volume", "1"),
+    ] {
+        assert!(d.s.inspector_set(k, t).is_err(), "{k} {t}");
+    }
+    assert_eq!(group_min(&d, g), before);
+    assert_eq!(inspector_text(&d, "w").0, "2.000 m");
+}
+
+#[test]
+fn with_several_groups_the_inspector_shows_mixed_values_and_edits_all() {
+    let mut d = Driver::empty();
+    let a = grouped_box(&mut d);
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(1.0, 0.0, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("4");
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    act(&mut d, "edit.selall");
+    assert_eq!(d.s.selected_groups().len(), 2);
+    assert_eq!(d.s.inspector().summary, "2 groups");
+    // Both are 2 m wide; together they span 6 m.
+    assert_eq!(inspector_text(&d, "w").0, "6.000 m");
+    assert!(
+        d.s.inspector()
+            .sections
+            .iter()
+            .flat_map(|s| &s.fields)
+            .all(|f| f.key != "name"),
+        "a name is for one group"
+    );
+    // Tag one only: the tag shows as mixed.
+    d.s.tag_command(prism_tools::TagOp::Add);
+    let tag = d.s.tag_rows()[0].0;
+    d.s.select_path(&[a]);
+    d.s.tag_command(prism_tools::TagOp::PutSelected(Some(tag)));
+    act(&mut d, "edit.selall");
+    assert!(inspector_text(&d, "tag").1, "the tags differ");
+    // One edit moves both.
+    d.s.inspector_set("y", "1").expect("moves both");
+    assert!((group_min(&d, a).y - 1.0).abs() < 1e-9);
+    undo(&mut d);
+    assert!(group_min(&d, a).y.abs() < 1e-9);
+}
+
+#[test]
+fn the_inspector_describes_selected_faces() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    assert_eq!(d.s.inspector().summary, "Nothing selected");
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    let i = d.s.inspector();
+    assert_eq!(i.summary, "1 face");
+    assert_eq!(inspector_text(&d, "area").0, "4.000 m²");
+    assert!(
+        d.s.inspector_set("x", "1").is_err(),
+        "geometry has no fields to set"
+    );
+}

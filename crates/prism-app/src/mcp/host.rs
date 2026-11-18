@@ -48,6 +48,15 @@ impl Host for AppHost<'_> {
         let v = match name {
             "get_model" => self.model(),
             "get_selection" => self.selection(),
+            "get_inspector" => self.inspector(),
+            "set_inspector" => {
+                let get = |k: &str| args.get(k).and_then(Value::as_str);
+                let (Some(key), Some(value)) = (get("key"), get("value")) else {
+                    return Err("key and value are text".into());
+                };
+                self.viewport.session.inspector_set(key, value)?;
+                self.inspector()
+            }
             "get_health" => self.health(),
             "validate_solids" => self.solids(),
             "heal" => {
@@ -276,6 +285,40 @@ impl AppHost<'_> {
                 "materials": materials.map(|(f, b)| json!({"front": f, "back": b})),
             }),
         }
+    }
+
+    fn inspector(&self) -> Value {
+        use prism_tools::session::FieldKind;
+        let i = self.viewport.session.inspector();
+        let sections: Vec<Value> = i
+            .sections
+            .iter()
+            .map(|s| {
+                let fields: Vec<Value> = s
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let kind = match &f.kind {
+                            FieldKind::Text => "text",
+                            FieldKind::Length => "length",
+                            FieldKind::Toggle => "toggle",
+                            FieldKind::Choice(_) => "choice",
+                            FieldKind::Fixed => "fixed",
+                        };
+                        let mut v = json!({
+                            "key": f.key, "label": f.label, "kind": kind,
+                            "value": f.text, "mixed": f.mixed,
+                        });
+                        if let FieldKind::Choice(o) = &f.kind {
+                            v["options"] = json!(o);
+                        }
+                        v
+                    })
+                    .collect();
+                json!({"title": s.title, "fields": fields})
+            })
+            .collect();
+        json!({"summary": i.summary, "path": i.path, "sections": sections})
     }
 
     fn health(&self) -> Value {
@@ -1105,6 +1148,49 @@ mod tests {
             },
         });
         assert_eq!(viewport.session.document().assembly().placed().len(), 0);
+    }
+
+    #[test]
+    fn the_inspector_reads_and_sets_a_groups_fields() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_tools::scenes::pocket());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let field = |v: &Value, key: &str| {
+            v["sections"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|s| s["fields"].as_array().unwrap().clone())
+                .find(|f| f["key"] == key)
+                .unwrap_or_else(|| panic!("no field {key}"))
+        };
+        let none = value(h.call("get_inspector", &json!({})));
+        assert_eq!(none["summary"], "Nothing selected");
+        assert!(
+            h.call("set_inspector", &json!({"key": "x", "value": "1"}))
+                .is_err()
+        );
+        value(h.call("run_action", &json!({"id": "edit.selall"})));
+        value(h.call("run_action", &json!({"id": "edit.group"})));
+        let v = value(h.call("get_inspector", &json!({})));
+        assert_eq!(v["summary"], "Group");
+        assert_eq!(field(&v, "name")["kind"], "text");
+        assert_eq!(field(&v, "tag")["options"], json!(["None"]));
+        let moved = value(h.call("set_inspector", &json!({"key": "x", "value": "2*0.5m"})));
+        assert_eq!(field(&moved, "x")["value"], "1.000 m");
+        assert!(
+            h.call("set_inspector", &json!({"key": "w", "value": "oops"}))
+                .is_err()
+        );
+        value(h.call("run_action", &json!({"id": "edit.undo"})));
+        let back = value(h.call("get_inspector", &json!({})));
+        assert_ne!(field(&back, "x")["value"], "1.000 m");
     }
 
     #[test]

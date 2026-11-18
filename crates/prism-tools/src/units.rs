@@ -135,6 +135,102 @@ impl NumberFormat {
         self.number(&s)
     }
 
+    /// A length, or a sum, difference, product or quotient of them with
+    /// brackets: `2*25.4mm`, `(1m+20cm)/2`. A plain number may multiply or
+    /// divide a length; two lengths may not be multiplied.
+    pub fn expression(&self, s: &str) -> Option<f64> {
+        if let Some(v) = self.length(s) {
+            return Some(v);
+        }
+        let mut tokens: Vec<String> = Vec::new();
+        let mut word = String::new();
+        let flush = |word: &mut String, tokens: &mut Vec<String>| {
+            if !word.trim().is_empty() {
+                tokens.push(word.trim().to_owned());
+            }
+            word.clear();
+        };
+        for c in s.chars() {
+            let operand_before = !word.trim().is_empty()
+                || tokens
+                    .last()
+                    .is_some_and(|t| t == ")" || !"+-*/(".contains(t.as_str()));
+            match c {
+                '+' | '*' | '/' | '(' | ')' => {
+                    flush(&mut word, &mut tokens);
+                    tokens.push(c.to_string());
+                }
+                '-' if operand_before => {
+                    flush(&mut word, &mut tokens);
+                    tokens.push("-".into());
+                }
+                _ => word.push(c),
+            }
+        }
+        flush(&mut word, &mut tokens);
+        let mut at = 0;
+        let (v, _) = self.sum(&tokens, &mut at)?;
+        (at == tokens.len() && v.is_finite()).then_some(v)
+    }
+
+    /// An operand's value, and whether it carried a unit.
+    fn operand(&self, t: &str) -> Option<(f64, bool)> {
+        let unit = t
+            .chars()
+            .any(|c| c.is_alphabetic() || c == '"' || c == '\'');
+        Some((self.length(t)?, unit))
+    }
+
+    fn sum(&self, t: &[String], at: &mut usize) -> Option<(f64, bool)> {
+        let (mut v, mut unit) = self.product(t, at)?;
+        while let Some(op) = t.get(*at).filter(|o| *o == "+" || *o == "-") {
+            *at += 1;
+            let (w, u) = self.product(t, at)?;
+            v = if op == "+" { v + w } else { v - w };
+            unit |= u;
+        }
+        Some((v, unit))
+    }
+
+    fn product(&self, t: &[String], at: &mut usize) -> Option<(f64, bool)> {
+        let (mut v, mut unit) = self.atom(t, at)?;
+        while let Some(op) = t.get(*at).filter(|o| *o == "*" || *o == "/") {
+            *at += 1;
+            let (w, u) = self.atom(t, at)?;
+            if op == "*" {
+                if unit && u {
+                    return None;
+                }
+                v *= w;
+                unit |= u;
+            } else {
+                if w == 0.0 || (!unit && u) {
+                    return None;
+                }
+                v /= w;
+                unit = unit && !u;
+            }
+        }
+        Some((v, unit))
+    }
+
+    fn atom(&self, t: &[String], at: &mut usize) -> Option<(f64, bool)> {
+        let tok = t.get(*at)?;
+        *at += 1;
+        if tok == "(" {
+            let r = self.sum(t, at)?;
+            if t.get(*at)? != ")" {
+                return None;
+            }
+            *at += 1;
+            return Some(r);
+        }
+        if "+-*/)".contains(tok.as_str()) {
+            return None;
+        }
+        self.operand(tok)
+    }
+
     /// One or two lengths ("2", "2,1.5"). A second value left empty means
     /// the same as the first.
     pub fn lengths(&self, s: &str) -> Option<(f64, Option<f64>)> {
@@ -255,6 +351,20 @@ mod tests {
     fn bad_input_is_rejected() {
         for s in ["", "abc", "2x", "1.2.3", "m", "2'x", "--1", "1,5"] {
             assert_eq!(DOT.length(s), None, "{s:?}");
+        }
+    }
+
+    #[test]
+    fn expressions_with_units() {
+        assert!(close(DOT.expression("2*25.4mm"), 0.0508));
+        assert!(close(DOT.expression("(1m+20cm)/2"), 0.6));
+        assert!(close(DOT.expression("1.5m - 50cm"), 1.0));
+        assert!(close(DOT.expression("-2*3"), -6.0));
+        assert!(close(DOT.expression("2'6\""), 0.762));
+        assert!(close(DOT.expression("2*(3+1)"), 8.0));
+        assert!(close(DOT.expression("1m/2m*3mm"), 0.0015));
+        for bad in ["1m*2m", "2/0", "2/1m", "(1+2", "1+", "*3", "", "abc"] {
+            assert_eq!(DOT.expression(bad), None, "{bad:?}");
         }
     }
 

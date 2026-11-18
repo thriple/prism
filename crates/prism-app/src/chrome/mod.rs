@@ -5,6 +5,7 @@
 mod components;
 mod fillet;
 mod hints;
+mod inspector;
 mod loft;
 mod materials;
 mod panels;
@@ -458,6 +459,7 @@ impl Chrome {
                     }
                     "win.outliner" => self.panels.outliner = true,
                     "win.info" => self.panels.info = true,
+                    "win.inspector" => self.panels.inspector = true,
                     "win.tags" => self.panels.tags = true,
                     "win.health" => self.panels.health = true,
                     "solid.heal" => {

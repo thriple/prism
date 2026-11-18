@@ -20,6 +20,8 @@ pub enum PanelOp {
     Hide(InstanceId, bool),
     Name(InstanceId, String),
     Tag(prism_tools::TagOp),
+    /// The Inspector: a field's key and what was typed or picked.
+    Inspect(&'static str, String),
     /// Model Health: select a row's items, or run its fix.
     HealthSelect(&'static str),
     HealthFix(&'static str),
@@ -49,6 +51,8 @@ pub enum PanelOp {
 pub struct PanelData {
     pub outline: Vec<OutlineRow>,
     pub info: Option<EntityInfo>,
+    /// The Inspector window's fields.
+    pub inspector: prism_tools::session::Inspector,
     /// Tag id, name, shown, instances on it.
     pub tags: Vec<(TagId, String, bool, usize)>,
     /// Model Health's rows (computed when the model changes while open).
@@ -79,6 +83,11 @@ pub struct Panels {
     /// Help > Tool Hint Panel.
     pub hints: bool,
     pub info: bool,
+    /// The Inspector window, the field being typed in, and why the last
+    /// edit was refused.
+    pub inspector: bool,
+    pub inspector_edit: Option<(&'static str, String)>,
+    pub inspector_error: Option<String>,
     pub tags: bool,
     pub health: bool,
     /// The Solids window (Solid > Validate and Heal), and what the last
@@ -129,6 +138,7 @@ impl Panels {
         self.outliner
             || self.hints
             || self.info
+            || self.inspector
             || self.tags
             || self.health
             || self.solids
@@ -170,6 +180,7 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                         super::texting::card(ui, &mut p, &data, &mut ops);
                     }
                     super::hints::card(chrome, ui, &mut p);
+                    super::inspector::card(ui, &mut p, &data, &mut ops);
                     info(ui, &mut p, &data, &mut ops);
                     super::materials::card(ui, &mut p, &data, &mut ops);
                     outliner(ui, &mut p, &data, &mut ops);

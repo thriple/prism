@@ -454,6 +454,11 @@ impl App {
                 chrome.panel_data = crate::chrome::PanelData {
                     outline: s.outline(),
                     info: Some(s.entity_info()),
+                    inspector: if chrome.panels.inspector {
+                        s.inspector()
+                    } else {
+                        Default::default()
+                    },
                     tags: s.tag_rows(),
                     health,
                     solids,
@@ -475,6 +480,9 @@ impl App {
                     crate::chrome::PanelOp::Hide(id, hidden) => s.set_hidden(id, hidden),
                     crate::chrome::PanelOp::Name(id, name) => s.name_instance(id, &name),
                     crate::chrome::PanelOp::Tag(t) => s.tag_command(t),
+                    crate::chrome::PanelOp::Inspect(key, text) => {
+                        chrome.panels.inspector_error = s.inspector_set(key, &text).err();
+                    }
                     crate::chrome::PanelOp::HealthSelect(k) => s.select_health(k),
                     crate::chrome::PanelOp::HealthFix(k) => s.health_fix(k),
                     crate::chrome::PanelOp::SolidSelect(of) => s.select_solid(&of),

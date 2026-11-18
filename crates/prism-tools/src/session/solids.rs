@@ -93,7 +93,7 @@ impl Session {
     }
 
     /// A volume in the document's unit cubed.
-    fn volume_text(&self, v: f64) -> String {
+    pub(super) fn volume_text(&self, v: f64) -> String {
         let u = self.number.units;
         let unit = match u.length {
             LengthUnit::Millimetres => "mm³",

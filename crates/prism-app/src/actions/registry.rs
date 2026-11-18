@@ -107,7 +107,7 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 30] = [
+const COMMANDS: [&str; 31] = [
     // Effects (brief 47): kept in the preferences.
     "view.effects",
     // Solids & CAD part 1 (brief 37): opens the Solids window.
@@ -139,6 +139,7 @@ const COMMANDS: [&str; 30] = [
     "win.components",
     "win.outliner",
     "win.info",
+    "win.inspector",
     "win.tags",
     "help.features",
     "help.search",

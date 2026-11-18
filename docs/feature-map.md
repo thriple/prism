@@ -42,7 +42,6 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | `tool.ball` | Ball Joint | Fit & Mechanisms |
 | `tool.fixed` | Fixed Joint | Fit & Mechanisms |
 | `mech.sweep` | Sweep Motion Range | Fit & Mechanisms |
-| `win.inspector` | Inspector | Inspector & Features |
 | `render.settings` | Render Settings… | Rendering |
 | `render.engine` | Engine | Rendering |
 | `render.passes` | Output and Passes… | Rendering |

@@ -40,6 +40,7 @@ mod effects;
 mod follow;
 mod groups;
 mod health;
+mod inspector;
 mod lofting;
 mod materials;
 mod paint;
@@ -70,6 +71,7 @@ use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
 pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
+pub use inspector::{Field, FieldKind, Inspector, Section};
 pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
@@ -512,6 +514,8 @@ pub struct Session {
     /// Effects (brief 47): on, and the ones running.
     effects_on: bool,
     effects_length: f64,
+    /// The Inspector's volume, for the selection it was worked out for.
+    inspector_volume: inspector::VolumeCache,
     effects: Vec<prism_view::effects::Effect>,
     dirty: bool,
     highlight_dirty: bool,
@@ -747,6 +751,7 @@ impl Session {
             reduce_motion: false,
             effects_on: true,
             effects_length: prism_view::effects::DURATION,
+            inspector_volume: Default::default(),
             effects: Vec::new(),
             dirty: true,
             highlight_dirty: true,

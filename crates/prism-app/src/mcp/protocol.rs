@@ -113,6 +113,25 @@ pub fn tools() -> Value {
             "inputSchema": none,
         },
         {
+            "name": "get_inspector",
+            "title": "Read the Inspector",
+            "description": "The Inspector's fields for the selection: a summary, the open groups, and sections of fields (key, label, kind, value, and `mixed` when the selected groups differ). Select a group or component first (Select tool or run_action).",
+            "inputSchema": none,
+        },
+        {
+            "name": "set_inspector",
+            "title": "Change an Inspector field",
+            "description": "Set field `key` (from get_inspector: name, tag, hidden, locked, x, y, z for the position of the selection's low corner, w, d, h for its size) to `value`. Lengths take units and simple expressions (`2*25.4mm`). Applies to every selected group; one undo step.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "value": {"type": "string"},
+                },
+                "required": ["key", "value"],
+            },
+        },
+        {
             "name": "get_health",
             "title": "Model Health",
             "description": "Model Health's checks on the open group's model: each check, how many problems, details, and whether a fix exists.",
@@ -572,6 +591,8 @@ mod tests {
             [
                 "get_model",
                 "get_selection",
+                "get_inspector",
+                "set_inspector",
                 "get_health",
                 "validate_solids",
                 "heal",
