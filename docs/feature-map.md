@@ -34,7 +34,6 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | `tool.layflat` | Lay Flat | Shapes & Placement |
 | `tool.hole` | Hole | Shapes & Placement |
 | `tool.subd` | Smooth / Subdivide | Cage & Subdivision |
-| — | Snap to grid (optional) | Annotation & Sections |
 | `tol.mod` | Tolerance Modifier | Fit & Mechanisms |
 | `fit.helper` | Fit Helper | Fit & Mechanisms |
 | `fit.check` | Check Fit | Fit & Mechanisms |

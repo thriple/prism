@@ -12,7 +12,7 @@ XL: five parts.
 2. **Dimensions** (linear, between two inferred points, with offset and a text label from the model's units).
 3. **Text** (screen labels first, then 3D text: outline, face, solid; fonts and shaping need dependencies, see below).
 4. **The model's own axes** (move the origin and directions of the whole model; reuses the Axes tool at the top level) and **Construction Planes** (a plane to draw on, with inference).
-5. **Leftovers**: snap to grid (optional), section planes in the export, MCP, docs.
+5. **Leftovers**: snap to grid (optional), section planes in the export, MCP, docs. **Built (2026-11-18):** View > Snap to Grid, and a Section view in the DXF / SVG export; mesh, STEP and 3DM are not clipped by the cut (NOTES "Annotation & Sections part 5"). The gap pass (Alt + click picking, typed distances, three-point planes, dimensions following the model) is in NOTES "the gap pass before part 5".
 
 ## Part 1: Section Planes and Section Display
 - **Document.** A section plane is a document object: `{ id, name, origin, normal }` plus which one is active, kept in the file (schema 12, optional `sections.json`), in world coordinates (built so: one plane cuts the whole model). One undo step per edit: `Command::AddSection`, `MoveSection`, `FlipSection`, `SetSectionActive`, `DeleteSection`.
@@ -54,7 +54,7 @@ XL: five parts.
 - Planned Features: `tool.section` and `view.section` leave the unbuilt list; the `every_unbuilt_feature_has_a_chunk` test still passes.
 
 ## Acceptance
-- [ ] A box is cut open by a plane dragged through it and the inside is capped (owner).
+- [x] A box is cut open by a plane dragged through it and the inside is capped (owner).
 
 **Built as (2026-11-18):** see NOTES "Annotation & Sections part 1". Not yet built from the list above: typing a distance, the context menu on a plane, and picking a plane with the Select tool (in NOTES' left-over list).
-- [ ] PLAN, NOTES, the Planned Features list and the feature map are updated.
+- [x] PLAN, NOTES, the Planned Features list and the feature map are updated.

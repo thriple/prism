@@ -7276,3 +7276,62 @@ fn a_dimension_made_with_the_tool_follows_the_corner_it_was_drawn_to() {
     act(&mut d, "dim.delete");
     assert!(d.s.document().assembly().dim_anchors().is_empty());
 }
+
+// ---------- Snap to grid (brief 46 part 5) ----------
+
+#[test]
+fn snap_to_grid_lands_on_the_grid_only_when_on_and_near() {
+    let mut d = Driver::empty();
+    d.tool(LINE);
+    // Off (the default): the point is where the cursor is.
+    let near = DVec3::new(1.03, 2.04, 0.0);
+    d.hover(near);
+    let p = d.s.inference().expect("a point").point;
+    assert!(p.distance(near) < 0.01, "{p}");
+    // On: it goes to the grid point (1, 2), and says so.
+    let mut v = d.s.view_style().clone();
+    v.snap_grid = true;
+    d.s.set_view_style(v);
+    d.hover(near);
+    let i = d.s.inference().expect("a point");
+    assert!(
+        i.point.distance(DVec3::new(1.0, 2.0, 0.0)) < 1e-9,
+        "{}",
+        i.point
+    );
+    assert_eq!(i.label, "On Grid");
+    // A click draws from it exactly.
+    d.click(near);
+    d.click(DVec3::new(3.03, 4.04, 0.0));
+    let m = d.s.model();
+    let ps: Vec<DVec3> = m.vertices().map(|(_, p)| p).collect();
+    assert!(
+        ps.iter()
+            .any(|p| p.distance(DVec3::new(1.0, 2.0, 0.0)) < 1e-9),
+        "{ps:?}"
+    );
+    assert!(
+        ps.iter()
+            .any(|p| p.distance(DVec3::new(3.0, 4.0, 0.0)) < 1e-9),
+        "{ps:?}"
+    );
+}
+
+#[test]
+fn an_object_snap_wins_over_the_grid() {
+    let mut d = Driver::empty();
+    d.tool(LINE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.click(DVec3::new(2.4, 0.0, 0.0));
+    d.send(Input::Key { key: Key::Escape });
+    let mut v = d.s.view_style().clone();
+    v.snap_grid = true;
+    d.s.set_view_style(v);
+    d.hover(DVec3::new(2.4, 0.01, 0.0));
+    let i = d.s.inference().expect("a point");
+    assert!(
+        i.point.distance(DVec3::new(2.4, 0.0, 0.0)) < 1e-6,
+        "the end, not 2: {}",
+        i.point
+    );
+}

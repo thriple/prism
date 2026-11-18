@@ -339,8 +339,9 @@ impl AppHost<'_> {
             u => return Err(format!("Unknown unit {u}: use mm, cm, m or in")),
         };
         let name = args.get("view").and_then(Value::as_str).unwrap_or("flat");
-        let view =
-            View::of(name).ok_or(format!("Unknown view {name}: use flat, top, front or side"))?;
+        let view = View::of(name).ok_or(format!(
+            "Unknown view {name}: use flat, top, front, side or section"
+        ))?;
         let s = &self.viewport.session;
         let only = args
             .get("selection_only")
@@ -1260,6 +1261,53 @@ mod tests {
             .is_err(),
             "three in a line"
         );
+    }
+
+    /// DXF and SVG over MCP (brief 45): a box laid flat is one closed
+    /// polyline; the square comes back in as a group, one undo step; the
+    /// Section view needs a cutting plane and then draws the cut.
+    #[test]
+    fn export_and_import_dxf_and_svg_over_mcp() {
+        let doc = prism_tools::scenes::cube();
+        let (mut chrome, mut viewport, mut files) =
+            parts(prism_doc::Document::with_model(doc.model().clone()));
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let r = value(h.call("export_dxf", &json!({})));
+        assert_eq!(r["summary"], "1 path in 1 part", "{r}");
+        let dxf = r["text"].as_str().unwrap().to_owned();
+        assert!(dxf.contains("LWPOLYLINE"));
+        let r = value(h.call("export_svg", &json!({"view": "front", "unit": "in"})));
+        assert!(r["text"].as_str().unwrap().starts_with("<?xml"), "{r}");
+        assert!(h.call("export_svg", &json!({"view": "below"})).is_err());
+        // The square back in, as a group; one undo takes it away.
+        let groups = |h: &AppHost| h.viewport.session.document().assembly().placed().len();
+        let r = value(h.call("import_dxf", &json!({"text": dxf})));
+        assert_eq!(r["summary"], "4 edges and 1 face", "{r}");
+        assert_eq!(groups(&h), 1);
+        value(h.call("run_action", &json!({"id": "edit.undo"})));
+        assert_eq!(groups(&h), 0);
+        assert!(h.call("import_svg", &json!({"text": "<svg"})).is_err());
+        // The Section view needs a cutting plane; with one it is the cut.
+        assert!(h.call("export_dxf", &json!({"view": "section"})).is_err());
+        value(h.call(
+            "add_section",
+            &json!({"origin": [0.0, 0.0, 5.0], "normal": [0.0, 0.0, 1.0]}),
+        ));
+        // A plane that misses the box (it spans z 1 to 3) draws nothing.
+        assert!(h.call("export_dxf", &json!({"view": "section"})).is_err());
+        value(h.call(
+            "add_section",
+            &json!({"origin": [0.0, 0.0, 2.0], "normal": [0.0, 0.0, 1.0]}),
+        ));
+        let r = value(h.call("export_dxf", &json!({"view": "section"})));
+        assert!(r["text"].as_str().unwrap().contains("LWPOLYLINE"), "{r}");
     }
 
     #[test]

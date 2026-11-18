@@ -1,8 +1,8 @@
-**New in this build: sections, dimensions and construction planes are easier to edit.**
-- **Alt + click** picks a section plane, a dimension or a construction plane (plain clicks never touch them, so they cannot get in the way of your model). Alt + click on the picked one picks it up: it follows the pointer and the next click sets it. **Type a distance and press Enter** to place it exactly (a plane moves that far along its normal; a dimension line stands that far from what it measures). **Delete** removes the picked one. **Right-click** near one opens its menu.
-- Construction planes can now be moved after you place them, and **Shift + click** in the Construction Plane tool makes a plane through three points.
-- **Dimensions follow the model:** a dimension drawn to corners stays attached to them when the geometry or the group moves.
-- **Text lands on the working plane** when the pointer is on it. Section planes no longer offer guides from faces they have cut away.
+**New in this build: Snap to Grid, sections in DXF and SVG, and easier editing of planes and dimensions.**
+- **View > Snap to Grid** (off by default): on the ground and on a construction plane, the pointer goes to the nearest grid point when it is close. Object snaps still win.
+- **File > Export > DXF / SVG has a Section view:** where your cutting section plane meets the model, drawn exactly (circles and arcs stay true arcs) for a router, laser or CNC program.
+- **Alt + click** picks a section plane, a dimension or a construction plane (plain clicks never touch them). Alt + click on the picked one picks it up; type a distance and Enter to place it exactly; Delete removes it; right-click near one opens its menu.
+- Construction planes can be moved after placing, and Shift + click in the Construction Plane tool makes one through three points. Dimensions follow the corners they were drawn to. Text lands on the working plane.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

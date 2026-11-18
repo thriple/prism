@@ -22,6 +22,11 @@ use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 /// Said when nothing could go into the drawing.
 pub const NOTHING: &str = "Nothing to export: no flat face or edge to draw.";
+/// Said when the Section view has no plane to cut with.
+pub const NO_SECTION: &str =
+    "No section plane is cutting: place one with the Section Plane tool first.";
+/// Said when the cutting plane meets nothing.
+pub const SECTION_MISSES: &str = "The cutting section plane does not meet the model.";
 /// Said for a curved face chosen to be laid flat.
 pub const CURVED: &str = "a curved face cannot be laid flat";
 /// Said for a piece of a closed spline the drawing cannot cut out.
@@ -39,10 +44,20 @@ pub enum View {
     Front,
     /// Seen from the right side (y right, z up the sheet).
     Side,
+    /// Where the active section plane cuts the model, as a viewer on the
+    /// cut-away side sees it: the exact lines, arcs and curves (Annotation
+    /// & Sections part 5).
+    Section,
 }
 
 impl View {
-    pub const ALL: [View; 4] = [View::Flat, View::Top, View::Front, View::Side];
+    pub const ALL: [View; 5] = [
+        View::Flat,
+        View::Top,
+        View::Front,
+        View::Side,
+        View::Section,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -50,6 +65,7 @@ impl View {
             View::Top => "Top",
             View::Front => "Front",
             View::Side => "Side",
+            View::Section => "Section",
         }
     }
 
@@ -63,7 +79,7 @@ impl View {
     /// From the world to the sheet (x, y), depth in z, as rows.
     fn axes(self) -> DMat3 {
         match self {
-            View::Flat | View::Top => DMat3::IDENTITY,
+            View::Flat | View::Top | View::Section => DMat3::IDENTITY,
             View::Front => DMat3::from_cols(DVec3::X, DVec3::Z, -DVec3::Y).transpose(),
             View::Side => DMat3::from_cols(DVec3::Y, DVec3::Z, DVec3::X).transpose(),
         }
@@ -168,11 +184,16 @@ pub fn make(
     };
     let parts = match view {
         View::Flat => w.flat(scope),
+        View::Section => w.sectioned(scope).ok_or(NO_SECTION)?,
         _ => w.seen(scope, view),
     };
     let parts: Vec<Part> = parts.into_iter().filter(|p| !p.paths.is_empty()).collect();
     if parts.is_empty() {
-        return Err(NOTHING);
+        return Err(if view == View::Section {
+            SECTION_MISSES
+        } else {
+            NOTHING
+        });
     }
     Ok((
         Drawing {
@@ -374,6 +395,98 @@ impl<'a> Walk<'a> {
         }
     }
 
+    // ---- Cut by the section plane ----
+
+    /// The lines, arcs and curves where the active section plane cuts each
+    /// shown model, as a part each. None if no plane cuts.
+    fn sectioned(&mut self, scope: Scope) -> Option<Vec<Part>> {
+        let (_, sec) = self.asm.active_section()?;
+        let plane = prism_view::section::CutPlane {
+            origin: sec.origin,
+            normal: sec.normal,
+        };
+        let (u, v) = plane.frame();
+        // World to the sheet: x along u, y along v, as seen from the side
+        // that is cut away.
+        let to_sheet = DAffine3::from_scale(DVec3::splat(self.k))
+            * DAffine3::from_mat3(DMat3::from_cols(u, v, plane.normal).transpose())
+            * DAffine3::from_translation(-plane.origin);
+        let (def, at) = self.open(scope.path);
+        let mut models: Vec<Placed> = Vec::new();
+        if let Some(d) = self.asm.def(def) {
+            models.push(Placed {
+                model: &d.model,
+                world: at,
+                name: match scope.path.last() {
+                    None => "Model".to_owned(),
+                    Some(id) => self.name(*id, def),
+                },
+            });
+        }
+        models.extend(self.groups(scope, def, at));
+        let mut parts: Vec<Part> = Vec::new();
+        for p in models {
+            // The plane in the model's own coordinates.
+            let inv = p.world.inverse();
+            let local = prism_math::Plane::new(
+                inv.transform_point3(plane.origin),
+                inv.matrix3
+                    .transpose()
+                    .mul_vec3(plane.normal)
+                    .normalize_or_zero(),
+            );
+            if local.normal == DVec3::ZERO {
+                continue;
+            }
+            let Some((lo, hi)) = p.model.bbox() else {
+                continue;
+            };
+            let mut m = p.model.clone();
+            let big =
+                (hi - lo).length().max(1e-9) * 2.0 + (local.origin - (lo + hi) * 0.5).length();
+            let (lu, lv) = prism_infer_frame(local.normal);
+            let centre = local.origin;
+            let mut sheet = Model::new();
+            prism_ops::add_polygon(
+                &mut sheet,
+                &[(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                    .map(|(a, b)| centre + lu * (big * a) + lv * (big * b)),
+            );
+            prism_ops::intersect::intersect_with(&mut m, &sheet);
+            let tol = m.tol().dist;
+            let edge_faces = m.edge_faces();
+            let in_plane = |q: DVec3| local.distance(q).abs() <= tol * 10.0;
+            let edges: BTreeSet<EdgeId> = m
+                .edges()
+                .filter(|(id, e)| {
+                    let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+                    in_plane(a)
+                        && in_plane(b)
+                        && in_plane(e.curve.point(a, b, 0.5))
+                        // The outline of the cut: used by a face that is not
+                        // in the plane itself.
+                        && edge_faces.get(id).is_some_and(|fs| {
+                            fs.iter().any(|f| {
+                                m.face(*f)
+                                    .and_then(|x| x.plane())
+                                    .is_none_or(|q| q.normal.dot(local.normal).abs() < 0.999_999)
+                            })
+                        })
+                })
+                .map(|(id, _)| id)
+                .collect();
+            let paths = self.chains(&m, &edges, &(to_sheet * p.world));
+            match parts.iter_mut().find(|x| x.name == p.name) {
+                Some(x) => x.paths.extend(paths),
+                None => parts.push(Part {
+                    name: p.name,
+                    paths,
+                }),
+            }
+        }
+        Some(parts)
+    }
+
     // ---- Seen from a side ----
 
     fn seen(&mut self, scope: Scope, view: View) -> Vec<Part> {
@@ -523,6 +636,12 @@ impl<'a> Walk<'a> {
         }
         (!segs.is_empty()).then_some(Path { segs, closed })
     }
+}
+
+/// Two unit vectors that, with `n`, make a frame.
+fn prism_infer_frame(n: DVec3) -> (DVec3, DVec3) {
+    let u = n.any_orthonormal_vector();
+    (u, n.cross(u))
 }
 
 /// A conic on the sheet; seen edge on (flat), the lines it folds into.

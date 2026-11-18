@@ -360,6 +360,7 @@ impl Transfer {
                 }
                 ui.label(match e.view {
                     View::Flat => "Each part's largest flat face (or each selected flat face) laid flat, outside up, in a row. Arcs stay arcs.",
+                    View::Section => "Where the cutting section plane meets the model, drawn as seen from the cut-away side. Arcs stay arcs.",
                     _ => "The edges seen straight on from this side. Hidden lines are not removed yet. Arcs stay arcs.",
                 });
                 ui.horizontal(|ui| {

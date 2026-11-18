@@ -157,13 +157,14 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 26] = [
+const TOGGLES: [&str; 27] = [
     "view.smart",
     "view.hidden",
     "view.section",
     "view.sectionplanes",
     "view.dimensions",
     "view.cplanes",
+    "view.snap",
     "view.wireframe",
     "view.basecolour",
     "view.colour",
@@ -631,7 +632,8 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 30] = [
+const BUILT_BEHAVIOURS: [&str; 31] = [
+    "Snap to grid (optional)",
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",

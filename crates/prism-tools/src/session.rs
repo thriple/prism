@@ -1981,6 +1981,7 @@ impl Session {
             if let (Some(f), Some(t0)) = (self.measure, t0) {
                 self.timings.infer_ms = (f() - t0) * 1e3;
             }
+            self.snap_to_grid(&mut i, s, &view);
             if let Some(r) = &mut self.rect {
                 // A snapped point is used where it is: off the first plane,
                 // the rectangle stands up toward it; back on it otherwise.

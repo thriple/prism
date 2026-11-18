@@ -56,6 +56,9 @@ pub struct ViewStyle {
     pub dimensions: bool,
     /// Construction planes are drawn, and used (Annotation & Sections part 4).
     pub work_planes: bool,
+    /// Snap to the grid on the ground and the working plane (Annotation &
+    /// Sections part 5): off by default, and weaker than any object snap.
+    pub snap_grid: bool,
     /// Points.
     pub line_width: f32,
     /// Points; 0 turns profiles off.
@@ -116,6 +119,7 @@ impl ViewStyle {
             section_planes: true,
             dimensions: true,
             work_planes: true,
+            snap_grid: false,
             line_width: 1.5,
             // Profiles on by default (owner request, 2026-11-09).
             profile_width: 3.0,
@@ -255,6 +259,7 @@ impl ViewStyle {
             "view.sectionplanes" => self.section_planes,
             "view.dimensions" => self.dimensions,
             "view.cplanes" => self.work_planes,
+            "view.snap" => self.snap_grid,
             "view.xray" => self.xray,
             "view.wireframe" => self.face_style == FaceStyle::Wireframe,
             "view.basecolour" => self.face_style == FaceStyle::BaseColour,
@@ -284,6 +289,7 @@ impl ViewStyle {
             "view.sectionplanes" => &mut self.section_planes,
             "view.dimensions" => &mut self.dimensions,
             "view.cplanes" => &mut self.work_planes,
+            "view.snap" => &mut self.snap_grid,
             "view.xray" => &mut self.xray,
             "view.shadow" => &mut self.shadows,
             "view.textures" => &mut self.textures,
@@ -315,7 +321,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 22] = [
+pub const TOGGLES: [&str; 23] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -328,6 +334,7 @@ pub const TOGGLES: [&str; 22] = [
     "view.sectionplanes",
     "view.dimensions",
     "view.cplanes",
+    "view.snap",
     "view.xray",
     "view.wireframe",
     "view.basecolour",

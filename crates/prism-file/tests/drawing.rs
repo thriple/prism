@@ -575,3 +575,99 @@ fn an_ellipse_goes_out_and_comes_back_with_its_area() {
         );
     }
 }
+
+// ---------- Section view (Annotation & Sections part 5) ----------
+
+fn with_section(mut d: Document, origin: DVec3, normal: DVec3) -> Document {
+    d.run(Command::AddSection { origin, normal });
+    d
+}
+
+#[test]
+fn the_section_view_draws_where_the_plane_cuts_a_pocket() {
+    // The pocket: a 4 by 4 block with a 2.4 by 2.4 hole; cut across the
+    // hole's walls at z = 1 in metres, so a square ring (two squares).
+    let d = with_section(
+        prism_tools::scenes::pocket(),
+        DVec3::new(0.0, 0.0, 1.0),
+        DVec3::Z,
+    );
+    let e = export(
+        d.assembly(),
+        everything(),
+        View::Section,
+        LengthUnit::Metres,
+        Format::Svg,
+    )
+    .unwrap();
+    assert_eq!(e.paths, 2, "{}", e.text);
+    assert_eq!(e.text.matches("<path ").count(), 2);
+    assert!(
+        e.text.contains(r#"width="4m"#) || e.text.contains(r#"width="4000mm""#),
+        "{}",
+        e.text
+    );
+    // As DXF: two closed polylines.
+    let e = export(
+        d.assembly(),
+        everything(),
+        View::Section,
+        LengthUnit::Metres,
+        Format::Dxf,
+    )
+    .unwrap();
+    assert_eq!(count(&e.text, "LWPOLYLINE"), 2, "{}", e.text);
+}
+
+#[test]
+fn a_cylinder_cut_across_gives_an_exact_circle() {
+    let d = with_section(
+        Document::with_model(prism_tools::scenes::cylinder(1.25, 0.5)),
+        DVec3::new(0.0, 0.0, 0.25),
+        DVec3::Z,
+    );
+    let e = export(
+        d.assembly(),
+        everything(),
+        View::Section,
+        LengthUnit::Millimetres,
+        Format::Dxf,
+    )
+    .unwrap();
+    assert_eq!(count(&e.text, "CIRCLE"), 1, "{}", e.text);
+    assert!(
+        e.text.contains("\n 40\n1250\n"),
+        "radius 1250 mm: {}",
+        e.text
+    );
+}
+
+#[test]
+fn a_plane_that_misses_the_model_draws_nothing() {
+    let d = with_section(
+        prism_tools::scenes::pocket(),
+        DVec3::new(0.0, 0.0, 50.0),
+        DVec3::Z,
+    );
+    let r = export(
+        d.assembly(),
+        everything(),
+        View::Section,
+        LengthUnit::Metres,
+        Format::Dxf,
+    );
+    assert_eq!(r.unwrap_err(), prism_file::drawing::SECTION_MISSES);
+}
+
+#[test]
+fn the_section_view_needs_a_cutting_plane() {
+    let d = prism_tools::scenes::pocket();
+    let r = export(
+        d.assembly(),
+        everything(),
+        View::Section,
+        LengthUnit::Metres,
+        Format::Dxf,
+    );
+    assert_eq!(r.unwrap_err(), prism_file::drawing::NO_SECTION);
+}

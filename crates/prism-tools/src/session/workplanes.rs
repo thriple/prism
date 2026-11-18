@@ -22,7 +22,50 @@ use super::Session;
 
 pub const CPLANE_TOOL: &str = "tool.cplane";
 
+/// How near a grid point must be to the cursor to snap to it, in pixels.
+const GRID_SNAP_PX: f64 = 12.0;
+
 impl Session {
+    /// Snap to grid (View > Snap to Grid): a point on the ground or on
+    /// the working plane, with no object snap, goes to the nearest grid
+    /// point if it is near the cursor. The grid's lines are `grid_spacing`
+    /// apart on the ground, and the same on a working plane, from its
+    /// origin.
+    pub(super) fn snap_to_grid(
+        &self,
+        i: &mut prism_infer::Inference,
+        s: prism_math::DVec2,
+        view: &prism_view::View,
+    ) {
+        use prism_infer::Kind;
+        if !self.view.snap_grid || !matches!(i.kind, Kind::OnGround | Kind::OnPlane) {
+            return;
+        }
+        let step = self.style.grid_spacing;
+        if step <= 0.0 || !step.is_finite() {
+            return;
+        }
+        let (origin, u, v) = match (i.kind, self.work_plane_ctx()) {
+            (Kind::OnPlane, Some(w)) => {
+                let (u, v) = prism_infer::plane_frame(w.normal);
+                (w.origin, u, v)
+            }
+            (Kind::OnPlane, None) => return,
+            // On the ground: the world's x and y, in the point's own plane.
+            _ => (DVec3::new(0.0, 0.0, i.point.z), DVec3::X, DVec3::Y),
+        };
+        let q = i.point - origin;
+        let at = origin
+            + u * ((q.dot(u) / step).round() * step)
+            + v * ((q.dot(v) / step).round() * step);
+        if let Some((px, _)) = view.to_screen(at)
+            && px.distance(s) <= GRID_SNAP_PX
+        {
+            i.point = at;
+            i.label = "On Grid".to_owned();
+        }
+    }
+
     /// The working plane the inference can land on, if one is in use.
     pub(super) fn work_plane_ctx(&self) -> Option<WorkPlane> {
         if !self.view.work_planes {

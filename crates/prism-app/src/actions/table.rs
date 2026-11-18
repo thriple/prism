@@ -607,6 +607,13 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "view.snap",
+        name: "Snap to Grid",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "view.sectionplanes",
         name: "Section Planes",
         key: "",
@@ -1816,6 +1823,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("view.sectionplanes"),
             Item::Action("view.cplanes"),
             Item::Action("view.dimensions"),
+            Item::Action("view.snap"),
         ],
     ),
     (

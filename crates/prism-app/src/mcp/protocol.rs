@@ -78,7 +78,7 @@ fn drawing_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "view": {"type": "string", "enum": ["flat", "top", "front", "side"], "description": "flat (default): each part's largest flat face, or each selected flat face, laid flat in a row; top, front or side: the edges seen straight on (hidden lines are not removed)."},
+            "view": {"type": "string", "enum": ["flat", "top", "front", "side", "section"], "description": "flat (default): each part's largest flat face, or each selected flat face, laid flat in a row; top, front or side: the edges seen straight on (hidden lines are not removed); section: where the cutting section plane meets the model (arcs and curves exact; needs a cutting plane)."},
             "unit": {"type": "string", "enum": ["mm", "cm", "m", "in"], "description": "The file's unit (default mm)."},
             "selection_only": {"type": "boolean", "description": "Only the selected faces, edges and groups (default false)."}
         },

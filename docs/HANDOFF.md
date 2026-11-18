@@ -347,3 +347,6 @@ Updated 2026-11-09 (Guam), before a context compaction.
   - double-clicking a `.prism` file on the Mac, and "Open With > Prism" on
     Windows, while Prism runs.
 - **Try by hand (2026-11-08):** see "Where the project is" above.
+
+## Annotation & Sections is done (2026-11-18)
+Brief 46, parts 1 to 5 and a gap pass. Planes and dimensions are picked in Select with **Alt + click** (never plain clicks: owner's rule), moved by dragging or by typing a distance, deleted with Delete; dimensions follow their vertices; View > Snap to Grid; the DXF / SVG export has a Section view. NOTES: "Annotation & Sections part 1" to "part 5" and "the gap pass before part 5". Left over is in `docs/feature-map.md`. A reminder from the owner's weekly limit: keep sessions efficient.
