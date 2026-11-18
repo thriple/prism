@@ -4680,3 +4680,12 @@ The owner asked for the left-over lists of parts 1 to 4 to be filled before part
 - **Not done (said plainly):** mesh, STEP and 3DM exports still write the whole model: the cut is a display effect and the 3D formats are not clipped by it (clipping a mesh with its materials and UVs, and cutting solids exactly, are separate work; DXF and SVG carry the cut). The Section view has no hatching or cap fill.
 - **MCP:** `export_dxf` and `export_svg` take `view: "section"`; `add_construction_plane` takes three `points`; the toggle for Snap to Grid is `run_action view.snap`.
 - **Found while checking:** the MCP tests I described for DXF and SVG in parts 6a and 6b were never saved (a script edit silently did nothing), so those tools were untested over MCP until now; fixed (`mcp/host.rs` `export_and_import_dxf_and_svg_over_mcp`).
+
+## Effects (brief 47, 2026-11-18)
+
+Built both parts. The owner named it "Effects", put the toggle in the menu bar after Help, on by default, in the theme's accent, and chose all the part 2 variants.
+- **The rule:** `Session::run` compares the drawn lines (`prism_view::effects::segments`) before and after a command. New lines animate; pieces of an old line split in two are not new. The command picks the kind: Segment, Arc and Spline trace; PushPull sweeps by the face's normal times the distance; Translate, Rotate, Scale, Place and Erase fade the old lines (a Ghost); the rest echo. Anything that only removed lines fades them. Undo, redo and opening a file clear running effects and start none.
+- **Timing:** effects are timed by the session's event time, like the camera's ease, so tests and replays see the same frames. 1 s (0.4 s fade with reduced motion); at most 4 at once; above 4,000 line pieces nothing animates. The owner wants to try the length; 0.5 s is the likely change (`prism_view::effects::DURATION`).
+- **App:** `view.effects` (View > Effects and the menu-bar toggle) is kept in the preferences (`Prefs.effects`). Found while checking it in the app: the viewport stamped a click with the last frame's time, which can be seconds old after the window was idle, so an effect looked over at once. Events now carry the last frame's time plus the time since (`Viewport::clock`).
+- **Seen in the app (Xvfb):** a rectangle's echo and a Push/Pull sweep. The lines are drawn over the model, like inference lines, so a box's back edge shows through while a sweep plays.
+- **Not done:** a sweep for Follow Me (it echoes); effects in exports or the renderer.

@@ -477,6 +477,12 @@ impl Chrome {
                         prefs::set(self, p);
                         self.set_on(id, p.smart_guides);
                     }
+                    "view.effects" => {
+                        let mut p = self.prefs;
+                        p.effects = !p.effects;
+                        prefs::set(self, p);
+                        self.set_on(id, p.effects);
+                    }
                     "help.update" => {
                         self.updates_open = true;
                         self.updater.check();

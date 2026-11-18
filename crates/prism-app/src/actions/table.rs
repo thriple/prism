@@ -514,6 +514,13 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "view.effects",
+        name: "Effects",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "view.hidden",
         name: "Hidden Geometry",
         key: "",
@@ -1781,6 +1788,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                     Item::Action("view.grid"),
                     Item::Action("view.guides"),
                     Item::Action("view.smart"),
+                    Item::Action("view.effects"),
                     Item::Action("view.hidden"),
                 ],
             ),

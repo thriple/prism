@@ -215,6 +215,11 @@ pub mod size {
     pub const MENU_BAR_BUTTON_HEIGHT: f32 = 34.0;
     pub const MENU_BAR_BUTTON_PAD: f32 = 12.0;
     pub const MENU_BAR_GAP: f32 = 2.0;
+    /// The Effects toggle after Help (brief 47): its dot, the gap to its
+    /// label, and the dot's ring when off.
+    pub const EFFECTS_DOT: f32 = 4.0;
+    pub const EFFECTS_DOT_GAP: f32 = 6.0;
+    pub const EFFECTS_DOT_RING: f32 = 1.0;
     /// Tool dock: two columns of square buttons.
     pub const DOCK_BUTTON: f32 = 44.0;
     pub const DOCK_GAP: f32 = 8.0;

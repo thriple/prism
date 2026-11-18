@@ -521,6 +521,8 @@ impl App {
                 .session
                 .set_smart_budget(chrome.prefs.smart_budget_ms);
             chrome.set_on("view.smart", chrome.prefs.smart_guides);
+            viewport.session.set_effects(chrome.prefs.effects);
+            chrome.set_on("view.effects", chrome.prefs.effects);
             chrome.tolerance = crate::prefs::tolerance_text(viewport.session.scene().tol.dist);
             let status = viewport.status();
             chrome.set_hint(status.hint);

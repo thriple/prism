@@ -141,6 +141,8 @@ pub struct Feedback {
     pub dimension: Rgba,
     /// Construction planes (Annotation & Sections part 4).
     pub work_plane: Rgba,
+    /// Effects (brief 47): the theme's accent.
+    pub effect: Rgba,
     pub guide_cross: Rgba,
     pub free: Rgba,
     /// Parallel guides and woken edges.
@@ -202,6 +204,7 @@ impl Default for Feedback {
             section_cap: Rgba::rgb(0xd2, 0x5a, 0x78),
             dimension: Rgba::rgb(0xf2, 0xc1, 0x4e),
             work_plane: Rgba::rgb(0x2f, 0xb8, 0xa6),
+            effect: Rgba::rgb(0x02, 0xce, 0xff),
             guide_cross: Rgba::rgb(0xb2, 0x1f, 0xc2),
             free: Rgba::rgb(0x6b, 0x72, 0x80),
             parallel: Rgba::rgb(0xb2, 0x1f, 0xc2),

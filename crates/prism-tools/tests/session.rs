@@ -7335,3 +7335,103 @@ fn an_object_snap_wins_over_the_grid() {
         i.point
     );
 }
+
+// ---------- Effects (brief 47) ----------
+
+use prism_view::effects::Kind as Fx;
+
+fn running(d: &Driver) -> Vec<(Fx, usize)> {
+    d.s.effects()
+        .iter()
+        .map(|e| (e.kind, e.segs.len()))
+        .collect()
+}
+
+#[test]
+fn a_rectangle_echoes_then_the_effect_ends() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    assert_eq!(running(&d), vec![(Fx::Echo, 4)], "its four sides");
+    assert!(d.s.animating(), "frames keep coming while it runs");
+    let accent = d.s.style.feedback.effect;
+    let ours = |d: &Driver| {
+        d.s.overlay()
+            .lines
+            .iter()
+            .filter(|l| l.color.0[..3] == accent.0[..3])
+            .count()
+    };
+    assert!(ours(&d) >= 4, "drawn over the model");
+    d.wait(1.1);
+    assert!(
+        running(&d).is_empty() && !d.s.animating(),
+        "over after a second"
+    );
+    assert_eq!(ours(&d), 0);
+}
+
+#[test]
+fn a_line_traces_and_push_pull_sweeps_up() {
+    let mut d = Driver::empty();
+    d.tool(LINE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.click(DVec3::new(3.0, 0.0, 0.0));
+    d.send(Input::Key { key: Key::Escape });
+    assert_eq!(running(&d).last(), Some(&(Fx::Trace, 1)));
+    d.wait(1.1);
+    rect_on_ground(&mut d, 0.0, 2.0, 2.0, 4.0);
+    d.wait(1.1);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 3.0, 0.0));
+    d.hover(DVec3::new(1.0, 3.0, 0.5));
+    d.typed("1.5");
+    let e = d.s.effects().last().expect("an effect").clone();
+    let Fx::Sweep(v) = e.kind else {
+        panic!("{:?}", e.kind)
+    };
+    assert!(
+        (v - DVec3::new(0.0, 0.0, 1.5)).length() < 1e-9,
+        "travels up: {v:?}"
+    );
+    assert_eq!(e.segs.len(), 8, "the top and the four sides");
+}
+
+#[test]
+fn erase_and_move_fade_what_went() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    d.wait(1.1);
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "edit.delete");
+    assert_eq!(running(&d), vec![(Fx::Ghost, 4)]);
+    act(&mut d, "edit.undo");
+    assert!(running(&d).is_empty(), "undo does not animate");
+    assert_eq!(d.faces(), 1);
+    act(&mut d, "edit.selall");
+    d.tool(MOVE);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.click(DVec3::new(0.0, 3.0, 0.0));
+    assert_eq!(
+        running(&d).last(),
+        Some(&(Fx::Ghost, 4)),
+        "the old outline fades"
+    );
+}
+
+#[test]
+fn effects_off_and_reduced_motion() {
+    let mut d = Driver::empty();
+    d.s.set_effects(false);
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    assert!(running(&d).is_empty(), "off: nothing is even worked out");
+    d.s.set_effects(true);
+    d.s.reduce_motion = true;
+    rect_on_ground(&mut d, 3.0, 0.0, 5.0, 1.0);
+    assert_eq!(running(&d).len(), 1);
+    d.wait(0.45);
+    assert!(running(&d).is_empty(), "a short fade with reduced motion");
+    rect_on_ground(&mut d, 6.0, 0.0, 8.0, 1.0);
+    d.s.set_effects(false);
+    assert!(running(&d).is_empty(), "turning it off stops it");
+}

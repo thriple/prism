@@ -36,6 +36,7 @@ mod curve;
 mod dimensions;
 mod draw;
 mod edit;
+mod effects;
 mod follow;
 mod groups;
 mod health;
@@ -507,6 +508,9 @@ pub struct Session {
     pub style: Style,
     pub ease: bool,
     pub reduce_motion: bool,
+    /// Effects (brief 47): on, and the ones running.
+    effects_on: bool,
+    effects: Vec<prism_view::effects::Effect>,
     dirty: bool,
     highlight_dirty: bool,
     overlay_dirty: bool,
@@ -738,6 +742,8 @@ impl Session {
             style: prism_view::ViewStyle::default().apply(&Style::default()),
             ease: true,
             reduce_motion: false,
+            effects_on: true,
+            effects: Vec::new(),
             dirty: true,
             highlight_dirty: true,
             overlay_dirty: true,
@@ -878,7 +884,7 @@ impl Session {
     }
     /// Whether the camera is still easing (keep drawing frames).
     pub fn animating(&self) -> bool {
-        self.motion.is_some()
+        self.motion.is_some() || !self.effects.is_empty()
     }
     /// When a hovered point will wake, so the app can wake the session then.
     pub fn next_wake(&self) -> Option<f64> {
@@ -1136,6 +1142,7 @@ impl Session {
                 self.motion = None;
             }
         }
+        self.effects_age();
         let mut resp = Response::default();
         // A Weld refusal lasts until the next click or command.
         if matches!(e.input, Input::Press { .. } | Input::Action { .. })
@@ -1466,8 +1473,11 @@ impl Session {
             self.dirty = true;
             return false;
         }
+        let before = self.effect_before();
+        let kind = self.effect_kind(&c);
         if self.run_here(c) {
             self.model_changed();
+            self.effect_after(before, kind);
             true
         } else {
             false
@@ -1647,6 +1657,7 @@ impl Session {
         self.cancel();
         self.last_op = None;
         self.mem.clear();
+        self.effects_clear();
         self.model_changed();
         if let Some((lo, hi)) = self.scene.bounds {
             let goal = Camera::home().extents(lo, hi, self.view().aspect());
@@ -1786,6 +1797,7 @@ impl Session {
                     }
                     self.ctx = ctx;
                     self.last_op = None;
+                    self.effects_clear();
                     self.model_changed();
                 }
             }
@@ -1799,6 +1811,7 @@ impl Session {
                     }
                     self.ctx = ctx;
                     self.last_op = None;
+                    self.effects_clear();
                     self.model_changed();
                 }
             }
@@ -2609,6 +2622,7 @@ impl Session {
         self.group_boxes(&mut o);
         self.health_marks(&mut o);
         self.combs_overlay(&mut o);
+        self.effects_overlay(&mut o);
         let fb = &self.style.feedback;
         let view = self.view();
         if let Some(b) = &self.boxing

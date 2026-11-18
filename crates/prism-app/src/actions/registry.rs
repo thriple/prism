@@ -107,7 +107,9 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 29] = [
+const COMMANDS: [&str; 30] = [
+    // Effects (brief 47): kept in the preferences.
+    "view.effects",
     // Solids & CAD part 1 (brief 37): opens the Solids window.
     "solid.heal",
     // Everyday Commands part 4 (brief 33): kept in the preferences.
@@ -157,7 +159,8 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 27] = [
+const TOGGLES: [&str; 28] = [
+    "view.effects",
     "view.smart",
     "view.hidden",
     "view.section",

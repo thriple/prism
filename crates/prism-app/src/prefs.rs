@@ -26,6 +26,9 @@ pub struct Prefs {
     /// View > Smart Guides (Ctrl+U), and its time budget (PLAN 5.1).
     pub smart_guides: bool,
     pub smart_budget_ms: f64,
+    /// View > Effects (brief 47): a short line animation when an edit
+    /// finishes.
+    pub effects: bool,
 }
 
 impl Default for Prefs {
@@ -35,6 +38,7 @@ impl Default for Prefs {
             inference: Settings::default(),
             smart_guides: true,
             smart_budget_ms: prism_tools::session::SMART_BUDGET_MS,
+            effects: true,
         }
     }
 }

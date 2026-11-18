@@ -402,8 +402,46 @@ fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
                 }
                 titles.push(BarTitle { rect: r });
             }
+            effects_toggle(chrome, ui, x, bar.center().y);
             ctx.data_mut(|d| d.insert_temp(Id::unique("menu-bar-titles"), titles));
         });
+}
+
+/// View > Effects in the menu bar, after Help (brief 47): a lit dot while
+/// on. It runs the same action as the menu.
+fn effects_toggle(chrome: &mut Chrome, ui: &mut egui::Ui, x: f32, y: f32) {
+    let on = chrome.is_on("view.effects");
+    let dot = size::EFFECTS_DOT;
+    let galley =
+        ui.painter()
+            .layout_no_wrap("Effects".to_owned(), theme::body_medium(), color::INK);
+    let w = galley.size().x + 2.0 * size::MENU_BAR_BUTTON_PAD + dot * 2.0 + size::EFFECTS_DOT_GAP;
+    let r = Rect::from_center_size(pos2(x + w * 0.5, y), vec2(w, size::MENU_BAR_BUTTON_HEIGHT));
+    let resp = ui
+        .interact(r, Id::unique("menu-bar-effects"), Sense::click())
+        .on_hover_text("Effects: a short line animation when an edit finishes");
+    let ink = if resp.hovered() {
+        color::INK_BRIGHT
+    } else if on {
+        color::INK
+    } else {
+        color::MUTED
+    };
+    let c = pos2(r.left() + size::MENU_BAR_BUTTON_PAD + dot, y);
+    if on {
+        ui.painter().circle_filled(c, dot, color::ACCENT);
+    } else {
+        ui.painter().circle_stroke(
+            c,
+            dot,
+            egui::Stroke::new(size::EFFECTS_DOT_RING, color::MUTED),
+        );
+    }
+    let at = pos2(c.x + dot + size::EFFECTS_DOT_GAP, y - galley.size().y * 0.5);
+    ui.painter().galley(at, galley, ink);
+    if resp.clicked() {
+        chrome.run("view.effects", super::Source::Menu);
+    }
 }
 
 /// A dark pill with white text (feel test `pill(`): its left middle at `at`.

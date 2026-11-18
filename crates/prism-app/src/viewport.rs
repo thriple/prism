@@ -18,6 +18,9 @@ pub struct Viewport {
     held: bool,
     /// The time egui last reported, so events carry it.
     now: f64,
+    /// The last frame's time and when it was: events between frames (a
+    /// key after the window was idle) carry the time they happen.
+    clock: Option<(f64, web_time::Instant)>,
     /// Sorts browser scrolls into wheel zooms and trackpad pans.
     wheel: WheelSort,
     /// A modifier pressed alone, so far (a tap toggles copy or new loop).
@@ -165,6 +168,7 @@ impl Viewport {
             rect: Rect::NOTHING,
             held: false,
             now: 0.0,
+            clock: None,
             wheel: WheelSort::default(),
             tap: None,
             held_keys: (false, false),
@@ -179,7 +183,10 @@ impl Viewport {
     }
 
     fn send(&mut self, input: Input) -> prism_tools::Response {
-        self.session.handle(&Event { t: self.now, input })
+        let t = self
+            .clock
+            .map_or(self.now, |(t, at)| t + at.elapsed().as_secs_f64());
+        self.session.handle(&Event { t, input })
     }
 
     fn local(&self, p: Pos2) -> (f64, f64) {
@@ -343,6 +350,7 @@ impl Viewport {
     /// Advance time: easing and waking points. Returns when to wake next.
     pub fn time(&mut self, now: f64) -> Option<f64> {
         self.now = now;
+        self.clock = Some((now, web_time::Instant::now()));
         let wake = self.session.next_wake();
         if self.session.animating() || wake.is_some_and(|t| t <= now) {
             self.send(Input::Time);
