@@ -108,10 +108,24 @@ impl Host for AppHost<'_> {
             }
             "list_construction_planes" => self.work_planes(),
             "add_construction_plane" => {
-                let origin = args.get("origin").and_then(parse_point);
-                let normal = args.get("normal").and_then(parse_point);
-                let (Some(origin), Some(normal)) = (origin, normal) else {
-                    return Err("origin and normal are [x, y, z]".into());
+                let three: Option<Vec<prism_math::DVec3>> = args
+                    .get("points")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(parse_point).collect());
+                let (origin, normal) = match three {
+                    // Through three points: the first is the origin.
+                    Some(p) if p.len() == 3 => (p[0], (p[1] - p[0]).cross(p[2] - p[0])),
+                    Some(_) => return Err("points are three [x, y, z] points".into()),
+                    None => {
+                        let origin = args.get("origin").and_then(parse_point);
+                        let normal = args.get("normal").and_then(parse_point);
+                        let (Some(origin), Some(normal)) = (origin, normal) else {
+                            return Err(
+                                "give origin and normal as [x, y, z], or three points".into()
+                            );
+                        };
+                        (origin, normal)
+                    }
                 };
                 match self.viewport.session.add_work_plane(origin, normal) {
                     Some(id) => json!({"id": id, "planes": self.work_planes()}),
@@ -1231,6 +1245,20 @@ mod tests {
         assert!(
             h.call("add_construction_plane", &json!({"origin": [0, 0]}))
                 .is_err()
+        );
+        // Through three points (a wall across x = 2).
+        let r = value(h.call(
+            "add_construction_plane",
+            &json!({"points": [[2, 0, 0], [2, 1, 0], [2, 0, 1]]}),
+        ));
+        assert_eq!(r["planes"][1]["normal"], json!([1.0, 0.0, 0.0]), "{r}");
+        assert!(
+            h.call(
+                "add_construction_plane",
+                &json!({"points": [[0, 0, 0], [1, 0, 0], [2, 0, 0]]})
+            )
+            .is_err(),
+            "three in a line"
         );
     }
 

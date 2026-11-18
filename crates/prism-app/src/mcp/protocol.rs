@@ -295,14 +295,14 @@ pub fn tools() -> Value {
         {
             "name": "add_construction_plane",
             "title": "Add a construction plane",
-            "description": "Add a construction plane through `origin` [x, y, z] (metres) square to `normal` [x, y, z]. It becomes the working plane: the cursor lands on it and the drawing tools draw on it. One undo step (run_action edit.undo). Returns its id.",
+            "description": "Add a construction plane through `origin` [x, y, z] (metres) square to `normal` [x, y, z], or through three `points` (the first is its origin). It becomes the working plane: the cursor lands on it and the drawing tools draw on it. One undo step (run_action edit.undo). Returns its id.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "origin": {"type": "array", "items": {"type": "number"}},
                     "normal": {"type": "array", "items": {"type": "number"}},
+                    "points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "description": "Three points [x, y, z] the plane passes through, instead of origin and normal."},
                 },
-                "required": ["origin", "normal"],
             },
         },
         {

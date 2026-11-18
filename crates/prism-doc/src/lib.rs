@@ -13,8 +13,9 @@ pub mod image;
 pub mod material;
 
 pub use assembly::{
-    Assembly, Attributes, DefId, Definition, DimId, Dimension, Instance, InstanceId, NESTED,
-    Placed, ROOT, Section, SectionId, SolidOp, TWO_SOLIDS, Tag, TagId, WorkPlane, WorkPlaneId,
+    Anchor, Assembly, Attributes, DefId, Definition, DimId, Dimension, Instance, InstanceId,
+    NESTED, Placed, ROOT, Section, SectionId, SolidOp, TWO_SOLIDS, Tag, TagId, WorkPlane,
+    WorkPlaneId,
 };
 pub use image::{Image, ImageId, Pixels, Texture};
 pub use material::{FaceSide, Material, Principled};
@@ -382,6 +383,12 @@ pub enum Command {
     DeleteDimension {
         id: DimId,
     },
+    /// Attach a dimension's ends to vertices, so they follow the model.
+    AnchorDimension {
+        id: DimId,
+        a: Option<Anchor>,
+        b: Option<Anchor>,
+    },
     /// Lock or unlock groups (anywhere: instance ids are unique).
     SetLocked {
         instances: BTreeSet<InstanceId>,
@@ -680,6 +687,7 @@ impl Command {
             Command::AddDimension { .. } => "Dimension",
             Command::MoveDimension { .. } => "Move Dimension",
             Command::DeleteDimension { .. } => "Delete Dimension",
+            Command::AnchorDimension { .. } => "Attach Dimension",
             Command::SetLocked { locked: true, .. } => "Lock",
             Command::SetLocked { .. } => "Unlock",
             Command::IntersectWith { .. } => "Intersect Faces",
@@ -984,6 +992,9 @@ impl Command {
             }
             Command::MoveDimension { id, offset } => asm.move_dimension(*id, *offset),
             Command::DeleteDimension { id } => asm.delete_dimension(*id),
+            Command::AnchorDimension { id, a, b } => {
+                asm.anchor_dimension(*id, a.clone(), b.clone())
+            }
             Command::AddSection { origin, normal } => {
                 asm.add_section(*origin, *normal);
             }
@@ -1410,6 +1421,7 @@ impl Command {
             | Command::AddDimension { .. }
             | Command::MoveDimension { .. }
             | Command::DeleteDimension { .. }
+            | Command::AnchorDimension { .. }
             | Command::AddSection { .. }
             | Command::MoveSection { .. }
             | Command::AddWorkPlane { .. }
@@ -1494,6 +1506,7 @@ impl Document {
     pub fn run(&mut self, command: Command) -> bool {
         let before = self.asm.clone();
         command.apply_in(&mut self.asm, ROOT);
+        self.asm.follow_dimensions();
         if self.asm == before {
             // Put it back exactly: a command can change a value without
             // changing it (0.0 to -0.0 compare equal), and the geometry must

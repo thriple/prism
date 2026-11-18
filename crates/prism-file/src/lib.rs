@@ -98,6 +98,17 @@ struct DimensionV1 {
     a: [f64; 3],
     b: [f64; 3],
     offset: [f64; 3],
+    /// What the ends are attached to, if anything (kept in the same
+    /// schema: older readers leave it out).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    anchors: Option<[Option<AnchorV1>; 2]>,
+}
+
+/// A vertex of the model in the group at `path`.
+#[derive(Clone, Serialize, Deserialize)]
+struct AnchorV1 {
+    path: Vec<u32>,
+    vertex: u32,
 }
 
 /// The document's section planes (schema 12).
@@ -386,6 +397,14 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                     a: d.a.to_array(),
                     b: d.b.to_array(),
                     offset: d.offset.to_array(),
+                    anchors: asm.dim_anchors().get(id).map(|pair| {
+                        pair.clone().map(|a| {
+                            a.map(|a| AnchorV1 {
+                                path: a.path.iter().map(|i| i.0).collect(),
+                                vertex: a.vertex.0,
+                            })
+                        })
+                    }),
                 })
                 .collect(),
         };
@@ -566,22 +585,37 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
     if let Some(json) = raw.files.get(DIMENSIONS) {
         let m: DimensionsV1 = serde_json::from_slice(json)
             .map_err(|e| FileError::Damaged(format!("{DIMENSIONS}: {e}")))?;
-        assembly = assembly.with_dimensions(
-            m.dimensions
-                .into_iter()
-                .map(|d| {
-                    (
-                        prism_doc::DimId(d.id),
-                        prism_doc::Dimension {
-                            a: prism_math::DVec3::from_array(d.a),
-                            b: prism_math::DVec3::from_array(d.b),
-                            offset: prism_math::DVec3::from_array(d.offset),
-                        },
-                    )
-                })
-                .collect(),
-            m.next,
-        );
+        let anchors: std::collections::BTreeMap<_, _> = m
+            .dimensions
+            .iter()
+            .filter_map(|d| {
+                let pair = d.anchors.clone()?.map(|a| {
+                    a.map(|a| prism_doc::Anchor {
+                        path: a.path.into_iter().map(prism_doc::InstanceId).collect(),
+                        vertex: prism_topo::VertexId(a.vertex),
+                    })
+                });
+                Some((prism_doc::DimId(d.id), pair))
+            })
+            .collect();
+        assembly = assembly
+            .with_dimensions(
+                m.dimensions
+                    .into_iter()
+                    .map(|d| {
+                        (
+                            prism_doc::DimId(d.id),
+                            prism_doc::Dimension {
+                                a: prism_math::DVec3::from_array(d.a),
+                                b: prism_math::DVec3::from_array(d.b),
+                                offset: prism_math::DVec3::from_array(d.offset),
+                            },
+                        )
+                    })
+                    .collect(),
+                m.next,
+            )
+            .with_dim_anchors(anchors);
     }
     Ok(Contents { assembly, settings })
 }

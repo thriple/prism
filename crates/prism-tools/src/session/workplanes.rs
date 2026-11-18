@@ -36,7 +36,7 @@ impl Session {
         })
     }
 
-    fn work_plane_corners(&self, origin: DVec3, normal: DVec3) -> [DVec3; 4] {
+    pub(super) fn work_plane_corners(&self, origin: DVec3, normal: DVec3) -> [DVec3; 4] {
         let (u, v) = prism_infer::plane_frame(normal);
         let h = self.plane_half();
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
@@ -81,7 +81,7 @@ impl Session {
 
     /// Run a plane command: planes are in the world, whichever group is
     /// open.
-    fn work_plane_run(&mut self, c: Command) -> bool {
+    pub(super) fn work_plane_run(&mut self, c: Command) -> bool {
         if self.doc.run(c) {
             self.model_changed();
             true
@@ -102,9 +102,39 @@ impl Session {
             .map(|i| (i.point, self.plane_normal(&i)));
     }
 
-    pub(super) fn work_plane_press(&mut self, s: prism_math::DVec2) {
+    pub(super) fn work_plane_press(&mut self, s: prism_math::DVec2, shift: bool) {
         self.update_hover(s);
         self.work_plane_hover();
+        // Shift + click starts a plane through three points; the next two
+        // clicks (shifted or not) finish it.
+        if shift || !self.cplane_pts.is_empty() {
+            let Some(p) = self.inference.as_ref().map(|i| i.point) else {
+                return;
+            };
+            let tiny = self.scene.tol.dist.max(p.length() * 1e-12);
+            if self.cplane_pts.iter().any(|q| q.distance(p) <= tiny) {
+                return;
+            }
+            self.cplane_pts.push(p);
+            if let [a, b, c] = self.cplane_pts[..] {
+                let normal = (b - a).cross(c - a);
+                // Not in a line: its normal has a length.
+                if normal.length() > tiny * (b - a).length().max((c - a).length()) {
+                    self.cplane_pts.clear();
+                    self.work_plane_run(Command::AddWorkPlane {
+                        origin: a,
+                        normal: normal.normalize(),
+                    });
+                } else {
+                    self.cplane_pts.pop();
+                    self.notice = Some("Those three points are in a line");
+                }
+            }
+            self.overlay_dirty = true;
+            self.dirty = true;
+            self.refresh();
+            return;
+        }
         if let Some((origin, normal)) = self.cplane_ghost
             && self.work_plane_run(Command::AddWorkPlane { origin, normal })
         {
@@ -115,9 +145,13 @@ impl Session {
     }
 
     pub(super) fn work_plane_hint(&self) -> Option<&'static str> {
-        (self.tool == CPLANE_TOOL).then_some(
-            "Click to place a construction plane: square to the face or ground under the cursor, or to an axis the arrows lock",
-        )
+        (self.tool == CPLANE_TOOL).then_some(match self.cplane_pts.len() {
+            0 => {
+                "Click to place a construction plane: square to the face or ground under the cursor, or to an axis the arrows lock · Shift + click starts one through three points"
+            }
+            1 => "Click the second point · Esc cancels",
+            _ => "Click the third point · Esc cancels",
+        })
     }
 
     /// Edit > Construction Plane > Use / Delete.
@@ -148,15 +182,15 @@ impl Session {
         }
         let colour = self.style.feedback.work_plane;
         let active = self.doc.assembly().active_work_plane().map(|(a, _)| a);
-        let mut outline = |origin: DVec3, normal: DVec3, solid: bool| {
+        let outline = |o: &mut Overlay, origin: DVec3, normal: DVec3, solid: bool, hot: bool| {
             let c = self.work_plane_corners(origin, normal);
             let dash = if solid { [0.0, 0.0] } else { [6.0, 4.0] };
             for k in 0..4 {
                 o.lines.push(Line {
                     a: c[k],
                     b: c[(k + 1) % 4],
-                    color: colour,
-                    width: 1.5,
+                    color: if hot { self.style.selected } else { colour },
+                    width: if hot { 2.5 } else { 1.5 },
                     dash,
                 });
             }
@@ -174,12 +208,37 @@ impl Session {
             }
         };
         for (id, p) in self.doc.assembly().work_planes().0 {
-            outline(p.origin, p.normal, active == Some(*id));
+            if self.cplane_op.is_some_and(|op| op.id == *id) {
+                continue;
+            }
+            outline(
+                o,
+                p.origin,
+                p.normal,
+                active == Some(*id),
+                self.cplane_sel == Some(*id),
+            );
         }
-        if self.tool == CPLANE_TOOL
+        if let Some(op) = &self.cplane_op {
+            outline(o, op.moved_to(), op.normal, true, true);
+        }
+        if !self.cplane_pts.is_empty() {
+            // The points so far, and on to the cursor.
+            let mut path = self.cplane_pts.clone();
+            path.extend(self.inference.as_ref().map(|i| i.point));
+            for w in path.windows(2) {
+                o.lines.push(Line {
+                    a: w[0],
+                    b: w[1],
+                    color: colour,
+                    width: 1.5,
+                    dash: [6.0, 4.0],
+                });
+            }
+        } else if self.tool == CPLANE_TOOL
             && let Some((at, n)) = self.cplane_ghost
         {
-            outline(at, n, false);
+            outline(o, at, n, false, false);
         }
     }
 }

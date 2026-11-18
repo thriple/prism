@@ -579,6 +579,10 @@ impl Session {
 
     /// Delete: the selection and the selected groups, in one step.
     pub(super) fn delete(&mut self) {
+        // A plane or dimension picked with Alt + click, and nothing else.
+        if self.selection.is_empty() && self.groups.is_empty() && self.ann_delete() {
+            return;
+        }
         let mut commands = Vec::new();
         if !self.selection.is_empty() {
             commands.push(Command::Erase {

@@ -76,6 +76,15 @@ pub struct Dimension {
     pub offset: DVec3,
 }
 
+/// Where a dimension's end is attached: a vertex of the model in the group
+/// at `path` (the instances from the top; empty for the top model). The
+/// end follows that vertex when it moves (geometry moved, or a group moved).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Anchor {
+    pub path: Vec<InstanceId>,
+    pub vertex: VertexId,
+}
+
 impl Dimension {
     fn is_usable(&self) -> bool {
         self.a.is_finite() && self.b.is_finite() && self.offset.is_finite() && self.a != self.b
@@ -197,6 +206,9 @@ pub struct Assembly {
     dimensions: BTreeMap<DimId, Dimension>,
     #[serde(default)]
     next_dim: u32,
+    /// What each end of a dimension is attached to, if anything.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    dim_anchors: BTreeMap<DimId, [Option<Anchor>; 2]>,
     /// Construction planes (Annotation & Sections part 4).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     work_planes: BTreeMap<WorkPlaneId, WorkPlane>,
@@ -255,6 +267,7 @@ impl Assembly {
             active_work_plane: None,
             dimensions: BTreeMap::new(),
             next_dim: 0,
+            dim_anchors: BTreeMap::new(),
         }
     }
 
@@ -335,6 +348,7 @@ impl Assembly {
             active_work_plane: None,
             dimensions: BTreeMap::new(),
             next_dim: 0,
+            dim_anchors: BTreeMap::new(),
         })
     }
 
@@ -481,6 +495,92 @@ impl Assembly {
 
     pub fn delete_dimension(&mut self, id: DimId) {
         self.dimensions.remove(&id);
+        self.dim_anchors.remove(&id);
+    }
+
+    /// What the dimensions' ends are attached to (for files).
+    pub fn dim_anchors(&self) -> &BTreeMap<DimId, [Option<Anchor>; 2]> {
+        &self.dim_anchors
+    }
+
+    /// Set the anchors from a file.
+    pub fn with_dim_anchors(mut self, anchors: BTreeMap<DimId, [Option<Anchor>; 2]>) -> Self {
+        self.dim_anchors = anchors
+            .into_iter()
+            .filter(|(id, _)| self.dimensions.contains_key(id))
+            .collect();
+        self
+    }
+
+    /// Attach a dimension's ends (None leaves an end free).
+    pub fn anchor_dimension(&mut self, id: DimId, a: Option<Anchor>, b: Option<Anchor>) {
+        if !self.dimensions.contains_key(&id) {
+            return;
+        }
+        if a.is_none() && b.is_none() {
+            self.dim_anchors.remove(&id);
+        } else {
+            self.dim_anchors.insert(id, [a, b]);
+        }
+    }
+
+    /// Where an anchor is now, in the world; None if its group or vertex
+    /// is gone.
+    fn anchor_at(&self, an: &Anchor) -> Option<DVec3> {
+        let mut def = ROOT;
+        let mut m = DAffine3::IDENTITY;
+        for id in &an.path {
+            let inst = self.def(def)?.instances.get(id)?;
+            m *= inst.transform;
+            def = inst.def;
+        }
+        let model = &self.def(def)?.model;
+        model
+            .has_vertex(an.vertex)
+            .then(|| m.transform_point3(model.vertex(an.vertex)))
+    }
+
+    /// Move each attached dimension end to where its vertex is now (after
+    /// an edit); an end whose vertex or group is gone is let go. The
+    /// dimension line keeps its side and distance.
+    pub fn follow_dimensions(&mut self) {
+        let ids: Vec<DimId> = self.dim_anchors.keys().copied().collect();
+        for id in ids {
+            let (Some(mut d), Some(anchors)) = (
+                self.dimensions.get(&id).copied(),
+                self.dim_anchors.get(&id).cloned(),
+            ) else {
+                self.dim_anchors.remove(&id);
+                continue;
+            };
+            let mut kept = anchors.clone();
+            let mut ends = [d.a, d.b];
+            for k in 0..2 {
+                if let Some(an) = &anchors[k] {
+                    match self.anchor_at(an) {
+                        Some(p) => ends[k] = p,
+                        None => kept[k] = None,
+                    }
+                }
+            }
+            if [d.a, d.b] != ends {
+                let line = (ends[1] - ends[0]).normalize_or_zero();
+                let offset = d.offset - line * d.offset.dot(line);
+                if ends[0] != ends[1] && line != DVec3::ZERO && offset.is_finite() {
+                    d.a = ends[0];
+                    d.b = ends[1];
+                    if offset.length() > 0.0 {
+                        d.offset = offset;
+                    }
+                    self.dimensions.insert(id, d);
+                }
+            }
+            if kept.iter().all(Option::is_none) {
+                self.dim_anchors.remove(&id);
+            } else {
+                self.dim_anchors.insert(id, kept);
+            }
+        }
     }
 
     // ---------- section planes (Annotation & Sections part 1) ----------

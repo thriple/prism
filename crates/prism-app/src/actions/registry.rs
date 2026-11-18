@@ -479,15 +479,24 @@ pub struct Selection {
     pub edges: usize,
     pub points: usize,
     pub groups: usize,
+    /// A section plane, dimension or construction plane picked with
+    /// Alt + click or by right-click: "section", "dimension" or "cplane".
+    pub annotation: Option<&'static str>,
 }
 
 impl Selection {
     pub fn is_empty(&self) -> bool {
-        self.faces + self.edges + self.points + self.groups == 0
+        self.faces + self.edges + self.points + self.groups == 0 && self.annotation.is_none()
     }
 
     /// The menu's heading: "Empty space", "1 face", "2 faces, 3 edges".
     pub fn label(&self) -> String {
+        match self.annotation {
+            Some("section") => return "Section plane".to_owned(),
+            Some("dimension") => return "Dimension".to_owned(),
+            Some("cplane") => return "Construction plane".to_owned(),
+            _ => {}
+        }
         let parts: Vec<String> = [
             (self.groups, "group"),
             (self.faces, "face"),
@@ -509,6 +518,19 @@ impl Selection {
 /// The right-click menu for a selection, following the prototype's `onContext`.
 pub fn context_menu(sel: Selection) -> Vec<Entry> {
     use Entry::{Action as A, Separator as S, Sub};
+    match sel.annotation {
+        Some("section") => {
+            return vec![
+                A("section.flip"),
+                A("section.active"),
+                S,
+                A("section.delete"),
+            ];
+        }
+        Some("dimension") => return vec![A("dim.delete")],
+        Some("cplane") => return vec![A("cplane.active"), S, A("cplane.delete")],
+        _ => {}
+    }
     if sel.is_empty() {
         return vec![
             A("edit.paste"),
@@ -793,6 +815,19 @@ mod tests {
                 edges: 2,
                 points: 0,
                 groups: 1,
+                annotation: None,
+            },
+            Selection {
+                annotation: Some("section"),
+                ..Default::default()
+            },
+            Selection {
+                annotation: Some("dimension"),
+                ..Default::default()
+            },
+            Selection {
+                annotation: Some("cplane"),
+                ..Default::default()
             },
         ] {
             ids_in(&context_menu(sel), &mut ids);
@@ -933,6 +968,7 @@ mod tests {
                 edges: 3,
                 points: 0,
                 groups: 0,
+                annotation: None,
             }
             .label(),
             "1 face, 3 edges"

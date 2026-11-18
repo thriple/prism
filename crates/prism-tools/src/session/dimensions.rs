@@ -43,7 +43,35 @@ pub fn offset_towards(a: DVec3, b: DVec3, p: DVec3) -> DVec3 {
 }
 
 impl Session {
-    fn dim_tiny(&self, p: DVec3) -> f64 {
+    /// The vertex of the open group's model at `p`, if there is one: what
+    /// a dimension end there is attached to.
+    fn dim_anchor(&self, p: DVec3) -> Option<prism_doc::Anchor> {
+        let path = self.open_path().to_vec();
+        let world = self.doc.assembly().world_of(&path)?;
+        let local = world.inverse().transform_point3(p);
+        let tol = self.scene.tol.dist.max(p.length() * 1e-12);
+        let (vertex, _) = self
+            .work_model()
+            .vertices()
+            .find(|(_, q)| q.distance(local) <= tol)?;
+        Some(prism_doc::Anchor { path, vertex })
+    }
+
+    /// The command that adds a dimension, attached to the vertices at its
+    /// ends so it follows the model.
+    pub(super) fn dim_add(&self, a: DVec3, b: DVec3, offset: DVec3) -> Command {
+        let add = Command::AddDimension { a, b, offset };
+        let (aa, ab) = (self.dim_anchor(a), self.dim_anchor(b));
+        if aa.is_none() && ab.is_none() {
+            return add;
+        }
+        let id = DimId(self.doc.assembly().dimensions().1);
+        Command::Batch {
+            commands: vec![add, Command::AnchorDimension { id, a: aa, b: ab }],
+        }
+    }
+
+    pub(super) fn dim_tiny(&self, p: DVec3) -> f64 {
         self.scene.tol.dist.max(p.length() * 1e-12)
     }
 
@@ -53,7 +81,7 @@ impl Session {
     }
 
     /// The dimension under the cursor.
-    fn dim_at(&self, s: DVec2, view: &View) -> Option<DimId> {
+    pub(super) fn dim_at(&self, s: DVec2, view: &View) -> Option<DimId> {
         let mut best: Option<(f64, DimId)> = None;
         for (id, d) in self.doc.assembly().dimensions().0 {
             let [a, b, c, e] = Self::dim_geometry(d);
@@ -120,7 +148,7 @@ impl Session {
                         if offset.length() > tiny {
                             let c = match op.moving {
                                 Some(id) => Command::MoveDimension { id, offset },
-                                None => Command::AddDimension { a: op.a, b, offset },
+                                None => self.dim_add(op.a, b, offset),
                             };
                             if self.doc.run(c) {
                                 self.model_changed();

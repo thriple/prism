@@ -196,6 +196,7 @@ impl Viewport {
             edges: s.edges.len(),
             points: s.vertices.len(),
             groups: self.session.selected_groups().len(),
+            annotation: self.session.picked_annotation(),
         }
     }
 

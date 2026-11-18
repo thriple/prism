@@ -199,7 +199,16 @@ impl Session {
         let point = self.inference.as_ref().map(|i| i.point);
         match (on_face, point) {
             (Some((at, n)), p) => Some(frame_on(p.unwrap_or(at), n)),
-            (None, Some(p)) => Some(frame_on(p, DVec3::Z)),
+            // Off every face: on the ground, or on the working plane when
+            // the cursor landed on it.
+            (None, Some(p)) => {
+                let n = self
+                    .inference
+                    .as_ref()
+                    .filter(|i| matches!(i.kind, prism_infer::Kind::OnPlane))
+                    .map_or(DVec3::Z, |i| self.plane_normal(i));
+                Some(frame_on(p, n))
+            }
             (None, None) => None,
         }
     }

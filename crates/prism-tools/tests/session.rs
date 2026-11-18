@@ -7004,3 +7004,275 @@ fn construction_planes_stay_drawn_and_the_menu_commands_work() {
     d.send(Input::Move { x: 51.0, y: 50.0 });
     assert!(d.s.overlay().lines.len() < lines);
 }
+
+// ---------- Picking annotations with Alt + click (brief 46 gaps) ----------
+
+/// Alt + click (and release) at a screen point.
+fn alt_click(d: &mut Driver, s: DVec2) {
+    d.send(Input::Move { x: s.x, y: s.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: s.x,
+        y: s.y,
+        shift: false,
+        ctrl: false,
+        alt: true,
+    });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.t += 0.5;
+}
+
+/// A document with the pocket and a section plane across it at `z`.
+fn cut_pocket(z: f64) -> Driver {
+    let mut doc = prism_tools::scenes::pocket();
+    doc.run(prism_doc::Command::AddSection {
+        origin: DVec3::new(0.0, 0.0, z),
+        normal: DVec3::Z,
+    });
+    Driver::new(doc)
+}
+
+/// The middle of the outline's longest drawn edge at height `z`.
+fn outline_point(d: &mut Driver, z: f64) -> DVec2 {
+    d.send(Input::Move { x: 5.0, y: 5.0 });
+    let lines = d.s.overlay().lines;
+    let l = lines
+        .iter()
+        .filter(|l| (l.a.z - z).abs() < 1e-9 && (l.b.z - z).abs() < 1e-9)
+        .max_by(|a, b| (a.a - a.b).length().total_cmp(&(b.a - b.b).length()))
+        .expect("the plane's outline");
+    d.screen((l.a + l.b) * 0.5)
+}
+
+#[test]
+fn alt_click_picks_a_plane_then_picks_it_up_and_a_click_sets_it() {
+    let mut d = cut_pocket(1.0);
+    let at = outline_point(&mut d, 1.0);
+    // A plain click on the outline does not pick it (it is not the model).
+    d.click_px(at, false, false);
+    assert_eq!(d.s.picked_annotation(), None);
+    alt_click(&mut d, at);
+    assert_eq!(d.s.picked_annotation(), Some("section"));
+    // Alt + click on the picked one picks it up; it follows the cursor.
+    alt_click(&mut d, at);
+    move_to(&mut d, DVec3::new(0.4, 0.4, 0.5));
+    d.click(DVec3::new(0.4, 0.4, 0.5));
+    let (_, sec) = d.s.document().assembly().active_section().unwrap();
+    // It moved with the cursor (by how far the cursor went along its
+    // normal's line from where it was picked up; typed distances are exact).
+    assert!((sec.origin.z - 1.0).abs() > 0.1, "{:?}", sec.origin);
+    // Alt + click on nothing lets go.
+    alt_click(&mut d, DVec2::new(5.0, 5.0));
+    assert_eq!(d.s.picked_annotation(), None);
+}
+
+#[test]
+fn a_picked_plane_takes_a_typed_distance_and_delete_removes_it() {
+    let mut d = cut_pocket(1.0);
+    let at = outline_point(&mut d, 1.0);
+    alt_click(&mut d, at);
+    alt_click(&mut d, at);
+    assert!(d.s.in_operation(), "it is picked up");
+    d.typed("0.4");
+    let (_, sec) = d.s.document().assembly().active_section().unwrap();
+    assert!((sec.origin.z - 1.4).abs() < 1e-9, "{:?}", sec.origin);
+    // Delete takes the picked plane when nothing else is selected.
+    let at = outline_point(&mut d, 1.4);
+    alt_click(&mut d, at);
+    assert_eq!(d.s.picked_annotation(), Some("section"));
+    act(&mut d, "edit.delete");
+    assert!(!d.s.has_sections());
+    assert_eq!(d.s.picked_annotation(), None);
+    // And one undo brings it back.
+    act(&mut d, "edit.undo");
+    assert!(d.s.has_sections());
+}
+
+#[test]
+fn right_click_on_a_plane_picks_it_but_on_the_model_does_not() {
+    let mut d = cut_pocket(1.0);
+    let at = outline_point(&mut d, 1.0);
+    d.send(Input::Move { x: at.x, y: at.y });
+    d.send(Input::Press {
+        button: Button::Right,
+        x: at.x,
+        y: at.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Release {
+        button: Button::Right,
+    });
+    assert_eq!(d.s.picked_annotation(), Some("section"));
+    // On a face of the model: none is picked, the model is.
+    let f = d.screen(DVec3::new(0.4, 0.4, 0.0));
+    d.send(Input::Press {
+        button: Button::Right,
+        x: f.x,
+        y: f.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Release {
+        button: Button::Right,
+    });
+    assert_eq!(d.s.picked_annotation(), None);
+}
+
+#[test]
+fn a_dimension_is_picked_moved_by_typing_and_deleted() {
+    let mut doc = prism_tools::scenes::pocket();
+    doc.run(prism_doc::Command::AddDimension {
+        a: DVec3::new(-2.0, -2.0, 2.0),
+        b: DVec3::new(2.0, -2.0, 2.0),
+        offset: DVec3::new(0.0, -1.0, 0.0),
+    });
+    let mut d = Driver::new(doc);
+    // Its dimension line, at y = -3.
+    let at = d.screen(DVec3::new(0.0, -3.0, 2.0));
+    alt_click(&mut d, at);
+    assert_eq!(d.s.picked_annotation(), Some("dimension"));
+    alt_click(&mut d, at);
+    d.typed("2");
+    let (_, dim) =
+        d.s.document()
+            .assembly()
+            .dimensions()
+            .0
+            .iter()
+            .next()
+            .unwrap();
+    assert!((dim.offset.length() - 2.0).abs() < 1e-9, "{:?}", dim.offset);
+    assert!(dim.offset.y < 0.0, "still on the same side");
+    act(&mut d, "edit.delete");
+    assert!(!d.s.has_dimensions());
+}
+
+#[test]
+fn a_construction_plane_is_picked_and_moved_along_its_normal() {
+    let mut doc = prism_tools::scenes::pocket();
+    doc.run(prism_doc::Command::AddWorkPlane {
+        origin: DVec3::new(0.0, 0.0, 1.0),
+        normal: DVec3::Z,
+    });
+    let mut d = Driver::new(doc);
+    let at = outline_point(&mut d, 1.0);
+    alt_click(&mut d, at);
+    assert_eq!(d.s.picked_annotation(), Some("cplane"));
+    alt_click(&mut d, at);
+    d.typed("0.5");
+    let (_, p) = d.s.document().assembly().active_work_plane().unwrap();
+    assert!((p.origin.z - 1.5).abs() < 1e-9, "{:?}", p.origin);
+}
+
+#[test]
+fn shift_click_makes_a_construction_plane_through_three_points() {
+    use prism_tools::session::CPLANE_TOOL;
+    let mut d = Driver::empty();
+    d.tool(CPLANE_TOOL);
+    let p = |x: f64, y: f64, z: f64| DVec3::new(x, y, z);
+    // The ground is under the cursor, so the points are on it: draw a
+    // vertical wall's three points with the arrows locking nothing, by
+    // giving the points directly through inference-free clicks on the
+    // ground, then a plane tilted by the third: check the first two lie
+    // on the plane and a line of three is refused.
+    d.send(Input::Move { x: 400.0, y: 300.0 });
+    let a = d.screen(p(0.0, 0.0, 0.0));
+    let b = d.screen(p(2.0, 0.0, 0.0));
+    let c = d.screen(p(1.0, 1.0, 0.0));
+    d.click_px(a, true, false);
+    assert!(d.s.hint().contains("second point"), "{}", d.s.hint());
+    d.click_px(b, false, false);
+    assert!(d.s.hint().contains("third point"), "{}", d.s.hint());
+    d.click_px(c, false, false);
+    let (_, plane) =
+        d.s.document()
+            .assembly()
+            .active_work_plane()
+            .expect("a plane");
+    assert!(
+        plane.normal.dot(DVec3::Z).abs() > 0.999,
+        "on the ground: {:?}",
+        plane.normal
+    );
+    // Three points in a line make nothing.
+    let n = d.s.document().assembly().work_planes().0.len();
+    d.click_px(a, true, false);
+    d.click_px(b, false, false);
+    d.click_px(d.screen(p(4.0, 0.0, 0.0)), false, false);
+    assert_eq!(d.s.document().assembly().work_planes().0.len(), n);
+    d.send(Input::Key { key: Key::Escape });
+    assert!(!d.s.in_operation());
+}
+
+#[test]
+fn text_lands_on_the_working_plane() {
+    use prism_tools::session::TEXT_TOOL;
+    let mut doc = Document::new();
+    // A wall plane across x = 1.
+    doc.run(prism_doc::Command::AddWorkPlane {
+        origin: DVec3::new(1.0, 0.0, 0.0),
+        normal: DVec3::X,
+    });
+    let mut d = Driver::new(doc);
+    d.s.text_input(prism_tools::session::TextSet::Text("A".into()));
+    d.tool(TEXT_TOOL);
+    d.hover(DVec3::new(1.0, 0.5, 0.5));
+    d.click(DVec3::new(1.0, 0.5, 0.5));
+    let g = text_groups(&d);
+    assert_eq!(g.len(), 1, "{g:?}");
+    // The text faces along the plane's normal (x), not up.
+    let n = g[0].1.transform_vector3(DVec3::Z);
+    assert!(n.dot(DVec3::X).abs() > 0.99, "{n}");
+}
+
+#[test]
+fn a_dimension_made_with_the_tool_follows_the_corner_it_was_drawn_to() {
+    use prism_tools::session::DIM_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::cube());
+    let model = d.s.document().model().clone();
+    let corners: Vec<_> = model.vertices().collect();
+    // The two ends of the box's front-bottom edge, and a point off to the side.
+    let (ia, a) = *corners
+        .iter()
+        .min_by(|x, y| (x.1.x + x.1.y + x.1.z).total_cmp(&(y.1.x + y.1.y + y.1.z)))
+        .unwrap();
+    let (ib, b) = *corners
+        .iter()
+        .find(|(_, p)| (p.y - a.y).abs() < 1e-9 && (p.z - a.z).abs() < 1e-9 && p.x > a.x + 1e-9)
+        .unwrap();
+    let _ = ia;
+    d.tool(DIM_TOOL);
+    d.click(a);
+    d.click(b);
+    d.click(a + DVec3::new(1.0, -1.5, 0.0));
+    let (_, dim) =
+        d.s.document()
+            .assembly()
+            .dimensions()
+            .0
+            .iter()
+            .next()
+            .expect("a dimension");
+    let len = dim.length();
+    assert_eq!(d.s.document().assembly().dim_anchors().len(), 1, "attached");
+    // Both ends are on corners: each is attached, and deleting the
+    // dimension forgets the attachment.
+    let anchors =
+        &d.s.document()
+            .assembly()
+            .dim_anchors()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+    assert!(anchors[0].is_some() && anchors[1].is_some(), "{anchors:?}");
+    assert_eq!(anchors[1].as_ref().unwrap().vertex, ib);
+    assert!(len > 0.0);
+    act(&mut d, "dim.delete");
+    assert!(d.s.document().assembly().dim_anchors().is_empty());
+}

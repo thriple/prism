@@ -36,7 +36,7 @@ pub(super) struct SectionOp {
 }
 
 impl SectionOp {
-    fn moved_to(&self) -> DVec3 {
+    pub(super) fn moved_to(&self) -> DVec3 {
         self.origin + self.normal * (self.t - self.t0)
     }
 }
@@ -125,7 +125,7 @@ impl Session {
 
     /// Run a section command: planes are in the world, whichever group is
     /// open.
-    fn section_run(&mut self, c: Command) -> bool {
+    pub(super) fn section_run(&mut self, c: Command) -> bool {
         if self.doc.run(c) {
             self.model_changed();
             true
@@ -135,7 +135,7 @@ impl Session {
     }
 
     /// The plane outline under the cursor, if any.
-    fn section_border_at(&self, s: DVec2, view: &View) -> Option<SectionId> {
+    pub(super) fn section_border_at(&self, s: DVec2, view: &View) -> Option<SectionId> {
         let mut best: Option<(f64, SectionId)> = None;
         for (id, sec) in self.doc.assembly().sections().0 {
             let c = self.plane_corners(sec.origin, sec.normal);

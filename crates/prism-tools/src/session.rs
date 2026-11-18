@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::select::box_select;
 
+mod annotations;
 mod arcs;
 mod axes;
 mod booleans;
@@ -598,6 +599,11 @@ pub struct Session {
     /// one picked.
     dim_op: Option<dimensions::DimOp>,
     dim_sel: Option<prism_doc::DimId>,
+    /// Construction planes: the one picked with Alt + click, the one being
+    /// moved, and the points of a plane being made from three.
+    cplane_sel: Option<prism_doc::WorkPlaneId>,
+    cplane_op: Option<annotations::PlaneOp>,
+    cplane_pts: Vec<DVec3>,
     /// The Text tool (part 3): the window's settings and the ghost's place.
     text_set: texting::TextSettings,
     text_ghost: Option<prism_math::DAffine3>,
@@ -625,6 +631,9 @@ impl Session {
             text_set: texting::TextSettings::default(),
             text_ghost: None,
             dim_sel: None,
+            cplane_sel: None,
+            cplane_op: None,
+            cplane_pts: Vec::new(),
             cage: None,
             cage_notice: None,
             curve_through: false,
@@ -837,6 +846,8 @@ impl Session {
             || self.axes_op.is_some()
             || self.section_op.is_some()
             || self.dim_op.is_some()
+            || self.cplane_op.is_some()
+            || !self.cplane_pts.is_empty()
             || self.solid_first.is_some()
             || self.cage_start().is_some()
             || self.boxing.is_some()
@@ -885,6 +896,7 @@ impl Session {
             return !c.is_control();
         }
         let editable = self.in_operation() && self.boxing.is_none()
+            || self.ann_typing()
             || self.last_op.is_some() && self.typing_tool()
             || self.tool == FILLET
             || self.tool == ZOOM
@@ -1319,6 +1331,8 @@ impl Session {
         self.section_ghost = None;
         self.cplane_ghost = None;
         self.dim_op = None;
+        self.cplane_op = None;
+        self.cplane_pts.clear();
         self.solid_first = None;
         self.cage_cancel();
         self.last_fillet = None;
@@ -1939,6 +1953,7 @@ impl Session {
 
     fn update_hover(&mut self, s: DVec2) {
         let view = self.view();
+        self.ann_hover(s, &view);
         if self.wants_inference() {
             let t0 = self.measure.map(|f| f());
             let ctx = self.context();
@@ -2113,7 +2128,7 @@ impl Session {
                 RRECT => self.rrect_press(s),
                 AXES_TOOL => self.axes_press(s),
                 SECTION_TOOL => self.section_press(s),
-                CPLANE_TOOL => self.work_plane_press(s),
+                CPLANE_TOOL => self.work_plane_press(s, shift),
                 DIM_TOOL => self.dim_press(s),
                 TEXT_TOOL => self.text_press(s),
                 FREEHAND => self.freehand_press(s, shift),
@@ -2126,6 +2141,9 @@ impl Session {
                 _ => {}
             },
             Button::Right => {
+                let on_model =
+                    pick::pick(&self.scene, &self.view(), s, self.settings.aperture).is_some();
+                self.ann_right_click(s, on_model);
                 if self.tool == SELECT
                     && let Some(h) =
                         pick::pick(&self.scene, &self.view(), s, self.settings.aperture)
@@ -2224,6 +2242,17 @@ impl Session {
     }
 
     fn select_press(&mut self, s: DVec2, shift: bool, ctrl: bool) {
+        // A plane or dimension picked up with Alt + click is set down by
+        // the next click; Alt + click picks them (nothing else does).
+        if self.ann_moving() {
+            self.ann_set(s);
+            return;
+        }
+        if self.press_alt {
+            self.ann_press(s);
+            return;
+        }
+        self.ann_clear();
         let n = self.clicks.press(self.time, s);
         let hit = pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit);
         let groups_before = self.groups.clone();
@@ -2482,6 +2511,9 @@ impl Session {
         }
         if self.edit.is_some() {
             self.edit_enter(&text);
+            return;
+        }
+        if self.ann_enter(&text) {
             return;
         }
         if self.rrect_enter(&text)

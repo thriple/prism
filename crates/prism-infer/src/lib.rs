@@ -711,6 +711,8 @@ pub fn infer(
             }
             for (k, (a, b)) in prism_ops::intersect::crossings(&hflat, &of.flat(), &scene.tol)
                 .into_iter()
+                // Not where a section plane has cut the model away.
+                .filter(|(a, b)| scene.kept((*a + *b) * 0.5))
                 .enumerate()
                 .take(255)
             {

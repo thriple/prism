@@ -120,7 +120,7 @@ Done since and left out: the camera items (Everyday Commands), Intersect within 
 | Rounding several edges by a drag; a true largest fit; rounds beside freeform faces, variable radius and corner styles; a piece of a straight line rounding alone (the Fillet window, Fillet Joins D) | Inspector & Features |
 | Materials and colours in every format, back materials, OBJ's other maps, imported materials merged by name, per-instance materials on a shared mesh (Files & Formats 2, Basic Materials 3b, 3c, Export for Beverly 2) | More Formats |
 | Exact curves recovered from meshes; joining imports to geometry; a progress bar; exports that keep holes (Files & Formats 2) | More Formats |
-| Construction planes, left over after part 4: moving one after it is placed, typed distances, a plane from three points, a grid on the plane, Text and Dimensions using the working plane, picking a plane with Select (1.4); the model's axes: typed values, the camera's up following tilted axes | Annotation & Sections |
+| Construction planes, left over after the gap pass: a grid drawn on the plane, naming planes in a list window, inference snapping to the plane's own origin, a plane square to an edge (1.4); the model's axes: typed values, the camera's up following tilted axes | Annotation & Sections |
 | Walk collision (Everyday Commands 2); double-clicks timed by frame on a slow renderer (Viewport) | Input & Feel |
 | A recording's saved result is the root model only (Groups & Components 1, Tool pass 1) | Input & Feel |
 | The hint panel's pictures (Everyday Commands 3) | Input & Feel |

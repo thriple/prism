@@ -443,3 +443,39 @@ fn soft_edges_round_trip() {
     let back = read(&write(&c, "test")).expect("opens");
     assert_eq!(back.model().to_json(), m.to_json());
 }
+
+/// A dimension's attached ends are saved and read back (inside the same
+/// schema: `dimensions.json` gains an optional field).
+#[test]
+fn dimension_anchors_round_trip() {
+    use prism_doc::{Anchor, DimId};
+    let mut d = prism_tools::scenes::pocket();
+    let v = d.model().vertices().next().map(|(id, _)| id).unwrap();
+    let p = d.model().vertex(v);
+    d.run(Command::Batch {
+        commands: vec![
+            Command::AddDimension {
+                a: p,
+                b: p + DVec3::X,
+                offset: DVec3::Z,
+            },
+            Command::AnchorDimension {
+                id: DimId(0),
+                a: Some(Anchor {
+                    path: Vec::new(),
+                    vertex: v,
+                }),
+                b: None,
+            },
+        ],
+    });
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = write(&c, "test");
+    let back = read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    assert_eq!(back.assembly.dim_anchors().len(), 1);
+    assert_eq!(write(&back, "test"), bytes);
+}
