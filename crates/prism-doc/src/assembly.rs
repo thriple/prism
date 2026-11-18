@@ -33,6 +33,20 @@ pub struct InstanceId(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TagId(pub u32);
 
+/// A section plane's id (Annotation & Sections part 1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SectionId(pub u32);
+
+/// A section plane: a plane in the world that can cut the model away on
+/// the side its normal points to. It changes no geometry.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Section {
+    pub name: String,
+    pub origin: DVec3,
+    /// Unit length. The side it points to is the side that is cut away.
+    pub normal: DVec3,
+}
+
 /// A tag: a name, and whether what is on it is shown.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tag {
@@ -130,6 +144,14 @@ pub struct Assembly {
     /// Instances locked against edits (Everyday Commands part 1).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     locked: BTreeSet<InstanceId>,
+    /// Section planes (Annotation & Sections part 1).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    sections: BTreeMap<SectionId, Section>,
+    #[serde(default)]
+    next_section: u32,
+    /// The plane that cuts, if any: only one does at a time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_section: Option<SectionId>,
 }
 
 /// An instance's name, tag and whether it is hidden (for files).
@@ -172,6 +194,9 @@ impl Assembly {
             next_material: 0,
             painted: BTreeMap::new(),
             locked: BTreeSet::new(),
+            sections: BTreeMap::new(),
+            next_section: 0,
+            active_section: None,
         }
     }
 
@@ -244,6 +269,9 @@ impl Assembly {
             next_material: 0,
             painted: BTreeMap::new(),
             locked: BTreeSet::new(),
+            sections: BTreeMap::new(),
+            next_section: 0,
+            active_section: None,
         })
     }
 
@@ -347,6 +375,116 @@ impl Assembly {
     /// Whether a path of instances (an open group) goes through a locked one.
     pub fn path_locked(&self, path: &[InstanceId]) -> bool {
         path.iter().any(|i| self.is_locked(*i))
+    }
+
+    // ---------- section planes (Annotation & Sections part 1) ----------
+
+    /// The section planes, and the counter for new ones (for files).
+    pub fn sections(&self) -> (&BTreeMap<SectionId, Section>, u32) {
+        (&self.sections, self.next_section)
+    }
+
+    pub fn section(&self, id: SectionId) -> Option<&Section> {
+        self.sections.get(&id)
+    }
+
+    /// The plane that cuts now.
+    pub fn active_section(&self) -> Option<(SectionId, &Section)> {
+        let id = self.active_section?;
+        self.sections.get(&id).map(|s| (id, s))
+    }
+
+    /// Set the planes from a file. A plane that is not a plane (a zero or
+    /// unusable normal) is dropped; `active` must name one that is left.
+    pub fn with_sections(
+        mut self,
+        sections: BTreeMap<SectionId, Section>,
+        next: u32,
+        active: Option<SectionId>,
+    ) -> Self {
+        self.sections = sections
+            .into_iter()
+            .filter_map(|(id, mut s)| {
+                let n = s.normal.normalize_or_zero();
+                (n != DVec3::ZERO && s.origin.is_finite()).then(|| {
+                    // A unit normal is kept as it is (normalising it again
+                    // would change its last digits and break exact round trips).
+                    if (s.normal.length() - 1.0).abs() > 1e-12 {
+                        s.normal = n;
+                    }
+                    (id, s)
+                })
+            })
+            .collect();
+        self.next_section = next.max(self.sections.keys().next_back().map_or(0, |k| k.0 + 1));
+        self.active_section = active.filter(|a| self.sections.contains_key(a));
+        self
+    }
+
+    /// Add a plane through `origin` whose normal points to the side that is
+    /// cut away. It becomes the active one. None for an unusable normal.
+    pub fn add_section(&mut self, origin: DVec3, normal: DVec3) -> Option<SectionId> {
+        let n = normal.normalize_or_zero();
+        if n == DVec3::ZERO || !origin.is_finite() {
+            return None;
+        }
+        let id = SectionId(self.next_section);
+        self.next_section += 1;
+        let name = format!("Section {}", id.0 + 1);
+        self.sections.insert(
+            id,
+            Section {
+                name,
+                origin,
+                normal: n,
+            },
+        );
+        self.active_section = Some(id);
+        Some(id)
+    }
+
+    /// Move a plane's origin (it keeps its direction).
+    pub fn move_section(&mut self, id: SectionId, origin: DVec3) {
+        if origin.is_finite()
+            && let Some(s) = self.sections.get_mut(&id)
+        {
+            s.origin = origin;
+        }
+    }
+
+    /// Cut away the other side instead.
+    pub fn flip_section(&mut self, id: SectionId) {
+        if let Some(s) = self.sections.get_mut(&id) {
+            s.normal = -s.normal;
+        }
+    }
+
+    /// Make a plane the one that cuts, or stop any plane cutting.
+    pub fn set_active_section(&mut self, id: SectionId, active: bool) {
+        if !self.sections.contains_key(&id) {
+            return;
+        }
+        if active {
+            self.active_section = Some(id);
+        } else if self.active_section == Some(id) {
+            self.active_section = None;
+        }
+    }
+
+    pub fn rename_section(&mut self, id: SectionId, name: &str) {
+        let name = name.trim();
+        if !name.is_empty()
+            && let Some(s) = self.sections.get_mut(&id)
+        {
+            s.name = name.to_owned();
+        }
+    }
+
+    pub fn delete_section(&mut self, id: SectionId) {
+        self.sections.remove(&id);
+        if self.active_section == Some(id) {
+            self.active_section = None;
+        }
     }
 
     /// Lock or unlock instances (anywhere: instance ids are unique).
@@ -587,6 +725,7 @@ impl Assembly {
     /// twice. Definitions are only copied where a counter is behind.
     pub fn keep_counters_from(&mut self, newer: &Assembly) {
         self.next_material = self.next_material.max(newer.next_material);
+        self.next_section = self.next_section.max(newer.next_section);
         self.next_def = self.next_def.max(newer.next_def);
         self.next_instance = self.next_instance.max(newer.next_instance);
         for (id, d) in &newer.defs {

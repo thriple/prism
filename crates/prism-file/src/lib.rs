@@ -49,8 +49,8 @@ pub use migrate::{Raw, migrate};
 /// (`materials.json`) and painted faces (geometry layout 7). Schema 9:
 /// texture images (`images/`) and texture placement on faces (geometry
 /// layout 8). Schema 10: NURBS curves and patches (geometry layout 9). Schema 11:
-/// locked groups (`groups.json`).
-pub const SCHEMA: u32 = 11;
+/// locked groups (`groups.json`). Schema 12: section planes (`sections.json`).
+pub const SCHEMA: u32 = 12;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -61,6 +61,25 @@ const DOCUMENT: &str = "document.json";
 const MODEL: &str = "geometry/model.bin";
 const GROUPS: &str = "groups.json";
 const MATERIALS: &str = "materials.json";
+const SECTIONS: &str = "sections.json";
+
+/// The document's section planes (schema 12).
+#[derive(Serialize, Deserialize)]
+struct SectionsV1 {
+    next: u32,
+    /// The plane that cuts, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active: Option<u32>,
+    sections: Vec<SectionV1>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SectionV1 {
+    id: u32,
+    name: String,
+    origin: [f64; 3],
+    normal: [f64; 3],
+}
 
 /// The document's materials (schema 8).
 #[derive(Serialize, Deserialize)]
@@ -270,6 +289,28 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         };
         files.push((MATERIALS.to_owned(), pretty(&m)));
     }
+    let (sections, next_section) = asm.sections();
+    if !sections.is_empty() {
+        manifest.entries.push(Entry {
+            path: SECTIONS.to_owned(),
+            kind: "sections".to_owned(),
+            version: 1,
+        });
+        let m = SectionsV1 {
+            next: next_section,
+            active: asm.active_section().map(|(id, _)| id.0),
+            sections: sections
+                .iter()
+                .map(|(id, s)| SectionV1 {
+                    id: id.0,
+                    name: s.name.clone(),
+                    origin: s.origin.to_array(),
+                    normal: s.normal.to_array(),
+                })
+                .collect(),
+        };
+        files.push((SECTIONS.to_owned(), pretty(&m)));
+    }
     for image in asm.images().values() {
         let path = image_path(image);
         manifest.entries.push(Entry {
@@ -399,7 +440,28 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
                 .collect(),
         );
     }
-    let assembly = assembly.with_images(images);
+    let mut assembly = assembly.with_images(images);
+    if let Some(json) = raw.files.get(SECTIONS) {
+        let m: SectionsV1 = serde_json::from_slice(json)
+            .map_err(|e| FileError::Damaged(format!("{SECTIONS}: {e}")))?;
+        assembly = assembly.with_sections(
+            m.sections
+                .into_iter()
+                .map(|s| {
+                    (
+                        prism_doc::SectionId(s.id),
+                        prism_doc::Section {
+                            name: s.name,
+                            origin: prism_math::DVec3::from_array(s.origin),
+                            normal: prism_math::DVec3::from_array(s.normal),
+                        },
+                    )
+                })
+                .collect(),
+            m.next,
+            m.active.map(prism_doc::SectionId),
+        );
+    }
     Ok(Contents { assembly, settings })
 }
 

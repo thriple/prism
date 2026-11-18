@@ -129,7 +129,31 @@ fn cases() -> Vec<(&'static str, Contents)> {
                 settings: Settings::default(),
             },
         ),
+        (
+            "sections.prism",
+            Contents {
+                assembly: sectioned().assembly().clone(),
+                settings: Settings::default(),
+            },
+        ),
     ]
+}
+
+/// Two section planes on the pocket, the second one cutting
+/// (Annotation & Sections part 1, schema 12).
+fn sectioned() -> prism_doc::Document {
+    use prism_doc::Command;
+    use prism_math::DVec3;
+    let mut d = prism_tools::scenes::pocket();
+    d.run(Command::AddSection {
+        origin: DVec3::new(1.0, 1.0, 1.0),
+        normal: DVec3::Z,
+    });
+    d.run(Command::AddSection {
+        origin: DVec3::new(0.5, 0.0, 0.0),
+        normal: DVec3::new(1.0, 1.0, 0.0),
+    });
+    d
 }
 
 /// A small checked PNG, made the same way every time.

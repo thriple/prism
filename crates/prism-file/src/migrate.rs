@@ -71,6 +71,8 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             9 => raw,
             // Schema 11 adds locked groups (an optional field).
             10 => raw,
+            // Schema 12 adds section planes (`sections.json`, optional).
+            11 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

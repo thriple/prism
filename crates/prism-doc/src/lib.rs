@@ -13,8 +13,8 @@ pub mod image;
 pub mod material;
 
 pub use assembly::{
-    Assembly, Attributes, DefId, Definition, Instance, InstanceId, NESTED, Placed, ROOT, SolidOp,
-    TWO_SOLIDS, Tag, TagId,
+    Assembly, Attributes, DefId, Definition, Instance, InstanceId, NESTED, Placed, ROOT, Section,
+    SectionId, SolidOp, TWO_SOLIDS, Tag, TagId,
 };
 pub use image::{Image, ImageId, Pixels, Texture};
 pub use material::{FaceSide, Material, Principled};
@@ -302,6 +302,33 @@ pub enum Command {
         clip: Box<Assembly>,
         at: DAffine3,
     },
+    /// A new section plane (Annotation & Sections part 1), in world
+    /// coordinates; the side `normal` points to is cut away. It becomes
+    /// the plane that cuts.
+    AddSection {
+        origin: DVec3,
+        normal: DVec3,
+    },
+    MoveSection {
+        id: SectionId,
+        origin: DVec3,
+    },
+    /// Cut away the other side.
+    FlipSection {
+        id: SectionId,
+    },
+    /// Make the plane the one that cuts, or stop it cutting.
+    SetSectionActive {
+        id: SectionId,
+        active: bool,
+    },
+    RenameSection {
+        id: SectionId,
+        name: String,
+    },
+    DeleteSection {
+        id: SectionId,
+    },
     /// Lock or unlock groups (anywhere: instance ids are unique).
     SetLocked {
         instances: BTreeSet<InstanceId>,
@@ -582,6 +609,13 @@ impl Command {
             Command::EraseInstances { .. } => "Erase",
             Command::Cut { .. } => "Cut",
             Command::Paste { .. } => "Paste",
+            Command::AddSection { .. } => "Section Plane",
+            Command::MoveSection { .. } => "Move Section Plane",
+            Command::FlipSection { .. } => "Flip Section Plane",
+            Command::SetSectionActive { active: true, .. } => "Activate Section Plane",
+            Command::SetSectionActive { .. } => "Deactivate Section Plane",
+            Command::RenameSection { .. } => "Rename Section Plane",
+            Command::DeleteSection { .. } => "Delete Section Plane",
             Command::SetLocked { locked: true, .. } => "Lock",
             Command::SetLocked { .. } => "Unlock",
             Command::IntersectWith { .. } => "Intersect Faces",
@@ -839,6 +873,14 @@ impl Command {
                 asm.paste(ctx, clip, at);
             }
             Command::SetLocked { instances, locked } => asm.set_locked(instances, *locked),
+            Command::AddSection { origin, normal } => {
+                asm.add_section(*origin, *normal);
+            }
+            Command::MoveSection { id, origin } => asm.move_section(*id, *origin),
+            Command::FlipSection { id } => asm.flip_section(*id),
+            Command::SetSectionActive { id, active } => asm.set_active_section(*id, *active),
+            Command::RenameSection { id, name } => asm.rename_section(*id, name),
+            Command::DeleteSection { id } => asm.delete_section(*id),
             Command::Batch { commands } => {
                 for c in commands {
                     c.apply_in(asm, ctx);
@@ -1242,6 +1284,12 @@ impl Command {
             | Command::Cut { .. }
             | Command::Paste { .. }
             | Command::SetLocked { .. }
+            | Command::AddSection { .. }
+            | Command::MoveSection { .. }
+            | Command::FlipSection { .. }
+            | Command::SetSectionActive { .. }
+            | Command::RenameSection { .. }
+            | Command::DeleteSection { .. }
             | Command::AddMaterial { .. }
             | Command::EditMaterial { .. }
             | Command::RemoveMaterial { .. }
