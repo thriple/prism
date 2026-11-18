@@ -11,6 +11,7 @@ pub mod outline;
 pub mod overlay;
 pub mod pick;
 pub mod scene;
+pub mod section;
 pub mod style;
 pub mod tess;
 pub mod view_style;

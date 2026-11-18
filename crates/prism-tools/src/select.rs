@@ -100,7 +100,7 @@ pub fn box_select(scene: &Scene, view: &View, lo: DVec2, hi: DVec2, crossing: bo
             out.edges.insert(e.id);
         }
     }
-    for f in &scene.faces {
+    for f in scene.faces.iter().filter(|f| !f.cap) {
         let pts: Option<Vec<DVec2>> = f.outer_points().into_iter().map(scr).collect();
         let Some(ps) = pts else {
             continue;

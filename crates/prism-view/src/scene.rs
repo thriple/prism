@@ -44,6 +44,9 @@ pub struct SceneFace {
     /// The material of the nearest painted group it is in, drawn on its
     /// Default sides (DECISIONS #35).
     pub inherited: Option<MaterialId>,
+    /// A section plane's cap (Annotation & Sections part 1): drawn, but not
+    /// part of the model, so never picked or selected.
+    pub cap: bool,
 }
 
 /// What picking a curved face needs.
@@ -326,6 +329,8 @@ pub struct Scene {
     /// The textures of the textured materials faces use (Basic Materials
     /// part 2), filled the same way.
     pub textures: BTreeMap<MaterialId, SceneTexture>,
+    /// Set when a section plane cut this scene ([`Scene::cut_by`]).
+    pub cut: Option<crate::section::SectionCut>,
 }
 
 /// A textured material's image, ready to draw.
@@ -374,6 +379,7 @@ impl Scene {
             vertex_owner: BTreeMap::new(),
             palette: BTreeMap::new(),
             textures: BTreeMap::new(),
+            cut: None,
             faces_hide: true,
             faces_pick: true,
             materials_shown: true,
@@ -428,6 +434,7 @@ impl Scene {
                 id,
                 paint: paint_of(f),
                 inherited: None,
+                cap: false,
                 normal: plane.normal,
                 origin: plane.origin,
                 u,
@@ -622,6 +629,7 @@ impl Scene {
             id,
             paint: paint_of(f),
             inherited: None,
+            cap: false,
             normal: c.normal_at(first),
             origin: c.origin,
             u: frame.u,
@@ -750,6 +758,7 @@ impl Scene {
             id,
             paint: paint_of(f),
             inherited: None,
+            cap: false,
             normal: f.surface.normal_at(start),
             origin: frame.0,
             u: frame.1,
@@ -1141,6 +1150,14 @@ impl Scene {
             .map(|x| x.1)
     }
 
+    /// Whether `p` is on the side a section plane leaves (always, if none
+    /// cuts this scene).
+    pub fn kept(&self, p: DVec3) -> bool {
+        self.cut
+            .as_ref()
+            .is_none_or(|c| c.plane.dist(p) <= self.tol.dist)
+    }
+
     /// The nearest face the ray hits, and how far along.
     pub fn ray_face(&self, o: DVec3, d: DVec3) -> Option<(FaceId, f64)> {
         if !self.faces_pick {
@@ -1148,7 +1165,9 @@ impl Scene {
         }
         self.faces
             .iter()
+            .filter(|f| !f.cap)
             .filter_map(|f| f.hit(o, d).map(|t| (f.id, t)))
+            .filter(|(_, t)| self.kept(o + d * *t))
             .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
     }
 
@@ -1166,7 +1185,8 @@ impl Scene {
         let slack = self.tol.dist + len * 1e-9;
         self.faces.iter().any(|f| {
             !(self.materials_shown && self.see_through(f, self.textures_shown))
-                && f.hit(eye, d).is_some_and(|t| t < len - slack)
+                && f.hit(eye, d)
+                    .is_some_and(|t| t < len - slack && self.kept(eye + d * t))
         })
     }
 

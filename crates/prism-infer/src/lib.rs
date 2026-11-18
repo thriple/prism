@@ -661,6 +661,7 @@ pub fn infer(
         let hflat = hf.flat();
         for of in &scene.faces {
             if of.id == hid
+                || of.cap
                 || of.curved.is_some()
                 || (hf.hi + pad).cmplt(of.lo).any()
                 || (of.hi + pad).cmplt(hf.lo).any()
