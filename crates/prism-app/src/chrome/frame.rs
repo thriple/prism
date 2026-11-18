@@ -3,6 +3,7 @@
 use egui::{Align2, Area, Context, Id, Order, Rect, Sense, pos2, vec2};
 use prism_ui::emboss;
 use prism_ui::theme::{self, color, depth, radius, size};
+use prism_ui::widgets::SoftToggle;
 
 use super::DocEvent;
 use super::{Chrome, Layout, MenuKind, OpenMenu, dock};
@@ -407,39 +408,21 @@ fn top_bar(chrome: &mut Chrome, ctx: &Context, rect: Rect) {
         });
 }
 
-/// View > Effects in the menu bar, after Help (brief 47): a lit dot while
-/// on. It runs the same action as the menu.
+/// View > Effects in the menu bar, after Help (brief 47): the kit's switch.
+/// It runs the same action as the menu.
 fn effects_toggle(chrome: &mut Chrome, ui: &mut egui::Ui, x: f32, y: f32) {
-    let on = chrome.is_on("view.effects");
-    let dot = size::EFFECTS_DOT;
-    let galley =
-        ui.painter()
-            .layout_no_wrap("Effects".to_owned(), theme::body_medium(), color::INK);
-    let w = galley.size().x + 2.0 * size::MENU_BAR_BUTTON_PAD + dot * 2.0 + size::EFFECTS_DOT_GAP;
-    let r = Rect::from_center_size(pos2(x + w * 0.5, y), vec2(w, size::MENU_BAR_BUTTON_HEIGHT));
-    let resp = ui
-        .interact(r, Id::unique("menu-bar-effects"), Sense::click())
+    let mut on = chrome.is_on("view.effects");
+    let label = ui
+        .painter()
+        .layout_no_wrap("Effects".to_owned(), theme::body(), color::INK);
+    let [w, h] = size::TOGGLE;
+    let width = label.size().x + size::ROW_GAP * 1.6 + w;
+    let r = Rect::from_min_size(pos2(x, y - h * 0.5), vec2(width, h));
+    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r));
+    let resp = inner
+        .add(SoftToggle::new(&mut on, "Effects"))
         .on_hover_text("Effects: a short line animation when an edit finishes");
-    let ink = if resp.hovered() {
-        color::INK_BRIGHT
-    } else if on {
-        color::INK
-    } else {
-        color::MUTED
-    };
-    let c = pos2(r.left() + size::MENU_BAR_BUTTON_PAD + dot, y);
-    if on {
-        ui.painter().circle_filled(c, dot, color::ACCENT);
-    } else {
-        ui.painter().circle_stroke(
-            c,
-            dot,
-            egui::Stroke::new(size::EFFECTS_DOT_RING, color::MUTED),
-        );
-    }
-    let at = pos2(c.x + dot + size::EFFECTS_DOT_GAP, y - galley.size().y * 0.5);
-    ui.painter().galley(at, galley, ink);
-    if resp.clicked() {
+    if resp.changed() {
         chrome.run("view.effects", super::Source::Menu);
     }
 }
