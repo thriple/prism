@@ -7,7 +7,7 @@ use prism_ui::widgets::{SoftButton, SoftDialog, SoftSelect, SoftSlider, SoftTogg
 
 use super::{Chrome, Source, storage};
 use crate::actions::keymap::{Keymap, Preset};
-use crate::prefs::{APERTURE, Prefs, RELEASE, SMART_BUDGET, WAKE};
+use crate::prefs::{APERTURE, EFFECTS_LENGTH, Prefs, RELEASE, SMART_BUDGET, WAKE};
 
 fn heading(ui: &mut egui::Ui, t: &str) {
     ui.add_space(size::MENU_PAD);
@@ -151,6 +151,25 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                         "While a group or body is moved or pasted, it lines up with its \
                  neighbours and snaps to equal gaps. Over the budget, spacing pauses \
                  first. View > Smart Guides or Ctrl+U turns it off.",
+                    );
+
+                    heading(ui, "Effects");
+                    ui.add(SoftToggle::new(
+                        &mut p.effects,
+                        "Animate an edit when it finishes",
+                    ));
+                    slider(
+                        ui,
+                        &mut p.effects_length,
+                        EFFECTS_LENGTH,
+                        1.0,
+                        "Length",
+                        " s",
+                    );
+                    note(
+                        ui,
+                        "A short line animation in the accent colour. With reduce motion \
+                 it is a quick fade. Effects in the menu bar turns it off.",
                     );
 
                     heading(ui, "Keyboard");

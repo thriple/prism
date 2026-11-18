@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use prism_math::DVec3;
+use prism_math::{DAffine3, DQuat, DVec3};
 
 use crate::overlay::Line;
 use crate::scene::Scene;
@@ -20,6 +20,8 @@ pub const DURATION: f64 = 1.0;
 pub const REDUCED: f64 = 0.4;
 /// Above this many lines an edit does not animate.
 pub const MAX_SEGMENTS: usize = 4000;
+/// A tiling's grid is many short pieces: it may have more.
+pub const MAX_TILE: usize = 20_000;
 /// Above this many lines in the scene, no edit animates (finding the
 /// shape would cost too much).
 pub const MAX_SCENE: usize = 200_000;
@@ -31,8 +33,46 @@ pub const GROW: f64 = 0.06;
 /// A drawn line piece, in world coordinates.
 pub type Seg = [DVec3; 2];
 
-/// How an effect moves.
+/// How a Travel moves: as the tool moved, turned or scaled.
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Turn {
+    Move(DVec3),
+    Rotate {
+        centre: DVec3,
+        axis: DVec3,
+        angle: f64,
+    },
+    Scale {
+        centre: DVec3,
+        factor: DVec3,
+    },
+}
+
+impl Turn {
+    /// The change `k` of the way (0 to 1).
+    pub fn at(&self, k: f64) -> DAffine3 {
+        match *self {
+            Turn::Move(by) => DAffine3::from_translation(by * k),
+            Turn::Rotate {
+                centre,
+                axis,
+                angle,
+            } => {
+                DAffine3::from_translation(centre)
+                    * DAffine3::from_axis_angle(axis.normalize_or_zero(), angle * k)
+                    * DAffine3::from_translation(-centre)
+            }
+            Turn::Scale { centre, factor } => {
+                DAffine3::from_translation(centre)
+                    * DAffine3::from_scale(DVec3::ONE.lerp(factor, k))
+                    * DAffine3::from_translation(-centre)
+            }
+        }
+    }
+}
+
+/// How an effect moves.
+#[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     /// The new lines flash, then a copy grows a little and fades.
     Echo,
@@ -41,9 +81,20 @@ pub enum Kind {
     /// An outline travels by this much, ending where the new lines are
     /// (Push/Pull).
     Sweep(DVec3),
-    /// The lines that went fade where they were (Move, Rotate, Scale,
-    /// Erase).
+    /// The lines that went fade where they were (Erase).
     Ghost,
+    /// New curved faces (Loft, Revolve, Fillet): their surface grid rolls
+    /// across them along this direction, then fades.
+    Tile(DVec3),
+    /// The old outline moves, turns or scales to where it lands (Move,
+    /// Rotate, Scale); its pinned ends stay.
+    Travel(Turn),
+    /// The profile outline travels along this path (Follow Me).
+    Follow(Vec<DVec3>),
+    /// Each line moves from its `from` place to where it is (Offset).
+    Morph,
+    /// Lines drawn in from their ends (a new group's box).
+    Draw,
 }
 
 /// One running effect.
@@ -52,8 +103,24 @@ pub struct Effect {
     pub kind: Kind,
     /// The lines it draws: the new ones, or for a Ghost the ones that went.
     pub segs: Vec<Seg>,
+    /// Morph: where each line starts from.
+    pub from: Vec<Seg>,
+    /// Travel: which ends stay put (empty: none).
+    pub pins: Vec<[bool; 2]>,
     /// When it started, in the session's time.
     pub start: f64,
+}
+
+impl Effect {
+    pub fn new(kind: Kind, segs: Vec<Seg>, start: f64) -> Effect {
+        Effect {
+            kind,
+            segs,
+            from: Vec::new(),
+            pins: Vec::new(),
+            start,
+        }
+    }
 }
 
 /// Every line piece the scene draws: edges (arcs as their drawn points)
@@ -164,6 +231,130 @@ fn within(segs: &[Seg], other: &[Seg], h: f64) -> Vec<Seg> {
         .collect()
 }
 
+/// About this many grid lines each way across a face.
+pub const GRID_LINES: f64 = 10.0;
+
+/// The grid lines of these faces' surfaces, from their drawn triangles:
+/// each triangle's sides that run along the surface's own directions (its
+/// unrolled coordinates), thinned to about [`GRID_LINES`] each way.
+pub fn surface_grid(scene: &Scene, faces: &[usize]) -> Vec<Seg> {
+    let m = &scene.mesh;
+    let mut out = Vec::new();
+    for &f in faces {
+        let Some(face) = scene.faces.get(f) else {
+            continue;
+        };
+        let r = face.tris.start as usize..face.tris.end as usize;
+        let tris = m.indices.get(r).unwrap_or(&[]);
+        // Each side once, with which way it runs (0: along u, at one v;
+        // 1: along v, at one u) and where.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut sides: Vec<(usize, f64, f64, Seg)> = Vec::new();
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        for tri in tris.as_chunks::<3>().0 {
+            for (a, b) in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+                if !seen.insert((a.min(b), a.max(b))) {
+                    continue;
+                }
+                let (Some(ua), Some(ub)) = (m.uvs.get(a as usize), m.uvs.get(b as usize)) else {
+                    continue;
+                };
+                let d = *ub - *ua;
+                // A cell's diagonal runs both ways at once: not a grid line.
+                let (way, step) = if d.x.abs() > 4.0 * d.y.abs() {
+                    (0, d.x.abs())
+                } else if d.y.abs() > 4.0 * d.x.abs() {
+                    (1, d.y.abs())
+                } else {
+                    continue;
+                };
+                let at = if way == 0 {
+                    (ua.y + ub.y) * 0.5
+                } else {
+                    (ua.x + ub.x) * 0.5
+                };
+                for (k, c) in [ua.x, ua.y].into_iter().enumerate() {
+                    lo[k] = lo[k].min(c);
+                    hi[k] = hi[k].max(c);
+                }
+                sides.push((
+                    way,
+                    at,
+                    step,
+                    [m.positions[a as usize], m.positions[b as usize]],
+                ));
+            }
+        }
+        // A side along u sits at one v: keep the rows near every `gap`.
+        for way in 0..2 {
+            let across = 1 - way;
+            let mut steps: Vec<f64> = sides
+                .iter()
+                .filter(|s| s.0 == across)
+                .map(|s| s.2)
+                .collect();
+            steps.sort_by(f64::total_cmp);
+            let Some(&cell) = steps.get(steps.len() / 2) else {
+                continue;
+            };
+            let span = hi[across] - lo[across];
+            let gap = (span / GRID_LINES).max(cell);
+            for s in sides.iter().filter(|s| s.0 == way) {
+                let x = s.1 - lo[across];
+                if (x - gap * (x / gap).round()).abs() <= cell * 0.5 {
+                    out.push(s.3);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The longest way across a set of lines: the world axis its box is
+/// widest along.
+pub fn long_axis(segs: &[Seg]) -> DVec3 {
+    let (mut lo, mut hi) = (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY));
+    for p in segs.iter().flatten() {
+        lo = lo.min(*p);
+        hi = hi.max(*p);
+    }
+    let w = hi - lo;
+    if w.x >= w.y && w.x >= w.z {
+        DVec3::X
+    } else if w.y >= w.z {
+        DVec3::Y
+    } else {
+        DVec3::Z
+    }
+}
+
+/// Which ends of `segs` are still there after an edit (a Travel leaves
+/// them where they are: the far end of an edge stretched by a Move).
+pub fn pins(segs: &[Seg], after: &[Seg], tol: f64) -> Vec<[bool; 2]> {
+    let h = tol.max(f64::MIN_POSITIVE);
+    let here: std::collections::BTreeSet<Key> =
+        after.iter().flatten().map(|p| key(*p, h)).collect();
+    segs.iter()
+        .map(|s| [here.contains(&key(s[0], h)), here.contains(&key(s[1], h))])
+        .collect()
+}
+
+/// The nearest point to `p` on any of `segs`.
+pub fn nearest_on(segs: &[Seg], p: DVec3) -> Option<DVec3> {
+    segs.iter()
+        .map(|s| {
+            let d = s[1] - s[0];
+            let l2 = d.length_squared();
+            let t = if l2 > 0.0 {
+                ((p - s[0]).dot(d) / l2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            s[0] + d * t
+        })
+        .min_by(|a, b| a.distance_squared(p).total_cmp(&b.distance_squared(p)))
+}
+
 /// Ease out: fast at first, settling at the end.
 fn ease(t: f64) -> f64 {
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
@@ -201,12 +392,125 @@ pub fn lines(e: &Effect, t: f64, reduced: bool, color: Rgba) -> Vec<Line> {
     if reduced {
         return solid(0.8 * (1.0 - t));
     }
-    match e.kind {
+    let (k, fade) = phase(t);
+    let c = alpha(color, 0.8 * fade);
+    match &e.kind {
         Kind::Echo => echo(&e.segs, t, color),
         Kind::Ghost => solid(0.7 * (1.0 - ease(t))),
         Kind::Trace => trace(&e.segs, t, color),
-        Kind::Sweep(v) => sweep(&e.segs, v, t, color),
+        Kind::Sweep(v) => sweep(&e.segs, *v, t, color),
+        Kind::Tile(dir) => tile(&e.segs, *dir, t, color),
+        Kind::Travel(turn) => {
+            let a = turn.at(k);
+            e.segs
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let pin = e.pins.get(i).copied().unwrap_or([false; 2]);
+                    let p = |j: usize| {
+                        if pin[j] {
+                            s[j]
+                        } else {
+                            a.transform_point3(s[j])
+                        }
+                    };
+                    line(p(0), p(1), c, WIDTH)
+                })
+                .collect()
+        }
+        Kind::Follow(path) => follow(&e.segs, path, k, c),
+        Kind::Morph => e
+            .segs
+            .iter()
+            .zip(e.from.iter().chain(std::iter::repeat(&[DVec3::ZERO; 2])))
+            .map(|(s, f)| line(f[0].lerp(s[0], k), f[1].lerp(s[1], k), c, WIDTH))
+            .collect(),
+        Kind::Draw => e
+            .segs
+            .iter()
+            .flat_map(|s| {
+                let m = (s[0] + s[1]) * 0.5;
+                [
+                    line(s[0], s[0].lerp(m, k), c, WIDTH),
+                    line(s[1], s[1].lerp(m, k), c, WIDTH),
+                ]
+            })
+            .collect(),
     }
+}
+
+/// The part of an effect that moves, then the part that fades: how far
+/// it has moved (eased, 0 to 1) and how bright it still is.
+fn phase(t: f64) -> (f64, f64) {
+    let k = ease(t / TRAVEL);
+    let fade = if t < TRAVEL {
+        1.0
+    } else {
+        1.0 - (t - TRAVEL) / (1.0 - TRAVEL)
+    };
+    (k, fade)
+}
+
+/// Lines a fraction `front` of the way across light up; those behind dim
+/// to a trace, those ahead are not drawn yet.
+fn tile(segs: &[Seg], dir: DVec3, t: f64, color: Rgba) -> Vec<Line> {
+    let d = dir.normalize_or_zero();
+    let at: Vec<f64> = segs.iter().map(|s| ((s[0] + s[1]) * 0.5).dot(d)).collect();
+    let lo = at.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = at.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let span = (hi - lo).max(f64::MIN_POSITIVE);
+    let (_, fade) = phase(t);
+    // An even roll (eased at both ends), not the quick start the others
+    // have. The front runs a little past both ends, so the first and last
+    // rows light up fully.
+    let x = (t / TRAVEL).clamp(0.0, 1.0);
+    let k = x * x * (3.0 - 2.0 * x);
+    let front = k * (1.0 + 2.0 * TILE_BAND) - TILE_BAND;
+    segs.iter()
+        .zip(at)
+        .filter_map(|(s, x)| {
+            let behind = front - (x - lo) / span;
+            if behind < 0.0 {
+                return None;
+            }
+            let glow = (1.0 - behind / TILE_BAND).max(0.0);
+            let a = (0.3 + 0.6 * glow) * fade;
+            Some(line(s[0], s[1], alpha(color, a), WIDTH))
+        })
+        .collect()
+}
+
+/// How wide the bright band of a tiling is, as a part of the face.
+const TILE_BAND: f64 = 0.25;
+
+/// The profile carried `k` of the way along the path: moved to the path's
+/// point there and turned as the path turns.
+fn follow(segs: &[Seg], path: &[DVec3], k: f64, c: Rgba) -> Vec<Line> {
+    let (Some(&p0), true) = (path.first(), path.len() >= 2) else {
+        return Vec::new();
+    };
+    let len: f64 = path.windows(2).map(|w| w[0].distance(w[1])).sum();
+    let mut left = k * len;
+    let n = path.len();
+    let mut at = (path[n - 1], (path[n - 1] - path[n - 2]).normalize_or_zero());
+    for w in path.windows(2) {
+        let l = w[0].distance(w[1]);
+        if l <= 0.0 {
+            continue;
+        }
+        let dir = (w[1] - w[0]) / l;
+        if left <= l {
+            at = (w[0] + dir * left, dir);
+            break;
+        }
+        left -= l;
+    }
+    let t0 = (path[1] - path[0]).normalize_or_zero();
+    let turn = DQuat::from_rotation_arc(t0, at.1);
+    let place = |q: DVec3| at.0 + turn * (q - p0);
+    segs.iter()
+        .map(|s| line(place(s[0]), place(s[1]), c, WIDTH))
+        .collect()
 }
 
 fn echo(segs: &[Seg], t: f64, color: Rgba) -> Vec<Line> {
@@ -429,11 +733,7 @@ mod tests {
     }
 
     fn fx(kind: Kind, segs: Vec<Seg>) -> Effect {
-        Effect {
-            kind,
-            segs,
-            start: 0.0,
-        }
+        Effect::new(kind, segs, 0.0)
     }
 
     #[test]
@@ -550,5 +850,109 @@ mod tests {
             c.iter().any(|p| p.len() == 5 && p[0] == p[4]),
             "the loop closes"
         );
+    }
+
+    #[test]
+    fn a_travel_turns_on_its_arc_and_keeps_its_pins() {
+        let turn = Turn::Rotate {
+            centre: DVec3::ZERO,
+            axis: DVec3::Z,
+            angle: std::f64::consts::PI,
+        };
+        let mut e = fx(
+            Kind::Travel(turn),
+            vec![[DVec3::X, DVec3::new(2.0, 0.0, 0.0)]],
+        );
+        e.pins = vec![[false, true]];
+        let half = lines(&e, TRAVEL * 0.2, false, C);
+        // Partway round, the moving end is off the line it starts and ends
+        // on (an arc, not a slide), at its distance from the centre.
+        assert!(half[0].a.y.abs() > 0.1 && (half[0].a.length() - 1.0).abs() < 1e-9);
+        assert_eq!(half[0].b, DVec3::new(2.0, 0.0, 0.0), "the pinned end stays");
+        let end = lines(&e, TRAVEL, false, C);
+        assert!(
+            (end[0].a + DVec3::X).length() < 1e-9,
+            "it lands turned round"
+        );
+    }
+
+    #[test]
+    fn a_follow_carries_the_profile_round_the_corner() {
+        let path = vec![
+            DVec3::ZERO,
+            DVec3::new(4.0, 0.0, 0.0),
+            DVec3::new(4.0, 3.0, 0.0),
+        ];
+        let up = [DVec3::ZERO, DVec3::Z];
+        let e = fx(Kind::Follow(path), vec![up]);
+        let start = lines(&e, 0.0, false, C);
+        assert_eq!((start[0].a, start[0].b), (up[0], up[1]));
+        let end = lines(&e, TRAVEL, false, C);
+        assert!(
+            (end[0].a - DVec3::new(4.0, 3.0, 0.0)).length() < 1e-9,
+            "at the path's end"
+        );
+        assert!(
+            (end[0].b - end[0].a - DVec3::Z).length() < 1e-9,
+            "still upright"
+        );
+    }
+
+    #[test]
+    fn a_morph_and_a_draw_move_into_place() {
+        let mut e = fx(Kind::Morph, square());
+        e.from = square().iter().map(|s| [s[0] * 2.0, s[1] * 2.0]).collect();
+        assert_eq!(
+            lines(&e, 0.0, false, C)[1].a,
+            e.from[1][0],
+            "from the old place"
+        );
+        assert_eq!(
+            lines(&e, TRAVEL, false, C)[1].a,
+            e.segs[1][0],
+            "to the new one"
+        );
+        let d = fx(Kind::Draw, vec![[DVec3::ZERO, DVec3::X]]);
+        let at = |t| {
+            lines(&d, t, false, C)
+                .iter()
+                .map(|l| l.a.distance(l.b))
+                .sum::<f64>()
+        };
+        assert!(
+            at(0.0) < 1e-12 && (at(TRAVEL) - 1.0).abs() < 1e-9,
+            "drawn in from both ends"
+        );
+    }
+
+    #[test]
+    fn a_tiling_rolls_across() {
+        let rows: Vec<Seg> = (0..10)
+            .map(|i| {
+                [
+                    DVec3::new(f64::from(i), 0.0, 0.0),
+                    DVec3::new(f64::from(i), 1.0, 0.0),
+                ]
+            })
+            .collect();
+        let e = fx(Kind::Tile(DVec3::X), rows);
+        let n = |t| lines(&e, t, false, C).len();
+        assert!(
+            n(0.1) < n(0.4) && n(0.4) < n(0.69),
+            "{} {} {}",
+            n(0.1),
+            n(0.4),
+            n(0.69)
+        );
+        assert_eq!(n(0.9), 10, "all of it, fading");
+    }
+
+    #[test]
+    fn pins_and_the_nearest_point() {
+        let after = vec![[DVec3::ZERO, DVec3::Y]];
+        let p = pins(&[[DVec3::ZERO, DVec3::X]], &after, 1e-9);
+        assert_eq!(p, vec![[true, false]]);
+        let n = nearest_on(&square(), DVec3::new(1.0, -3.0, 0.0));
+        assert_eq!(n, Some(DVec3::new(1.0, 0.0, 0.0)));
     }
 }

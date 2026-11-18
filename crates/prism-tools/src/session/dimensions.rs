@@ -153,6 +153,7 @@ impl Session {
                             if self.doc.run(c) {
                                 self.model_changed();
                                 if op.moving.is_none() {
+                                    self.effect_dimension(op.a, b, offset);
                                     self.dim_sel = self
                                         .doc
                                         .assembly()

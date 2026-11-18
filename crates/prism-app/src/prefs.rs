@@ -15,6 +15,8 @@ pub const RELEASE: (f64, f64) = (1.0, 3.0);
 pub const WAKE: (f64, f64) = (0.05, 0.8);
 /// Smart Guides' time budget per cursor move (milliseconds).
 pub const SMART_BUDGET: (f64, f64) = (0.5, 10.0);
+/// How long an effect lasts (seconds).
+pub const EFFECTS_LENGTH: (f64, f64) = (0.3, 2.0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -29,6 +31,7 @@ pub struct Prefs {
     /// View > Effects (brief 47): a short line animation when an edit
     /// finishes.
     pub effects: bool,
+    pub effects_length: f64,
 }
 
 impl Default for Prefs {
@@ -39,6 +42,7 @@ impl Default for Prefs {
             smart_guides: true,
             smart_budget_ms: prism_tools::session::SMART_BUDGET_MS,
             effects: true,
+            effects_length: prism_view::effects::DURATION,
         }
     }
 }
@@ -70,6 +74,11 @@ impl Prefs {
             self.smart_budget_ms,
             SMART_BUDGET,
             prism_tools::session::SMART_BUDGET_MS,
+        );
+        self.effects_length = fit(
+            self.effects_length,
+            EFFECTS_LENGTH,
+            prism_view::effects::DURATION,
         );
         self.units.decimals = self.units.decimals.min(prism_math::units::MAX_DECIMALS);
     }
@@ -123,6 +132,18 @@ mod tests {
         let old = Prefs::from_json(r#"{"units":{"length":"Millimetres","decimals":1}}"#);
         assert_eq!(old.units, p.units);
         assert_eq!(old.inference, Settings::default());
+    }
+
+    #[test]
+    fn effects_are_on_and_their_length_stays_in_range() {
+        let p = Prefs::default();
+        assert!(p.effects && p.effects_length == prism_view::effects::DURATION);
+        let mut q = p;
+        q.effects_length = 9.0;
+        let back = Prefs::from_json(&q.to_json());
+        assert_eq!(back.effects_length, EFFECTS_LENGTH.1);
+        let old = Prefs::from_json(r#"{"smart_guides": false}"#);
+        assert!(old.effects, "a file from before has them on");
     }
 
     #[test]

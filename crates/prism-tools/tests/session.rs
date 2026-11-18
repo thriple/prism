@@ -7343,7 +7343,7 @@ use prism_view::effects::Kind as Fx;
 fn running(d: &Driver) -> Vec<(Fx, usize)> {
     d.s.effects()
         .iter()
-        .map(|e| (e.kind, e.segs.len()))
+        .map(|e| (e.kind.clone(), e.segs.len()))
         .collect()
 }
 
@@ -7412,10 +7412,153 @@ fn erase_and_move_fade_what_went() {
     d.tool(MOVE);
     d.click(DVec3::new(0.0, 0.0, 0.0));
     d.click(DVec3::new(0.0, 3.0, 0.0));
+    let e = d.s.effects().last().expect("an effect").clone();
+    let Fx::Travel(turn) = e.kind else {
+        panic!("{:?}", e.kind)
+    };
+    assert_eq!(e.segs.len(), 4, "the old outline travels");
+    assert!(e.pins.iter().all(|p| *p == [false; 2]), "all of it moved");
+    let end = turn.at(1.0).transform_point3(DVec3::ZERO);
+    assert!(
+        (end - DVec3::new(0.0, 3.0, 0.0)).length() < 1e-9,
+        "to where it landed"
+    );
+}
+
+#[test]
+fn moving_one_corner_pins_the_far_ends() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    d.wait(1.1);
+    d.tool(MOVE);
+    d.click(DVec3::new(2.0, 1.0, 0.0));
+    d.click(DVec3::new(2.0, 1.0, 1.0));
+    let e = d.s.effects().last().expect("an effect");
+    assert!(matches!(e.kind, Fx::Travel(_)), "{:?}", e.kind);
+    assert_eq!(e.segs.len(), 2, "the two sides at the corner");
+    let pinned = e.pins.iter().flatten().filter(|p| **p).count();
+    assert_eq!(pinned, 2, "their far ends stay");
+}
+
+#[test]
+fn offset_grows_from_the_face() {
+    use prism_tools::session::OFFSET;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    d.wait(1.1);
+    d.tool(OFFSET);
+    d.click(DVec3::new(0.5, 2.0, 0.0));
+    d.hover(DVec3::new(1.0, 2.0, 0.0));
+    d.typed("1");
+    let e = d.s.effects().last().expect("an effect").clone();
+    assert_eq!(e.kind, Fx::Morph);
+    assert_eq!(e.segs.len(), 4);
+    // Each new corner starts on the old outline.
+    let on = |p: DVec3| {
+        p.x.abs() < 1e-9 || p.y.abs() < 1e-9 || (p.x - 4.0).abs() < 1e-9 || (p.y - 4.0).abs() < 1e-9
+    };
+    assert!(e.from.iter().flatten().all(|p| on(*p)), "{:?}", e.from);
+}
+
+#[test]
+fn follow_me_carries_its_profile_along_the_path() {
+    use prism_tools::session::FOLLOW;
+    let mut m = prism_topo::Model::new();
+    let c = [(-0.5, 1.5), (0.5, 1.5), (0.5, 2.5), (-0.5, 2.5)].map(|(y, z)| DVec3::new(0.0, y, z));
+    for i in 0..4 {
+        prism_ops::add_segment(&mut m, c[i], c[(i + 1) % 4]);
+    }
+    prism_ops::add_segment(&mut m, DVec3::ZERO, DVec3::new(4.0, 0.0, 0.0));
+    prism_ops::add_segment(&mut m, DVec3::new(4.0, 0.0, 0.0), DVec3::new(4.0, 3.0, 0.0));
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(6.0, -8.0, 9.0),
+        target: DVec3::new(2.0, 1.0, 1.0),
+    });
+    d.tool(SELECT);
+    let a = d.screen(DVec3::new(2.0, 0.0, 0.0));
+    d.click_px(a, false, false);
+    let b = d.screen(DVec3::new(4.0, 1.5, 0.0));
+    d.click_px(b, true, false);
+    d.tool(FOLLOW);
+    d.click(DVec3::new(0.0, 0.0, 2.0));
+    let e = d.s.effects().last().expect("an effect").clone();
+    let Fx::Follow(path) = &e.kind else {
+        panic!("{:?}", e.kind)
+    };
+    assert_eq!(e.segs.len(), 4, "the profile's outline");
+    assert!(
+        path[0].length() < 1e-9,
+        "from the end the profile is at: {path:?}"
+    );
+    assert!((path[path.len() - 1] - DVec3::new(4.0, 3.0, 0.0)).length() < 1e-9);
+}
+
+#[test]
+fn a_loft_tiles_its_new_surfaces() {
+    use prism_tools::session::LOFT;
+    let mut d = arcs_round_a_corner();
+    d.tool(LOFT);
+    pick(&mut d, TOP_ARC);
+    key(&mut d, Key::Enter);
+    pick(&mut d, SIDE_ARC);
+    key(&mut d, Key::Enter);
+    pick(&mut d, FRONT_ARC);
+    d.wait(2.5);
+    key(&mut d, Key::Enter);
+    let e = d.s.effects().last().expect("an effect");
+    assert!(matches!(e.kind, Fx::Tile(_)), "{:?}", e.kind);
+    assert!(
+        e.segs.len() > 12,
+        "the surfaces' grid, not only their edges"
+    );
+}
+
+#[test]
+fn groups_planes_and_dimensions_animate() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    d.wait(1.1);
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "edit.group");
     assert_eq!(
-        running(&d).last(),
-        Some(&(Fx::Ghost, 4)),
-        "the old outline fades"
+        running(&d),
+        vec![(Fx::Draw, 12)],
+        "the group's box draws in"
+    );
+    d.wait(1.1);
+    assert!(
+        d.s.add_section_plane(DVec3::new(1.0, 0.5, 0.0), DVec3::X)
+            .is_some()
+    );
+    assert_eq!(running(&d), vec![(Fx::Echo, 4)], "the plane's outline");
+    d.s.add_work_plane(DVec3::new(0.0, 0.0, 2.0), DVec3::Z);
+    assert_eq!(running(&d).len(), 2);
+}
+
+#[test]
+fn a_new_dimension_traces_its_line() {
+    let mut d = Driver::empty();
+    d.tool("tool.dim");
+    d.click(DVec3::new(0.0, 2.0, 0.0));
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    d.click(DVec3::new(1.5, 3.0, 0.0));
+    assert_eq!(running(&d), vec![(Fx::Trace, 3)], "out, along and back");
+}
+
+#[test]
+fn the_origin_snaps_while_the_axes_show() {
+    let mut d = Driver::empty();
+    d.tool(LINE);
+    d.hover(DVec3::new(0.01, 0.01, 0.0));
+    assert_eq!(d.s.inference().map(|i| i.kind), Some(Kind::Origin));
+    act(&mut d, "view.axes");
+    d.hover(DVec3::new(0.02, 0.01, 0.0));
+    assert_ne!(
+        d.s.inference().map(|i| i.kind),
+        Some(Kind::Origin),
+        "hidden axes: no origin"
     );
 }
 

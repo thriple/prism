@@ -126,8 +126,16 @@ impl Session {
     /// Run a section command: planes are in the world, whichever group is
     /// open.
     pub(super) fn section_run(&mut self, c: Command) -> bool {
+        let placed = match c {
+            Command::AddSection { origin, normal } => Some((origin, normal)),
+            _ => None,
+        };
         if self.doc.run(c) {
             self.model_changed();
+            if let Some((o, n)) = placed {
+                let c = self.plane_corners(o, n);
+                self.effect_outline(c);
+            }
             true
         } else {
             false

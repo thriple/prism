@@ -69,6 +69,8 @@ pub enum Kind {
     Guide,
     /// A guide point in the model (Tape Measure).
     GuidePoint,
+    /// Where the model's axes cross, while they are shown.
+    Origin,
     Free,
 }
 
@@ -78,6 +80,7 @@ impl Kind {
         match self {
             Kind::Endpoint => (6.0, 14.0),
             Kind::GuidePoint => (5.8, 14.0),
+            Kind::Origin => (5.9, 14.0),
             Kind::GuideCross => (5.5, 12.0),
             Kind::Centre => (5.2, 12.0),
             Kind::Midpoint => (5.0, 12.0),
@@ -109,6 +112,7 @@ impl Kind {
             Kind::GuideCross => "Guide Cross",
             Kind::Guide => "Guide",
             Kind::GuidePoint => "Guide Point",
+            Kind::Origin => "Origin",
             Kind::Free => "Free",
         }
     }
@@ -124,6 +128,7 @@ impl Kind {
                 | Kind::Intersection
                 | Kind::GuideCross
                 | Kind::GuidePoint
+                | Kind::Origin
         )
     }
 
@@ -138,6 +143,7 @@ impl Kind {
                 | Kind::Centre
                 | Kind::Quadrant
                 | Kind::GuidePoint
+                | Kind::Origin
         )
     }
 }
@@ -206,6 +212,7 @@ impl Guide {
 pub enum Key {
     Vertex(VertexId),
     GuidePoint(GuideId),
+    Origin,
     Mid(EdgeId),
     Edge(EdgeId),
     /// An arc's centre, and a quadrant (0 to 3) on it.
@@ -328,6 +335,8 @@ pub struct Context {
     pub no_lock: bool,
     /// The working plane, if the document has one in use.
     pub work_plane: Option<WorkPlane>,
+    /// The model's origin snaps (the axes are shown).
+    pub origin: bool,
 }
 
 /// A construction plane the cursor can land on: a square of side `2 * half`
@@ -671,6 +680,15 @@ pub fn infer(
                 });
             }
         }
+    }
+    if ctx.origin {
+        push(
+            Kind::Origin,
+            DVec3::ZERO,
+            Key::Origin,
+            false,
+            blank(Kind::Origin, Key::Origin),
+        );
     }
     for (id, g) in &scene.guides {
         match *g {

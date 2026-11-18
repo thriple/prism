@@ -125,8 +125,16 @@ impl Session {
     /// Run a plane command: planes are in the world, whichever group is
     /// open.
     pub(super) fn work_plane_run(&mut self, c: Command) -> bool {
+        let placed = match c {
+            Command::AddWorkPlane { origin, normal } => Some((origin, normal)),
+            _ => None,
+        };
         if self.doc.run(c) {
             self.model_changed();
+            if let Some((o, n)) = placed {
+                let c = self.work_plane_corners(o, n);
+                self.effect_outline(c);
+            }
             true
         } else {
             false

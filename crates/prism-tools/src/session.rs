@@ -510,6 +510,7 @@ pub struct Session {
     pub reduce_motion: bool,
     /// Effects (brief 47): on, and the ones running.
     effects_on: bool,
+    effects_length: f64,
     effects: Vec<prism_view::effects::Effect>,
     dirty: bool,
     highlight_dirty: bool,
@@ -743,6 +744,7 @@ impl Session {
             ease: true,
             reduce_motion: false,
             effects_on: true,
+            effects_length: prism_view::effects::DURATION,
             effects: Vec::new(),
             dirty: true,
             highlight_dirty: true,
@@ -1863,6 +1865,7 @@ impl Session {
     fn context(&self) -> Context {
         let mut c = self.tool_context();
         c.work_plane = self.work_plane_ctx();
+        c.origin = self.view.axes;
         c
     }
 
@@ -2491,6 +2494,10 @@ impl Session {
                 return n;
             }
         }
+        // The origin lies on the ground: draw there, as from the ground.
+        if i.kind == Kind::Origin {
+            return DVec3::Z;
+        }
         let f = self.view().f;
         let a = (0..3)
             .max_by(|&i, &j| f[i].abs().total_cmp(&f[j].abs()))
@@ -2789,7 +2796,7 @@ impl Session {
             Kind::GuideCross => fb.guide_cross,
             Kind::Guide => fb.intersection,
             Kind::Tangent => fb.tangent,
-            Kind::GuidePoint => fb.endpoint,
+            Kind::GuidePoint | Kind::Origin => fb.endpoint,
             Kind::Free => fb.free,
         };
         let color = i.axis.map_or(glyph_color, axis_color);
@@ -2827,7 +2834,7 @@ impl Session {
         let shape = match i.kind {
             Kind::Endpoint | Kind::Free | Kind::Guide | Kind::Tangent => Shape::Circle,
             Kind::Midpoint | Kind::Quadrant => Shape::Triangle,
-            Kind::Centre => Shape::Ring,
+            Kind::Centre | Kind::Origin => Shape::Ring,
             Kind::OnEdge | Kind::OnArc => Shape::Square,
             Kind::OnFace | Kind::OnPlane | Kind::OnGround => Shape::Diamond,
             Kind::Intersection | Kind::GuideCross | Kind::GuidePoint => Shape::Cross,

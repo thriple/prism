@@ -49,6 +49,17 @@ These keep the same rule and plumbing and only change the drawing:
 
 The owner chose to build all three (2026-11-18). Follow Me uses the Echo.
 
+## Part 3 (owner, 2026-11-18): more kinds, a length setting, snap to origin
+- **Tile:** new curved faces (Loft, Revolve, Sweep, Patch, Fillet, Shell) show their surface's grid, about 10 lines each way, rolling across the face along its longest side, then fading.
+- **Travel** replaces the Ghost for Move, Rotate and Scale (loose geometry and groups): the old outline moves, turns on its arc or scales to where it lands. Ends that stay (the far end of an edge a Move stretched) stay. A single copy travels from the original.
+- **Follow Me:** the profile's outline travels along the path, turning with it.
+- **Offset:** the new loop starts on the face's old outline and moves to its place.
+- **Make Group / Component:** the new group's box draws in from its corners.
+- **Section plane, construction plane:** the outline echoes when placed. **Dimension:** traces out, along its line and back.
+- **Preferences > Effects:** on or off, and the length (0.3 to 2 s, 1 s by default).
+- **Snap to origin:** where the axes cross is an inference point ("Origin") while the axes are shown; drawing from it starts on the ground.
+- Not done: the Paint Bucket (owner: not needed).
+
 ## Out of scope
 - Sound.
 - Effects in the path-traced renderer or in exports.
@@ -61,4 +72,4 @@ The owner chose to build all three (2026-11-18). Follow Me uses the Echo.
 - [x] The toggle after Help turns it off at once. Off, the app draws no extra frames.
 - [x] PLAN and NOTES are updated (no Planned Features or feature-map row was needed: nothing was greyed).
 
-**Built as (2026-11-18):** NOTES "Effects (brief 47)".
+**Built as (2026-11-18):** NOTES "Effects (brief 47)" and "Effects part 3".

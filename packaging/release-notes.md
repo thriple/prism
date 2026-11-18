@@ -1,6 +1,8 @@
 **New in this build: Effects.**
-- When you finish an edit, the shape answers with a short line animation in the accent colour: a new shape flashes and echoes outward, a line or arc is traced along, a Push/Pull outline rises from where the face was, and things you move or erase fade where they were.
-- Turn it on or off with **Effects** in the menu bar (after Help) or **View > Effects**. It is on by default, and lasts about a second (a short fade with reduced motion). Tell us if it feels too slow.
+- When you finish an edit, the shape answers with a short line animation in the accent colour: a new shape flashes and echoes outward, a line or arc is traced along, a Push/Pull outline rises from where the face was, and things you erase fade where they were.
+- Lofts, revolves and other curved faces roll their surface grid across them. Moved, rotated and scaled things travel from where they were. Follow Me carries its profile along the path, Offset grows from the face's edge, a new group's box draws in, and new section planes, construction planes and dimensions trace themselves.
+- Turn it on or off with **Effects** in the menu bar (after Help), **View > Effects**, or **Edit > Preferences > Effects**, which also sets how long it lasts (1 second by default).
+- **Snap to origin:** where the red, green and blue axes cross is now a snap point ("Origin") while the axes are shown.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 
