@@ -4700,3 +4700,11 @@ The owner asked for a tiling for lofted faces, a length setting and snap to orig
 - **Preferences > Effects:** the toggle and a length slider (0.3 to 2 s; `Prefs.effects_length`). Reduced motion uses 0.4 s or the length, whichever is shorter.
 - **Snap to origin:** `Kind::Origin` (priority just under Endpoint), offered while View > Axes is on (`Context.origin`). Drawing from it uses the ground plane, unless the point lies on a face under the cursor. Three saved acceptance sessions (small-building, window-from-guides, rectangle-split-by-a-line) started a corner within the capture radius of the origin; they now land on it exactly, so their saved results were updated (each moved by under 1e-15, same vertices and faces).
 - **Seen in the app:** the Origin label and a rectangle from it on the ground; an edge moved with Move travelling across with its far ends pinned. Not seen: a tiling, Follow Me, Offset and the group box (unit and session tests cover them).
+
+## Section plane: the lock and snapping (owner, 2026-11-18)
+
+The owner found that an arrow-key lock before placing a section plane said "locked" but the plane still followed the face under the cursor, and that the second part (moving the plane along its normal) did not snap, though the inference marker showed.
+- **Lock:** with an axis locked, the Section Plane tool places the plane square to that axis through the snapped point (also over empty space), facing the viewer (`section_place`). This also covers the part 1 left-over "a plane on an axis when no face is under the cursor".
+- **Snapping while moving:** the move goes level with what the inference engine snaps to (a corner, a midpoint, an edge, a guide; not a face, the ground or nothing), else follows the cursor's ray as before (`plane_t`). The same applies to a section plane, a construction plane or a dimension line picked up with Alt + click in Select: inference now runs during that move, and the move is updated after it (`ann_hover` moved to the end of `update_hover`).
+- Tests: a locked plane is square to red, not to the face; a moving plane goes exactly level with a midpoint; one picked up in Select goes exactly level with a corner.
+- Still left over (now in the feature map): points on the cut-away side still snap.

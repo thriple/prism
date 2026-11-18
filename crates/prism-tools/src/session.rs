@@ -1856,6 +1856,7 @@ impl Session {
             || self.tool == CPLANE_TOOL
             || self.tool == DIM_TOOL
             || self.tool == TEXT_TOOL
+            || self.ann_moving()
             || self.cage_wants_inference()
             || self.edit_wants_inference()
             || self.pasting()
@@ -1969,7 +1970,6 @@ impl Session {
 
     fn update_hover(&mut self, s: DVec2) {
         let view = self.view();
-        self.ann_hover(s, &view);
         if self.wants_inference() {
             let t0 = self.measure.map(|f| f());
             let ctx = self.context();
@@ -2046,6 +2046,9 @@ impl Session {
             }
             self.hover = h;
         }
+        // After inference: a plane or dimension picked up in Select goes
+        // level with what snaps.
+        self.ann_hover(s, &view);
     }
 
     fn moved(&mut self, s: DVec2) {

@@ -169,6 +169,45 @@ impl Session {
         best.map(|b| b.1)
     }
 
+    /// Where a new plane goes: with an axis locked, through the snapped
+    /// point, square to that axis; otherwise on the flat face under the
+    /// cursor. Its normal is turned to face the viewer.
+    fn section_place(&self, s: DVec2, view: &View) -> Option<(DVec3, DVec3)> {
+        if let prism_infer::Lock::Axis(a) = self.lock
+            && let Some(i) = &self.inference
+        {
+            let (_, d) = view.ray(s);
+            let n = prism_infer::AXES[a as usize];
+            return Some((i.point, if n.dot(d) > 0.0 { -n } else { n }));
+        }
+        self.section_face_at(s, view)
+    }
+
+    /// Where a plane moved along its normal goes, as `t` on the normal's
+    /// line (see [`SectionOp`]): level with a snapped point (a corner, a
+    /// midpoint, an edge, a guide), else where the cursor's ray passes
+    /// closest to the line.
+    pub(super) fn plane_t(
+        &self,
+        s: DVec2,
+        view: &View,
+        origin: DVec3,
+        normal: DVec3,
+        t0: f64,
+    ) -> Option<f64> {
+        use prism_infer::Kind;
+        if let Some(i) = &self.inference
+            && !matches!(
+                i.kind,
+                Kind::OnFace | Kind::OnPlane | Kind::OnGround | Kind::Free
+            )
+        {
+            return Some(t0 + (i.point - origin).dot(normal));
+        }
+        let (o, d) = view.ray(s);
+        line_param(o, d, origin, normal)
+    }
+
     /// The flat face under the cursor: where, and its normal turned to face
     /// the viewer.
     fn section_face_at(&self, s: DVec2, view: &View) -> Option<(DVec3, DVec3)> {
@@ -206,7 +245,7 @@ impl Session {
                             t,
                         });
                     }
-                } else if let Some((at, normal)) = self.section_face_at(s, &view)
+                } else if let Some((at, normal)) = self.section_place(s, &view)
                     && self.section_run(Command::AddSection { origin: at, normal })
                     && let Some((id, _)) = self.doc.assembly().active_section()
                 {
@@ -233,14 +272,15 @@ impl Session {
         if self.tool != SECTION_TOOL && self.section_op.is_none() {
             return;
         }
-        let (o, d) = view.ray(s);
-        if let Some(op) = &mut self.section_op {
-            if let Some(t) = line_param(o, d, op.origin, op.normal) {
+        if let Some(op) = self.section_op {
+            if let Some(t) = self.plane_t(s, view, op.origin, op.normal, op.t0)
+                && let Some(op) = &mut self.section_op
+            {
                 op.t = t;
             }
             return;
         }
-        let ghost = self.section_face_at(s, view);
+        let ghost = self.section_place(s, view);
         if ghost != self.section_ghost {
             self.section_ghost = ghost;
         }
@@ -253,7 +293,7 @@ impl Session {
         Some(if self.section_op.is_some() {
             "Move the plane along its normal · click to set it · Esc leaves it"
         } else {
-            "Click a face to place a section plane · click a plane's outline to move it"
+            "Click a face to place a section plane (an arrow key locks its direction) · click a plane's outline to move it"
         })
     }
 

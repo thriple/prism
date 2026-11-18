@@ -7578,3 +7578,58 @@ fn effects_off_and_reduced_motion() {
     d.s.set_effects(false);
     assert!(running(&d).is_empty(), "turning it off stops it");
 }
+
+#[test]
+fn a_locked_axis_sets_the_section_planes_direction() {
+    use prism_tools::session::SECTION_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::cube());
+    d.tool(SECTION_TOOL);
+    d.send(Input::Key { key: Key::Right }); // lock red
+    d.click(DVec3::new(0.0, 0.0, 3.0));
+    let (_, sec) = d.s.document().assembly().active_section().expect("a plane");
+    assert_eq!(
+        sec.normal.x.abs(),
+        1.0,
+        "square to red, not to the top face: {:?}",
+        sec.normal
+    );
+    assert!(
+        (sec.origin - DVec3::new(0.0, 0.0, 3.0)).length() < 0.05,
+        "{:?}",
+        sec.origin
+    );
+}
+
+#[test]
+fn a_moving_section_plane_snaps_level_with_a_point() {
+    use prism_tools::session::SECTION_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::cube());
+    d.tool(SECTION_TOOL);
+    d.click(DVec3::new(0.0, 0.0, 3.0));
+    // The middle of a vertical edge: the plane goes level with it.
+    let mid = DVec3::new(1.0, -1.0, 2.0);
+    move_to(&mut d, mid);
+    assert_eq!(d.s.inference().map(|i| i.kind), Some(Kind::Midpoint));
+    d.click(mid);
+    let (_, sec) = d.s.document().assembly().active_section().expect("a plane");
+    assert!(
+        (sec.origin.z - 2.0).abs() < 1e-9,
+        "exactly level: {:?}",
+        sec.origin
+    );
+}
+
+#[test]
+fn a_plane_picked_up_in_select_snaps_level_with_a_point() {
+    let mut d = cut_pocket(1.5);
+    let at = outline_point(&mut d, 1.5);
+    alt_click(&mut d, at);
+    alt_click(&mut d, at);
+    // A corner of the box's base: the plane goes down to z = 0.
+    let corner = DVec3::new(4.0, 0.0, 0.0);
+    move_to(&mut d, corner);
+    assert_eq!(d.s.inference().map(|i| i.kind), Some(Kind::Endpoint));
+    d.click(corner);
+    let (_, sec) = d.s.document().assembly().active_section().unwrap();
+    assert!(sec.origin.z.abs() < 1e-9, "exactly level: {:?}", sec.origin);
+}

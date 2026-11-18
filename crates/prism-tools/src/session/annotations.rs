@@ -232,22 +232,39 @@ impl Session {
         if self.tool != SELECT {
             return;
         }
-        let (o, d) = view.ray(s);
-        if let Some(op) = &mut self.section_op {
-            if let Some(t) = line_param(o, d, op.origin, op.normal) {
+        // Planes and dimension lines go level with a snapped point.
+        if let Some(op) = self.section_op {
+            if let Some(t) = self.plane_t(s, view, op.origin, op.normal, op.t0)
+                && let Some(op) = &mut self.section_op
+            {
                 op.t = t;
             }
             self.overlay_dirty = true;
         }
-        if let Some(op) = &mut self.cplane_op {
-            if let Some(t) = line_param(o, d, op.origin, op.normal) {
+        if let Some(op) = self.cplane_op {
+            if let Some(t) = self.plane_t(s, view, op.origin, op.normal, op.t0)
+                && let Some(op) = &mut self.cplane_op
+            {
                 op.t = t;
             }
             self.overlay_dirty = true;
         }
+        let snapped = self
+            .inference
+            .as_ref()
+            .filter(|i| {
+                !matches!(
+                    i.kind,
+                    prism_infer::Kind::OnFace
+                        | prism_infer::Kind::OnPlane
+                        | prism_infer::Kind::OnGround
+                        | prism_infer::Kind::Free
+                )
+            })
+            .map(|i| i.point);
         if let Some(op) = self.dim_op
             && let Some(b) = op.b
-            && let Some(p) = self.dim_cursor(s, view, op.a, b)
+            && let Some(p) = snapped.or_else(|| self.dim_cursor(s, view, op.a, b))
         {
             self.dim_op = Some(DimOp { at: p, ..op });
             self.overlay_dirty = true;
@@ -256,8 +273,7 @@ impl Session {
 
     /// The click that sets a picked-up one down.
     pub(super) fn ann_set(&mut self, s: DVec2) {
-        let view = self.view();
-        self.ann_hover(s, &view);
+        self.update_hover(s);
         if let Some(op) = self.section_op.take()
             && (op.t - op.t0).abs() > self.scene.tol.dist
         {
