@@ -7933,3 +7933,32 @@ fn offset_matches_a_point_in_another_plane_by_the_edge_it_began_near() {
     );
     valid(&d);
 }
+
+#[test]
+fn offset_highlights_the_edge_its_distance_is_matched_to() {
+    // Owner's session 14: while offsetting, an edge the cursor snaps to
+    // lights up, so it is clear which one stands for the distance.
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    rect_on_ground(&mut d, -3.0, 1.0, -1.0, 3.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(-2.0, 2.0, 0.0));
+    d.typed("2");
+    d.tool(OFFSET);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    assert!(!matches!(d.s.hover(), Some(prism_view::Hit::Edge(_))));
+    // The block's top edge at x = -1, 2 m up: not a corner or a midpoint.
+    d.hover(DVec3::new(-1.0, 1.4, 2.0));
+    assert_eq!(
+        d.s.inference().map(|i| i.kind),
+        Some(prism_infer::Kind::OnEdge)
+    );
+    assert!(
+        matches!(d.s.hover(), Some(prism_view::Hit::Edge(_))),
+        "{:?}",
+        d.s.hover()
+    );
+    // Away from every edge, nothing is lit.
+    d.hover(DVec3::new(3.0, 3.0, 0.0));
+    assert!(!matches!(d.s.hover(), Some(prism_view::Hit::Edge(_))));
+}

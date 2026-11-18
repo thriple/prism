@@ -1,7 +1,5 @@
-**New in this build: Offset matches, better recordings.**
-- **Offset:** while you drag, snapping to a corner, midpoint or guide (also in another plane, such as the edge of a part beside it) now sets the distance from the edge you clicked near, so offsets on different faces line up. When a face cannot be offset (a spline edge, a curved face), the tool says why.
-- **Record Session** now saves every group and component, which group was open and what was selected, so a recording made inside a component can be replayed. Files are larger by the size of the model.
-- **Inspector** (Window > Inspector): see and change a group's name, tag, hidden and locked, and the position and size of its box, with units and sums like `2*25.4mm`.
+**New in this build: Offset lights up the edge it matches.**
+- **Offset:** while you drag, an edge the cursor snaps to (on its length, an arc, or its midpoint) is highlighted, so you can see which edge sets the distance. The preview works as before.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

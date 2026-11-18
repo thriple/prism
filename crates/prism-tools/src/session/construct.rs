@@ -142,6 +142,17 @@ impl Session {
             *d = dd;
             *at = p;
             self.update_preview();
+            // A snap on an edge says which edge stands for the distance.
+            let edge = self
+                .inference
+                .as_ref()
+                .filter(|i| matches!(i.kind, Kind::OnEdge | Kind::OnArc | Kind::Midpoint))
+                .and_then(|i| i.edge)
+                .filter(|e| snapped.is_some() && self.work_model().edge(*e).is_some());
+            self.set_hover_pick(edge.map(|e| prism_view::Picked {
+                hit: Hit::Edge(e),
+                point: p,
+            }));
         } else {
             let (o, d) = view.ray(s);
             let h = self
