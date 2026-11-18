@@ -108,6 +108,7 @@ impl Session {
             d0,
             d,
             at,
+            start,
         }) = &mut self.edit
         {
             // A snap anywhere in the model (a point, an edge, a guide), put
@@ -124,7 +125,9 @@ impl Session {
             // moves it by how far it has moved from the first click.
             let work = self.work.as_ref().unwrap_or_else(|| self.doc.model());
             let dd = match snapped {
-                Some(p) => offset::distance_through(work, *face, p).map(|d| (p, d)),
+                Some(p) => {
+                    offset::distance_from_nearest_edge(work, *face, *start, p).map(|d| (p, d))
+                }
                 None => plane_point(view, s, *origin, *n).and_then(|p| {
                     offset::signed_distance(work, *face, p).map(|now| (p, now - *d0))
                 }),
@@ -197,6 +200,7 @@ impl Session {
             d0,
             d: 0.0,
             at: p,
+            start: p,
         });
         self.last_op = None;
         self.overlay_dirty = true;

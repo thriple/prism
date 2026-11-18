@@ -1,7 +1,7 @@
-**New in this build: the Inspector.**
-- **Window > Inspector** shows what is selected and lets you change it. For a group or component: its name, tag, hidden and locked, and the position and size of its box. Type a length with units or a simple sum, such as `1.5m`, `2*25.4mm` or `(1m+20cm)/2`, and press Enter; each change is one undo step.
-- Select several groups and a field they differ on shows "—"; an edit applies to all of them. It also shows faces, edges and volume, and the area of selected faces.
-- Editable fillets, chamfers and booleans come in the next parts.
+**New in this build: Offset matches, better recordings.**
+- **Offset:** while you drag, snapping to a corner, midpoint or guide (also in another plane, such as the edge of a part beside it) now sets the distance from the edge you clicked near, so offsets on different faces line up. When a face cannot be offset (a spline edge, a curved face), the tool says why.
+- **Record Session** now saves every group and component, which group was open and what was selected, so a recording made inside a component can be replayed. Files are larger by the size of the model.
+- **Inspector** (Window > Inspector): see and change a group's name, tag, hidden and locked, and the position and size of its box, with units and sums like `2*25.4mm`.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

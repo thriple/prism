@@ -1187,9 +1187,7 @@ impl Command {
                     prism_ops::follow::refusal(&m, &path, *profile)
                 }
             },
-            Command::Offset { face, .. } if m.face(*face).is_some_and(|f| f.is_curved()) => {
-                Some(prism_ops::offset::CURVED_OFFSET)
-            }
+            Command::Offset { face, distance } => prism_ops::offset::refusal(m, *face, *distance),
             Command::Translate { vertices, by } => {
                 arcs_refusal(m, vertices, &prism_math::DAffine3::from_translation(*by))
             }

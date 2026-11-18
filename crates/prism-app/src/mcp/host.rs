@@ -1080,7 +1080,7 @@ fn replay(args: &Value) -> Result<Value, String> {
     let m = s.model();
     Ok(json!({
         "events": r.events.len(),
-        "matches_recording": if r.result.is_empty() { Value::Null } else { json!(r.ends_with(m)) },
+        "matches_recording": if r.result.is_empty() { Value::Null } else { json!(r.ends_with_document(s.document())) },
         "end": {"faces": m.face_count(), "edges": m.edge_count(), "points": m.vertex_count(), "tool": s.tool()},
     }))
 }

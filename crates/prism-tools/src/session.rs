@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use prism_doc::{Command, Document};
+use prism_doc::{Command, Document, InstanceId};
 use prism_infer::{self as infer, AXES, Context, Inference, Kind, Lock, Memory, Settings};
 use prism_math::{DVec2, DVec3};
 use prism_ops::select::Selection;
@@ -313,9 +313,33 @@ pub struct Recording {
     pub shell_size: Option<f64>,
     #[serde(default)]
     pub shell_outside: bool,
+    /// The whole document's groups and components when recording started
+    /// (`model` is only the top level, which is empty when everything is
+    /// in components), the group that was open, and the groups selected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assembly: Option<prism_doc::Assembly>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub open: Vec<InstanceId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected: Vec<InstanceId>,
+    /// The assembly at the end, as JSON: every group and component, not
+    /// only the top level that `result` holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_assembly: Option<String>,
 }
 
 impl Recording {
+    /// Whether `doc` is the document this recording ended with: the top
+    /// level as [`Recording::ends_with`] says and, when the recording kept
+    /// the groups and components, all of them.
+    pub fn ends_with_document(&self, doc: &Document) -> bool {
+        self.ends_with(doc.model())
+            && self
+                .result_assembly
+                .as_ref()
+                .is_none_or(|r| serde_json::to_string(doc.assembly()).is_ok_and(|now| now == *r))
+    }
+
     /// Whether `model` is the one this recording ended with. A recording
     /// saved before loops named their edges is read back as a model (which
     /// finds them), so it still matches.
@@ -1100,6 +1124,10 @@ impl Session {
             round_chamfer: self.round_chamfer,
             shell_size: self.shell_size,
             shell_outside: self.shell_outside,
+            assembly: Some(self.doc.assembly().clone()),
+            open: self.ctx.clone(),
+            selected: self.groups.iter().copied().collect(),
+            result_assembly: None,
         });
     }
 
@@ -1107,18 +1135,28 @@ impl Session {
     pub fn stop_recording(&mut self) -> Option<String> {
         let mut r = self.recording.take()?;
         r.result = self.doc.model().geometry_json();
+        r.result_assembly = serde_json::to_string(self.doc.assembly()).ok();
         serde_json::to_string_pretty(&r).ok()
     }
 
     /// Play a recording from its start. Returns the session at the end.
     pub fn replay(r: &Recording) -> Session {
         let next = r.materials.last().map_or(0, |(id, _)| id.0 + 1);
-        let asm = prism_doc::Assembly::with_model(r.model.clone()).with_materials(
-            r.materials.iter().cloned().collect(),
-            next,
-            Default::default(),
-        );
+        // A recording that kept the whole assembly starts from it; an older
+        // one starts from its top-level model and materials.
+        let asm = r.assembly.clone().unwrap_or_else(|| {
+            prism_doc::Assembly::with_model(r.model.clone()).with_materials(
+                r.materials.iter().cloned().collect(),
+                next,
+                Default::default(),
+            )
+        });
         let mut s = Session::new(Document::with_assembly(asm));
+        if !r.open.is_empty() {
+            s.ctx = r.open.clone();
+            s.build_scene();
+        }
+        s.groups = r.selected.iter().copied().collect();
         s.camera = r.camera;
         s.tool = r.tool.clone();
         s.size = r.size;

@@ -121,7 +121,6 @@ Done since and left out: the camera items (Everyday Commands), Intersect within 
 | Section planes, left over: corners and edges on the cut-away side still snap (only crossing guides are dropped); a smooth cap for cut curved faces; caps in the ground shadow (Annotation & Sections 1) | Annotation & Sections |
 | Construction planes, left over after the gap pass: a grid drawn on the plane, naming planes in a list window, inference snapping to the plane's own origin, a plane square to an edge (1.4); the model's axes: typed values, the camera's up following tilted axes | Annotation & Sections |
 | Walk collision (Everyday Commands 2); double-clicks timed by frame on a slow renderer (Viewport) | Input & Feel |
-| A recording's saved result is the root model only (Groups & Components 1, Tool pass 1) | Input & Feel |
 | The hint panel's pictures (Everyday Commands 3) | Input & Feel |
 | The Windows installer and file-type registration; the Mac Apple event handler; a thumbnail in the file; recent files on the web (Files & Formats 1, 3) | Packaging & App Polish |
 | Dragging tabs to reorder, more than one window, the system clipboard and dragging between windows (Files & Formats 3, Everyday Commands 1) | Packaging & App Polish |

@@ -479,6 +479,41 @@ pub fn distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
     best.or_else(|| signed_distance(model, face, p))
 }
 
+/// The offset distance that puts the loops through `p`, measured from the
+/// edge of the face nearest `start` (where the offset was begun): `p`'s
+/// distance from that edge's line, positive into the face. This is how
+/// Offset matches a point in another plane: the distance does not jump to
+/// whichever edge `p` happens to lie on. Faces with arcs use
+/// [`distance_through`].
+pub fn distance_from_nearest_edge(
+    model: &Model,
+    face: FaceId,
+    start: DVec3,
+    p: DVec3,
+) -> Option<f64> {
+    if model.face_has_arcs(face) {
+        return distance_through(model, face, p);
+    }
+    let (flat, loops) = flat_loops(model, face)?;
+    let (s, q) = (flat.to_2d(start), flat.to_2d(p));
+    let mut best: Option<(f64, DVec2, DVec2)> = None;
+    for l in &loops {
+        let n = l.len();
+        for i in 0..n {
+            let (a, b) = (l[i], l[(i + 1) % n]);
+            let e = b - a;
+            let t = ((s - a).dot(e) / e.length_squared().max(f64::MIN_POSITIVE)).clamp(0.0, 1.0);
+            let gap = s.distance(a + e * t);
+            if best.is_none_or(|(g, ..)| gap < g) {
+                best = Some((gap, a, b));
+            }
+        }
+    }
+    let (_, a, b) = best?;
+    let t = (b - a).normalize_or_zero();
+    (t != DVec2::ZERO).then(|| DVec2::new(-t.y, t.x).dot(q - a))
+}
+
 /// [`distance_through`] for a face with arcs: the nearest piece that `p`
 /// lies beside (within its length, or its sweep), by how far it is to
 /// that piece's left.
@@ -523,6 +558,37 @@ fn arc_distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
 /// add a ring round it). Returns the distance used, if anything was added.
 /// Said when Offset is asked to offset a curved face.
 pub const CURVED_OFFSET: &str = "Curved faces cannot be offset yet.";
+
+/// Said when a face has a spline edge: its curve cannot be moved sideways yet.
+pub const SPLINE_OFFSET: &str =
+    "Offset cannot move a spline edge yet: draw that outline with lines and arcs.";
+
+/// Said when no distance gives a valid outline.
+pub const NO_OFFSET: &str = "That face cannot be offset: an edge would vanish or cross.";
+
+/// Why `offset` would do nothing for this face and distance, if it would.
+pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static str> {
+    if model.face(face)?.is_curved() {
+        return Some(CURVED_OFFSET);
+    }
+    if face_pieces(model, face).is_some_and(|loops| {
+        loops
+            .iter()
+            .flatten()
+            .any(|p| matches!(p.curve, Curve::Spline(_)))
+    }) {
+        return Some(SPLINE_OFFSET);
+    }
+    if model.tol().is_zero(distance) {
+        return None;
+    }
+    let found = if model.face_has_arcs(face) {
+        offset_arc_loops(model, face, distance).is_some()
+    } else {
+        offset_loops(model, face, distance).is_some()
+    };
+    (!found).then_some(NO_OFFSET)
+}
 
 pub fn offset(model: &mut Model, face: FaceId, distance: f64) -> Option<f64> {
     if model.tol().is_zero(distance) {

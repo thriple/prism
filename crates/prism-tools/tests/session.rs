@@ -56,6 +56,10 @@ impl Driver {
             round_chamfer: false,
             shell_size: None,
             shell_outside: false,
+            assembly: None,
+            open: Vec::new(),
+            selected: Vec::new(),
+            result_assembly: None,
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -7867,4 +7871,65 @@ fn the_inspector_describes_selected_faces() {
         d.s.inspector_set("x", "1").is_err(),
         "geometry has no fields to set"
     );
+}
+
+#[test]
+fn a_recording_keeps_the_groups_the_open_group_and_the_selection() {
+    // The owner's session 12 was recorded inside a component: the top
+    // level was empty, so the recording could not be replayed.
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.s.open_path_to(&[g]);
+    d.s.start_recording();
+    d.tool(LINE);
+    d.click(DVec3::new(0.5, 0.5, 2.0));
+    d.click(DVec3::new(1.5, 0.5, 2.0));
+    key(&mut d, Key::Escape);
+    let json = d.s.stop_recording().expect("recorded");
+    let r: Recording = serde_json::from_str(&json).expect("reads back");
+    assert_eq!(r.open, [g]);
+    assert!(r.assembly.is_some());
+    assert!(r.model.face_count() == 0, "the top level is empty");
+    let s = Session::replay(&r);
+    assert_eq!(s.open_path(), [g], "it starts inside the group");
+    assert!(
+        r.ends_with_document(s.document()),
+        "the replay ends where the session did"
+    );
+    // The same recording with the groups left out ends somewhere else.
+    let mut bare = r.clone();
+    bare.assembly = None;
+    bare.open.clear();
+    assert!(!bare.ends_with_document(Session::replay(&bare).document()));
+}
+
+#[test]
+fn offset_matches_a_point_in_another_plane_by_the_edge_it_began_near() {
+    // Owner's session 12: a snapped point above the face (another part's
+    // corner) sets the distance from the edge nearest the first click. It
+    // used to pick whichever edge the point's shadow lay beside (here the
+    // left edge, outward), so nothing lined up.
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 4.0, 4.0);
+    rect_on_ground(&mut d, -3.0, 1.0, -1.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(-2.0, 1.5, 0.0));
+    d.typed("2");
+    d.tool(OFFSET);
+    d.click(DVec3::new(2.0, 0.3, 0.0));
+    d.hover(DVec3::new(-1.0, 1.0, 2.0));
+    assert_eq!(
+        d.s.inference().map(|i| i.kind),
+        Some(prism_infer::Kind::Endpoint),
+        "the corner snaps"
+    );
+    d.click(DVec3::new(-1.0, 1.0, 2.0));
+    // One metre in from the bottom edge, all round: a 4 x 4 square leaves
+    // a ring of 12 round a 2 x 2 one.
+    assert!(
+        areas(&d).iter().any(|a| (*a - 12.0).abs() < 1e-6),
+        "{:?}",
+        areas(&d)
+    );
+    valid(&d);
 }

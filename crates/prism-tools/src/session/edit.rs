@@ -115,6 +115,8 @@ pub(super) enum EditOp {
         d: f64,
         /// The cursor on the plane.
         at: DVec3,
+        /// Where it was begun, on the plane.
+        start: DVec3,
     },
     Tape {
         start: DVec3,
