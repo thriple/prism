@@ -55,7 +55,7 @@ pub fn line_param(o: DVec3, d: DVec3, p: DVec3, n: DVec3) -> Option<f64> {
 
 impl Session {
     /// The planes' drawing size: a little more than the model.
-    fn plane_half(&self) -> f64 {
+    pub(super) fn plane_half(&self) -> f64 {
         self.scene
             .bounds
             .map_or(2.0, |(lo, hi)| ((hi - lo).length() * 0.6).max(1.0))

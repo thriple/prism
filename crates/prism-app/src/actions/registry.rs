@@ -32,6 +32,8 @@ pub enum When {
     HasSections,
     /// The document has a dimension (Annotation & Sections part 2).
     HasDimensions,
+    /// The document has a construction plane (Annotation & Sections part 4).
+    HasWorkPlanes,
     /// A recent-file slot: enabled while that many files are remembered.
     Recent(usize),
     /// A label only ("No recent files").
@@ -98,6 +100,8 @@ pub struct Context {
     pub has_sections: bool,
     /// The document has a dimension.
     pub has_dimensions: bool,
+    /// The document has a construction plane.
+    pub has_work_planes: bool,
     /// How many recent files are remembered.
     pub recent: usize,
 }
@@ -153,12 +157,13 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 25] = [
+const TOGGLES: [&str; 26] = [
     "view.smart",
     "view.hidden",
     "view.section",
     "view.sectionplanes",
     "view.dimensions",
+    "view.cplanes",
     "view.wireframe",
     "view.basecolour",
     "view.colour",
@@ -249,6 +254,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Annotation & Sections part 1.
         || id.starts_with("section.")
         || id.starts_with("dim.")
+        || id.starts_with("cplane.")
         || id == "win.nexttab"
         || id == "win.prevtab"
     {
@@ -339,6 +345,7 @@ impl Registry {
                         }
                         None if r.id.starts_with("section.") => When::HasSections,
                         None if r.id.starts_with("dim.") => When::HasDimensions,
+                        None if r.id.starts_with("cplane.") => When::HasWorkPlanes,
                         None if r.id == "edit.explode"
                             || r.id == "edit.unique"
                             || r.id == "edit.hide"
@@ -387,6 +394,7 @@ impl Registry {
                     When::HasGroups => ctx.has_groups,
                     When::HasSections => ctx.has_sections,
                     When::HasDimensions => ctx.has_dimensions,
+                    When::HasWorkPlanes => ctx.has_work_planes,
                     When::Recent(n) => n <= ctx.recent,
                     When::Never => false,
                 }
@@ -406,6 +414,7 @@ impl Registry {
             When::HasGroups if !ctx.has_groups => Some("Select a group first"),
             When::HasSections if !ctx.has_sections => Some("Place a section plane first"),
             When::HasDimensions if !ctx.has_dimensions => Some("Make a dimension first"),
+            When::HasWorkPlanes if !ctx.has_work_planes => Some("Place a construction plane first"),
             When::Recent(n) if n > ctx.recent => Some("No file here yet"),
             When::Never => Some("Files you open or save are listed here"),
             _ => None,
@@ -600,7 +609,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 28] = [
+const BUILT_BEHAVIOURS: [&str; 30] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -630,6 +639,9 @@ const BUILT_BEHAVIOURS: [&str; 28] = [
     "Section planes: cut the model open in the viewport (Section Plane tool, Section Display)",
     // Annotation & Sections part 3.
     "Text: words set down as geometry in three bundled fonts (Text tool)",
+    // Annotation & Sections part 4.
+    "Model axes: set the whole model's origin and directions (Axes tool at the top level)",
+    "Construction planes: a plane to draw on anywhere, with inference (Construction Plane tool)",
     // Annotation & Sections part 2.
     "Dimensions: measure between two points and label the length (Dimensions tool)",
     // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.

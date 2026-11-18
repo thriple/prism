@@ -224,6 +224,11 @@ impl Session {
             {
                 return n;
             }
+            if i.kind == Kind::OnPlane
+                && let Some((_, p)) = self.doc.assembly().active_work_plane()
+            {
+                return p.normal;
+            }
             if i.kind == Kind::OnGround {
                 return DVec3::Z;
             }

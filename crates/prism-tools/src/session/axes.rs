@@ -4,8 +4,9 @@
 //! - **Axes tool:** inside an open group, click the origin, a point on the
 //!   red axis, then a point that sets green (made square to red), all with
 //!   inference. The group's contents keep their place in the world; only
-//!   its axes change. At the top level the tool asks for a group to be
-//!   opened (the model's own axes are part of Annotation & Sections).
+//!   its axes change. At the top level the same three clicks set the
+//!   model's own axes (Annotation & Sections part 4): everything moves so
+//!   that the new axes are the world's, and the view moves with it.
 //! - The axes are worked out in the group's own coordinates and kept rigid,
 //!   so curved geometry stays exact even in a group scaled unevenly.
 
@@ -32,6 +33,14 @@ pub(super) struct AxesOp {
     pub at: DVec3,
 }
 
+/// The frame a Change Model Axes command sets, if `c` is one.
+pub(super) fn model_axes_of(c: &Command) -> Option<DAffine3> {
+    match c {
+        Command::ChangeModelAxes { axes } => Some(*axes),
+        _ => None,
+    }
+}
+
 /// Rigid axes at `origin` with red towards `red` and green towards `green`
 /// (made square to red). None if the points are too close or in a line.
 pub fn axes_from(origin: DVec3, red: DVec3, green: DVec3, tiny: f64) -> Option<DAffine3> {
@@ -55,9 +64,6 @@ impl Session {
     }
 
     pub(super) fn axes_press(&mut self, s: DVec2) {
-        if self.ctx.is_empty() {
-            return;
-        }
         self.update_hover(s);
         let Some(p) = self.inference.as_ref().map(|i| i.point) else {
             return;
@@ -98,7 +104,16 @@ impl Session {
     /// were used.
     fn commit_axes(&mut self, origin: DVec3, red: DVec3, green: DVec3) -> bool {
         let Some(&id) = self.ctx.last() else {
-            return false;
+            // At the top level: the model's own axes, in world coordinates.
+            let Some(axes) = axes_from(origin, red, green, self.axes_tiny(origin)) else {
+                return false;
+            };
+            self.cancel();
+            if !self.run(Command::ChangeModelAxes { axes }) {
+                return false;
+            }
+            self.move_view(&axes.inverse());
+            return true;
         };
         let local = self.to_world.inverse();
         let [o, r, g] = [origin, red, green].map(|p| local.transform_point3(p));
@@ -107,6 +122,15 @@ impl Session {
         };
         self.run(Command::ChangeAxes { instance: id, axes });
         true
+    }
+
+    /// Carry the camera along when the model's axes change (`m` is what
+    /// the model itself was moved by), so the view looks the same.
+    pub(super) fn move_view(&mut self, m: &DAffine3) {
+        self.settle_camera();
+        self.camera.eye = m.transform_point3(self.camera.eye);
+        self.camera.target = m.transform_point3(self.camera.target);
+        self.dirty = true;
     }
 
     /// The selected groups, one per definition (copies of a component
@@ -166,20 +190,22 @@ impl Session {
         if self.tool != AXES_TOOL {
             return None;
         }
-        Some(if self.ctx.is_empty() {
-            "Open a group or component (double-click it) to set its axes"
+        let what = if self.ctx.is_empty() {
+            "model"
         } else {
-            match self.axes_op.map(|a| a.red.is_some()) {
-                None => "Click the new origin",
-                Some(false) => "Click a point on the red axis · Esc cancels",
-                Some(true) => "Click a point that sets green · Esc cancels",
-            }
+            "group"
+        };
+        Some(match self.axes_op.map(|a| a.red.is_some()) {
+            None if what == "model" => "Click the model's new origin",
+            None => "Click the new origin",
+            Some(false) => "Click a point on the red axis · Esc cancels",
+            Some(true) => "Click a point that sets green · Esc cancels",
         })
     }
 
     /// The axes being set, or the open group's own while the tool waits.
     pub(super) fn axes_overlay(&self, o: &mut Overlay) {
-        if self.tool != AXES_TOOL || self.ctx.is_empty() {
+        if self.tool != AXES_TOOL {
             return;
         }
         let (origin, dirs) = match self.axes_op {

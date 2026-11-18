@@ -47,6 +47,21 @@ pub struct Section {
     pub normal: DVec3,
 }
 
+/// A construction plane's id (Annotation & Sections part 4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct WorkPlaneId(pub u32);
+
+/// A construction plane: a plane in the world that the drawing tools use
+/// as their working plane when it is the active one. It changes no
+/// geometry.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WorkPlane {
+    pub name: String,
+    pub origin: DVec3,
+    /// Unit length.
+    pub normal: DVec3,
+}
+
 /// A dimension's id (Annotation & Sections part 2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct DimId(pub u32);
@@ -182,6 +197,14 @@ pub struct Assembly {
     dimensions: BTreeMap<DimId, Dimension>,
     #[serde(default)]
     next_dim: u32,
+    /// Construction planes (Annotation & Sections part 4).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    work_planes: BTreeMap<WorkPlaneId, WorkPlane>,
+    #[serde(default)]
+    next_work_plane: u32,
+    /// The working plane the drawing tools use, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_work_plane: Option<WorkPlaneId>,
 }
 
 /// An instance's name, tag and whether it is hidden (for files).
@@ -227,6 +250,9 @@ impl Assembly {
             sections: BTreeMap::new(),
             next_section: 0,
             active_section: None,
+            work_planes: BTreeMap::new(),
+            next_work_plane: 0,
+            active_work_plane: None,
             dimensions: BTreeMap::new(),
             next_dim: 0,
         }
@@ -304,6 +330,9 @@ impl Assembly {
             sections: BTreeMap::new(),
             next_section: 0,
             active_section: None,
+            work_planes: BTreeMap::new(),
+            next_work_plane: 0,
+            active_work_plane: None,
             dimensions: BTreeMap::new(),
             next_dim: 0,
         })
@@ -564,6 +593,107 @@ impl Assembly {
         }
     }
 
+    // ---------- construction planes (Annotation & Sections part 4) ----------
+
+    /// The construction planes, and the counter for new ones (for files).
+    pub fn work_planes(&self) -> (&BTreeMap<WorkPlaneId, WorkPlane>, u32) {
+        (&self.work_planes, self.next_work_plane)
+    }
+
+    pub fn work_plane(&self, id: WorkPlaneId) -> Option<&WorkPlane> {
+        self.work_planes.get(&id)
+    }
+
+    /// The working plane the drawing tools use now.
+    pub fn active_work_plane(&self) -> Option<(WorkPlaneId, &WorkPlane)> {
+        let id = self.active_work_plane?;
+        self.work_planes.get(&id).map(|p| (id, p))
+    }
+
+    /// Set the planes from a file. One with an unusable normal is dropped;
+    /// `active` must name one that is left.
+    pub fn with_work_planes(
+        mut self,
+        planes: BTreeMap<WorkPlaneId, WorkPlane>,
+        next: u32,
+        active: Option<WorkPlaneId>,
+    ) -> Self {
+        self.work_planes = planes
+            .into_iter()
+            .filter_map(|(id, mut p)| {
+                let n = p.normal.normalize_or_zero();
+                (n != DVec3::ZERO && p.origin.is_finite()).then(|| {
+                    // A unit normal is kept as it is, so files round trip.
+                    if (p.normal.length() - 1.0).abs() > 1e-12 {
+                        p.normal = n;
+                    }
+                    (id, p)
+                })
+            })
+            .collect();
+        self.next_work_plane = next.max(self.work_planes.keys().next_back().map_or(0, |k| k.0 + 1));
+        self.active_work_plane = active.filter(|a| self.work_planes.contains_key(a));
+        self
+    }
+
+    /// Add a plane and make it the working plane. None if the normal is
+    /// unusable.
+    pub fn add_work_plane(&mut self, origin: DVec3, normal: DVec3) -> Option<WorkPlaneId> {
+        let n = normal.normalize_or_zero();
+        if n == DVec3::ZERO || !origin.is_finite() {
+            return None;
+        }
+        let id = WorkPlaneId(self.next_work_plane);
+        self.next_work_plane += 1;
+        self.work_planes.insert(
+            id,
+            WorkPlane {
+                name: format!("Plane {}", id.0 + 1),
+                origin,
+                normal: n,
+            },
+        );
+        self.active_work_plane = Some(id);
+        Some(id)
+    }
+
+    /// Move a plane's origin (it keeps its direction).
+    pub fn move_work_plane(&mut self, id: WorkPlaneId, origin: DVec3) {
+        if origin.is_finite()
+            && let Some(p) = self.work_planes.get_mut(&id)
+        {
+            p.origin = origin;
+        }
+    }
+
+    /// Make a plane the working plane, or stop it being one.
+    pub fn set_active_work_plane(&mut self, id: WorkPlaneId, active: bool) {
+        if !self.work_planes.contains_key(&id) {
+            return;
+        }
+        if active {
+            self.active_work_plane = Some(id);
+        } else if self.active_work_plane == Some(id) {
+            self.active_work_plane = None;
+        }
+    }
+
+    pub fn rename_work_plane(&mut self, id: WorkPlaneId, name: &str) {
+        let name = name.trim();
+        if !name.is_empty()
+            && let Some(p) = self.work_planes.get_mut(&id)
+        {
+            p.name = name.to_owned();
+        }
+    }
+
+    pub fn delete_work_plane(&mut self, id: WorkPlaneId) {
+        self.work_planes.remove(&id);
+        if self.active_work_plane == Some(id) {
+            self.active_work_plane = None;
+        }
+    }
+
     /// Lock or unlock instances (anywhere: instance ids are unique).
     pub fn set_locked(&mut self, instances: &BTreeSet<InstanceId>, locked: bool) {
         let alive: BTreeSet<InstanceId> = self
@@ -803,6 +933,7 @@ impl Assembly {
     pub fn keep_counters_from(&mut self, newer: &Assembly) {
         self.next_material = self.next_material.max(newer.next_material);
         self.next_section = self.next_section.max(newer.next_section);
+        self.next_work_plane = self.next_work_plane.max(newer.next_work_plane);
         self.next_dim = self.next_dim.max(newer.next_dim);
         self.next_def = self.next_def.max(newer.next_def);
         self.next_instance = self.next_instance.max(newer.next_instance);
@@ -1319,6 +1450,51 @@ impl Assembly {
                     inst.transform *= *axes;
                 }
             }
+        }
+        true
+    }
+
+    /// The model's own axes (Annotation & Sections part 4): `axes` (a
+    /// rigid frame in world coordinates) become the world's origin and
+    /// directions. Everything moves by the inverse: the loose geometry,
+    /// guides, the groups and components placed at the top level, section
+    /// planes, construction planes and dimensions. What is inside a group keeps its own
+    /// coordinates. False if nothing changed (not rigid, or the same).
+    pub fn change_model_axes(&mut self, axes: &DAffine3) -> bool {
+        let m = axes.matrix3;
+        let rigid = m.determinant() > 0.0
+            && m.x_axis.is_finite()
+            && m.y_axis.is_finite()
+            && m.z_axis.is_finite()
+            && axes.translation.is_finite()
+            && (m.x_axis.length() - 1.0).abs() < 1e-9
+            && (m.y_axis.length() - 1.0).abs() < 1e-9
+            && (m.z_axis.length() - 1.0).abs() < 1e-9
+            && m.x_axis.dot(m.y_axis).abs() < 1e-9
+            && m.x_axis.dot(m.z_axis).abs() < 1e-9
+            && m.y_axis.dot(m.z_axis).abs() < 1e-9;
+        if !rigid || *axes == DAffine3::IDENTITY {
+            return false;
+        }
+        let back = axes.inverse();
+        if let Some(d) = self.def_mut(ROOT) {
+            transform::affine(&mut d.model, &back);
+            for inst in d.instances.values_mut() {
+                inst.transform = back * inst.transform;
+            }
+        }
+        for s in self.sections.values_mut() {
+            s.origin = back.transform_point3(s.origin);
+            s.normal = back.transform_vector3(s.normal).normalize();
+        }
+        for p in self.work_planes.values_mut() {
+            p.origin = back.transform_point3(p.origin);
+            p.normal = back.transform_vector3(p.normal).normalize();
+        }
+        for d in self.dimensions.values_mut() {
+            d.a = back.transform_point3(d.a);
+            d.b = back.transform_point3(d.b);
+            d.offset = back.transform_vector3(d.offset);
         }
         true
     }

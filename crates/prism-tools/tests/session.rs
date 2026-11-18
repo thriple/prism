@@ -6064,10 +6064,13 @@ fn the_axes_tool_sets_an_open_groups_axes_in_three_clicks() {
     let g = grouped_box(&mut d);
     let before = world_points(&d);
     let t0 = group_transform(&d, g);
-    // At the top level the tool asks for a group to be opened.
+    // At the top level it sets the model's own axes (a first click starts
+    // that; Esc leaves everything as it was).
     d.tool(prism_tools::session::AXES_TOOL);
+    assert!(d.s.hint().contains("model's new origin"));
     d.click(DVec3::new(2.0, 0.0, 0.0));
-    assert!(d.s.hint().contains("Open a group"));
+    assert!(d.s.hint().contains("red axis"));
+    key(&mut d, Key::Escape);
     assert_eq!(group_transform(&d, g), t0);
     // Change Axes opens it and starts the tool.
     d.tool(SELECT);
@@ -6092,6 +6095,42 @@ fn the_axes_tool_sets_an_open_groups_axes_in_three_clicks() {
     // One undo step.
     act(&mut d, "edit.undo");
     assert_eq!(group_transform(&d, g), t0);
+}
+
+#[test]
+fn the_axes_tool_at_the_top_level_sets_the_models_axes() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let before = world_points(&d);
+    let cam = d.s.camera();
+    d.tool(prism_tools::session::AXES_TOOL);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.click(DVec3::new(0.0, 2.0, 0.0));
+    // The new axes are the world's: everything moved by their inverse.
+    let axes = prism_tools::session::axes_from(
+        DVec3::new(2.0, 0.0, 0.0),
+        DVec3::new(2.0, 2.0, 0.0),
+        DVec3::new(0.0, 2.0, 0.0),
+        1e-9,
+    )
+    .expect("axes");
+    let back = axes.inverse();
+    let after = world_points(&d);
+    let expected: Vec<DVec3> = before.iter().map(|p| back.transform_point3(*p)).collect();
+    kept(&expected, &after);
+    let c = d.s.camera();
+    assert!(
+        c.eye.distance(back.transform_point3(cam.eye)) < 1e-9,
+        "the view goes with the model"
+    );
+    assert!(d.s.document().assembly().find_instance(g).is_some());
+    // One undo step puts both back; redo does it again.
+    act(&mut d, "edit.undo");
+    kept(&before, &world_points(&d));
+    assert!(d.s.camera().eye.distance(cam.eye) < 1e-9);
+    act(&mut d, "edit.redo");
+    kept(&expected, &world_points(&d));
 }
 
 #[test]
@@ -6876,4 +6915,92 @@ fn the_window_ignores_what_is_not_a_length_and_cuts_long_text() {
     // Not with another tool.
     d.tool(SELECT);
     assert!(d.s.text_panel().is_none());
+}
+
+// ---------- Construction planes (Annotation & Sections part 4, brief 46) ----------
+
+#[test]
+fn the_construction_plane_tool_places_a_plane_on_the_ground_and_uses_it() {
+    let mut d = Driver::empty();
+    d.tool(prism_tools::session::CPLANE_TOOL);
+    assert!(d.s.hint().contains("construction plane"));
+    d.click(DVec3::new(3.0, 3.0, 0.0));
+    let asm = d.s.document().assembly();
+    let (_, p) = asm.active_work_plane().expect("a plane in use");
+    assert!(p.origin.distance(DVec3::new(3.0, 3.0, 0.0)) < 1e-6, "{p:?}");
+    assert!(p.normal.abs_diff_eq(DVec3::Z, 1e-9));
+    assert!(d.s.has_work_planes());
+    // One undo step removes it.
+    act(&mut d, "edit.undo");
+    assert!(!d.s.has_work_planes());
+}
+
+#[test]
+fn drawing_tools_draw_on_the_working_plane() {
+    let mut d = Driver::empty();
+    // A wall plane at y = 1 (square to y), then a rectangle on it.
+    d.s.add_work_plane(DVec3::new(3.0, 1.0, 0.0), DVec3::Y)
+        .expect("plane");
+    d.tool(RECT);
+    d.click(DVec3::new(2.5, 1.0, 0.5));
+    assert_eq!(
+        d.s.inference().map(|i| i.kind),
+        Some(prism_infer::Kind::OnPlane)
+    );
+    d.click(DVec3::new(3.5, 1.0, 1.5));
+    assert_eq!(d.faces(), 1);
+    for (_, p) in d.s.model().vertices() {
+        assert!((p.y - 1.0).abs() < 1e-6, "on the plane: {p}");
+    }
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(3.5, 1.0, 1.5)).is_some());
+}
+
+#[test]
+fn hiding_the_planes_stops_using_them() {
+    let mut d = Driver::empty();
+    d.s.add_work_plane(DVec3::new(3.0, 1.0, 0.0), DVec3::Y)
+        .expect("plane");
+    let mut v = d.s.view_style().clone();
+    v.work_planes = false;
+    d.s.set_view_style(v);
+    d.tool(RECT);
+    d.click(DVec3::new(2.0, 2.0, 0.0));
+    d.click(DVec3::new(4.0, 3.0, 0.0));
+    for (_, p) in d.s.model().vertices() {
+        assert!(p.z.abs() < 1e-6, "on the ground: {p}");
+    }
+}
+
+#[test]
+fn a_face_in_front_of_the_plane_still_wins() {
+    let mut d = Driver::empty();
+    d.tool(RECT);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.click(DVec3::new(4.0, 2.0, 0.0));
+    // A plane well below the ground square: the rectangle is nearer.
+    d.s.add_work_plane(DVec3::new(3.0, 1.0, -1.0), DVec3::Z)
+        .expect("plane");
+    d.hover(DVec3::new(3.0, 1.0, 0.0));
+    let i = d.s.inference().expect("inference");
+    assert_eq!(i.kind, prism_infer::Kind::OnFace);
+}
+
+#[test]
+fn construction_planes_stay_drawn_and_the_menu_commands_work() {
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.s.add_work_plane(DVec3::new(0.0, 0.0, 1.0), DVec3::Z)
+        .expect("plane");
+    d.tool(SELECT);
+    d.send(Input::Move { x: 50.0, y: 50.0 });
+    let lines = d.s.overlay().lines.len();
+    assert!(lines >= 6, "the outline and the cross ({lines})");
+    // Use / stop using it, then delete it.
+    act(&mut d, "cplane.active");
+    assert!(d.s.document().assembly().active_work_plane().is_none());
+    act(&mut d, "cplane.active");
+    assert!(d.s.document().assembly().active_work_plane().is_some());
+    act(&mut d, "cplane.delete");
+    assert!(!d.s.has_work_planes());
+    d.send(Input::Move { x: 51.0, y: 50.0 });
+    assert!(d.s.overlay().lines.len() < lines);
 }

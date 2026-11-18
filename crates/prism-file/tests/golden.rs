@@ -137,6 +137,13 @@ fn cases() -> Vec<(&'static str, Contents)> {
             },
         ),
         (
+            "planes.prism",
+            Contents {
+                assembly: planed().assembly().clone(),
+                settings: Settings::default(),
+            },
+        ),
+        (
             "sections.prism",
             Contents {
                 assembly: sectioned().assembly().clone(),
@@ -144,6 +151,23 @@ fn cases() -> Vec<(&'static str, Contents)> {
             },
         ),
     ]
+}
+
+/// Two construction planes on the pocket, the second the working plane
+/// (Annotation & Sections part 4, schema 14).
+fn planed() -> prism_doc::Document {
+    use prism_doc::Command;
+    use prism_math::DVec3;
+    let mut d = prism_tools::scenes::pocket();
+    d.run(Command::AddWorkPlane {
+        origin: DVec3::new(1.0, 1.0, 1.0),
+        normal: DVec3::X,
+    });
+    d.run(Command::AddWorkPlane {
+        origin: DVec3::new(0.5, 0.0, 0.0),
+        normal: DVec3::new(1.0, 1.0, 0.0),
+    });
+    d
 }
 
 /// Two dimensions on the pocket (Annotation & Sections part 2, schema 13).

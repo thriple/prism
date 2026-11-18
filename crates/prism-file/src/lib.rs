@@ -50,8 +50,9 @@ pub use migrate::{Raw, migrate};
 /// texture images (`images/`) and texture placement on faces (geometry
 /// layout 8). Schema 10: NURBS curves and patches (geometry layout 9). Schema 11:
 /// locked groups (`groups.json`). Schema 12: section planes (`sections.json`).
-/// Schema 13: dimensions (`dimensions.json`).
-pub const SCHEMA: u32 = 13;
+/// Schema 13: dimensions (`dimensions.json`). Schema 14: construction
+/// planes (`planes.json`).
+pub const SCHEMA: u32 = 14;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -64,6 +65,25 @@ const GROUPS: &str = "groups.json";
 const MATERIALS: &str = "materials.json";
 const SECTIONS: &str = "sections.json";
 const DIMENSIONS: &str = "dimensions.json";
+const PLANES: &str = "planes.json";
+
+/// The document's construction planes (schema 14).
+#[derive(Serialize, Deserialize)]
+struct PlanesV1 {
+    next: u32,
+    /// The working plane, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active: Option<u32>,
+    planes: Vec<PlaneV1>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PlaneV1 {
+    id: u32,
+    name: String,
+    origin: [f64; 3],
+    normal: [f64; 3],
+}
 
 /// The document's dimensions (schema 13).
 #[derive(Serialize, Deserialize)]
@@ -328,6 +348,28 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         };
         files.push((SECTIONS.to_owned(), pretty(&m)));
     }
+    let (planes, next_plane) = asm.work_planes();
+    if !planes.is_empty() {
+        manifest.entries.push(Entry {
+            path: PLANES.to_owned(),
+            kind: "planes".to_owned(),
+            version: 1,
+        });
+        let m = PlanesV1 {
+            next: next_plane,
+            active: asm.active_work_plane().map(|(id, _)| id.0),
+            planes: planes
+                .iter()
+                .map(|(id, p)| PlaneV1 {
+                    id: id.0,
+                    name: p.name.clone(),
+                    origin: p.origin.to_array(),
+                    normal: p.normal.to_array(),
+                })
+                .collect(),
+        };
+        files.push((PLANES.to_owned(), pretty(&m)));
+    }
     let (dims, next_dim) = asm.dimensions();
     if !dims.is_empty() {
         manifest.entries.push(Entry {
@@ -498,6 +540,27 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
                 .collect(),
             m.next,
             m.active.map(prism_doc::SectionId),
+        );
+    }
+    if let Some(json) = raw.files.get(PLANES) {
+        let m: PlanesV1 = serde_json::from_slice(json)
+            .map_err(|e| FileError::Damaged(format!("{PLANES}: {e}")))?;
+        assembly = assembly.with_work_planes(
+            m.planes
+                .into_iter()
+                .map(|p| {
+                    (
+                        prism_doc::WorkPlaneId(p.id),
+                        prism_doc::WorkPlane {
+                            name: p.name,
+                            origin: prism_math::DVec3::from_array(p.origin),
+                            normal: prism_math::DVec3::from_array(p.normal),
+                        },
+                    )
+                })
+                .collect(),
+            m.next,
+            m.active.map(prism_doc::WorkPlaneId),
         );
     }
     if let Some(json) = raw.files.get(DIMENSIONS) {

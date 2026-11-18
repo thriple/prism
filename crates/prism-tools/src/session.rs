@@ -52,6 +52,7 @@ mod surfacing;
 mod texpos;
 mod texting;
 mod views;
+mod workplanes;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
 pub use axes::{AXES_TOOL, axes_from};
@@ -79,6 +80,7 @@ pub use solids::{SolidOf, SolidRow};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
 pub use texting::{MAX_TEXT, TEXT_TOOL, TextKind, TextPanel, TextSet, TextSettings, frame_on};
 pub use views::{LOOK, WALK, WINDOW};
+pub use workplanes::CPLANE_TOOL;
 
 /// Tool ids (the action registry's).
 pub const SELECT: &str = "tool.select";
@@ -94,7 +96,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 42] = [
+pub const TOOLS: [&str; 43] = [
     SELECT,
     LINE,
     RECT,
@@ -140,6 +142,7 @@ pub const TOOLS: [&str; 42] = [
     axes::AXES_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
+    workplanes::CPLANE_TOOL,
     // Annotation & Sections part 2.
     dimensions::DIM_TOOL,
     // Annotation & Sections part 3.
@@ -589,6 +592,8 @@ pub struct Session {
     section_op: Option<sections::SectionOp>,
     section_sel: Option<prism_doc::SectionId>,
     section_ghost: Option<(DVec3, DVec3)>,
+    /// Where the Construction Plane tool would put a plane: origin, normal.
+    cplane_ghost: Option<(DVec3, DVec3)>,
     /// The Dimensions tool (part 2): the one being made or moved, and the
     /// one picked.
     dim_op: Option<dimensions::DimOp>,
@@ -615,6 +620,7 @@ impl Session {
             section_op: None,
             section_sel: None,
             section_ghost: None,
+            cplane_ghost: None,
             dim_op: None,
             text_set: texting::TextSettings::default(),
             text_ghost: None,
@@ -995,6 +1001,7 @@ impl Session {
             .or_else(|| self.freehand_hint())
             .or_else(|| self.axes_hint())
             .or_else(|| self.section_hint())
+            .or_else(|| self.work_plane_hint())
             .or_else(|| self.dim_hint())
             .or_else(|| self.text_hint())
             .or_else(|| self.solid_hint())
@@ -1310,6 +1317,7 @@ impl Session {
         self.axes_op = None;
         self.section_op = None;
         self.section_ghost = None;
+        self.cplane_ghost = None;
         self.dim_op = None;
         self.solid_first = None;
         self.cage_cancel();
@@ -1748,6 +1756,7 @@ impl Session {
             "axes.centre" => self.reset_axes(true),
             "section.flip" | "section.active" | "section.delete" => self.section_action(id),
             "dim.delete" => self.dim_delete(),
+            "cplane.active" | "cplane.delete" => self.work_plane_action(id),
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
@@ -1756,7 +1765,11 @@ impl Session {
                 self.cancel();
                 // Undo of an edit inside a group opens that group again.
                 let ctx = self.doc.undo_context();
+                let axes = self.doc.undo_command().and_then(axes::model_axes_of);
                 if self.doc.undo() {
+                    if let Some(a) = axes {
+                        self.move_view(&a);
+                    }
                     self.ctx = ctx;
                     self.last_op = None;
                     self.model_changed();
@@ -1765,7 +1778,11 @@ impl Session {
             "edit.redo" => {
                 self.cancel();
                 let ctx = self.doc.redo_context();
+                let axes = self.doc.redo_command().and_then(axes::model_axes_of);
                 if self.doc.redo() {
+                    if let Some(a) = axes {
+                        self.move_view(&a.inverse());
+                    }
                     self.ctx = ctx;
                     self.last_op = None;
                     self.model_changed();
@@ -1807,6 +1824,7 @@ impl Session {
             || self.tool == FREEHAND
             || self.tool == AXES_TOOL
             || self.tool == SECTION_TOOL
+            || self.tool == CPLANE_TOOL
             || self.tool == DIM_TOOL
             || self.tool == TEXT_TOOL
             || self.cage_wants_inference()
@@ -1814,7 +1832,14 @@ impl Session {
             || self.pasting()
     }
 
+    /// What the tool is doing, with the working plane if one is in use.
     fn context(&self) -> Context {
+        let mut c = self.tool_context();
+        c.work_plane = self.work_plane_ctx();
+        c
+    }
+
+    fn tool_context(&self) -> Context {
         if self.pasting() {
             return Context::default();
         }
@@ -1874,6 +1899,7 @@ impl Session {
                         verts.clone()
                     },
                     no_lock: false,
+                    ..Default::default()
                 },
                 _ => Context::default(),
             },
@@ -1966,6 +1992,7 @@ impl Session {
             self.axes_hover();
             self.section_hover(s, &view);
             self.dim_hover();
+            self.work_plane_hover();
             self.text_hover(s, &view);
             self.arc_hover(s, &view);
             self.cage_hover();
@@ -2086,6 +2113,7 @@ impl Session {
                 RRECT => self.rrect_press(s),
                 AXES_TOOL => self.axes_press(s),
                 SECTION_TOOL => self.section_press(s),
+                CPLANE_TOOL => self.work_plane_press(s),
                 DIM_TOOL => self.dim_press(s),
                 TEXT_TOOL => self.text_press(s),
                 FREEHAND => self.freehand_press(s, shift),
@@ -2398,6 +2426,11 @@ impl Session {
         {
             return n;
         }
+        if i.kind == Kind::OnPlane
+            && let Some((_, p)) = self.doc.assembly().active_work_plane()
+        {
+            return p.normal;
+        }
         if i.kind == Kind::OnGround {
             return DVec3::Z;
         }
@@ -2579,6 +2612,7 @@ impl Session {
         self.window_overlay(&mut o);
         // Section planes and dimensions stay drawn whatever the tool.
         self.section_overlay(&mut o);
+        self.work_plane_overlay(&mut o);
         self.dim_overlay(&mut o);
         self.text_overlay(&mut o);
         if !self.wants_inference() {
@@ -2702,7 +2736,7 @@ impl Session {
             Kind::Midpoint | Kind::Quadrant => fb.midpoint,
             Kind::Centre => fb.endpoint,
             Kind::OnEdge | Kind::OnArc => fb.on_edge,
-            Kind::OnFace => fb.on_face,
+            Kind::OnFace | Kind::OnPlane => fb.on_face,
             Kind::OnGround => fb.on_ground,
             Kind::Intersection => fb.intersection,
             Kind::GuideCross => fb.guide_cross,
@@ -2748,7 +2782,7 @@ impl Session {
             Kind::Midpoint | Kind::Quadrant => Shape::Triangle,
             Kind::Centre => Shape::Ring,
             Kind::OnEdge | Kind::OnArc => Shape::Square,
-            Kind::OnFace | Kind::OnGround => Shape::Diamond,
+            Kind::OnFace | Kind::OnPlane | Kind::OnGround => Shape::Diamond,
             Kind::Intersection | Kind::GuideCross | Kind::GuidePoint => Shape::Cross,
         };
         o.marks.push(Mark {
@@ -2808,7 +2842,10 @@ fn remove_all(s: &mut Selection, o: &Selection) {
 /// plane). None on the plane, for a point not snapped, or one straight
 /// along the normal (no plane holds a rectangle there).
 fn stand_up(start: DVec3, base: DVec3, i: &Inference, tol: f64) -> Option<DVec3> {
-    if matches!(i.kind, Kind::OnFace | Kind::OnGround | Kind::Free) {
+    if matches!(
+        i.kind,
+        Kind::OnFace | Kind::OnPlane | Kind::OnGround | Kind::Free
+    ) {
         return None;
     }
     let d = i.point - start;
@@ -2865,7 +2902,10 @@ fn rect_point(
     start: DVec3,
     n: DVec3,
 ) -> DVec3 {
-    let snapped = !matches!(i.kind, Kind::OnFace | Kind::OnGround | Kind::Free);
+    let snapped = !matches!(
+        i.kind,
+        Kind::OnFace | Kind::OnPlane | Kind::OnGround | Kind::Free
+    );
     if !snapped {
         let (o, d) = view.ray(s);
         let den = n.dot(d);

@@ -61,6 +61,8 @@ pub enum Kind {
     /// Along an arc's tangent at its end.
     Tangent,
     OnFace,
+    /// A construction plane, the working plane (Annotation & Sections part 4).
+    OnPlane,
     OnGround,
     Intersection,
     GuideCross,
@@ -85,6 +87,7 @@ impl Kind {
             Kind::Guide => (3.3, 8.0),
             Kind::OnEdge | Kind::OnArc => (3.0, 9.0),
             Kind::OnFace => (1.0, 0.0),
+            Kind::OnPlane => (0.9, 0.0),
             Kind::OnGround => (0.8, 0.0),
             Kind::Free => (0.0, 0.0),
         }
@@ -100,6 +103,7 @@ impl Kind {
             Kind::Quadrant => "Quadrant",
             Kind::Tangent => "Tangent",
             Kind::OnFace => "On Face",
+            Kind::OnPlane => "On Plane",
             Kind::OnGround => "On Ground",
             Kind::Intersection => "Intersection",
             Kind::GuideCross => "Guide Cross",
@@ -208,6 +212,7 @@ pub enum Key {
     Centre(EdgeId),
     Quadrant(EdgeId, u8),
     Face(FaceId),
+    Plane,
     Ground,
     Guide(GuideSource),
     Cross(GuideSource, GuideSource),
@@ -321,6 +326,42 @@ pub struct Context {
     pub exclude: BTreeSet<VertexId>,
     /// The tool ignores locks (Rectangle: the arrows pick its plane).
     pub no_lock: bool,
+    /// The working plane, if the document has one in use.
+    pub work_plane: Option<WorkPlane>,
+}
+
+/// A construction plane the cursor can land on: a square of side `2 * half`
+/// round `origin` (the part that is drawn).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WorkPlane {
+    pub origin: DVec3,
+    pub normal: DVec3,
+    pub half: f64,
+}
+
+impl WorkPlane {
+    /// Where the ray `o + d·t` meets the drawn square, as `t`.
+    pub fn hit(&self, o: DVec3, d: DVec3) -> Option<f64> {
+        let den = self.normal.dot(d);
+        if den.abs() < 1e-9 {
+            return None;
+        }
+        let t = self.normal.dot(self.origin - o) / den;
+        if t <= 0.0 {
+            return None;
+        }
+        let (u, v) = plane_frame(self.normal);
+        let q = o + d * t - self.origin;
+        (q.dot(u).abs() <= self.half && q.dot(v).abs() <= self.half).then_some(t)
+    }
+}
+
+/// Two unit vectors that, with `n`, make a frame (the same as the section
+/// planes' drawing).
+pub fn plane_frame(n: DVec3) -> (DVec3, DVec3) {
+    let a = if n.z.abs() < 0.9 { DVec3::Z } else { DVec3::X };
+    let u = n.cross(a).normalize();
+    (u, n.cross(u))
 }
 
 /// The answer: where a click lands and why.
@@ -781,6 +822,25 @@ pub fn infer(
     let ground = (dir.z < -1e-12 && o.z > 0.0)
         .then(|| -o.z / dir.z)
         .filter(|t| *t < reach);
+    // A construction plane in use is a surface too, where it is drawn: the
+    // nearest of it, a face and the ground wins.
+    let plane = ctx
+        .work_plane
+        .and_then(|p| p.hit(o, dir))
+        .filter(|t| *t < reach)
+        .filter(|tp| face_hit.is_none_or(|(_, tf)| *tp < tf));
+    let plane = plane.filter(|tp| ground.is_none_or(|tg| *tp <= tg));
+    let (face_hit, ground) = if plane.is_some() {
+        (None, None)
+    } else {
+        (face_hit, ground)
+    };
+    if let Some(tp) = plane {
+        let mut c = blank(Kind::OnPlane, Key::Plane);
+        c.point = o + dir * tp;
+        c.score = Kind::OnPlane.priority().0;
+        cands.push(c);
+    }
     match (face_hit, ground) {
         (Some((f, tf)), g) if g.is_none_or(|tg| tf <= tg) => {
             let mut c = blank(Kind::OnFace, Key::Face(f));

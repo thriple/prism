@@ -1,6 +1,7 @@
-**New in this build: text.**
-- **Text (Tools > Text).** Type the words in the Text window, pick Sans, Serif or Mono and the capitals' height, choose Outline, Face or Solid (with a depth), then click: the text is set down as a group named after it, on the face under the pointer (reading upright) or on the ground. A ghost shows where it will go. Three fonts come with Prism, so text looks the same on every computer and in the browser.
-- Also recent: dimensions (Tools > Dimensions), section planes (Tools > Section Plane), the program's icon on Windows, and Alt tapped with Ctrl or Cmd held no longer turns on New Loop.
+**New in this build: construction planes and the model's own axes.**
+- **Construction planes (Tools > Construction Plane).** Click to place a plane to draw on: it lies square to the face or the ground under the pointer, or to an axis the arrow keys lock. Then the pointer lands on it and every drawing tool draws on it, so you can draw on a wall in the air. A face in front of it still wins. Edit > Construction Plane stops using it or deletes it; View > Construction Planes hides them.
+- **The model's own axes (Tools > Axes, with nothing open).** Click the new origin, a point on the red axis, then a point that sets green. Everything moves so those become the world's axes, and the view goes with it. Undo puts it all back in one step.
+- Also recent: text (Tools > Text, three fonts come with Prism), dimensions (Tools > Dimensions), section planes (Tools > Section Plane).
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

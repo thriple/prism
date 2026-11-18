@@ -330,6 +330,53 @@ fn section_planes_round_trip() {
     assert_eq!(d2.assembly().sections().0.len(), 3);
 }
 
+/// Construction planes are saved and read back exactly (schema 14); a file
+/// with none has no `planes.json`.
+#[test]
+fn construction_planes_round_trip() {
+    let mut d = prism_tools::scenes::pocket();
+    let plain = write(
+        &Contents {
+            assembly: d.assembly().clone(),
+            settings: Default::default(),
+        },
+        "test",
+    );
+    assert!(!String::from_utf8_lossy(&plain).contains("planes.json"));
+    d.run(Command::AddWorkPlane {
+        origin: DVec3::new(1.0 / 3.0, 0.5, 1.0),
+        normal: DVec3::new(0.3, -0.2, 0.9),
+    });
+    d.run(Command::AddWorkPlane {
+        origin: DVec3::new(0.0, 0.0, 2.0),
+        normal: DVec3::Z,
+    });
+    let first = d.assembly().work_planes().0.keys().next().copied().unwrap();
+    d.run(Command::RenameWorkPlane {
+        id: first,
+        name: "Wall".into(),
+    });
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = write(&c, "test");
+    let back = read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    assert_eq!(back.assembly.work_planes().0.len(), 2);
+    assert_eq!(
+        back.assembly.active_work_plane().map(|(id, _)| id),
+        c.assembly.active_work_plane().map(|(id, _)| id)
+    );
+    assert_eq!(write(&back, "test"), bytes);
+    let mut d2 = prism_doc::Document::with_assembly(back.assembly);
+    d2.run(Command::AddWorkPlane {
+        origin: DVec3::ZERO,
+        normal: DVec3::X,
+    });
+    assert_eq!(d2.assembly().work_planes().0.len(), 3);
+}
+
 /// Dimensions are saved and read back exactly (schema 13); a file with
 /// none has no `dimensions.json`.
 #[test]

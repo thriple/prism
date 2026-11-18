@@ -106,6 +106,33 @@ impl Host for AppHost<'_> {
                 }
                 self.sections()
             }
+            "list_construction_planes" => self.work_planes(),
+            "add_construction_plane" => {
+                let origin = args.get("origin").and_then(parse_point);
+                let normal = args.get("normal").and_then(parse_point);
+                let (Some(origin), Some(normal)) = (origin, normal) else {
+                    return Err("origin and normal are [x, y, z]".into());
+                };
+                match self.viewport.session.add_work_plane(origin, normal) {
+                    Some(id) => json!({"id": id, "planes": self.work_planes()}),
+                    None => return Err("that is not a plane: the normal has no length".into()),
+                }
+            }
+            "set_construction_plane_active" => {
+                let id = args
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .ok_or("id is the number from list_construction_planes")?;
+                let active = args.get("active").and_then(Value::as_bool).unwrap_or(true);
+                if !self
+                    .viewport
+                    .session
+                    .set_work_plane_active(id as u32, active)
+                {
+                    return Err(format!("no construction plane {id}"));
+                }
+                self.work_planes()
+            }
             "paint" => self.paint(args)?,
             "replay_session" => replay(args)?,
             "run_action" => self.run(args.get("id").and_then(Value::as_str))?,
@@ -455,6 +482,26 @@ impl AppHost<'_> {
                     "name": s.name,
                     "origin": point(s.origin),
                     "normal": point(s.normal),
+                    "active": active == Some(*id),
+                })
+            })
+            .collect();
+        json!(rows)
+    }
+
+    fn work_planes(&self) -> Value {
+        let asm = self.viewport.session.document().assembly();
+        let active = asm.active_work_plane().map(|(id, _)| id);
+        let rows: Vec<Value> = asm
+            .work_planes()
+            .0
+            .iter()
+            .map(|(id, p)| {
+                json!({
+                    "id": id.0,
+                    "name": p.name,
+                    "origin": point(p.origin),
+                    "normal": point(p.normal),
                     "active": active == Some(*id),
                 })
             })
@@ -1141,6 +1188,50 @@ mod tests {
             .is_err()
         );
         assert!(h.call("add_section", &json!({"origin": [0, 0]})).is_err());
+    }
+
+    #[test]
+    fn construction_planes_are_listed_added_and_switched() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_tools::scenes::pocket());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        assert_eq!(
+            value(h.call("list_construction_planes", &json!({}))),
+            json!([])
+        );
+        let r = value(h.call(
+            "add_construction_plane",
+            &json!({"origin": [0.0, 0.0, 1.0], "normal": [0.0, 0.0, 2.0]}),
+        ));
+        assert_eq!(r["id"], 0);
+        assert_eq!(r["planes"][0]["normal"], json!([0.0, 0.0, 1.0]));
+        assert_eq!(r["planes"][0]["active"], true);
+        let r = value(h.call(
+            "set_construction_plane_active",
+            &json!({"id": 0, "active": false}),
+        ));
+        assert_eq!(r[0]["active"], false);
+        assert!(
+            h.call("set_construction_plane_active", &json!({"id": 7}))
+                .is_err()
+        );
+        assert!(
+            h.call(
+                "add_construction_plane",
+                &json!({"origin": [0, 0, 0], "normal": [0, 0, 0]})
+            )
+            .is_err()
+        );
+        assert!(
+            h.call("add_construction_plane", &json!({"origin": [0, 0]}))
+                .is_err()
+        );
     }
 
     #[test]

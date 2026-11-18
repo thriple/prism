@@ -182,7 +182,10 @@ impl Session {
         let at = match r.b {
             None => i.point,
             Some(b) => {
-                let snapped = !matches!(i.kind, Kind::OnFace | Kind::OnGround | Kind::Free);
+                let snapped = !matches!(
+                    i.kind,
+                    Kind::OnFace | Kind::OnPlane | Kind::OnGround | Kind::Free
+                );
                 let n = self.rrect_plane(r.a, b, r.normal, view);
                 if snapped && self.lock == Lock::None {
                     i.point

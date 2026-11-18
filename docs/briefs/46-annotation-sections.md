@@ -37,8 +37,10 @@ XL: five parts.
 - **Built as:** NOTES "Annotation & Sections part 3". Not built: exact glyph curves, text along a path, editable text, bold and italic, alignment, screen labels.
 - **Tests:** layout (heights, holes, widths, lines, missing characters); faces with holes, closed solids; the command, its group and undo; the tool on the ground and on a face; the MCP call; a screenshot of solid text in each font.
 
-## Part 4: Model axes and Construction Planes (outline)
+## Part 4: Model axes and Construction Planes
 - The model's own axes: the Axes tool at the top level moves the model's origin and directions (a command that transforms everything, one undo step, guides and section planes included). Construction Planes: a named plane the drawing tools use as their working plane, with inference.
+- **Built as (2026-11-18):** see NOTES "Annotation & Sections part 4". `Command::ChangeModelAxes` moves everything (guides, groups, section and construction planes, dimensions) by the frame's inverse, and the camera goes with it. Construction planes are document objects (schema 14, `planes.json`); `Kind::OnPlane` lets the cursor land on the one in use, so every drawing tool draws on it; Construction Plane tool, Edit > Construction Plane, View > Construction Planes, MCP `list_construction_planes`, `add_construction_plane`, `set_construction_plane_active`. Not built: moving a plane after placing it, typed distances, a plane from three points, a grid on the plane, Text and Dimensions using it.
+- **Tests:** model axes move everything and undo exactly; a property test that shapes keep their size; planes' commands, file round trip and golden; the tool on the ground; a rectangle drawn on a wall plane; hidden planes are not used; a face in front still wins; the MCP calls.
 
 ## Out of scope for this chunk
 - Section planes in the renderer's path-traced output (Render chunk); scenes; dimension styles beyond one set; text along a path (a later pass).

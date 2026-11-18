@@ -287,6 +287,38 @@ pub fn tools() -> Value {
             },
         },
         {
+            "name": "list_construction_planes",
+            "title": "List construction planes",
+            "description": "The document's construction planes: id, name, origin, normal and whether it is the working plane the drawing tools use. They change no geometry.",
+            "inputSchema": none,
+        },
+        {
+            "name": "add_construction_plane",
+            "title": "Add a construction plane",
+            "description": "Add a construction plane through `origin` [x, y, z] (metres) square to `normal` [x, y, z]. It becomes the working plane: the cursor lands on it and the drawing tools draw on it. One undo step (run_action edit.undo). Returns its id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "origin": {"type": "array", "items": {"type": "number"}},
+                    "normal": {"type": "array", "items": {"type": "number"}},
+                },
+                "required": ["origin", "normal"],
+            },
+        },
+        {
+            "name": "set_construction_plane_active",
+            "title": "Use a construction plane, or stop",
+            "description": "Make plane `id` (from list_construction_planes) the working plane (`active` true, the default), or stop using it. Only one is in use at a time.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "active": {"type": "boolean"},
+                },
+                "required": ["id"],
+            },
+        },
+        {
             "name": "paint",
             "title": "Paint faces or groups",
             "description": "Paint faces (by id, from get_geometry) or the selection with a material, in one undoable step. The material is an existing one by `material` (its id or name, from get_model), a new plain colour by `colour` (\"#rrggbb\", with an optional `name`), or `default` (back to Default). `side` is front (the outside, the default), back, or both. With `selection`, the selected faces and groups are painted (a group as a whole: its Default faces show the material). The Paint Bucket itself is tool.paint in use_tool, whose clicks take `keys` (ctrl fills connected, shift replaces everywhere, ctrl+shift in the open group, alt samples).",
@@ -558,6 +590,9 @@ mod tests {
                 "list_sections",
                 "add_section",
                 "set_section_active",
+                "list_construction_planes",
+                "add_construction_plane",
+                "set_construction_plane_active",
                 "paint",
                 "screenshot",
                 "replay_session",

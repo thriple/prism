@@ -75,6 +75,8 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             11 => raw,
             // Schema 13 adds dimensions (`dimensions.json`, optional).
             12 => raw,
+            // Schema 14 adds construction planes (`planes.json`, optional).
+            13 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

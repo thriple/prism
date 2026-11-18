@@ -73,12 +73,13 @@ pub fn guide(tool: &str) -> Option<Guide> {
             ],
         ),
         s::AXES_TOOL => g(
-            "Set a group's or component's own axes: its origin and directions.",
+            "Set the axes of a group, a component, or the whole model: an origin and directions.",
             &[
-                "Open the group first (double-click it), or right-click it and pick Change Axes.",
+                "In a group (double-click it, or right-click it and pick Change Axes) only that group's axes change.",
+                "At the top level it sets the model's own axes: everything moves so they become the world's, and the view goes with it.",
                 "Click the new origin.",
                 "Click a point on the red axis, then a point that sets green.",
-                "Nothing moves: only the axes change, for every copy of a component.",
+                "A group's contents stay where they are; its axes change for every copy of a component.",
                 "Edit > Axes > Reset Axes squares them again; Axes to Centre moves the origin to the middle.",
             ],
         ),
@@ -89,6 +90,15 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Outline makes edges only, Face flat faces, Solid pulls them out by the depth.",
                 "Click where it goes: on a face it lies on that face, reading upright; elsewhere on the ground.",
                 "The text becomes a group named after it; Undo removes it. The ghost shows where it will land.",
+            ],
+        ),
+        s::CPLANE_TOOL => g(
+            "Set a plane to draw on, anywhere in space.",
+            &[
+                "Click where it goes: it lies square to the face under the cursor, or on the ground.",
+                "The arrows lock it square to an axis; the click snaps like any drawing tool.",
+                "Then every drawing tool draws on it, in front of the ground and what is behind it.",
+                "Edit > Construction Plane stops using it or deletes it; View > Construction Planes hides them.",
             ],
         ),
         s::DIM_TOOL => g(

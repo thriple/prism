@@ -118,7 +118,10 @@ impl Session {
         // The end of a 2-point arc, and the 3-point arc's later points, go
         // where they snap even off the first plane: the plane then turns to
         // hold them (`chord_plane`).
-        let snapped = !matches!(i.kind, Kind::OnFace | Kind::OnGround | Kind::Free);
+        let snapped = !matches!(
+            i.kind,
+            Kind::OnFace | Kind::OnPlane | Kind::OnGround | Kind::Free
+        );
         let locked = self.lock != prism_infer::Lock::None;
         if snapped && !locked && !by_centre(&self.tool) && (op.pts.len() == 1 || self.tool == ARC3)
         {

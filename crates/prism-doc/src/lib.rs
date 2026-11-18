@@ -14,7 +14,7 @@ pub mod material;
 
 pub use assembly::{
     Assembly, Attributes, DefId, Definition, DimId, Dimension, Instance, InstanceId, NESTED,
-    Placed, ROOT, Section, SectionId, SolidOp, TWO_SOLIDS, Tag, TagId,
+    Placed, ROOT, Section, SectionId, SolidOp, TWO_SOLIDS, Tag, TagId, WorkPlane, WorkPlaneId,
 };
 pub use image::{Image, ImageId, Pixels, Texture};
 pub use material::{FaceSide, Material, Principled};
@@ -275,6 +275,12 @@ pub enum Command {
         instance: InstanceId,
         axes: DAffine3,
     },
+    /// The model's own axes (Annotation & Sections part 4): `axes`, a rigid
+    /// frame in world coordinates, becomes the world's origin and
+    /// directions. Everything moves with it, one undo step.
+    ChangeModelAxes {
+        axes: DAffine3,
+    },
     /// Move, rotate or scale whole groups.
     Place {
         instances: BTreeSet<InstanceId>,
@@ -312,6 +318,28 @@ pub enum Command {
     MoveSection {
         id: SectionId,
         origin: DVec3,
+    },
+    /// A new construction plane (Annotation & Sections part 4), in world
+    /// coordinates. It becomes the working plane the drawing tools use.
+    AddWorkPlane {
+        origin: DVec3,
+        normal: DVec3,
+    },
+    MoveWorkPlane {
+        id: WorkPlaneId,
+        origin: DVec3,
+    },
+    /// Make the plane the working plane, or stop it being one.
+    SetWorkPlaneActive {
+        id: WorkPlaneId,
+        active: bool,
+    },
+    RenameWorkPlane {
+        id: WorkPlaneId,
+        name: String,
+    },
+    DeleteWorkPlane {
+        id: WorkPlaneId,
     },
     /// Cut away the other side.
     FlipSection {
@@ -617,6 +645,7 @@ impl Command {
             Command::MakeComponent { .. } => "Make Component",
             Command::MakeUnique { .. } => "Make Unique",
             Command::ChangeAxes { .. } => "Change Axes",
+            Command::ChangeModelAxes { .. } => "Change Model Axes",
             Command::Rename { .. } | Command::RenameTag { .. } => "Rename",
             Command::SetHidden { hidden: true, .. } => "Hide",
             Command::SetHidden { .. } => "Unhide",
@@ -636,6 +665,12 @@ impl Command {
             Command::Paste { .. } => "Paste",
             Command::AddSection { .. } => "Section Plane",
             Command::MoveSection { .. } => "Move Section Plane",
+            Command::AddWorkPlane { .. } => "Construction Plane",
+            Command::MoveWorkPlane { .. } => "Move Construction Plane",
+            Command::SetWorkPlaneActive { active: true, .. } => "Use Construction Plane",
+            Command::SetWorkPlaneActive { .. } => "Stop Using Construction Plane",
+            Command::RenameWorkPlane { .. } => "Rename Construction Plane",
+            Command::DeleteWorkPlane { .. } => "Delete Construction Plane",
             Command::FlipSection { .. } => "Flip Section Plane",
             Command::SetSectionActive { active: true, .. } => "Activate Section Plane",
             Command::SetSectionActive { .. } => "Deactivate Section Plane",
@@ -953,6 +988,13 @@ impl Command {
                 asm.add_section(*origin, *normal);
             }
             Command::MoveSection { id, origin } => asm.move_section(*id, *origin),
+            Command::AddWorkPlane { origin, normal } => {
+                asm.add_work_plane(*origin, *normal);
+            }
+            Command::MoveWorkPlane { id, origin } => asm.move_work_plane(*id, *origin),
+            Command::SetWorkPlaneActive { id, active } => asm.set_active_work_plane(*id, *active),
+            Command::RenameWorkPlane { id, name } => asm.rename_work_plane(*id, name),
+            Command::DeleteWorkPlane { id } => asm.delete_work_plane(*id),
             Command::FlipSection { id } => asm.flip_section(*id),
             Command::SetSectionActive { id, active } => asm.set_active_section(*id, *active),
             Command::RenameSection { id, name } => asm.rename_section(*id, name),
@@ -989,6 +1031,9 @@ impl Command {
                 if let Some((_, inst)) = asm.find_instance(*instance) {
                     asm.change_axes(inst.def, axes);
                 }
+            }
+            Command::ChangeModelAxes { axes } => {
+                asm.change_model_axes(axes);
             }
             Command::Rename { def, name } => {
                 asm.rename(*def, name);
@@ -1347,6 +1392,7 @@ impl Command {
             | Command::MakeComponent { .. }
             | Command::MakeUnique { .. }
             | Command::ChangeAxes { .. }
+            | Command::ChangeModelAxes { .. }
             | Command::Rename { .. }
             | Command::SetHidden { .. }
             | Command::NameInstance { .. }
@@ -1366,6 +1412,11 @@ impl Command {
             | Command::DeleteDimension { .. }
             | Command::AddSection { .. }
             | Command::MoveSection { .. }
+            | Command::AddWorkPlane { .. }
+            | Command::MoveWorkPlane { .. }
+            | Command::SetWorkPlaneActive { .. }
+            | Command::RenameWorkPlane { .. }
+            | Command::DeleteWorkPlane { .. }
             | Command::FlipSection { .. }
             | Command::SetSectionActive { .. }
             | Command::RenameSection { .. }
@@ -1503,6 +1554,16 @@ impl Document {
     /// The command Undo would undo.
     pub fn undo_name(&self) -> Option<&'static str> {
         self.done.last().map(|s| s.command.name())
+    }
+
+    /// The command Undo would undo.
+    pub fn undo_command(&self) -> Option<&Command> {
+        self.done.last().map(|s| &s.command)
+    }
+
+    /// The command Redo would run again.
+    pub fn redo_command(&self) -> Option<&Command> {
+        self.undone.last().map(|s| &s.command)
     }
 
     pub fn redo_name(&self) -> Option<&'static str> {

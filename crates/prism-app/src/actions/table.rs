@@ -282,6 +282,20 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "cplane.active",
+        name: "Use as Working Plane",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "cplane.delete",
+        name: "Delete Construction Plane",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "dim.delete",
         name: "Delete Dimension",
         key: "",
@@ -581,6 +595,13 @@ pub const ACTIONS: &[RawAction] = &[
     RawAction {
         id: "view.dimensions",
         name: "Dimensions",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "view.cplanes",
+        name: "Construction Planes",
         key: "",
         proto_run: "",
         when: "",
@@ -1693,6 +1714,15 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                 &[Item::Action("tool.dim"), Item::Action("dim.delete")],
             ),
             Item::Sub(
+                "Construction Plane",
+                &[
+                    Item::Action("tool.cplane"),
+                    Item::Separator,
+                    Item::Action("cplane.active"),
+                    Item::Action("cplane.delete"),
+                ],
+            ),
+            Item::Sub(
                 "Section Plane",
                 &[
                     Item::Action("tool.section"),
@@ -1784,6 +1814,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Separator,
             Item::Action("view.section"),
             Item::Action("view.sectionplanes"),
+            Item::Action("view.cplanes"),
             Item::Action("view.dimensions"),
         ],
     ),
@@ -1891,6 +1922,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("tool.text"),
             Item::Action("tool.axes"),
             Item::Action("tool.section"),
+            Item::Action("tool.cplane"),
             Item::Separator,
             Item::Sub(
                 "Fabrication",
@@ -2431,6 +2463,14 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     (
         "Text: words set down as geometry in three bundled fonts (Text tool)",
+        true,
+    ),
+    (
+        "Model axes: set the whole model's origin and directions (Axes tool at the top level)",
+        true,
+    ),
+    (
+        "Construction planes: a plane to draw on anywhere, with inference (Construction Plane tool)",
         true,
     ),
     (
