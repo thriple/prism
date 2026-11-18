@@ -34,10 +34,8 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | `tool.layflat` | Lay Flat | Shapes & Placement |
 | `tool.hole` | Hole | Shapes & Placement |
 | `tool.subd` | Smooth / Subdivide | Cage & Subdivision |
-| `view.section` | Section Display | Annotation & Sections |
 | `tool.dim` | Dimensions | Annotation & Sections |
 | `tool.text` | Text | Annotation & Sections |
-| `tool.section` | Section Plane | Annotation & Sections |
 | `tool.cplane` | Construction Plane | Annotation & Sections |
 | — | Snap to grid (optional) | Annotation & Sections |
 | `tol.mod` | Tolerance Modifier | Fit & Mechanisms |

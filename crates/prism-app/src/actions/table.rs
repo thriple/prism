@@ -261,6 +261,27 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "section.flip",
+        name: "Flip Section Plane",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "section.active",
+        name: "Section Plane Cuts",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "section.delete",
+        name: "Delete Section Plane",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "flip.x",
         name: "X (red)",
         key: "",
@@ -546,6 +567,13 @@ pub const ACTIONS: &[RawAction] = &[
     RawAction {
         id: "view.section",
         name: "Section Display",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "view.sectionplanes",
+        name: "Section Planes",
         key: "",
         proto_run: "",
         when: "",
@@ -1646,6 +1674,16 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                     Item::Action("axes.centre"),
                 ],
             ),
+            Item::Sub(
+                "Section Plane",
+                &[
+                    Item::Action("tool.section"),
+                    Item::Separator,
+                    Item::Action("section.flip"),
+                    Item::Action("section.active"),
+                    Item::Action("section.delete"),
+                ],
+            ),
             Item::Separator,
             Item::Sub(
                 "Flip Along",
@@ -1727,6 +1765,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("view.styles"),
             Item::Separator,
             Item::Action("view.section"),
+            Item::Action("view.sectionplanes"),
         ],
     ),
     (
@@ -2361,6 +2400,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     (
         "Group axes: set a group's or component's origin and directions (Axes tool, Reset Axes, Axes to Centre)",
+        true,
+    ),
+    (
+        "Section planes: cut the model open in the viewport (Section Plane tool, Section Display)",
         true,
     ),
     (

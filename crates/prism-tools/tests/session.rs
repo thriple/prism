@@ -6519,3 +6519,126 @@ fn new_loop_shows_at_the_cursor_before_the_pull() {
     d.send(Input::AltTap);
     assert!(!label(&d));
 }
+
+// ---------- Section planes (Annotation & Sections part 1, brief 46) ----------
+
+fn move_to(d: &mut Driver, p: DVec3) {
+    let s = d.screen(p);
+    d.send(Input::Move { x: s.x, y: s.y });
+}
+
+#[test]
+fn the_section_tool_places_a_plane_on_a_face_then_moves_it() {
+    use prism_tools::session::SECTION_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.tool(SECTION_TOOL);
+    assert!(d.s.hint().contains("Click a face"), "{}", d.s.hint());
+    // A ghost lies on the face under the cursor; nothing is added yet.
+    d.hover(DVec3::new(0.4, 0.4, 2.0));
+    assert!(d.s.document().assembly().sections().0.is_empty());
+    // Click the top ring: a plane on it, facing the viewer.
+    d.click(DVec3::new(0.4, 0.4, 2.0));
+    let (id, sec) = d.s.document().assembly().active_section().expect("a plane");
+    assert!((sec.origin.z - 2.0).abs() < 1e-6, "{:?}", sec.origin);
+    assert_eq!(sec.normal, DVec3::Z, "its normal faces the viewer");
+    assert!(d.s.hint().contains("along its normal"));
+    // It follows the mouse along its normal; the next click sets it.
+    move_to(&mut d, DVec3::new(0.4, 0.4, 1.0));
+    d.click(DVec3::new(0.4, 0.4, 1.0));
+    let (_, sec) = d.s.document().assembly().active_section().expect("a plane");
+    assert!((sec.origin.z - 1.0).abs() < 0.02, "{:?}", sec.origin);
+    // The pocket's walls are cut at z = 1: a ring cap, 4×4 less 2.4×2.4.
+    let cut = d.s.scene().cut.as_ref().expect("the scene is cut");
+    assert_eq!(cut.caps, 1);
+    assert!((cut.cap_area - 10.24).abs() < 0.05, "{}", cut.cap_area);
+    let _ = id;
+    // Placing and moving is two undo steps; the model never changed.
+    let model = d.s.document().model().clone();
+    act(&mut d, "edit.undo");
+    act(&mut d, "edit.undo");
+    assert!(d.s.document().assembly().sections().0.is_empty());
+    assert!(d.s.scene().cut.is_none());
+    assert_eq!(d.s.document().model(), &model);
+}
+
+#[test]
+fn esc_leaves_a_new_plane_where_it_was_placed() {
+    use prism_tools::session::SECTION_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.tool(SECTION_TOOL);
+    d.click(DVec3::new(0.4, 0.4, 2.0));
+    move_to(&mut d, DVec3::new(0.4, 0.4, 0.8));
+    d.send(Input::Key { key: Key::Escape });
+    let (_, sec) = d.s.document().assembly().active_section().expect("a plane");
+    assert!((sec.origin.z - 2.0).abs() < 1e-6, "{:?}", sec.origin);
+    assert_eq!(d.s.tool(), SECTION_TOOL);
+}
+
+#[test]
+fn a_plane_is_picked_up_by_its_outline_and_the_menu_commands_act_on_it() {
+    use prism_tools::session::SECTION_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.tool(SECTION_TOOL);
+    d.click(DVec3::new(0.4, 0.4, 2.0));
+    move_to(&mut d, DVec3::new(0.4, 0.4, 1.0));
+    d.click(DVec3::new(0.4, 0.4, 1.0));
+    // Flip: the other half is cut away.
+    act(&mut d, "section.flip");
+    let (_, sec) = d.s.document().assembly().active_section().unwrap();
+    assert_eq!(sec.normal, -DVec3::Z);
+    let tol = d.s.scene().tol.dist;
+    assert!(
+        d.s.scene()
+            .mesh
+            .indices
+            .iter()
+            .all(|i| d.s.scene().mesh.positions[*i as usize].z >= sec.origin.z - tol),
+        "only what is above the plane is left"
+    );
+    // Deactivate: the model shows whole again, the plane stays.
+    act(&mut d, "section.active");
+    assert!(d.s.document().assembly().active_section().is_none());
+    assert!(d.s.scene().cut.is_none());
+    assert!(d.s.has_sections());
+    // Activate again, then delete.
+    act(&mut d, "section.active");
+    assert!(d.s.scene().cut.is_some());
+    act(&mut d, "section.delete");
+    assert!(!d.s.has_sections());
+    assert!(d.s.scene().cut.is_none());
+}
+
+#[test]
+fn section_display_off_shows_the_whole_model() {
+    let mut doc = prism_tools::scenes::pocket();
+    doc.run(prism_doc::Command::AddSection {
+        origin: DVec3::new(0.0, 0.0, 1.0),
+        normal: DVec3::Z,
+    });
+    let mut d = Driver::new(doc);
+    assert!(d.s.scene().cut.is_some());
+    let mut v = d.s.view_style().clone();
+    v.section = false;
+    d.s.set_view_style(v);
+    assert!(d.s.scene().cut.is_none(), "Section Display is off");
+    let mut v = d.s.view_style().clone();
+    v.section = true;
+    d.s.set_view_style(v);
+    assert!(d.s.scene().cut.is_some());
+}
+
+#[test]
+fn a_cut_away_face_cannot_be_clicked() {
+    let mut doc = prism_tools::scenes::pocket();
+    doc.run(prism_doc::Command::AddSection {
+        origin: DVec3::new(0.0, 0.0, 1.0),
+        normal: DVec3::Z,
+    });
+    let mut d = Driver::new(doc);
+    // The ring on top (z = 2) is cut away: a click there finds what is
+    // behind it, not the ring.
+    let ring = prism_ops::face_at(d.s.document().model(), DVec3::new(0.4, 0.4, 2.0)).expect("ring");
+    d.tool(SELECT);
+    d.click(DVec3::new(0.4, 0.4, 2.0));
+    assert!(!d.s.selection().faces.contains(&ring));
+}

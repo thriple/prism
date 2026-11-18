@@ -48,6 +48,10 @@ pub struct ViewStyle {
     pub guides: bool,
     /// Hidden objects drawn as ghosts that can be picked and unhidden.
     pub hidden: bool,
+    /// Section Display: the active section plane cuts the model (Annotation
+    /// & Sections part 1), and whether the planes are drawn.
+    pub section: bool,
+    pub section_planes: bool,
     /// Points.
     pub line_width: f32,
     /// Points; 0 turns profiles off.
@@ -104,6 +108,8 @@ impl ViewStyle {
             grid: true,
             guides: true,
             hidden: false,
+            section: true,
+            section_planes: true,
             line_width: 1.5,
             // Profiles on by default (owner request, 2026-11-09).
             profile_width: 3.0,
@@ -239,6 +245,8 @@ impl ViewStyle {
             "view.grid" => self.grid,
             "view.guides" => self.guides,
             "view.hidden" => self.hidden,
+            "view.section" => self.section,
+            "view.sectionplanes" => self.section_planes,
             "view.xray" => self.xray,
             "view.wireframe" => self.face_style == FaceStyle::Wireframe,
             "view.basecolour" => self.face_style == FaceStyle::BaseColour,
@@ -264,6 +272,8 @@ impl ViewStyle {
             "view.grid" => &mut self.grid,
             "view.guides" => &mut self.guides,
             "view.hidden" => &mut self.hidden,
+            "view.section" => &mut self.section,
+            "view.sectionplanes" => &mut self.section_planes,
             "view.xray" => &mut self.xray,
             "view.shadow" => &mut self.shadows,
             "view.textures" => &mut self.textures,
@@ -295,7 +305,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 18] = [
+pub const TOGGLES: [&str; 20] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -304,6 +314,8 @@ pub const TOGGLES: [&str; 18] = [
     "view.grid",
     "view.guides",
     "view.hidden",
+    "view.section",
+    "view.sectionplanes",
     "view.xray",
     "view.wireframe",
     "view.basecolour",

@@ -42,6 +42,7 @@ mod materials;
 mod paint;
 mod round;
 mod scalebox;
+mod sections;
 mod shapes;
 mod shelling;
 mod smart;
@@ -67,6 +68,7 @@ pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
+pub use sections::{SECTION_TOOL, line_param};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
 pub use shelling::{SHELL, ShellPanel, ShellSet};
 pub use smart::BUDGET_MS as SMART_BUDGET_MS;
@@ -88,7 +90,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 39] = [
+pub const TOOLS: [&str; 40] = [
     SELECT,
     LINE,
     RECT,
@@ -132,6 +134,8 @@ pub const TOOLS: [&str; 39] = [
     draw::FREEHAND,
     // Group Axes (brief 36).
     axes::AXES_TOOL,
+    // Annotation & Sections part 1.
+    sections::SECTION_TOOL,
     // Solids & CAD part 2 (brief 39): the Solid menu's booleans.
     booleans::UNION,
     booleans::SUBTRACT,
@@ -572,6 +576,11 @@ pub struct Session {
     freehand: Option<draw::Freehand>,
     /// The Axes tool's clicks (brief 36).
     axes_op: Option<axes::AxesOp>,
+    /// The Section Plane tool (Annotation & Sections part 1): the plane
+    /// being moved, the one picked, and the ghost on the face under the cursor.
+    section_op: Option<sections::SectionOp>,
+    section_sel: Option<prism_doc::SectionId>,
+    section_ghost: Option<(DVec3, DVec3)>,
 }
 
 impl Session {
@@ -588,6 +597,9 @@ impl Session {
             rrect: None,
             freehand: None,
             axes_op: None,
+            section_op: None,
+            section_sel: None,
+            section_ghost: None,
             cage: None,
             cage_notice: None,
             curve_through: false,
@@ -705,7 +717,7 @@ impl Session {
         };
         // Groups, and materials' colours and textures, need the full build.
         let asm = s.doc.assembly();
-        if asm.has_instances() || !asm.materials().0.is_empty() {
+        if asm.has_instances() || !asm.materials().0.is_empty() || asm.active_section().is_some() {
             s.build_scene();
         }
         s
@@ -798,6 +810,7 @@ impl Session {
             || self.rrect.is_some()
             || self.freehand.is_some()
             || self.axes_op.is_some()
+            || self.section_op.is_some()
             || self.solid_first.is_some()
             || self.cage_start().is_some()
             || self.boxing.is_some()
@@ -961,6 +974,7 @@ impl Session {
             .rrect_hint()
             .or_else(|| self.freehand_hint())
             .or_else(|| self.axes_hint())
+            .or_else(|| self.section_hint())
             .or_else(|| self.solid_hint())
         {
             return h;
@@ -1272,6 +1286,8 @@ impl Session {
         self.rrect = None;
         self.freehand = None;
         self.axes_op = None;
+        self.section_op = None;
+        self.section_ghost = None;
         self.solid_first = None;
         self.cage_cancel();
         self.last_fillet = None;
@@ -1543,7 +1559,9 @@ impl Session {
             return;
         }
         // Guides and hidden objects change what the scene holds.
-        let rebuild = v.guides != self.view.guides || v.hidden != self.view.hidden;
+        let rebuild = v.guides != self.view.guides
+            || v.hidden != self.view.hidden
+            || v.section != self.view.section;
         self.view = v;
         self.style = self.view.apply(&Style::default());
         if rebuild {
@@ -1705,6 +1723,7 @@ impl Session {
             "axes.change" => self.change_axes(),
             "axes.reset" => self.reset_axes(false),
             "axes.centre" => self.reset_axes(true),
+            "section.flip" | "section.active" | "section.delete" => self.section_action(id),
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
@@ -1763,6 +1782,7 @@ impl Session {
             || self.tool == RRECT
             || self.tool == FREEHAND
             || self.tool == AXES_TOOL
+            || self.tool == SECTION_TOOL
             || self.cage_wants_inference()
             || self.edit_wants_inference()
             || self.pasting()
@@ -1914,6 +1934,7 @@ impl Session {
             self.shape_hover(s, &view);
             self.rrect_hover(s, &view);
             self.axes_hover();
+            self.section_hover(s, &view);
             self.arc_hover(s, &view);
             self.cage_hover();
             self.paste_hover(&view);
@@ -2032,6 +2053,7 @@ impl Session {
                 }
                 RRECT => self.rrect_press(s),
                 AXES_TOOL => self.axes_press(s),
+                SECTION_TOOL => self.section_press(s),
                 FREEHAND => self.freehand_press(s, shift),
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
@@ -2634,6 +2656,7 @@ impl Session {
         self.curve_overlay(&mut o);
         self.rrect_overlay(&mut o);
         self.axes_overlay(&mut o);
+        self.section_overlay(&mut o);
         self.freehand_overlay(&mut o);
         self.cage_overlay(&mut o);
         // The snap: its target, glyph and label.

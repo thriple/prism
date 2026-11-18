@@ -15,7 +15,7 @@ XL: five parts.
 5. **Leftovers**: snap to grid (optional), section planes in the export, MCP, docs.
 
 ## Part 1: Section Planes and Section Display
-- **Document.** A section plane is a document object: `{ id, name, origin, normal, active, visible }`, kept in the file (schema bump with a migration), in an open group's own coordinates when placed in a group. One undo step per edit: `Command::AddSection`, `MoveSection`, `FlipSection`, `SetSectionActive`, `DeleteSection`.
+- **Document.** A section plane is a document object: `{ id, name, origin, normal }` plus which one is active, kept in the file (schema 12, optional `sections.json`), in world coordinates (built so: one plane cuts the whole model). One undo step per edit: `Command::AddSection`, `MoveSection`, `FlipSection`, `SetSectionActive`, `DeleteSection`.
 - **Section Plane tool** (Tools > Section Plane; Construct toolbar; greyed until now). Hover over a face: a ghost plane lies on it with inference, aligned to that face's plane. Click places it. Hover empty space: it asks for a face or an axis (the measurement-box axis keys X, Y, Z choose one). Esc cancels.
 - **Cutting.** An active plane hides everything on its positive side in the viewport. The cut is a display effect: no geometry changes, picking ignores what is cut away, and export is unchanged (until part 5). Section Display (View > Section Display) turns every plane's cut on or off; Section Planes (View > Section Planes) shows or hides the plane drawings. Only one plane is active at a time (the newest placed or the one last Activated); the others stay as drawn.
 - **Cut face fill.** Closed solids show a flat cap where the plane cuts them (drawn in the section colour), so a cut solid does not look hollow. Open surfaces show no cap.
@@ -46,4 +46,6 @@ XL: five parts.
 
 ## Acceptance
 - [ ] A box is cut open by a plane dragged through it and the inside is capped (owner).
+
+**Built as (2026-11-18):** see NOTES "Annotation & Sections part 1". Not yet built from the list above: typing a distance, the context menu on a plane, and picking a plane with the Select tool (in NOTES' left-over list).
 - [ ] PLAN, NOTES, the Planned Features list and the feature map are updated.

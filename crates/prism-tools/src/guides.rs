@@ -82,6 +82,16 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Edit > Axes > Reset Axes squares them again; Axes to Centre moves the origin to the middle.",
             ],
         ),
+        s::SECTION_TOOL => g(
+            "Cut the model open with a plane, to look inside it.",
+            &[
+                "Click a flat face to place a plane on it; it faces you.",
+                "Move the mouse to slide it along its normal, then click to set it.",
+                "Click a plane's outline to pick it up again. Esc leaves it where it is.",
+                "Edit > Section Plane flips it, turns its cutting on or off, or deletes it.",
+                "View > Section Display and Section Planes show or hide the cut and the outlines. The model itself never changes.",
+            ],
+        ),
         s::RRECT => g(
             "Draw a rectangle at any angle, on any plane.",
             &[

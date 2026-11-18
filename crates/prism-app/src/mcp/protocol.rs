@@ -217,6 +217,38 @@ pub fn tools() -> Value {
             },
         },
         {
+            "name": "list_sections",
+            "title": "List section planes",
+            "description": "The document's section planes: id, name, origin, normal (the side it points to is cut away) and whether it is the one that cuts. Sections cut the viewport only; the model is not changed.",
+            "inputSchema": none,
+        },
+        {
+            "name": "add_section",
+            "title": "Add a section plane",
+            "description": "Add a section plane through `origin` [x, y, z] (metres) whose `normal` [x, y, z] points to the side to cut away. It becomes the plane that cuts. One undo step (run_action edit.undo). Returns its id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "origin": {"type": "array", "items": {"type": "number"}},
+                    "normal": {"type": "array", "items": {"type": "number"}},
+                },
+                "required": ["origin", "normal"],
+            },
+        },
+        {
+            "name": "set_section_active",
+            "title": "Turn a section plane's cutting on or off",
+            "description": "Make plane `id` (from list_sections) the one that cuts (`active` true, the default), or stop it cutting. Only one cuts at a time.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "active": {"type": "boolean"},
+                },
+                "required": ["id"],
+            },
+        },
+        {
             "name": "paint",
             "title": "Paint faces or groups",
             "description": "Paint faces (by id, from get_geometry) or the selection with a material, in one undoable step. The material is an existing one by `material` (its id or name, from get_model), a new plain colour by `colour` (\"#rrggbb\", with an optional `name`), or `default` (back to Default). `side` is front (the outside, the default), back, or both. With `selection`, the selected faces and groups are painted (a group as a whole: its Default faces show the material). The Paint Bucket itself is tool.paint in use_tool, whose clicks take `keys` (ctrl fills connected, shift replaces everywhere, ctrl+shift in the open group, alt samples).",
@@ -482,6 +514,9 @@ mod tests {
                 "list_actions",
                 "get_geometry",
                 "use_tool",
+                "list_sections",
+                "add_section",
+                "set_section_active",
                 "paint",
                 "screenshot",
                 "replay_session",

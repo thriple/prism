@@ -230,6 +230,7 @@ impl Session {
         if !self.view.hidden {
             scene.drop_soft();
         }
+        self.section_cut(asm, &mut scene);
         Built {
             scene,
             owners,
@@ -261,6 +262,7 @@ impl Session {
         if !self.view.hidden {
             own.drop_soft();
         }
+        self.section_cut(self.doc.assembly(), &mut own);
         own
     }
 

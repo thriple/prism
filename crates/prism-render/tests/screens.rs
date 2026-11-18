@@ -1307,3 +1307,56 @@ fn a_parallel_front_view_shows_a_square() {
     img.save("parallel-iso");
     assert_eq!(back_pixels(&img), 0);
 }
+
+/// Section planes (Annotation & Sections part 1): a box cut by a plane
+/// shows its flat cap in the section colour, from above and from beside,
+/// and nothing of what was cut away.
+#[test]
+fn a_cut_box_shows_its_cap() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let m = pocket_box(0.0001, 0.001);
+    let style = Style::default();
+    let cap = style.feedback.section_cap;
+    let mut scene = prism_render::Scene::build(&m);
+    scene.cut_by(
+        prism_view::section::CutPlane {
+            origin: DVec3::new(2.0, 2.0, 1.0),
+            normal: DVec3::Z,
+        },
+        cap,
+    );
+    let cam = looking_at(DVec3::new(2.0, 2.0, 1.0), 11.0, 30.0, 45.0);
+    g.renderer.resize(&g.device, 480, 320);
+    g.renderer.set_scene(&g.device, &g.queue, &scene, &style);
+    g.renderer
+        .set_highlight(&g.device, &scene, &Highlight::default(), &style);
+    let img = g.draw(cam, 480, 320, 1.0, &style, scene.bounds);
+    img.save("section-cap");
+    // The cap is lit, so match its hue: red-pink, clearly not grey.
+    let capped = img
+        .px
+        .iter()
+        .filter(|p| {
+            p[0] > 120
+                && i32::from(p[0]) > i32::from(p[1]) + 50
+                && i32::from(p[0]) > i32::from(p[2]) + 30
+        })
+        .count();
+    assert!(capped > 4000, "the cap shows ({capped} pixels)");
+    // Without the cut there is none of it.
+    let whole = prism_render::Scene::build(&m);
+    g.renderer.set_scene(&g.device, &g.queue, &whole, &style);
+    g.renderer
+        .set_highlight(&g.device, &whole, &Highlight::default(), &style);
+    let img = g.draw(cam, 480, 320, 1.0, &style, whole.bounds);
+    let none = img
+        .px
+        .iter()
+        .filter(|p| {
+            p[0] > 120
+                && i32::from(p[0]) > i32::from(p[1]) + 50
+                && i32::from(p[0]) > i32::from(p[2]) + 30
+        })
+        .count();
+    assert!(none < 400, "no cap without the cut ({none})");
+}

@@ -28,6 +28,8 @@ pub enum When {
     HasSelection,
     /// Groups are selected (Explode).
     HasGroups,
+    /// The document has a section plane (Annotation & Sections part 1).
+    HasSections,
     /// A recent-file slot: enabled while that many files are remembered.
     Recent(usize),
     /// A label only ("No recent files").
@@ -90,6 +92,8 @@ pub struct Context {
     pub has_selection: bool,
     /// Groups are selected.
     pub has_groups: bool,
+    /// The document has a section plane.
+    pub has_sections: bool,
     /// How many recent files are remembered.
     pub recent: usize,
 }
@@ -145,9 +149,11 @@ const EVENTS: [&str; 8] = [
     "cmd:shadow",
 ];
 /// Settings that show a check mark while on.
-const TOGGLES: [&str; 22] = [
+const TOGGLES: [&str; 24] = [
     "view.smart",
     "view.hidden",
+    "view.section",
+    "view.sectionplanes",
     "view.wireframe",
     "view.basecolour",
     "view.colour",
@@ -235,6 +241,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
             "edit.hide" | "edit.unhide" | "edit.unhideall" | "edit.unhidelast" | "edit.isolate"
         )
         || id.starts_with("flip.")
+        // Annotation & Sections part 1.
+        || id.starts_with("section.")
         || id == "win.nexttab"
         || id == "win.prevtab"
     {
@@ -323,6 +331,7 @@ impl Registry {
                         {
                             When::HasSelection
                         }
+                        None if r.id.starts_with("section.") => When::HasSections,
                         None if r.id == "edit.explode"
                             || r.id == "edit.unique"
                             || r.id == "edit.hide"
@@ -369,6 +378,7 @@ impl Registry {
                     When::CanRedo => ctx.can_redo,
                     When::HasSelection => ctx.has_selection,
                     When::HasGroups => ctx.has_groups,
+                    When::HasSections => ctx.has_sections,
                     When::Recent(n) => n <= ctx.recent,
                     When::Never => false,
                 }
@@ -386,6 +396,7 @@ impl Registry {
             When::CanRedo if !ctx.can_redo => Some("Nothing to redo"),
             When::HasSelection if !ctx.has_selection => Some("Select something first"),
             When::HasGroups if !ctx.has_groups => Some("Select a group first"),
+            When::HasSections if !ctx.has_sections => Some("Place a section plane first"),
             When::Recent(n) if n > ctx.recent => Some("No file here yet"),
             When::Never => Some("Files you open or save are listed here"),
             _ => None,
@@ -580,7 +591,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 25] = [
+const BUILT_BEHAVIOURS: [&str; 26] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -606,6 +617,8 @@ const BUILT_BEHAVIOURS: [&str; 25] = [
     "Export for game engines: groups and components as named objects in GLB, components shared",
     // Group Axes (brief 36).
     "Group axes: set a group's or component's origin and directions (Axes tool, Reset Axes, Axes to Centre)",
+    // Annotation & Sections part 1.
+    "Section planes: cut the model open in the viewport (Section Plane tool, Section Display)",
     // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.
     "Exact circles, arcs and NURBS",
     "Model Health: reversed faces, holes, interior faces, nesting counts",

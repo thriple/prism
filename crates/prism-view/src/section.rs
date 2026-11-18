@@ -65,8 +65,11 @@ impl Scene {
         let old = std::mem::take(&mut self.mesh.indices);
         for f in &mut self.faces {
             let start = self.mesh.indices.len() as u32;
-            for t in old[f.tris.start as usize..f.tris.end as usize].chunks_exact(3) {
-                clip_triangle(&mut self.mesh, [t[0], t[1], t[2]], &plane, eps, &mut segments);
+            for t in old[f.tris.start as usize..f.tris.end as usize]
+                .as_chunks::<3>()
+                .0
+            {
+                clip_triangle(&mut self.mesh, *t, &plane, eps, &mut segments);
             }
             f.tris = start..self.mesh.indices.len() as u32;
         }
@@ -141,11 +144,9 @@ impl Scene {
         self.palette.insert(CAP_MATERIAL, cap);
         let mut made = 0;
         let mut area = 0.0;
-        for i in (0..flat.len()).filter(|&i| depth[i] % 2 == 0) {
+        for i in (0..flat.len()).filter(|&i| depth[i].is_multiple_of(2)) {
             let holes: Vec<usize> = (0..flat.len())
-                .filter(|&j| {
-                    depth[j] == depth[i] + 1 && inside(&flat[i], flat[j][0]) && j != i
-                })
+                .filter(|&j| depth[j] == depth[i] + 1 && inside(&flat[i], flat[j][0]) && j != i)
                 .collect();
             let outer = &flat[i];
             let hole_pts: Vec<Vec<DVec2>> = holes.iter().map(|&j| flat[j].clone()).collect();
@@ -267,19 +268,26 @@ fn clip_triangle(
         if side[a] * side[b] < 0 {
             let s = d[a] / (d[a] - d[b]);
             let (ia, ib) = (t[a] as usize, t[b] as usize);
-            let n = mesh.normals[ia].lerp(mesh.normals[ib], s).normalize_or_zero();
+            let n = mesh.normals[ia]
+                .lerp(mesh.normals[ib], s)
+                .normalize_or_zero();
             let uv = mesh.uvs[ia].lerp(mesh.uvs[ib], s);
             let at = mesh.positions[ia].lerp(mesh.positions[ib], s);
             let face = mesh.faces[ia];
             mesh.positions.push(at);
-            mesh.normals.push(if n == DVec3::ZERO { mesh.normals[ia] } else { n });
+            mesh.normals.push(if n == DVec3::ZERO {
+                mesh.normals[ia]
+            } else {
+                n
+            });
             mesh.uvs.push(uv);
             mesh.faces.push(face);
             poly.push(mesh.positions.len() as u32 - 1);
         }
     }
     for k in 1..poly.len().saturating_sub(1) {
-        mesh.indices.extend_from_slice(&[poly[0], poly[k], poly[k + 1]]);
+        mesh.indices
+            .extend_from_slice(&[poly[0], poly[k], poly[k + 1]]);
     }
 }
 
@@ -299,15 +307,16 @@ fn kept_run(pts: &[DVec3], plane: &CutPlane, eps: f64) -> Option<Vec<DVec3>> {
         if d[k] <= eps {
             cur.push(pts[k]);
         }
-        if let Some(&next) = d.get(k + 1) {
-            if (d[k] <= eps) != (next <= eps) && (d[k] - next).abs() > 0.0 {
-                let at = pts[k].lerp(pts[k + 1], d[k] / (d[k] - next));
-                if d[k] <= eps {
-                    cur.push(at);
-                    runs.push(std::mem::take(&mut cur));
-                } else {
-                    cur = vec![at];
-                }
+        if let Some(&next) = d.get(k + 1)
+            && (d[k] <= eps) != (next <= eps)
+            && (d[k] - next).abs() > 0.0
+        {
+            let at = pts[k].lerp(pts[k + 1], d[k] / (d[k] - next));
+            if d[k] <= eps {
+                cur.push(at);
+                runs.push(std::mem::take(&mut cur));
+            } else {
+                cur = vec![at];
             }
         }
     }
@@ -412,14 +421,20 @@ mod tests {
         // Nothing drawn above the plane; the cap is on it, facing up.
         let tol = s.tol.dist;
         assert!(corners(&s).all(|p| p.z <= 1.0 + tol));
-        assert!(s.edges.iter().all(|e| e.a.z <= 1.0 + tol && e.b.z <= 1.0 + tol));
+        assert!(
+            s.edges
+                .iter()
+                .all(|e| e.a.z <= 1.0 + tol && e.b.z <= 1.0 + tol)
+        );
         assert!(s.vertices.iter().all(|(_, p)| p.z <= 1.0 + tol));
         let cap = s.faces.iter().find(|f| f.cap).expect("a cap");
         assert_eq!(cap.normal, DVec3::Z);
         assert!(cap.id.0 >= CAP_FACE);
         // The cap is area 4: its triangles add up.
         let area: f64 = s.mesh.indices[cap.tris.start as usize..cap.tris.end as usize]
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|t| {
                 let p = [0, 1, 2].map(|k| s.mesh.positions[t[k] as usize]);
                 (p[1] - p[0]).cross(p[2] - p[0]).length() / 2.0
@@ -438,7 +453,7 @@ mod tests {
             .ray_face(v(1.0, 1.0, 5.0), -DVec3::Z)
             .expect("the floor is hit");
         assert!((5.0 - t).abs() < 1e-9, "the floor at z = 0, not the top");
-        assert_ne!(s.face(id).unwrap().cap, true, "caps are not picked");
+        assert!(!s.face(id).unwrap().cap, "caps are not picked");
         // The cap is solid: it hides the floor from a point above it.
         assert!(s.occluded(v(1.0, 1.0, 5.0), v(1.0, 1.0, 0.0)));
         // A sheet that is cut away hides nothing behind it.
@@ -460,7 +475,11 @@ mod tests {
         let c = s.cut.as_ref().expect("cut");
         assert_eq!(c.caps, 1);
         // A 2 by 2·√2 rectangle.
-        assert!((c.cap_area - 4.0 * 2f64.sqrt()).abs() < 1e-9, "{}", c.cap_area);
+        assert!(
+            (c.cap_area - 4.0 * 2f64.sqrt()).abs() < 1e-9,
+            "{}",
+            c.cap_area
+        );
     }
 
     #[test]

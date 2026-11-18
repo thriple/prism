@@ -133,6 +133,10 @@ pub struct Feedback {
     pub on_face: Rgba,
     pub on_ground: Rgba,
     pub intersection: Rgba,
+    /// Section planes' outlines and cut lines, and the cap where a plane
+    /// cuts a solid (Annotation & Sections part 1).
+    pub section: Rgba,
+    pub section_cap: Rgba,
     pub guide_cross: Rgba,
     pub free: Rgba,
     /// Parallel guides and woken edges.
@@ -190,6 +194,8 @@ impl Default for Feedback {
             on_face: Rgba::rgb(0x2b, 0x57, 0xd6),
             on_ground: Rgba::rgb(0x6b, 0x72, 0x80),
             intersection: Rgba::rgb(0x11, 0x11, 0x11),
+            section: Rgba::rgb(0xe8, 0x4a, 0x8f),
+            section_cap: Rgba::rgb(0xd2, 0x5a, 0x78),
             guide_cross: Rgba::rgb(0xb2, 0x1f, 0xc2),
             free: Rgba::rgb(0x6b, 0x72, 0x80),
             parallel: Rgba::rgb(0xb2, 0x1f, 0xc2),

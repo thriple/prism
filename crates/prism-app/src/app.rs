@@ -83,6 +83,7 @@ pub(crate) fn rules(viewport: &Viewport, recent: usize) -> crate::actions::Conte
         can_redo: viewport.can_redo(),
         has_selection: !viewport.counts().is_empty(),
         has_groups: viewport.counts().groups > 0,
+        has_sections: viewport.session.has_sections(),
         recent,
     }
 }
@@ -676,6 +677,17 @@ fn button_name(button: MouseButton) -> String {
     }
 }
 
+/// The program's icon for the window: `packaging/windows/icon-64.png`.
+#[cfg(not(any(target_arch = "wasm32", target_os = "macos")))]
+fn window_icon() -> Option<winit::window::Icon> {
+    let png = include_bytes!("../../../packaging/windows/icon-64.png");
+    let img = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .ok()?
+        .into_rgba8();
+    let (w, h) = img.dimensions();
+    winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
+}
+
 impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
@@ -687,6 +699,12 @@ impl ApplicationHandler<UserEvent> for App {
         #[cfg(not(target_arch = "wasm32"))]
         {
             attributes = attributes.with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0));
+        }
+        // The program's icon in the title bar and taskbar (Windows and Linux;
+        // the Mac takes its icon from the app bundle).
+        #[cfg(not(any(target_arch = "wasm32", target_os = "macos")))]
+        {
+            attributes = attributes.with_window_icon(window_icon());
         }
         #[cfg(target_arch = "wasm32")]
         {

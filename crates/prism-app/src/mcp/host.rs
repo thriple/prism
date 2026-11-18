@@ -67,6 +67,33 @@ impl Host for AppHost<'_> {
                     .map_or(GEOMETRY_LIMIT, |n| n as usize),
             ),
             "use_tool" => self.use_tool(args)?,
+            "list_sections" => self.sections(),
+            "add_section" => {
+                let origin = args.get("origin").and_then(parse_point);
+                let normal = args.get("normal").and_then(parse_point);
+                let (Some(origin), Some(normal)) = (origin, normal) else {
+                    return Err("origin and normal are [x, y, z]".into());
+                };
+                match self.viewport.session.add_section_plane(origin, normal) {
+                    Some(id) => json!({"id": id, "sections": self.sections()}),
+                    None => return Err("that is not a plane: the normal has no length".into()),
+                }
+            }
+            "set_section_active" => {
+                let id = args
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .ok_or("id is the number from list_sections")?;
+                let active = args.get("active").and_then(Value::as_bool).unwrap_or(true);
+                if !self
+                    .viewport
+                    .session
+                    .set_section_plane_active(id as u32, active)
+                {
+                    return Err(format!("no section plane {id}"));
+                }
+                self.sections()
+            }
             "paint" => self.paint(args)?,
             "replay_session" => replay(args)?,
             "run_action" => self.run(args.get("id").and_then(Value::as_str))?,
@@ -339,6 +366,26 @@ impl AppHost<'_> {
             "sheets": sheets,
             "refused": refused,
         }))
+    }
+
+    fn sections(&self) -> Value {
+        let asm = self.viewport.session.document().assembly();
+        let active = asm.active_section().map(|(id, _)| id);
+        let rows: Vec<Value> = asm
+            .sections()
+            .0
+            .iter()
+            .map(|(id, s)| {
+                json!({
+                    "id": id.0,
+                    "name": s.name,
+                    "origin": point(s.origin),
+                    "normal": point(s.normal),
+                    "active": active == Some(*id),
+                })
+            })
+            .collect();
+        json!(rows)
     }
 
     fn solids(&self) -> Value {
@@ -922,6 +969,40 @@ mod tests {
             },
         });
         assert_eq!(viewport.session.document().assembly().placed().len(), 0);
+    }
+
+    #[test]
+    fn section_planes_are_listed_added_and_switched() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_tools::scenes::pocket());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        assert_eq!(value(h.call("list_sections", &json!({}))), json!([]));
+        let r = value(h.call(
+            "add_section",
+            &json!({"origin": [0.0, 0.0, 1.0], "normal": [0.0, 0.0, 2.0]}),
+        ));
+        assert_eq!(r["id"], 0);
+        assert_eq!(r["sections"][0]["normal"], json!([0.0, 0.0, 1.0]));
+        assert_eq!(r["sections"][0]["active"], true);
+        assert!(h.viewport.session.scene().cut.is_some(), "the view is cut");
+        let r = value(h.call("set_section_active", &json!({"id": 0, "active": false})));
+        assert_eq!(r[0]["active"], false);
+        assert!(h.viewport.session.scene().cut.is_none());
+        assert!(h.call("set_section_active", &json!({"id": 7})).is_err());
+        assert!(
+            h.call(
+                "add_section",
+                &json!({"origin": [0, 0, 0], "normal": [0, 0, 0]})
+            )
+            .is_err()
+        );
+        assert!(h.call("add_section", &json!({"origin": [0, 0]})).is_err());
     }
 
     #[test]

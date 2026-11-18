@@ -31,6 +31,7 @@ serde_json.workspace = true
 zip.workspace = true
 flate2.workspace = true
 sha2 = "0.10"
+image.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.11"
@@ -44,6 +45,10 @@ ureq = { version = "3.5", default-features = false, features = ["native-tls-no-d
 # "0BSD OR Apache-2.0": we use it under Apache-2.0.
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "macos")))'.dependencies]
 interprocess = "2.4.7"
+
+# The program's icon in the Windows .exe (build.rs); MIT.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"

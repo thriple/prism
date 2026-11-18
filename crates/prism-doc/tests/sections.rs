@@ -101,9 +101,9 @@ fn move_flip_rename_and_delete_undo_exactly() {
         assert!(d.undo());
         assert_eq!(d.assembly(), &states[k], "undo step {k}");
     }
-    for k in 1..5 {
+    for (k, state) in states.iter().enumerate().skip(1) {
         assert!(d.redo());
-        assert_eq!(d.assembly(), &states[k], "redo step {k}");
+        assert_eq!(d.assembly(), state, "redo step {k}");
     }
 }
 
