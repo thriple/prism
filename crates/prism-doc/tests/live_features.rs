@@ -177,10 +177,11 @@ fn a_direct_edit_runs_underneath_the_round() {
 }
 
 #[test]
-fn an_edit_that_stops_the_round_marks_it_broken() {
+fn an_edit_the_features_cannot_follow_bakes_them() {
     let (mut d, inst, def) = grouped_cube();
     round(&mut d, inst, def, 0.25);
-    // Take a wall at the rounded corner away: the body is open.
+    // Take a wall at the rounded corner away: the body is open, so the
+    // round could not run again. It is baked, not lost.
     let wall = face_facing(model(&d, def), -DVec3::X);
     assert!(d.run_in(
         &[inst],
@@ -191,9 +192,12 @@ fn an_edit_that_stops_the_round_marks_it_broken() {
             },
         }
     ));
-    let stack = d.assembly().def(def).unwrap().stack.as_ref().unwrap();
-    assert!(stack.features[0].is_broken(), "said so, not dropped");
-    assert_eq!(model(&d, def).face_count(), 5, "the plain base shows");
+    assert!(d.assembly().def(def).unwrap().stack.is_none());
+    assert_eq!(
+        model(&d, def).face_count(),
+        6,
+        "the round stays, the wall goes"
+    );
 }
 
 #[test]
@@ -224,4 +228,105 @@ fn a_feature_is_taken_off_and_the_cube_is_plain_again() {
         let m = Model::from_json(&plain).unwrap();
         m.geometry_json()
     });
+}
+
+/// Faces the features made: in the drawn model, not in the base.
+fn made_faces(d: &Document, def: DefId) -> Vec<FaceId> {
+    let def = d.assembly().def(def).unwrap();
+    let base = &def.stack.as_ref().unwrap().base;
+    def.model
+        .faces()
+        .map(|(f, _)| f)
+        .filter(|f| base.face(*f).is_none())
+        .collect()
+}
+
+#[test]
+fn an_edit_of_the_round_itself_bakes_it_first() {
+    let (mut d, inst, def) = grouped_cube();
+    round(&mut d, inst, def, 0.25);
+    let made = made_faces(&d, def);
+    assert_eq!(made.len(), 1, "the round");
+    // Take the round's own face away: the base has no such face.
+    assert!(d.run_in(
+        &[inst],
+        Command::Erase {
+            selection: Selection {
+                faces: made.into_iter().collect(),
+                ..Selection::default()
+            },
+        }
+    ));
+    assert!(
+        d.assembly().def(def).unwrap().stack.is_none(),
+        "baked to make the edit"
+    );
+    assert_eq!(model(&d, def).face_count(), 6, "the face is gone");
+    d.undo();
+    assert!(
+        d.assembly().def(def).unwrap().stack.is_some(),
+        "one undo step"
+    );
+}
+
+#[test]
+fn only_the_features_up_to_the_one_touched_are_baked() {
+    let (mut d, inst, def) = grouped_cube();
+    round(&mut d, inst, def, 0.25);
+    // A second round at the far corner.
+    let far = {
+        let m = model(&d, def);
+        m.edges()
+            .filter(|(_, e)| (m.vertex(e.a).z - m.vertex(e.b).z).abs() > 1.0)
+            .max_by(|(_, a), (_, b)| {
+                let s = |e: &prism_topo::Edge| m.vertex(e.a).x + m.vertex(e.a).y;
+                s(a).total_cmp(&s(b))
+            })
+            .unwrap()
+            .0
+    };
+    assert!(d.run_in(
+        &[inst],
+        Command::RoundEdges {
+            edges: [far].into(),
+            size: 0.25,
+            fillet: true,
+        }
+    ));
+    assert_eq!(
+        d.assembly()
+            .def(def)
+            .unwrap()
+            .stack
+            .as_ref()
+            .unwrap()
+            .features
+            .len(),
+        2
+    );
+    // An edge of the first round (one the second round did not make).
+    let first_round_edge = {
+        let def = d.assembly().def(def).unwrap();
+        let stack = def.stack.as_ref().unwrap();
+        let mut one = prism_doc::Stack {
+            base: stack.base.clone(),
+            features: stack.features[..1].to_vec(),
+        };
+        let after_first = one.evaluate();
+        after_first
+            .edges()
+            .map(|(e, _)| e)
+            .find(|e| stack.base.edge(*e).is_none())
+            .unwrap()
+    };
+    assert!(d.run_in(
+        &[inst],
+        Command::Soften {
+            edges: [first_round_edge].into(),
+            soft: true,
+        }
+    ));
+    let stack = d.assembly().def(def).unwrap().stack.as_ref().unwrap();
+    assert_eq!(stack.features.len(), 1, "only the first round was baked");
+    assert!(!stack.features[0].is_broken());
 }

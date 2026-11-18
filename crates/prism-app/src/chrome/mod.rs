@@ -136,6 +136,8 @@ pub struct Chrome {
     pub(crate) mcp_open: bool,
     pub mcp: crate::mcp::Mcp,
     pub(crate) status: String,
+    /// The status is a notice (red), not the tool's hint.
+    pub(crate) status_warn: bool,
     /// Actions that ran and are waiting for a chunk that handles them.
     pub events: Vec<ActionEvent>,
     /// The recent files' names, for File > Open Recent.
@@ -239,6 +241,7 @@ impl Chrome {
             updater: Default::default(),
             mcp_open: false,
             mcp: Default::default(),
+            status_warn: false,
             status: "Middle-drag orbits, Shift+middle-drag pans, the wheel zooms. Greyed items are not built yet.".to_owned(),
             events: Vec::new(),
             recent: Vec::new(),
@@ -266,7 +269,8 @@ impl Chrome {
     }
 
     /// Show the tool's hint, unless a message is up for this tool.
-    pub fn set_hint(&mut self, hint: &str) {
+    pub fn set_hint(&mut self, hint: &str, warn: bool) {
+        self.status_warn = warn;
         match &self.note {
             Some((text, tool)) if *tool == self.active_tool => self.status = text.clone(),
             _ => {

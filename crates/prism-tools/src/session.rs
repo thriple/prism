@@ -998,6 +998,11 @@ impl Session {
     }
 
     /// The status bar's hint for the tool's next step (feel test `hintText(`).
+    /// The hint is a notice: a refusal, or an edit that did more than asked.
+    pub fn hint_is_notice(&self) -> bool {
+        self.notice.is_some()
+    }
+
     pub fn hint(&self) -> &'static str {
         if let Some(h) = self.notice {
             return h;
@@ -1526,7 +1531,13 @@ impl Session {
         }
         let before = self.effect_before();
         let kind = self.effect_kind(&c);
+        let live = self.live_features();
+        let asked = inspector::takes_features_off(&c);
         if self.run_here(c) {
+            // An edit of what a live feature made bakes it (said so).
+            if !asked && self.live_features() < live {
+                self.notice = Some(inspector::FEATURE_BAKED);
+            }
             self.model_changed();
             self.effect_after(before, kind);
             true

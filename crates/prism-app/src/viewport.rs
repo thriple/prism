@@ -146,6 +146,8 @@ fn draw_bucket(ctx: &Context, p: Pos2, colour: egui::Color32, sampling: bool) {
 /// What the status bar shows from the viewport.
 pub struct Status {
     pub hint: &'static str,
+    /// The hint is a notice (an edit was refused or did more than asked).
+    pub warn: bool,
     pub measure: (String, String, bool),
     pub lock: Option<(String, [u8; 4])>,
 }
@@ -222,6 +224,7 @@ impl Viewport {
     pub fn status(&self) -> Status {
         Status {
             hint: self.session.hint(),
+            warn: self.session.hint_is_notice(),
             measure: self.session.measurement(),
             lock: self
                 .session

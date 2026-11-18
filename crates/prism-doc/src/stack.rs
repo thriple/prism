@@ -136,3 +136,113 @@ impl Stack {
         m
     }
 }
+
+/// The elements of a model an edit names.
+#[derive(Clone, Debug, Default)]
+pub struct Targets {
+    pub vertices: BTreeSet<prism_topo::VertexId>,
+    pub edges: BTreeSet<EdgeId>,
+    pub faces: BTreeSet<prism_topo::FaceId>,
+}
+
+impl Targets {
+    fn all_in(&self, m: &Model) -> bool {
+        self.vertices.iter().all(|v| m.has_vertex(*v))
+            && self.edges.iter().all(|e| m.edge(*e).is_some())
+            && self.faces.iter().all(|f| m.face(*f).is_some())
+    }
+}
+
+/// What a model looks like, whatever its ids: where its corners are, how
+/// many edges and faces it has, and how many edges are soft or smooth and
+/// how many faces are painted. Two runs of the same edit that give the
+/// same shape give the same signature.
+type Signature = (Vec<[i64; 3]>, [usize; 5]);
+
+fn signature(m: &Model) -> Signature {
+    let q = |x: f64| (x * 1e6).round() as i64;
+    let mut v: Vec<[i64; 3]> = m
+        .vertices()
+        .map(|(_, p)| [q(p.x), q(p.y), q(p.z)])
+        .collect();
+    v.sort_unstable();
+    let soft = m.edges().filter(|(_, e)| e.soft).count();
+    let smooth = m.edges().filter(|(_, e)| e.smooth).count();
+    let painted = m
+        .faces()
+        .filter(|(_, f)| f.paint.front.is_some() || f.paint.back.is_some())
+        .count();
+    (v, [m.edge_count(), m.face_count(), soft, smooth, painted])
+}
+
+impl Stack {
+    /// The first `j` features turned into geometry: the base is what they
+    /// make, and the rest still run on it.
+    fn bake_first(&self, j: usize) -> Stack {
+        let mut head = Stack {
+            base: self.base.clone(),
+            features: self.features[..j].to_vec(),
+        };
+        Stack {
+            base: head.evaluate(),
+            features: self.features[j..].to_vec(),
+        }
+    }
+
+    /// A direct edit of the body as drawn (`shown`). It goes to the base
+    /// and the features run again. If that does not give what the edit
+    /// does to the drawn model (it names a face, edge or corner a feature
+    /// made, which the base does not have), the fewest features that
+    /// must be baked first are baked. Returns the stack, the model to
+    /// draw, and how many features were baked.
+    pub fn edit(
+        &self,
+        shown: &Model,
+        targets: Option<Targets>,
+        edit: impl Fn(&mut Model),
+    ) -> (Stack, Model, usize) {
+        let n = self.features.len();
+        let clean = !self.features.iter().any(Feature::is_broken);
+        // An edit that names its elements goes under the fewest features
+        // whose base has them all.
+        if let Some(t) = targets {
+            for j in 0..=n {
+                let mut s = if j == 0 {
+                    self.clone()
+                } else {
+                    self.bake_first(j)
+                };
+                if j == n || t.all_in(&s.base) {
+                    edit(&mut s.base);
+                    if j == n {
+                        let m = s.base.clone();
+                        return (Stack::new(m.clone()), m, n);
+                    }
+                    let m = s.evaluate();
+                    // A feature that cannot follow the edit is baked too,
+                    // rather than lost.
+                    if clean && s.features.iter().any(Feature::is_broken) {
+                        continue;
+                    }
+                    return (s, m, j);
+                }
+            }
+        }
+        let mut want = shown.clone();
+        edit(&mut want);
+        let sig = signature(&want);
+        for j in 0..n {
+            let mut s = if j == 0 {
+                self.clone()
+            } else {
+                self.bake_first(j)
+            };
+            edit(&mut s.base);
+            let m = s.evaluate();
+            if signature(&m) == sig {
+                return (s, m, j);
+            }
+        }
+        (Stack::new(want.clone()), want, n)
+    }
+}

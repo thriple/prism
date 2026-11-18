@@ -1154,19 +1154,65 @@ impl Command {
                 }
             }
             // A direct edit of a body with live features goes to its base,
-            // and the features run again on it.
+            // and the features run again on it. One that names what a
+            // feature made bakes that feature first (the Inspector part 2
+            // notes).
             geometry => {
                 if let Some(d) = asm.def_mut_live(ctx) {
-                    match &mut d.stack {
+                    match d.stack.take() {
                         Some(stack) => {
-                            geometry.apply(&mut stack.base);
-                            d.model = stack.evaluate();
+                            let (s, m, _) =
+                                stack.edit(&d.model, geometry.targets(), |m| geometry.apply(m));
+                            d.model = m;
+                            d.stack = (!s.features.is_empty()).then_some(s);
                         }
                         None => geometry.apply(&mut d.model),
                     }
                 }
             }
         }
+    }
+
+    /// The elements this edit names, for the commands that name them (a
+    /// face to push, the corners to move, the edges to erase); None for
+    /// the ones that work by place (a line drawn across a face). Live
+    /// features use it to tell an edit of the original shape from an edit
+    /// of what a feature made.
+    pub fn targets(&self) -> Option<stack::Targets> {
+        let mut t = stack::Targets::default();
+        match self {
+            Command::Erase { selection } | Command::Copy { selection, .. } => {
+                t.vertices.extend(&selection.vertices);
+                t.edges.extend(&selection.edges);
+                t.faces.extend(&selection.faces);
+            }
+            Command::PushPull { face, .. } | Command::Offset { face, .. } => {
+                t.faces.insert(*face);
+            }
+            Command::Translate { vertices, .. }
+            | Command::Rotate { vertices, .. }
+            | Command::Scale { vertices, .. } => t.vertices.extend(vertices),
+            Command::ConvertCurve { edges }
+            | Command::Weld { edges }
+            | Command::Soften { edges, .. }
+            | Command::Loft { edges, .. }
+            | Command::Revolve { edges, .. }
+            | Command::Sweep { edges, .. }
+            | Command::Patch { edges, .. }
+            | Command::RoundEdges { edges, .. } => t.edges.extend(edges),
+            Command::RoundEdge { edge, .. } => {
+                t.edges.insert(*edge);
+            }
+            Command::ConvertFaces { faces } | Command::ReverseFaces { faces } => {
+                t.faces.extend(faces);
+            }
+            Command::Shell { faces, open, .. } => {
+                t.faces.extend(faces);
+                t.faces.extend(open);
+            }
+            _ => return None,
+        }
+        Some(t)
     }
 
     /// Whether this command would change a locked group (and so does

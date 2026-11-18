@@ -15,6 +15,8 @@ pub mod color {
     pub const INK: Color32 = Color32::from_rgb(0xe6, 0xe8, 0xee);
     /// Secondary text, hotkey labels, values.
     pub const MUTED: Color32 = Color32::from_rgb(0x8b, 0x90, 0x9c);
+    /// A message that says something was done for you or refused.
+    pub const WARN: Color32 = Color32::from_rgb(0xff, 0x6b, 0x6b);
     /// The dark half of every emboss: black at 55%.
     pub const SHADOW_DARK: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 140);
     /// The light half of every emboss: white at 6.5%.

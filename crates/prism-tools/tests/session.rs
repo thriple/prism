@@ -8048,3 +8048,71 @@ fn bake_features_in_the_edit_menu_makes_the_round_plain() {
     undo(&mut d);
     assert!(live(&d), "one undo step");
 }
+
+#[test]
+fn editing_what_a_live_round_made_bakes_it_and_says_so() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.s.open_path_to(&[g]);
+    d.tool(FILLET);
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.send(Input::Key { key: Key::Enter });
+    let live = |d: &Driver| {
+        let asm = d.s.document().assembly();
+        let def = asm.find_instance(g).expect("group").1.def;
+        asm.def(def).expect("def").stack.is_some()
+    };
+    assert!(live(&d));
+    // A flat wall: the round stays live, nothing is said.
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    d.hover(DVec3::new(1.0, 1.0, 2.5));
+    d.typed("0.5");
+    assert!(live(&d), "an ordinary face is edited underneath");
+    let top =
+        d.s.document()
+            .assembly()
+            .find_instance(g)
+            .map(|(_, i)| i.def)
+            .and_then(|def| {
+                d.s.document()
+                    .assembly()
+                    .def(def)
+                    .map(|x| x.model.vertices().map(|(_, p)| p.z).fold(0.0, f64::max))
+            });
+    assert_eq!(top, Some(2.5), "and it moved");
+    assert!(!d.s.hint_is_notice());
+    // An edge the round made: it is baked, and the hint says so.
+    d.tool(ERASE);
+    // The middle of a straight edge the round made.
+    let mid = {
+        let asm = d.s.document().assembly();
+        let def = asm
+            .def(asm.find_instance(g).expect("group").1.def)
+            .expect("def");
+        let base = &def.stack.as_ref().expect("live").base;
+        def.model
+            .edges()
+            .filter(|(e, edge)| {
+                base.edge(*e).is_none() && matches!(edge.curve, prism_geom::Curve::Line)
+            })
+            .map(|(_, e)| (def.model.vertex(e.a) + def.model.vertex(e.b)) / 2.0)
+            .next()
+            .expect("an edge the round made")
+    };
+    d.hover(mid);
+    assert!(
+        matches!(d.s.hover(), Some(prism_view::Hit::Edge(_))),
+        "{:?} {:?}",
+        mid,
+        d.s.hover()
+    );
+    d.click(mid);
+    assert!(!live(&d), "baked to edit its edge");
+    assert!(d.s.hint_is_notice());
+    assert!(d.s.hint().contains("baked"), "{}", d.s.hint());
+    undo(&mut d);
+    assert!(live(&d), "one undo step brings it back");
+}

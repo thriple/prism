@@ -536,7 +536,7 @@ impl App {
             chrome.set_on("view.effects", chrome.prefs.effects);
             chrome.tolerance = crate::prefs::tolerance_text(viewport.session.scene().tol.dist);
             let status = viewport.status();
-            chrome.set_hint(status.hint);
+            chrome.set_hint(status.hint, status.warn);
             chrome.measure = status.measure;
             chrome.lock_chip = status.lock.map(|(t, c)| (t, prism_ui::theme::srgba(c)));
             // Labels and the select box, from last frame's feedback.

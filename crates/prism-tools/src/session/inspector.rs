@@ -69,6 +69,21 @@ pub struct Inspector {
 pub type VolumeCache = std::cell::RefCell<Option<(u64, BTreeSet<InstanceId>, String)>>;
 
 const NONE: &str = "None";
+
+/// Said when an edit of a face, edge or corner a live feature made baked
+/// that feature to do it.
+pub(super) const FEATURE_BAKED: &str =
+    "A fillet or chamfer was baked to edit its faces. Undo puts it back.";
+
+/// Whether the command is one that takes features off on purpose.
+pub(super) fn takes_features_off(c: &Command) -> bool {
+    match c {
+        Command::BakeFeatures { .. } | Command::RemoveFeature { .. } => true,
+        Command::Batch { commands } => commands.iter().any(takes_features_off),
+        Command::In { command, .. } => takes_features_off(command),
+        _ => false,
+    }
+}
 /// The least size a group can have on an axis and still be scaled.
 const FLAT: f64 = 1e-9;
 
@@ -89,6 +104,16 @@ fn agree<T: PartialEq>(mut values: impl Iterator<Item = T>) -> Option<T> {
 }
 
 impl Session {
+    /// How many live features the document has.
+    pub(super) fn live_features(&self) -> usize {
+        self.doc
+            .assembly()
+            .defs()
+            .filter_map(|(_, d)| d.stack.as_ref())
+            .map(|s| s.features.len())
+            .sum()
+    }
+
     /// The Inspector for the selection.
     pub fn inspector(&self) -> Inspector {
         let asm = self.doc.assembly();

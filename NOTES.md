@@ -4747,3 +4747,9 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Ids:** the first feature's edges are base ids, so they are always followed. A later feature's edges are found by place first, because the ids a feature makes can shift when the base grows.
 - **File:** schema 15; golden files re-saved with `PRISM_RESAVE_GOLDEN`. Undo is the document's before and after copies, so the stack undoes with the geometry.
 - **Left over:** an edit naming a face the fillet made does nothing (the base has no such face) and says nothing; paint on a face a feature made is lost when it runs again; re-picking a broken feature's edges; more feature kinds (part 3); pick in the viewport and ghosts (part 4). The Features section of the window was checked by tests, not on screen.
+
+## Live features: an edit of what a feature made bakes it (owner, 2026-11-18)
+
+- **Rule:** `Stack::edit`. Edits that name elements (`Command::targets`) go under the fewest features whose base has them all. Edits that work by place go under the features and are kept only if they give the same shape as on the drawn model (corners, edge and face counts, soft, smooth and painted counts); otherwise features are baked one more at a time. A feature that would be broken by the edit is baked instead. The session says so with a red notice (`notice`, the status bar draws it in `color::WARN`).
+- **Why not compare shapes for named edits:** pushing a face beside a fillet extends the fillet, but the drawn model splits the round into two faces and the live one does not, so the shapes never match.
+- **Still a gap:** `Command`s with optional element sets (`IntersectFaces` with none) and the cage commands work by place, so they use the shape check.

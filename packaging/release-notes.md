@@ -1,7 +1,7 @@
-**New in this build: live fillets, and a switch for Effects.**
-- **Fillet and Chamfer inside a group stay live.** Select the group, open Window > Inspector, and change the size under Features. Drawing or push/pulling on the body afterwards re-runs the round. If an edit removes the round's edges, it is marked broken. **Edit > Bake Features** makes it plain geometry. Saved in the file.
-- **Effects** in the menu bar is now the kit's switch.
-- **Offset** lights up the edge it snaps to.
+**New in this build: live fillets bake themselves when you edit their own faces.**
+- **Live fillets:** edit a face next to a fillet (push/pull, move) and the fillet follows. Edit the fillet's own face, edge or corner (erase, split, drag) and that fillet is baked first, in the same undo step, with a red message in the status bar. Undo brings it back.
+- Fillet and Chamfer inside a group stay live: change the size under Window > Inspector > Features, or Edit > Bake Features. Saved in the file.
+- **Effects** in the menu bar is now the kit's switch. **Offset** lights up the edge it snaps to.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

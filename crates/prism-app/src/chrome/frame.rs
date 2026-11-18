@@ -198,7 +198,11 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
             let hint = p.layout(
                 chrome.status.clone(),
                 theme::body(),
-                color::MUTED,
+                if chrome.status_warn {
+                    color::WARN
+                } else {
+                    color::MUTED
+                },
                 (left_end - rect.left() - 3.0 * size::TOP_BAR_PAD).max(50.0),
             );
             let first = hint.rows.first().map(|r| r.row.size.y).unwrap_or(0.0);
