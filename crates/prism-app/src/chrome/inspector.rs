@@ -38,7 +38,7 @@ pub(super) fn card(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<
 
 fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
     ui.horizontal_wrapped(|ui| {
-        ui.label(f.label);
+        ui.label(&f.label);
         match &f.kind {
             FieldKind::Text | FieldKind::Length => {
                 // What is being typed is kept while the field has the keys.
@@ -49,12 +49,12 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                 let hint = if f.mixed { "—" } else { "" };
                 let w = field(ui, &mut text, hint, 140.0);
                 if w.has_focus() {
-                    p.inspector_edit = Some((f.key, text.clone()));
+                    p.inspector_edit = Some((f.key.clone(), text.clone()));
                 }
                 if w.lost_focus() {
                     p.inspector_edit = None;
                     if text.trim() != f.text && !text.trim().is_empty() {
-                        ops.push(PanelOp::Inspect(f.key, text));
+                        ops.push(PanelOp::Inspect(f.key.clone(), text));
                     }
                 }
             }
@@ -71,7 +71,7 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                     .add(SoftButton::new(label).small().selected(on))
                     .clicked()
                 {
-                    ops.push(PanelOp::Inspect(f.key, (!on).to_string()));
+                    ops.push(PanelOp::Inspect(f.key.clone(), (!on).to_string()));
                 }
             }
             FieldKind::Choice(options) => {
@@ -84,8 +84,13 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                         )
                         .clicked()
                     {
-                        ops.push(PanelOp::Inspect(f.key, o.clone()));
+                        ops.push(PanelOp::Inspect(f.key.clone(), o.clone()));
                     }
+                }
+            }
+            FieldKind::Action => {
+                if ui.add(SoftButton::new(&f.text).small()).clicked() {
+                    ops.push(PanelOp::Inspect(f.key.clone(), String::new()));
                 }
             }
             FieldKind::Fixed => {

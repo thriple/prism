@@ -11,6 +11,7 @@ use std::collections::BTreeSet;
 pub mod assembly;
 pub mod image;
 pub mod material;
+pub mod stack;
 
 pub use assembly::{
     Anchor, Assembly, Attributes, DefId, Definition, DimId, Dimension, Instance, InstanceId,
@@ -24,6 +25,7 @@ use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
 use prism_topo::{FaceId, Guide, Model, VertexId};
 use serde::{Deserialize, Serialize};
+pub use stack::{EdgeRef, Feature, Stack};
 
 /// One edit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -414,6 +416,22 @@ pub enum Command {
         size: f64,
         fillet: bool,
     },
+    /// Change a live feature's size (Inspector part 2); the features run
+    /// again on the body's base.
+    SetFeatureSize {
+        instance: InstanceId,
+        index: usize,
+        size: f64,
+    },
+    /// Take a live feature off a body.
+    RemoveFeature {
+        instance: InstanceId,
+        index: usize,
+    },
+    /// Turn a body's live features into plain geometry.
+    BakeFeatures {
+        instance: InstanceId,
+    },
     /// Sweep a profile face along a path of lines (Follow Me, Exact Curves
     /// 5c).
     FollowMe {
@@ -693,6 +711,9 @@ impl Command {
             Command::IntersectWith { .. } => "Intersect Faces",
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
+            Command::SetFeatureSize { .. } => "Change Feature",
+            Command::RemoveFeature { .. } => "Remove Feature",
+            Command::BakeFeatures { .. } => "Bake Features",
             Command::RoundEdges { fillet: true, .. } => "Fillet",
             Command::RoundEdges { .. } => "Chamfer",
             Command::FollowMe { .. } => "Follow Me",
@@ -1015,6 +1036,34 @@ impl Command {
                     c.apply_in(asm, ctx);
                 }
             }
+            Command::SetFeatureSize {
+                instance,
+                index,
+                size,
+            } => {
+                if let Some((_, inst)) = asm.find_instance(*instance) {
+                    asm.set_feature_size(inst.def, *index, *size);
+                }
+            }
+            Command::RemoveFeature { instance, index } => {
+                if let Some((_, inst)) = asm.find_instance(*instance) {
+                    asm.remove_feature(inst.def, *index);
+                }
+            }
+            Command::BakeFeatures { instance } => {
+                if let Some((_, inst)) = asm.find_instance(*instance) {
+                    asm.bake(inst.def);
+                }
+            }
+            // Inside a group a round stays live; loose geometry is rounded
+            // outright.
+            Command::RoundEdges {
+                edges,
+                size,
+                fillet,
+            } if ctx != ROOT => {
+                asm.round_live(ctx, edges, *size, *fillet);
+            }
             Command::MakeGroup {
                 selection,
                 instances,
@@ -1082,9 +1131,13 @@ impl Command {
             Command::Paint { sides, material } => {
                 // Only a material the document has.
                 if material.is_none_or(|m| asm.material(m).is_some())
-                    && let Some(d) = asm.def_mut(ctx)
+                    && let Some(d) = asm.def_mut_live(ctx)
                 {
                     material::paint(&mut d.model, sides, *material);
+                    // The live features' base too, or the next run loses it.
+                    if let Some(s) = &mut d.stack {
+                        material::paint(&mut s.base, sides, *material);
+                    }
                 }
             }
             Command::PaintInstances {
@@ -1100,9 +1153,17 @@ impl Command {
                     asm.replace_material((!*everywhere).then_some(ctx), *from, *to);
                 }
             }
+            // A direct edit of a body with live features goes to its base,
+            // and the features run again on it.
             geometry => {
-                if let Some(d) = asm.def_mut(ctx) {
-                    geometry.apply(&mut d.model);
+                if let Some(d) = asm.def_mut_live(ctx) {
+                    match &mut d.stack {
+                        Some(stack) => {
+                            geometry.apply(&mut stack.base);
+                            d.model = stack.evaluate();
+                        }
+                        None => geometry.apply(&mut d.model),
+                    }
                 }
             }
         }
@@ -1123,9 +1184,11 @@ impl Command {
             | Command::PaintInstances { instances, .. }
             | Command::MakeGroup { instances, .. }
             | Command::MakeComponent { instances, .. } => any(instances),
-            Command::Explode { instance } | Command::ChangeAxes { instance, .. } => {
-                asm.is_locked(*instance)
-            }
+            Command::Explode { instance }
+            | Command::ChangeAxes { instance, .. }
+            | Command::SetFeatureSize { instance, .. }
+            | Command::RemoveFeature { instance, .. }
+            | Command::BakeFeatures { instance } => asm.is_locked(*instance),
             Command::Boolean { first, second, .. } => {
                 asm.is_locked(*first) || asm.is_locked(*second)
             }
@@ -1412,6 +1475,9 @@ impl Command {
             | Command::Place { .. }
             | Command::CopyInstances { .. }
             | Command::EraseInstances { .. }
+            | Command::SetFeatureSize { .. }
+            | Command::RemoveFeature { .. }
+            | Command::BakeFeatures { .. }
             | Command::Cut { .. }
             | Command::Paste { .. }
             | Command::SetLocked { .. }

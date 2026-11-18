@@ -223,6 +223,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         // Groups & Components part 1: handled by the session.
         || id == "edit.group"
         || id == "edit.explode"
+        || id == "edit.bake"
         // Part 2: components and mirroring.
         || id == "edit.comp"
         || id == "edit.unique"
@@ -352,6 +353,7 @@ impl Registry {
                         None if r.id.starts_with("dim.") => When::HasDimensions,
                         None if r.id.starts_with("cplane.") => When::HasWorkPlanes,
                         None if r.id == "edit.explode"
+                            || r.id == "edit.bake"
                             || r.id == "edit.unique"
                             || r.id == "edit.hide"
                             || r.id == "edit.lock"
@@ -563,6 +565,7 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         A("edit.group"),
         A("edit.comp"),
         A("edit.explode"),
+        A("edit.bake"),
         A("edit.unique"),
         Sub(
             "Axes",

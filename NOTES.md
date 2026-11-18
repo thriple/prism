@@ -4739,3 +4739,11 @@ The owner found that rounding edges one click at a time blocks rounds that share
 ## Offset highlights the edge it snaps to (owner, session 14, 2026-11-18)
 - While an Offset is open, a snap on an edge (On Edge, On Arc, Midpoint) sets the hover to that edge, so it draws lit. Corners show their marker only. Nothing about the distance changed.
 - Left over: a corner snap does not light an edge. Offset of spline edges is still not built.
+
+## Inspector, part 2: the modifier stack (brief 48, owner choice 2026-11-18)
+
+- **Built:** `prism-doc/src/stack.rs` (`Stack`, `Feature::Round`, `EdgeRef`), `Definition.stack`, `Assembly::round_live`, `set_feature_size`, `remove_feature`, `bake`, and the commands `SetFeatureSize`, `RemoveFeature`, `BakeFeatures`. The owner chose "re-run underneath": a direct edit goes to the base and the features run again.
+- **The one rule that keeps it safe:** `Assembly::def_mut` clears the stack (bakes) because most writers change the geometry; `def_mut_live` keeps it, for instance changes, names, and the two writers that also apply to the base (paint, material replace and purge). A new writer of a definition's model gets the safe default.
+- **Ids:** the first feature's edges are base ids, so they are always followed. A later feature's edges are found by place first, because the ids a feature makes can shift when the base grows.
+- **File:** schema 15; golden files re-saved with `PRISM_RESAVE_GOLDEN`. Undo is the document's before and after copies, so the stack undoes with the geometry.
+- **Left over:** an edit naming a face the fillet made does nothing (the base has no such face) and says nothing; paint on a face a feature made is lost when it runs again; re-picking a broken feature's edges; more feature kinds (part 3); pick in the viewport and ghosts (part 4). The Features section of the window was checked by tests, not on screen.

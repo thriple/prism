@@ -51,8 +51,9 @@ pub use migrate::{Raw, migrate};
 /// layout 8). Schema 10: NURBS curves and patches (geometry layout 9). Schema 11:
 /// locked groups (`groups.json`). Schema 12: section planes (`sections.json`).
 /// Schema 13: dimensions (`dimensions.json`). Schema 14: construction
-/// planes (`planes.json`).
-pub const SCHEMA: u32 = 14;
+/// planes (`planes.json`). Schema 15: live features (`features` in
+/// `groups.json`, the base in `geometry/defs/<id>.base.bin`).
+pub const SCHEMA: u32 = 15;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -146,6 +147,11 @@ fn image_path(i: &prism_doc::Image) -> String {
 fn def_path(id: u32) -> String {
     format!("geometry/defs/{id}.bin")
 }
+
+/// The geometry a definition's live features are applied to.
+fn base_path(id: u32) -> String {
+    format!("geometry/defs/{id}.base.bin")
+}
 /// The largest entry read (a damaged size field must not exhaust memory).
 const MAX_ENTRY: u64 = 1 << 32;
 
@@ -229,6 +235,10 @@ fn is_false(b: &bool) -> bool {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct DefV1 {
     id: u32,
+    /// Live features, in order (schema 15); their base is in
+    /// `geometry/defs/<id>.base.bin`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    features: Vec<prism_doc::Feature>,
     /// A component's name; groups have none (part 1 files never do).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -430,6 +440,7 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                 .defs()
                 .map(|(id, d)| DefV1 {
                     id: id.0,
+                    features: d.stack.as_ref().map_or(Vec::new(), |s| s.features.clone()),
                     name: d.name.clone(),
                     instances: d
                         .instances
@@ -472,6 +483,14 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                 kind: "geometry".to_owned(),
                 version: geometry::VERSION,
             });
+            if let Some(stack) = &d.stack {
+                files.push((base_path(id.0), geometry::encode(&stack.base)));
+                manifest.entries.push(Entry {
+                    path: base_path(id.0),
+                    kind: "geometry".to_owned(),
+                    version: geometry::VERSION,
+                });
+            }
         }
     }
     // A fixed order, so the same document gives the same bytes.
@@ -643,6 +662,23 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
                 .ok_or_else(|| FileError::Damaged(format!("no {path}")))?;
             geometry::decode(bin, version)?
         };
+        let stack = if d.features.is_empty() {
+            None
+        } else {
+            let path = base_path(d.id);
+            let version = raw
+                .entry(&path)
+                .map(|e| e.version)
+                .ok_or_else(|| FileError::Damaged(format!("no {path} in the manifest")))?;
+            let bin = raw
+                .files
+                .get(&path)
+                .ok_or_else(|| FileError::Damaged(format!("no {path}")))?;
+            Some(prism_doc::Stack {
+                base: geometry::decode(bin, version)?,
+                features: d.features.clone(),
+            })
+        };
         for i in &d.instances {
             attrs.insert(
                 InstanceId(i.id),
@@ -674,6 +710,7 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
                     model,
                     instances,
                     name: d.name,
+                    stack,
                 },
             )
             .is_some()

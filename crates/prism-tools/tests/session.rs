@@ -7962,3 +7962,89 @@ fn offset_highlights_the_edge_its_distance_is_matched_to() {
     d.hover(DVec3::new(3.0, 3.0, 0.0));
     assert!(!matches!(d.s.hover(), Some(prism_view::Hit::Edge(_))));
 }
+
+/// The radii of the round faces in a group's own model.
+fn group_radii(d: &Driver, g: prism_doc::InstanceId) -> Vec<f64> {
+    let asm = d.s.document().assembly();
+    let def = asm.find_instance(g).expect("the group").1.def;
+    asm.def(def)
+        .expect("its definition")
+        .model
+        .faces()
+        .filter_map(|(_, f)| match f.surface.clone() {
+            prism_geom::Surface::Cylinder(c) => Some(c.radius),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_round_inside_a_group_stays_live_and_the_inspector_edits_it() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.s.open_path_to(&[g]);
+    d.tool(FILLET);
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.send(Input::Key { key: Key::Enter });
+    let rounded = group_radii(&d, g);
+    assert_eq!(rounded.len(), 1, "rounded");
+    // Close the group and select it: its Inspector lists the feature.
+    d.tool(SELECT);
+    d.s.open_path_to(&[]);
+    d.s.select_path(&[g]);
+    let titles: Vec<_> = d.s.inspector().sections.iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["General", "Features", "Position", "Size"]);
+    assert_eq!(
+        inspector_text(&d, "feature.0.size").0,
+        d.s.number.show(rounded[0])
+    );
+    // A new radius: one undo step, and the face count stays the same.
+    d.s.inspector_set("feature.0.size", "0.5").expect("changes");
+    assert!(
+        (group_radii(&d, g)[0] - 0.5).abs() < 1e-9,
+        "{:?}",
+        group_radii(&d, g)
+    );
+    undo(&mut d);
+    assert!((group_radii(&d, g)[0] - rounded[0]).abs() < 1e-9);
+    // Refusals say why and change nothing.
+    assert!(d.s.inspector_set("feature.0.size", "0").is_err());
+    assert!(d.s.inspector_set("feature.0.size", "50").is_err());
+    assert!(d.s.inspector_set("feature.3.size", "1").is_err());
+    assert!((group_radii(&d, g)[0] - rounded[0]).abs() < 1e-9);
+    // Bake: the round stays, the Features section goes.
+    d.s.inspector_set("bake", "").expect("bakes");
+    assert_eq!(group_radii(&d, g).len(), 1);
+    let titles: Vec<_> = d.s.inspector().sections.iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["General", "Position", "Size"]);
+    assert!(d.s.inspector_set("bake", "").is_err(), "nothing to bake");
+    valid(&d);
+}
+
+#[test]
+fn bake_features_in_the_edit_menu_makes_the_round_plain() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.s.open_path_to(&[g]);
+    d.tool(FILLET);
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.send(Input::Key { key: Key::Enter });
+    d.tool(SELECT);
+    d.s.open_path_to(&[]);
+    d.s.select_path(&[g]);
+    let live = |d: &Driver| {
+        let asm = d.s.document().assembly();
+        let def = asm.find_instance(g).expect("group").1.def;
+        asm.def(def).expect("def").stack.is_some()
+    };
+    assert!(live(&d));
+    act(&mut d, "edit.bake");
+    assert!(!live(&d));
+    assert_eq!(group_radii(&d, g).len(), 1, "the round is still there");
+    undo(&mut d);
+    assert!(live(&d), "one undo step");
+}

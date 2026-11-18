@@ -408,6 +408,7 @@ impl Reader<'_> {
                         model,
                         instances,
                         name,
+                        stack: None,
                     },
                 );
                 if component {

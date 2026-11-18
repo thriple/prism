@@ -577,6 +577,27 @@ impl Session {
         self.run(Command::Batch { commands });
     }
 
+    /// Bake Features: the selected groups' live features become plain
+    /// geometry, in one step.
+    pub(super) fn bake_features(&mut self) {
+        let asm = self.doc.assembly();
+        let commands: Vec<Command> = self
+            .groups
+            .iter()
+            .filter(|g| {
+                asm.context_def(&self.path_of(**g))
+                    .and_then(|d| asm.def(d))
+                    .is_some_and(|d| d.stack.is_some())
+            })
+            .map(|g| Command::BakeFeatures { instance: *g })
+            .collect();
+        if commands.is_empty() {
+            return;
+        }
+        self.cancel();
+        self.run(Command::Batch { commands });
+    }
+
     /// Delete: the selection and the selected groups, in one step.
     pub(super) fn delete(&mut self) {
         // A plane or dimension picked with Alt + click, and nothing else.

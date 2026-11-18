@@ -1837,6 +1837,7 @@ impl Session {
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
             "edit.explode" => self.explode(),
+            "edit.bake" => self.bake_features(),
             "edit.undo" => {
                 self.cancel();
                 // Undo of an edit inside a group opens that group again.

@@ -31,13 +31,16 @@ pub enum FieldKind {
     Choice(Vec<String>),
     /// Shown, not edited.
     Fixed,
+    /// A button: the field's text is its label, and setting it (with any
+    /// text) does it.
+    Action,
 }
 
 /// One row of the Inspector.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Field {
-    pub key: &'static str,
-    pub label: &'static str,
+    pub key: String,
+    pub label: String,
     pub kind: FieldKind,
     /// The value as text (empty when mixed).
     pub text: String,
@@ -69,10 +72,10 @@ const NONE: &str = "None";
 /// The least size a group can have on an axis and still be scaled.
 const FLAT: f64 = 1e-9;
 
-fn field(key: &'static str, label: &'static str, kind: FieldKind, text: String) -> Field {
+fn field(key: &str, label: &str, kind: FieldKind, text: String) -> Field {
     Field {
-        key,
-        label,
+        key: key.to_owned(),
+        label: label.to_owned(),
         kind,
         text,
         mixed: false,
@@ -207,6 +210,14 @@ impl Session {
             title: "General",
             fields: general,
         });
+        if n == 1
+            && let Some(stack) = asm
+                .context_def(&self.path_of(ids[0]))
+                .and_then(|d| asm.def(d))
+                .and_then(|d| d.stack.as_ref())
+        {
+            out.sections.push(self.features_section(stack));
+        }
 
         let Some((lo, hi)) = self.groups_bounds() else {
             return;
@@ -248,16 +259,51 @@ impl Session {
         });
     }
 
-    fn mixed_field(
-        &self,
-        key: &'static str,
-        label: &'static str,
-        kind: FieldKind,
-        value: Option<String>,
-    ) -> Field {
+    /// The live features of the one selected body, each with its size, and
+    /// a way to take it off or bake them all.
+    fn features_section(&self, stack: &prism_doc::Stack) -> Section {
+        let mut fields = Vec::new();
+        for (i, f) in stack.features.iter().enumerate() {
+            let prism_doc::Feature::Round { size, fillet, .. } = f;
+            let label = if *fillet {
+                "Fillet radius"
+            } else {
+                "Chamfer size"
+            };
+            let key = format!("feature.{i}.size");
+            if f.is_broken() {
+                fields.push(field(
+                    &key,
+                    f.name(),
+                    FieldKind::Fixed,
+                    "Broken: its edges are gone. Remove it or bake.".into(),
+                ));
+            } else {
+                fields.push(field(
+                    &key,
+                    label,
+                    FieldKind::Length,
+                    self.number.show(*size),
+                ));
+            }
+            fields.push(field(
+                &format!("feature.{i}.remove"),
+                "",
+                FieldKind::Action,
+                format!("Remove {}", f.name()),
+            ));
+        }
+        fields.push(field("bake", "", FieldKind::Action, "Bake".into()));
+        Section {
+            title: "Features",
+            fields,
+        }
+    }
+
+    fn mixed_field(&self, key: &str, label: &str, kind: FieldKind, value: Option<String>) -> Field {
         Field {
-            key,
-            label,
+            key: key.to_owned(),
+            label: label.to_owned(),
             kind,
             mixed: value.is_none(),
             text: value.unwrap_or_default(),
@@ -265,7 +311,7 @@ impl Session {
     }
 
     /// The path of a selected group (in the open group).
-    fn path_of(&self, id: InstanceId) -> Vec<InstanceId> {
+    pub(super) fn path_of(&self, id: InstanceId) -> Vec<InstanceId> {
         let mut p = self.ctx.clone();
         p.push(id);
         p
@@ -410,8 +456,64 @@ impl Session {
                     change,
                 });
             }
+            "bake" | "feature" => return self.feature_set(key, text),
+            k if k.starts_with("feature.") => return self.feature_set(k, text),
             _ => return Err(format!("{key:?} is not an Inspector field")),
         }
         Ok(())
+    }
+
+    /// `bake`, `feature.N.size` and `feature.N.remove`, for the one
+    /// selected body.
+    fn feature_set(&mut self, key: &str, text: &str) -> Result<(), String> {
+        let [id] = self.groups.iter().copied().collect::<Vec<_>>()[..] else {
+            return Err("Select one group to edit its features".into());
+        };
+        let asm = self.doc.assembly();
+        let count = asm
+            .context_def(&self.path_of(id))
+            .and_then(|d| asm.def(d))
+            .and_then(|d| d.stack.as_ref())
+            .map_or(0, |s| s.features.len());
+        if count == 0 {
+            return Err("It has no live features".into());
+        }
+        let command = if key == "bake" {
+            Command::BakeFeatures { instance: id }
+        } else {
+            let mut parts = key.split('.').skip(1);
+            let index: usize = parts
+                .next()
+                .and_then(|n| n.parse().ok())
+                .filter(|n| *n < count)
+                .ok_or(format!("{key:?} is not an Inspector field"))?;
+            match parts.next() {
+                Some("remove") => Command::RemoveFeature {
+                    instance: id,
+                    index,
+                },
+                Some("size") => {
+                    let size = self
+                        .number
+                        .expression(text)
+                        .ok_or(format!("{text:?} is not a length"))?;
+                    if size <= 0.0 {
+                        return Err("A size must be more than zero".into());
+                    }
+                    Command::SetFeatureSize {
+                        instance: id,
+                        index,
+                        size,
+                    }
+                }
+                _ => return Err(format!("{key:?} is not an Inspector field")),
+            }
+        };
+        self.cancel();
+        if self.run(command) {
+            Ok(())
+        } else {
+            Err("Nothing changed: the size is the same, or it does not fit these edges".into())
+        }
     }
 }

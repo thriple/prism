@@ -481,7 +481,7 @@ impl App {
                     crate::chrome::PanelOp::Name(id, name) => s.name_instance(id, &name),
                     crate::chrome::PanelOp::Tag(t) => s.tag_command(t),
                     crate::chrome::PanelOp::Inspect(key, text) => {
-                        chrome.panels.inspector_error = s.inspector_set(key, &text).err();
+                        chrome.panels.inspector_error = s.inspector_set(&key, &text).err();
                     }
                     crate::chrome::PanelOp::HealthSelect(k) => s.select_health(k),
                     crate::chrome::PanelOp::HealthFix(k) => s.health_fix(k),

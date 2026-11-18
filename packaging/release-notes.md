@@ -1,5 +1,7 @@
-**New in this build: Offset lights up the edge it matches.**
-- **Offset:** while you drag, an edge the cursor snaps to (on its length, an arc, or its midpoint) is highlighted, so you can see which edge sets the distance. The preview works as before.
+**New in this build: live fillets, and a switch for Effects.**
+- **Fillet and Chamfer inside a group stay live.** Select the group, open Window > Inspector, and change the size under Features. Drawing or push/pulling on the body afterwards re-runs the round. If an edit removes the round's edges, it is marked broken. **Edit > Bake Features** makes it plain geometry. Saved in the file.
+- **Effects** in the menu bar is now the kit's switch.
+- **Offset** lights up the edge it snaps to.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

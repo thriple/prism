@@ -15,9 +15,10 @@ use std::sync::Arc;
 use prism_math::{DAffine3, DVec3};
 use prism_ops::select::Selection;
 use prism_ops::transform;
-use prism_topo::{FaceId, MaterialId, Model, VertexId};
+use prism_topo::{EdgeId, FaceId, MaterialId, Model, VertexId};
 
 use crate::material::Material;
+use crate::stack::{EdgeRef, Feature, Stack};
 use serde::{Deserialize, Serialize};
 
 /// A definition's id.
@@ -143,6 +144,10 @@ pub struct Definition {
     /// instance share the definition; copies of a group get their own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Live features: when set, `model` is `stack.base` with them applied
+    /// (Inspector part 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack: Option<Stack>,
 }
 
 impl Definition {
@@ -244,6 +249,7 @@ impl Assembly {
                     model,
                     instances: BTreeMap::new(),
                     name: None,
+                    stack: None,
                 }),
             )]
             .into(),
@@ -900,8 +906,114 @@ impl Assembly {
     }
 
     /// The definition, copied first if an undo step shares it.
+    /// For a change to the definition's geometry the live features do not
+    /// know about: they are baked into it first, so nothing is lost or put
+    /// out of step. Use `def_mut_live` for what leaves the geometry alone.
     pub fn def_mut(&mut self, id: DefId) -> Option<&mut Definition> {
+        let d = self.def_mut_live(id)?;
+        d.stack = None;
+        Some(d)
+    }
+
+    /// The definition, copied first if an undo step shares it, with its
+    /// live features kept: for changes to its instances or name, or to
+    /// geometry the caller also applies to the stack's base.
+    pub fn def_mut_live(&mut self, id: DefId) -> Option<&mut Definition> {
         self.defs.get_mut(&id).map(Arc::make_mut)
+    }
+
+    // ---------- live features (Inspector part 2) ----------
+
+    /// Round `edges` of the body in `ctx` as a live feature. The edges are
+    /// those of the model as drawn, which is the base with the features so
+    /// far applied. Changes nothing when the kernel refuses.
+    pub fn round_live(
+        &mut self,
+        ctx: DefId,
+        edges: &BTreeSet<EdgeId>,
+        size: f64,
+        fillet: bool,
+    ) -> bool {
+        let Some(d) = self.def_mut_live(ctx) else {
+            return false;
+        };
+        let refs: Vec<EdgeRef> = edges
+            .iter()
+            .filter_map(|e| EdgeRef::of(&d.model, *e))
+            .collect();
+        if refs.len() != edges.len() {
+            return false;
+        }
+        let mut stack = d
+            .stack
+            .clone()
+            .unwrap_or_else(|| Stack::new(d.model.clone()));
+        stack.features.push(Feature::Round {
+            edges: refs,
+            size,
+            fillet,
+            broken: false,
+        });
+        let model = stack.evaluate();
+        if stack.features.last().is_some_and(Feature::is_broken) {
+            return false;
+        }
+        d.model = model;
+        d.stack = Some(stack);
+        true
+    }
+
+    /// Change a live feature's size and run the features again.
+    pub fn set_feature_size(&mut self, def: DefId, index: usize, new: f64) -> bool {
+        let Some(d) = self.def_mut_live(def) else {
+            return false;
+        };
+        let Some(stack) = &mut d.stack else {
+            return false;
+        };
+        let mut next = stack.clone();
+        match next.features.get_mut(index) {
+            Some(Feature::Round { size, .. }) => *size = new,
+            None => return false,
+        }
+        // A size the kernel refuses is not taken.
+        let model = next.evaluate();
+        if next.features[index].is_broken() {
+            return false;
+        }
+        d.model = model;
+        d.stack = Some(next);
+        true
+    }
+
+    /// Take a live feature off and run the rest again.
+    pub fn remove_feature(&mut self, def: DefId, index: usize) -> bool {
+        let Some(d) = self.def_mut_live(def) else {
+            return false;
+        };
+        let Some(stack) = &mut d.stack else {
+            return false;
+        };
+        if index >= stack.features.len() {
+            return false;
+        }
+        stack.features.remove(index);
+        d.model = stack.evaluate();
+        if stack.features.is_empty() {
+            d.stack = None;
+        }
+        true
+    }
+
+    /// Turn the live features into plain geometry.
+    pub fn bake(&mut self, def: DefId) -> bool {
+        match self.def_mut_live(def) {
+            Some(d) if d.stack.is_some() => {
+                d.stack = None;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Whether two assemblies share this definition (not a copy of it).
@@ -1072,6 +1184,7 @@ impl Assembly {
             model: d.model,
             instances,
             name: d.name,
+            stack: d.stack,
         }))
     }
 
@@ -1116,7 +1229,7 @@ impl Assembly {
         let id = self.make_group(ctx, sel, instances)?;
         let name = self.free_name(base);
         let def = self.def(ctx)?.instances.get(&id)?.def;
-        self.def_mut(def)?.name = Some(name);
+        self.def_mut_live(def)?.name = Some(name);
         Some(id)
     }
 
@@ -1137,10 +1250,10 @@ impl Assembly {
                 continue;
             };
             let name = self.free_name(old.name.as_deref().unwrap_or("Component"));
-            if let Some(d) = self.def_mut(new) {
+            if let Some(d) = self.def_mut_live(new) {
                 d.name = Some(name);
             }
-            if let Some(slot) = self.def_mut(ctx).and_then(|d| d.instances.get_mut(i)) {
+            if let Some(slot) = self.def_mut_live(ctx).and_then(|d| d.instances.get_mut(i)) {
                 slot.def = new;
             }
         }
@@ -1156,7 +1269,7 @@ impl Assembly {
         {
             return false;
         }
-        match self.def_mut(def) {
+        match self.def_mut_live(def) {
             Some(d) if d.name.is_some() => {
                 d.name = Some(name.to_owned());
                 true
@@ -1239,9 +1352,10 @@ impl Assembly {
             model: geo,
             instances: inner,
             name: None,
+            stack: None,
         });
         let id = self.new_instance();
-        self.def_mut(ctx)?.instances.insert(
+        self.def_mut_live(ctx)?.instances.insert(
             id,
             Instance {
                 def,
@@ -1269,9 +1383,10 @@ impl Assembly {
             model,
             instances: BTreeMap::new(),
             name: None,
+            stack: None,
         });
         let id = self.new_instance();
-        self.def_mut(ctx)?
+        self.def_mut_live(ctx)?
             .instances
             .insert(id, Instance { def, transform: at });
         self.set_name(id, name);
@@ -1347,6 +1462,7 @@ impl Assembly {
                 model: geo,
                 instances: placed,
                 name: None,
+                stack: None,
             }),
         );
         out.prune();
@@ -1473,6 +1589,7 @@ impl Assembly {
             model,
             instances,
             name,
+            stack: None,
         });
         map.defs.insert(d, k);
         Some(k)
@@ -1633,7 +1750,7 @@ impl Assembly {
     /// Change the placement of instances in `ctx` by `m` (in `ctx`'s
     /// coordinates).
     pub fn place(&mut self, ctx: DefId, instances: &BTreeSet<InstanceId>, m: &DAffine3) {
-        if let Some(d) = self.def_mut(ctx) {
+        if let Some(d) = self.def_mut_live(ctx) {
             for i in instances {
                 if let Some(inst) = d.instances.get_mut(i) {
                     inst.transform = *m * inst.transform;
@@ -1666,7 +1783,7 @@ impl Assembly {
                     continue;
                 };
                 let id = self.new_instance();
-                if let Some(d) = self.def_mut(ctx) {
+                if let Some(d) = self.def_mut_live(ctx) {
                     d.instances.insert(
                         id,
                         Instance {
@@ -1804,9 +1921,10 @@ impl Assembly {
                 model: m,
                 instances: BTreeMap::new(),
                 name: None,
+                stack: None,
             });
             let id = self.new_instance();
-            if let Some(d) = self.def_mut(ctx) {
+            if let Some(d) = self.def_mut_live(ctx) {
                 d.instances.insert(
                     id,
                     Instance {
@@ -1822,7 +1940,7 @@ impl Assembly {
 
     /// Erase instances from `ctx`.
     pub fn erase(&mut self, ctx: DefId, instances: &BTreeSet<InstanceId>) {
-        if let Some(d) = self.def_mut(ctx) {
+        if let Some(d) = self.def_mut_live(ctx) {
             for i in instances {
                 d.instances.remove(i);
             }
@@ -2012,8 +2130,13 @@ impl Assembly {
             if sides.is_empty() {
                 continue;
             }
-            if let Some(d) = self.def_mut(id) {
+            if let Some(d) = self.def_mut_live(id) {
                 crate::material::paint(&mut d.model, &sides, to);
+                // The live features' base too, or the next run loses it.
+                if let Some(s) = &mut d.stack {
+                    let base = crate::material::sides_with(&s.base, from);
+                    crate::material::paint(&mut s.base, &base, to);
+                }
             }
         }
         if from.is_some() {
@@ -2054,17 +2177,23 @@ impl Assembly {
             if !stale {
                 continue;
             }
-            if let Some(d) = self.def_mut(id) {
-                let faces: Vec<FaceId> = d.model.faces().map(|(f, _)| f).collect();
-                for f in faces {
-                    d.model.edit_face(f, |x| {
-                        if x.paint.front.is_some_and(|m| !have.contains(&m)) {
-                            x.paint.front = None;
-                        }
-                        if x.paint.back.is_some_and(|m| !have.contains(&m)) {
-                            x.paint.back = None;
-                        }
-                    });
+            if let Some(d) = self.def_mut_live(id) {
+                let clear = |m: &mut Model| {
+                    let faces: Vec<FaceId> = m.faces().map(|(f, _)| f).collect();
+                    for f in faces {
+                        m.edit_face(f, |x| {
+                            if x.paint.front.is_some_and(|m| !have.contains(&m)) {
+                                x.paint.front = None;
+                            }
+                            if x.paint.back.is_some_and(|m| !have.contains(&m)) {
+                                x.paint.back = None;
+                            }
+                        });
+                    }
+                };
+                clear(&mut d.model);
+                if let Some(s) = &mut d.stack {
+                    clear(&mut s.base);
                 }
             }
         }

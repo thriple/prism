@@ -479,3 +479,64 @@ fn dimension_anchors_round_trip() {
     assert_eq!(back.assembly.dim_anchors().len(), 1);
     assert_eq!(write(&back, "test"), bytes);
 }
+
+/// Live features are saved with their base and read back exactly (schema 15).
+#[test]
+fn live_features_round_trip() {
+    use prism_doc::{Command, Document};
+    let mut d = Document::new();
+    d.run(Command::Rect {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 2.0,
+        y1: 2.0,
+        z: 0.0,
+    });
+    let f = d.model().faces().next().unwrap().0;
+    let up = d.model().face(f).unwrap().plane().unwrap().normal.z;
+    d.run(Command::PushPull {
+        face: f,
+        distance: 2.0 * up,
+        new_loop: false,
+    });
+    let m = d.model();
+    let sel = prism_ops::Selection {
+        vertices: m.vertices().map(|(id, _)| id).collect(),
+        edges: m.edges().map(|(id, _)| id).collect(),
+        faces: m.faces().map(|(id, _)| id).collect(),
+        ..Default::default()
+    };
+    let g = d.assembly().next_instance();
+    d.run(Command::MakeGroup {
+        selection: sel,
+        instances: Default::default(),
+    });
+    let def = d.assembly().find_instance(g).unwrap().1.def;
+    let edge = d
+        .assembly()
+        .def(def)
+        .unwrap()
+        .model
+        .edges()
+        .next()
+        .unwrap()
+        .0;
+    assert!(d.run_in(
+        &[g],
+        Command::RoundEdges {
+            edges: [edge].into(),
+            size: 0.25,
+            fillet: true,
+        }
+    ));
+    assert!(d.assembly().def(def).unwrap().stack.is_some());
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = prism_file::write(&c, "test");
+    let back = prism_file::read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    assert!(back.assembly.def(def).unwrap().stack.is_some());
+    assert_eq!(prism_file::write(&back, "test"), bytes);
+}

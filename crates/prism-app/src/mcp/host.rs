@@ -304,6 +304,7 @@ impl AppHost<'_> {
                             FieldKind::Toggle => "toggle",
                             FieldKind::Choice(_) => "choice",
                             FieldKind::Fixed => "fixed",
+                            FieldKind::Action => "action",
                         };
                         let mut v = json!({
                             "key": f.key, "label": f.label, "kind": kind,

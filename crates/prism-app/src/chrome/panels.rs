@@ -21,7 +21,7 @@ pub enum PanelOp {
     Name(InstanceId, String),
     Tag(prism_tools::TagOp),
     /// The Inspector: a field's key and what was typed or picked.
-    Inspect(&'static str, String),
+    Inspect(String, String),
     /// Model Health: select a row's items, or run its fix.
     HealthSelect(&'static str),
     HealthFix(&'static str),
@@ -86,7 +86,7 @@ pub struct Panels {
     /// The Inspector window, the field being typed in, and why the last
     /// edit was refused.
     pub inspector: bool,
-    pub inspector_edit: Option<(&'static str, String)>,
+    pub inspector_edit: Option<(String, String)>,
     pub inspector_error: Option<String>,
     pub tags: bool,
     pub health: bool,
