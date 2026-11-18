@@ -1,0 +1,14 @@
+[package]
+name = "prism-text"
+description = "Text for Prism: three bundled fonts, shaping and glyph outlines as closed contours."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prism-math.workspace = true
+serde.workspace = true
+rustybuzz = "0.20"
+ttf-parser = "0.25"

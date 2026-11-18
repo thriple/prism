@@ -36,6 +36,14 @@ Add a row before adding a dependency. Allowed by default: MIT, Apache-2.0, BSD, 
 |---|---|---|---|
 | IBM Plex Sans | Regular, Medium, SemiBold (TTF) | SIL OFL 1.1, Reserved Font Name "Plex" | IBM's original files, unmodified (subsetting or converting would count as a modified font, which may not use the name). Licence text in `assets/fonts/OFL.txt`. |
 | IBM Plex Mono | Regular, Medium (TTF) | SIL OFL 1.1, Reserved Font Name "Plex" | As above. |
+| IBM Plex Serif | Regular (TTF) | SIL OFL 1.1, Reserved Font Name "Plex" | As above (IBM's own file, unmodified; added for the Text tool, Annotation & Sections part 3). `prism-text` uses Plex Sans, Serif and Mono Regular: the three fonts text can be set in, no system fonts (owner, 2026-11-18). |
+
+## Text (Annotation & Sections part 3)
+
+| Crate | Version | Used by | Licence | Web | Note |
+|---|---|---|---|---|---|
+| rustybuzz | 0.20 | prism-text | MIT | Yes (pure Rust, checked: the web build compiles) | Shaping (kerning, ligatures, marks) for text in the three bundled fonts. A port of HarfBuzz. Brings core_maths (MIT), unicode-bidi-mirroring, unicode-ccc (MIT OR Apache-2.0) and unicode-script (MIT OR Apache-2.0); bitflags, bytemuck, smallvec, ttf-parser and unicode-properties were already in the tree |
+| ttf-parser | 0.25 | prism-text | MIT OR Apache-2.0 | Yes | Glyph outlines (already in the tree through egui's font code) |
 
 ## Indirect dependencies outside the default list
 

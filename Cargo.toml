@@ -6,6 +6,7 @@ members = [
     "crates/prism-topo",
     "crates/prism-kernel",
     "crates/prism-ops",
+    "crates/prism-text",
     "crates/prism-doc",
     "crates/prism-file",
     "crates/prism-view",
