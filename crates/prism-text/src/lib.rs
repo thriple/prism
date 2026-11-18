@@ -199,7 +199,8 @@ pub fn layout(text: &str, font: Font, cap_height: f64) -> Laid {
                 cur: Vec::new(),
                 last: DVec2::ZERO,
             };
-            if buzz.outline_glyph(glyph, &mut flat).is_some() {
+            // A character the font lacks draws nothing (not the font's box).
+            if info.glyph_id != 0 && buzz.outline_glyph(glyph, &mut flat).is_some() {
                 flat.end();
                 out.contours.extend(flat.done);
             }
@@ -303,6 +304,11 @@ mod tests {
     fn characters_the_font_lacks_are_counted() {
         let l = layout("a日b", Font::Sans, 1.0);
         assert_eq!(l.missing, 1);
+        assert_eq!(
+            layout("日", Font::Sans, 1.0).contours.len(),
+            0,
+            "no box drawn"
+        );
         assert_eq!(layout("ab", Font::Sans, 1.0).missing, 0);
         assert_eq!(layout("a b\tc", Font::Sans, 1.0).missing, 0);
     }

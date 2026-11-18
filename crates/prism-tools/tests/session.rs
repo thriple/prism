@@ -6766,3 +6766,114 @@ fn section_planes_stay_drawn_with_any_tool() {
         "Section Planes off hides it"
     );
 }
+
+// ---------- Text (Annotation & Sections part 3, brief 46) ----------
+
+fn text_groups(d: &Driver) -> Vec<(String, prism_math::DAffine3)> {
+    d.s.document()
+        .assembly()
+        .root()
+        .instances
+        .iter()
+        .map(|(id, i)| {
+            (
+                d.s.document()
+                    .assembly()
+                    .name_of(*id)
+                    .unwrap_or("")
+                    .to_owned(),
+                i.transform,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_text_tool_sets_text_down_as_a_named_group_on_the_ground() {
+    use prism_tools::session::{TEXT_TOOL, TextKind, TextSet};
+    let mut d = Driver::empty();
+    d.tool(TEXT_TOOL);
+    assert!(
+        d.s.hint().contains("Click where the text goes"),
+        "{}",
+        d.s.hint()
+    );
+    d.s.text_input(TextSet::Text("Hello".into()));
+    d.s.text_input(TextSet::Height("300mm".into()));
+    d.s.text_input(TextSet::Kind(TextKind::Solid));
+    d.s.text_input(TextSet::Depth("50mm".into()));
+    let panel = d.s.text_panel().expect("the window shows with the tool");
+    assert_eq!(panel.settings.text, "Hello");
+    assert!((panel.settings.height - 0.3).abs() < 1e-9);
+    assert_eq!(panel.missing, 0);
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    let all = text_groups(&d);
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].0, "Text: Hello");
+    let t = all[0].1;
+    assert!(
+        t.translation.distance(DVec3::new(3.0, 2.0, 0.0)) < 0.2,
+        "{:?}",
+        t.translation
+    );
+    assert!(
+        t.matrix3.z_axis.abs_diff_eq(DVec3::Z, 1e-9),
+        "flat on the ground, facing up"
+    );
+    assert_eq!(d.s.selected_groups().len(), 1, "the new group is selected");
+    // Solid, 50 mm deep, capitals 300 mm tall.
+    let (lo, hi) = d.s.document().assembly().flattened().bbox().unwrap();
+    assert!((hi.z - lo.z - 0.05).abs() < 1e-6, "{lo} {hi}");
+    assert!(hi.y - lo.y > 0.28 && hi.y - lo.y < 0.5, "{lo} {hi}");
+    // One undo step.
+    act(&mut d, "edit.undo");
+    assert!(text_groups(&d).is_empty());
+}
+
+#[test]
+fn text_on_a_face_lies_on_it_and_faces_out() {
+    use prism_tools::session::{TEXT_TOOL, TextSet};
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.tool(TEXT_TOOL);
+    d.s.text_input(TextSet::Text("Top".into()));
+    d.click(DVec3::new(0.4, 0.4, 2.0));
+    let all = text_groups(&d);
+    assert_eq!(all.len(), 1);
+    let t = all[0].1;
+    assert!((t.translation.z - 2.0).abs() < 1e-6, "{:?}", t.translation);
+    assert!(t.matrix3.z_axis.abs_diff_eq(DVec3::Z, 1e-9));
+}
+
+#[test]
+fn empty_text_says_so_and_adds_nothing() {
+    use prism_tools::session::{TEXT_TOOL, TextSet};
+    let mut d = Driver::empty();
+    d.tool(TEXT_TOOL);
+    d.s.text_input(TextSet::Text("   ".into()));
+    assert!(d.s.hint().contains("Type the text"));
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    assert!(text_groups(&d).is_empty());
+    assert!(d.s.hint().contains("Type the text"), "{}", d.s.hint());
+    // Text with only characters the font lacks draws nothing either.
+    d.s.text_input(TextSet::Text("日本".into()));
+    assert_eq!(d.s.text_panel().unwrap().missing, 2);
+    d.click(DVec3::new(3.0, 2.0, 0.0));
+    assert!(text_groups(&d).is_empty());
+}
+
+#[test]
+fn the_window_ignores_what_is_not_a_length_and_cuts_long_text() {
+    use prism_tools::session::{MAX_TEXT, TEXT_TOOL, TextSet};
+    let mut d = Driver::empty();
+    d.tool(TEXT_TOOL);
+    d.s.text_input(TextSet::Height("tall".into()));
+    d.s.text_input(TextSet::Height("0".into()));
+    d.s.text_input(TextSet::Depth("0".into()));
+    let s = d.s.text_settings().clone();
+    assert_eq!((s.height, s.depth), (0.2, 0.05), "unchanged");
+    d.s.text_input(TextSet::Text("x".repeat(MAX_TEXT + 50)));
+    assert_eq!(d.s.text_settings().text.chars().count(), MAX_TEXT);
+    // Not with another tool.
+    d.tool(SELECT);
+    assert!(d.s.text_panel().is_none());
+}

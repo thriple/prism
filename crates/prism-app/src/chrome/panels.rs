@@ -40,6 +40,8 @@ pub enum PanelOp {
     ShellSize(String),
     /// The Loft window.
     Loft(prism_tools::session::LoftOp),
+    /// The Text window: a change to its settings.
+    Text(prism_tools::session::TextSet),
 }
 
 /// The panels' data, set by the app each frame.
@@ -66,6 +68,8 @@ pub struct PanelData {
     pub shell: Option<prism_tools::session::ShellPanel>,
     /// The Loft window (while its tool is active).
     pub loft: Option<prism_tools::session::LoftPanel>,
+    /// The Text window (while its tool is active).
+    pub text: Option<prism_tools::session::TextPanel>,
 }
 
 /// Which panels are open, and text being edited.
@@ -104,6 +108,12 @@ pub struct Panels {
     pub shell_size: Option<String>,
     /// The Loft window (shown only with its tool).
     pub loft: bool,
+    /// The Text window (shown only with its tool), and its fields while
+    /// they are being typed in.
+    pub text: bool,
+    pub text_words: Option<String>,
+    pub text_height: Option<String>,
+    pub text_depth: Option<String>,
     /// Model Health's problems not drawn in the model (its switch off).
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
@@ -155,6 +165,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     }
                     if chrome.active_tool == prism_tools::session::LOFT {
                         super::loft::card(ui, &mut p, &data, &mut ops);
+                    }
+                    if chrome.active_tool == prism_tools::session::TEXT_TOOL {
+                        super::texting::card(ui, &mut p, &data, &mut ops);
                     }
                     super::hints::card(chrome, ui, &mut p);
                     info(ui, &mut p, &data, &mut ops);

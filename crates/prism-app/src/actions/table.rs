@@ -2430,6 +2430,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         true,
     ),
     (
+        "Text: words set down as geometry in three bundled fonts (Text tool)",
+        true,
+    ),
+    (
         "Box select: window (left to right) and crossing (right to left), Shift toggles, Ctrl adds",
         true,
     ),

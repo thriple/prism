@@ -12,6 +12,7 @@ prism-math.workspace = true
 prism-geom.workspace = true
 prism-topo.workspace = true
 prism-ops.workspace = true
+prism-text.workspace = true
 prism-doc.workspace = true
 prism-view.workspace = true
 prism-infer.workspace = true

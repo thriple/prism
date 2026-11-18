@@ -9,6 +9,7 @@ mod loft;
 mod materials;
 mod panels;
 mod shell;
+mod texting;
 pub use materials::image_loaded;
 pub use panels::{PanelData, PanelOp};
 mod dock;
@@ -288,13 +289,22 @@ impl Chrome {
     /// Whether the Outliner, Entity Info or Tags is open (their data is
     /// only gathered then).
     pub fn panels_open(&self) -> bool {
-        self.panels.any_open() || self.fillet_shown() || self.loft_shown() || self.shell_shown()
+        self.panels.any_open()
+            || self.fillet_shown()
+            || self.loft_shown()
+            || self.shell_shown()
+            || self.text_shown()
     }
 
     /// Whether the Shell / Thicken window shows: open, and only with its
     /// tool.
     pub(crate) fn shell_shown(&self) -> bool {
         self.panels.shell && self.active_tool == prism_tools::session::SHELL
+    }
+
+    /// Whether the Text window shows: open, and only with its tool.
+    pub(crate) fn text_shown(&self) -> bool {
+        self.panels.text && self.active_tool == prism_tools::session::TEXT_TOOL
     }
 
     /// Whether the Loft window shows: open, and only with its tool.
@@ -423,6 +433,11 @@ impl Chrome {
                     self.panels.shell = true;
                     self.panels.folded.remove("Shell / Thicken");
                 }
+                // So does the Text tool (Annotation & Sections part 3).
+                if id == prism_tools::session::TEXT_TOOL {
+                    self.panels.text = true;
+                    self.panels.folded.remove("Text");
+                }
                 // So does the Loft tool (brief 34).
                 if id == prism_tools::session::LOFT {
                     self.panels.loft = true;
@@ -510,6 +525,7 @@ impl Chrome {
             || self.fillet_shown()
             || self.loft_shown()
             || self.shell_shown()
+            || self.text_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
@@ -866,6 +882,20 @@ mod tests {
         assert!(!c.panels.folded.contains("Shell / Thicken"));
         c.run("tool.select", Source::Key);
         assert!(!c.shell_shown() && !c.side_open(), "not with another tool");
+    }
+
+    /// The Text tool brings its window the same way (Annotation & Sections
+    /// part 3).
+    #[test]
+    fn the_text_tool_opens_its_window_only_while_active() {
+        let mut c = chrome();
+        assert!(!c.text_shown() && !c.side_open());
+        c.panels.folded.insert("Text");
+        c.run("tool.text", Source::Key);
+        assert!(c.text_shown() && c.side_open() && c.panels_open());
+        assert!(!c.panels.folded.contains("Text"));
+        c.run("tool.select", Source::Key);
+        assert!(!c.text_shown() && !c.side_open(), "not with another tool");
     }
 
     /// The Loft tool brings its window the same way (brief 34).

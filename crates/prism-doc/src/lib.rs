@@ -329,6 +329,17 @@ pub enum Command {
     DeleteSection {
         id: SectionId,
     },
+    /// Text (Annotation & Sections part 3), set in one of the bundled
+    /// fonts with capitals `height` tall and made into a new group
+    /// (named after the text) whose axes are the text's: `at` places it,
+    /// `x` along the line, `y` up, facing `z`.
+    AddText {
+        text: String,
+        font: prism_text::Font,
+        height: f64,
+        mode: prism_ops::text::TextMode,
+        at: DAffine3,
+    },
     /// A new linear dimension (Annotation & Sections part 2), in world
     /// coordinates.
     AddDimension {
@@ -630,6 +641,7 @@ impl Command {
             Command::SetSectionActive { .. } => "Deactivate Section Plane",
             Command::RenameSection { .. } => "Rename Section Plane",
             Command::DeleteSection { .. } => "Delete Section Plane",
+            Command::AddText { .. } => "Text",
             Command::AddDimension { .. } => "Dimension",
             Command::MoveDimension { .. } => "Move Dimension",
             Command::DeleteDimension { .. } => "Delete Dimension",
@@ -820,6 +832,31 @@ impl Command {
                 size: size * scale,
                 fillet: *fillet,
             },
+            Command::AddText {
+                text,
+                font,
+                height,
+                mode,
+                at,
+            } => {
+                // Placed by origin and axes (a group scaled evenly grows
+                // the text with it).
+                let (u, v) = (dir(at.matrix3.x_axis), dir(at.matrix3.y_axis));
+                let k = u.length();
+                let (u, v) = (u.normalize_or_zero(), v.normalize_or_zero());
+                Command::AddText {
+                    text: text.clone(),
+                    font: *font,
+                    height: height * k,
+                    mode: match mode {
+                        prism_ops::text::TextMode::Solid { depth } => {
+                            prism_ops::text::TextMode::Solid { depth: depth * k }
+                        }
+                        m => *m,
+                    },
+                    at: DAffine3::from_cols(u, v, u.cross(v), p(at.translation)),
+                }
+            }
             Command::AddGuide { guide } => Command::AddGuide {
                 guide: match *guide {
                     Guide::Line { origin, dir: d } => Guide::Line {
@@ -890,6 +927,19 @@ impl Command {
                 asm.paste(ctx, clip, at);
             }
             Command::SetLocked { instances, locked } => asm.set_locked(instances, *locked),
+            Command::AddText {
+                text,
+                font,
+                height,
+                mode,
+                at,
+            } => {
+                let laid = prism_text::layout(text, *font, *height);
+                let model = prism_ops::text::text_model(&laid, *mode);
+                let first = text.lines().next().unwrap_or("").trim();
+                let short: String = first.chars().take(24).collect();
+                asm.add_group_model(ctx, model, &format!("Text: {short}"), *at);
+            }
             Command::AddDimension { a, b, offset } => {
                 asm.add_dimension(Dimension {
                     a: *a,
@@ -1310,6 +1360,7 @@ impl Command {
             | Command::Cut { .. }
             | Command::Paste { .. }
             | Command::SetLocked { .. }
+            | Command::AddText { .. }
             | Command::AddDimension { .. }
             | Command::MoveDimension { .. }
             | Command::DeleteDimension { .. }

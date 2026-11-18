@@ -82,6 +82,15 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Edit > Axes > Reset Axes squares them again; Axes to Centre moves the origin to the middle.",
             ],
         ),
+        s::TEXT_TOOL => g(
+            "Set text down as geometry, in one of three fonts.",
+            &[
+                "Type the words in the Text window, pick Sans, Serif or Mono, and the capitals' height.",
+                "Outline makes edges only, Face flat faces, Solid pulls them out by the depth.",
+                "Click where it goes: on a face it lies on that face, reading upright; elsewhere on the ground.",
+                "The text becomes a group named after it; Undo removes it. The ghost shows where it will land.",
+            ],
+        ),
         s::DIM_TOOL => g(
             "Label a distance on the drawing.",
             &[

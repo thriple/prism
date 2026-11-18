@@ -1,7 +1,6 @@
-**New in this build: dimensions.**
-- **Dimensions (Tools > Dimensions).** Click two points, then click where the dimension line goes: Prism draws the extension lines, arrowheads and the length in your document's unit. Click a dimension's line to move it; Edit > Dimension > Delete Dimension removes one; View > Dimensions hides them all. They are saved in the file and undo like any edit.
-- **Fixed:** section planes were drawn only while the Section Plane tool was active; they now stay drawn with any tool.
-- Also recent: section planes (Tools > Section Plane), the program's icon on Windows, and Alt tapped with Ctrl or Cmd held no longer turns on New Loop.
+**New in this build: text.**
+- **Text (Tools > Text).** Type the words in the Text window, pick Sans, Serif or Mono and the capitals' height, choose Outline, Face or Solid (with a depth), then click: the text is set down as a group named after it, on the face under the pointer (reading upright) or on the ground. A ghost shows where it will go. Three fonts come with Prism, so text looks the same on every computer and in the browser.
+- Also recent: dimensions (Tools > Dimensions), section planes (Tools > Section Plane), the program's icon on Windows, and Alt tapped with Ctrl or Cmd held no longer turns on New Loop.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

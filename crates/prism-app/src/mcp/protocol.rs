@@ -217,6 +217,24 @@ pub fn tools() -> Value {
             },
         },
         {
+            "name": "add_text",
+            "title": "Add text",
+            "description": "Set `text` down as a new group named after it (one undo step), in one of the three bundled fonts: `font` Sans (the default), Serif or Mono. `height` is the capital letters' height in metres (default 0.2). `mode` is Face (flat faces, the default), Outline (edges only) or Solid (pulled out `depth` metres, default 0.05). It goes at `origin` [x, y, z] on a plane with `normal` [x, y, z] (default the ground, facing up), reading along the world x (or y on a plane square to x), upright. Returns the group's id and how many characters the font lacks (those draw nothing).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "font": {"type": "string", "enum": ["Sans", "Serif", "Mono"]},
+                    "height": {"type": "number"},
+                    "mode": {"type": "string", "enum": ["Face", "Outline", "Solid"]},
+                    "depth": {"type": "number"},
+                    "origin": {"type": "array", "items": {"type": "number"}},
+                    "normal": {"type": "array", "items": {"type": "number"}},
+                },
+                "required": ["text"],
+            },
+        },
+        {
             "name": "list_dimensions",
             "title": "List dimensions",
             "description": "The document's dimensions: id, the two points, the offset of the dimension line, and the measured length in metres. Dimensions label the drawing only; the model is not changed.",
@@ -534,6 +552,7 @@ mod tests {
                 "list_actions",
                 "get_geometry",
                 "use_tool",
+                "add_text",
                 "list_dimensions",
                 "add_dimension",
                 "list_sections",

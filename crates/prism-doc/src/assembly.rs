@@ -1020,6 +1020,33 @@ impl Assembly {
         Some(id)
     }
 
+    /// Put a finished model in a new group in `ctx`, named `name`, placed
+    /// by `at` (the model is in the group's own coordinates). Returns the
+    /// group; None if the model is empty.
+    pub fn add_group_model(
+        &mut self,
+        ctx: DefId,
+        model: Model,
+        name: &str,
+        at: DAffine3,
+    ) -> Option<InstanceId> {
+        if model.face_count() == 0 && model.edge_count() == 0 {
+            return None;
+        }
+        self.def(ctx)?;
+        let def = self.new_def(Definition {
+            model,
+            instances: BTreeMap::new(),
+            name: None,
+        });
+        let id = self.new_instance();
+        self.def_mut(ctx)?
+            .instances
+            .insert(id, Instance { def, transform: at });
+        self.set_name(id, name);
+        Some(id)
+    }
+
     /// Explode: the group's geometry, placed, joins `ctx`'s model, where
     /// the overlap rules run (PLAN 1.9); its own groups become `ctx`'s.
     pub fn explode(&mut self, ctx: DefId, id: InstanceId) -> bool {

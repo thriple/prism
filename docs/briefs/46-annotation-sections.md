@@ -31,8 +31,11 @@ XL: five parts.
 - **Built as:** NOTES "Annotation & Sections part 2". A dimension does not yet follow the model if it is moved (a later pass); angle and radius dimensions come after the linear one.
 - **Tests:** commands and exact undo; file round trip and golden; the tool's three clicks, Esc, pick-up, delete, the view toggle; the MCP calls.
 
-## Part 3: Text (outline)
-- Screen labels (always face the screen) and 3D text (outline, face, solid, extruded depth; along a path later). Fonts: system fonts and bundled OFL fonts; shaping with `rustybuzz` (MIT), glyph outlines with `ttf-parser` (MIT/Apache-2.0). Add each to `docs/DEPENDENCIES.md` first, with whether it builds for wasm. System font listing differs on the web (bundled fonts only there).
+## Part 3: Text
+- **Fonts (owner, 2026-11-18):** three bundled fonts only (IBM Plex Sans, Serif, Mono; SIL OFL), no system fonts: the same everywhere, including the web, and deterministic in tests. Shaping with `rustybuzz` (MIT), outlines with `ttf-parser`, in a new pure crate `prism-text`.
+- **Text tool** (Tools > Text; greyed until now) with a Text window (words, font, capitals' height, Outline / Face / Solid, depth). A click sets the text down as a new group named after it, on the flat face under the pointer or on the ground; a ghost shows where. `Command::AddText`, one undo step. MCP `add_text`.
+- **Built as:** NOTES "Annotation & Sections part 3". Not built: exact glyph curves, text along a path, editable text, bold and italic, alignment, screen labels.
+- **Tests:** layout (heights, holes, widths, lines, missing characters); faces with holes, closed solids; the command, its group and undo; the tool on the ground and on a face; the MCP call; a screenshot of solid text in each font.
 
 ## Part 4: Model axes and Construction Planes (outline)
 - The model's own axes: the Axes tool at the top level moves the model's origin and directions (a command that transforms everything, one undo step, guides and section planes included). Construction Planes: a named plane the drawing tools use as their working plane, with inference.

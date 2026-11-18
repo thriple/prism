@@ -1360,3 +1360,33 @@ fn a_cut_box_shows_its_cap() {
         .count();
     assert!(none < 400, "no cap without the cut ({none})");
 }
+
+/// Text (Annotation & Sections part 3): solid letters in each bundled font
+/// draw as lit faces with edges.
+#[test]
+fn solid_text_draws_in_every_font() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    for font in prism_text::Font::ALL {
+        let laid = prism_text::layout("Prism 3D", font, 1.0);
+        let m = prism_ops::text::text_model(&laid, prism_ops::text::TextMode::Solid { depth: 0.3 });
+        let cam = looking_at(DVec3::new(laid.width / 2.0, 0.4, 0.15), 9.0, -80.0, 50.0);
+        let img = g.shot(
+            &m,
+            cam,
+            640,
+            240,
+            1.0,
+            &Style::default(),
+            &Highlight::default(),
+        );
+        img.save(&format!("text-{}", font.word()));
+        // The letters are lit grey faces and dark edges on a pale sky and
+        // ground: plenty of dark-edge and mid-grey pixels in the middle.
+        let dark = img
+            .px
+            .iter()
+            .filter(|p| p[0] < 60 && p[1] < 60 && p[2] < 60)
+            .count();
+        assert!(dark > 300, "{font:?}: edges drawn ({dark})");
+    }
+}

@@ -34,7 +34,6 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | `tool.layflat` | Lay Flat | Shapes & Placement |
 | `tool.hole` | Hole | Shapes & Placement |
 | `tool.subd` | Smooth / Subdivide | Cage & Subdivision |
-| `tool.text` | Text | Annotation & Sections |
 | `tool.cplane` | Construction Plane | Annotation & Sections |
 | — | Snap to grid (optional) | Annotation & Sections |
 | `tol.mod` | Tolerance Modifier | Fit & Mechanisms |
@@ -78,7 +77,7 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | "Smooth" a flat cage region into a patch; insert edge loop as a tool (1.1) | Cage & Subdivision |
 | Glue to and Cut opening for components, with the glue sign and toggle; a components library browser (1.2) | Groups & Components 2 |
 | USD / USDZ and FBX; mesh export controls (chord and angle tolerance, edge length) with a preview and triangle count (1.3) | More Formats |
-| Text: every system font, a proper font list, shaping (`rustybuzz`), exact glyphs, outline / face / solid output, text along a path or on a face, editable text (1.4) | Annotation & Sections |
+| Text, left over after part 3 (three bundled fonts, shaping, outline / face / solid as a group): exact glyph curves (they are short straight pieces now), text along a path, bold and italic, alignment, a font list beyond the three (the owner chose three bundled fonts, no system fonts, 2026-11-18), editable text (it is baked into a group when set down), text on curved faces, screen labels (1.4) | Annotation & Sections |
 | Keymap presets for Blender and Fusion (1.5a); the Mouse and navigation tab and a printable cheat sheet (1.12) | Input & Feel |
 | The Mac system menu bar, and a key to open the menu bar (Alt or F10) (1.6) | Input & Feel |
 

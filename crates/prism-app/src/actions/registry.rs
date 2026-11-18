@@ -600,7 +600,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 27] = [
+const BUILT_BEHAVIOURS: [&str; 28] = [
     "Groups and components, open and exit",
     "Command search (Shift+S)",
     "Inference: endpoint, midpoint, on-edge, on-face, guides",
@@ -628,6 +628,8 @@ const BUILT_BEHAVIOURS: [&str; 27] = [
     "Group axes: set a group's or component's origin and directions (Axes tool, Reset Axes, Axes to Centre)",
     // Annotation & Sections part 1.
     "Section planes: cut the model open in the viewport (Section Plane tool, Section Display)",
+    // Annotation & Sections part 3.
+    "Text: words set down as geometry in three bundled fonts (Text tool)",
     // Annotation & Sections part 2.
     "Dimensions: measure between two points and label the length (Dimensions tool)",
     // Freeform NURBS parts 1 and 2: curves and surfaces are in the model.

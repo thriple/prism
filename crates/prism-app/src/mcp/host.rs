@@ -67,6 +67,7 @@ impl Host for AppHost<'_> {
                     .map_or(GEOMETRY_LIMIT, |n| n as usize),
             ),
             "use_tool" => self.use_tool(args)?,
+            "add_text" => self.add_text(args)?,
             "list_dimensions" => self.dimensions(),
             "add_dimension" => {
                 let get = |k: &str| args.get(k).and_then(parse_point);
@@ -377,6 +378,46 @@ impl AppHost<'_> {
             "sheets": sheets,
             "refused": refused,
         }))
+    }
+
+    fn add_text(&mut self, args: &Value) -> Result<Value, String> {
+        use prism_tools::session::{TextKind, TextSettings};
+        let text = args
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or("text is the words to set")?;
+        let word = |k: &str| args.get(k).and_then(Value::as_str);
+        let mut set = TextSettings {
+            text: text.to_owned(),
+            ..TextSettings::default()
+        };
+        if let Some(w) = word("font") {
+            set.font = prism_text::Font::from_word(w).ok_or("font is Sans, Serif or Mono")?;
+        }
+        if let Some(h) = args.get("height").and_then(Value::as_f64) {
+            set.height = h;
+        }
+        if let Some(d) = args.get("depth").and_then(Value::as_f64) {
+            set.depth = d;
+        }
+        set.kind = match word("mode").map(str::to_ascii_lowercase).as_deref() {
+            None | Some("face") => TextKind::Face,
+            Some("outline") => TextKind::Outline,
+            Some("solid") => TextKind::Solid,
+            Some(_) => return Err("mode is Face, Outline or Solid".into()),
+        };
+        let origin = args
+            .get("origin")
+            .and_then(parse_point)
+            .unwrap_or(DVec3::ZERO);
+        let normal = args.get("normal").and_then(parse_point).unwrap_or(DVec3::Z);
+        let missing = prism_text::layout(&set.text, set.font, set.height).missing;
+        let id = self
+            .viewport
+            .session
+            .add_text(set, origin, normal)
+            .map_err(str::to_owned)?;
+        Ok(json!({"id": id, "missing": missing}))
     }
 
     fn dimensions(&self) -> Value {
@@ -1002,6 +1043,42 @@ mod tests {
             },
         });
         assert_eq!(viewport.session.document().assembly().placed().len(), 0);
+    }
+
+    #[test]
+    fn text_is_added_as_a_named_group() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::new());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        let r = value(h.call(
+            "add_text",
+            &json!({"text": "Hi", "font": "Serif", "mode": "Solid", "depth": 0.1, "origin": [1, 2, 0]}),
+        ));
+        assert_eq!(r["missing"], 0);
+        let asm = h.viewport.session.document().assembly();
+        assert_eq!(asm.root().instances.len(), 1);
+        let id = *asm.root().instances.keys().next().unwrap();
+        assert_eq!(asm.name_of(id), Some("Text: Hi"));
+        assert!(h.call("add_text", &json!({"text": ""})).is_err());
+        assert!(
+            h.call("add_text", &json!({"text": "x", "font": "Comic"}))
+                .is_err()
+        );
+        assert!(
+            h.call("add_text", &json!({"text": "x", "mode": "Wavy"}))
+                .is_err()
+        );
+        assert!(
+            h.call("add_text", &json!({"text": "x", "height": -1}))
+                .is_err()
+        );
+        assert!(h.call("add_text", &json!({})).is_err());
     }
 
     #[test]

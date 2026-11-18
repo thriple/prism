@@ -50,6 +50,7 @@ mod smart;
 mod solids;
 mod surfacing;
 mod texpos;
+mod texting;
 mod views;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
@@ -76,6 +77,7 @@ pub use shelling::{SHELL, ShellPanel, ShellSet};
 pub use smart::BUDGET_MS as SMART_BUDGET_MS;
 pub use solids::{SolidOf, SolidRow};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
+pub use texting::{MAX_TEXT, TEXT_TOOL, TextKind, TextPanel, TextSet, TextSettings, frame_on};
 pub use views::{LOOK, WALK, WINDOW};
 
 /// Tool ids (the action registry's).
@@ -92,7 +94,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 41] = [
+pub const TOOLS: [&str; 42] = [
     SELECT,
     LINE,
     RECT,
@@ -140,6 +142,8 @@ pub const TOOLS: [&str; 41] = [
     sections::SECTION_TOOL,
     // Annotation & Sections part 2.
     dimensions::DIM_TOOL,
+    // Annotation & Sections part 3.
+    texting::TEXT_TOOL,
     // Solids & CAD part 2 (brief 39): the Solid menu's booleans.
     booleans::UNION,
     booleans::SUBTRACT,
@@ -589,6 +593,9 @@ pub struct Session {
     /// one picked.
     dim_op: Option<dimensions::DimOp>,
     dim_sel: Option<prism_doc::DimId>,
+    /// The Text tool (part 3): the window's settings and the ghost's place.
+    text_set: texting::TextSettings,
+    text_ghost: Option<prism_math::DAffine3>,
 }
 
 impl Session {
@@ -609,6 +616,8 @@ impl Session {
             section_sel: None,
             section_ghost: None,
             dim_op: None,
+            text_set: texting::TextSettings::default(),
+            text_ghost: None,
             dim_sel: None,
             cage: None,
             cage_notice: None,
@@ -987,6 +996,7 @@ impl Session {
             .or_else(|| self.axes_hint())
             .or_else(|| self.section_hint())
             .or_else(|| self.dim_hint())
+            .or_else(|| self.text_hint())
             .or_else(|| self.solid_hint())
         {
             return h;
@@ -1798,6 +1808,7 @@ impl Session {
             || self.tool == AXES_TOOL
             || self.tool == SECTION_TOOL
             || self.tool == DIM_TOOL
+            || self.tool == TEXT_TOOL
             || self.cage_wants_inference()
             || self.edit_wants_inference()
             || self.pasting()
@@ -1955,6 +1966,7 @@ impl Session {
             self.axes_hover();
             self.section_hover(s, &view);
             self.dim_hover();
+            self.text_hover(s, &view);
             self.arc_hover(s, &view);
             self.cage_hover();
             self.paste_hover(&view);
@@ -2075,6 +2087,7 @@ impl Session {
                 AXES_TOOL => self.axes_press(s),
                 SECTION_TOOL => self.section_press(s),
                 DIM_TOOL => self.dim_press(s),
+                TEXT_TOOL => self.text_press(s),
                 FREEHAND => self.freehand_press(s, shift),
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
@@ -2567,6 +2580,7 @@ impl Session {
         // Section planes and dimensions stay drawn whatever the tool.
         self.section_overlay(&mut o);
         self.dim_overlay(&mut o);
+        self.text_overlay(&mut o);
         if !self.wants_inference() {
             return o;
         }
