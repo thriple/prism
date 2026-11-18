@@ -1420,7 +1420,7 @@ mod tests {
         ));
         let r = value(h.call(
             "use_tool",
-            &json!({"tool": "tool.fillet", "steps": [{"type": "0.2"}, {"double_click": [1, 1, 2]}]}),
+            &json!({"tool": "tool.fillet", "steps": [{"type": "0.2"}, {"double_click": [1, 1, 2]}, {"key": "Enter"}]}),
         ));
         assert_eq!(r["model"]["faces"], 10, "{r}");
         let g = value(h.call("get_geometry", &json!({})));

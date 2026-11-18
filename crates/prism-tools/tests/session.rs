@@ -2712,9 +2712,11 @@ fn the_fillet_tool_rounds_an_edge_and_ctrl_chamfers_one() {
     let faces = d.faces();
     d.tool(FILLET);
     assert!(d.s.hint().contains("Ctrl swaps"), "{}", d.s.hint());
-    // An upright corner edge, at its middle: rounded with a tenth of the
-    // face's width.
+    // An upright corner edge, at its middle: collected, then Enter rounds
+    // it with a tenth of the face's width.
     d.click(DVec3::new(2.0, 0.0, 1.0));
+    assert_eq!(d.faces(), faces, "a click only collects");
+    d.send(Input::Key { key: Key::Enter });
     assert_eq!(d.faces(), faces + 1);
     assert_eq!(radii(&d).len(), 1);
     assert!((radii(&d)[0] - 0.2).abs() < 1e-9, "{:?}", radii(&d));
@@ -2724,15 +2726,24 @@ fn the_fillet_tool_rounds_an_edge_and_ctrl_chamfers_one() {
     assert!((radii(&d)[0] - 0.5).abs() < 1e-9, "{:?}", radii(&d));
     assert_eq!(d.faces(), faces + 1);
     valid(&d);
-    // Ctrl cuts another edge off flat, with the same size.
+    // Ctrl held at Enter cuts another edge off flat, with the same size.
     let s = d.screen(DVec3::new(0.0, 0.0, 1.0));
-    d.click_px(s, false, true);
+    d.click_px(s, false, false);
+    d.send(Input::Held {
+        ctrl: true,
+        alt: false,
+    });
+    d.send(Input::Key { key: Key::Enter });
+    d.send(Input::Held {
+        ctrl: false,
+        alt: false,
+    });
     assert_eq!(d.faces(), faces + 2);
     assert_eq!(radii(&d).len(), 1, "flat");
     valid(&d);
     // Too big for the faces: refused, and the hint says why.
     d.typed("5");
-    assert_eq!(d.s.hint(), prism_ops::round::TOO_WIDE);
+    assert!(d.s.hint().contains("too large"), "{}", d.s.hint());
     undo(&mut d);
     undo(&mut d);
     assert_eq!(d.faces(), faces, "one undo each");
@@ -2798,10 +2809,11 @@ fn the_fillet_window_previews_and_changes_the_last_round() {
         d.s.round_panel().unwrap().refused,
         Some(prism_ops::round::TOO_WIDE)
     );
-    // Back to fitting each edge, then click.
+    // Back to fitting each edge, then click and Enter.
     d.s.round_text("");
     assert_eq!(shown(&d), real + 1);
     d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.send(Input::Key { key: Key::Enter });
     assert_eq!(d.faces(), faces + 1);
     assert!((radii(&d)[0] - 0.2).abs() < 1e-9, "{:?}", radii(&d));
     assert!(d.s.round_panel().unwrap().changes_last);
@@ -5884,6 +5896,8 @@ fn a_double_click_on_a_face_rounds_all_its_edges() {
     let mut d = box_for_rounding();
     assert_eq!(d.faces(), 6);
     double_click(&mut d, DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.selection().edges.len(), 4, "collected");
+    d.send(Input::Key { key: Key::Enter });
     assert_eq!(cylinders(&d), 4, "the four top edges");
     assert_eq!(d.faces(), 10, "the top face stays, smaller");
     assert!(d.s.model().edges().all(|(_, e)| !e.approx), "exact mitres");
@@ -5908,7 +5922,7 @@ fn edges_selected_first_are_rounded_by_enter() {
     d.click_px(b, true, false);
     assert_eq!(d.s.selection().edges.len(), 2);
     d.tool(FILLET);
-    assert!(d.s.hint().contains("selected edges"), "{}", d.s.hint());
+    assert!(d.s.hint().contains("collected edges"), "{}", d.s.hint());
     d.send(Input::Key { key: Key::Enter });
     assert_eq!(cylinders(&d), 2);
     assert!(d.s.selection().is_empty(), "the rounded edges are gone");
@@ -5916,7 +5930,7 @@ fn edges_selected_first_are_rounded_by_enter() {
 }
 
 #[test]
-fn shift_click_gathers_edges_and_a_click_rounds_them() {
+fn shift_click_gathers_edges_and_enter_rounds_them() {
     let mut d = box_for_rounding();
     let a = d.screen(DVec3::new(2.0, 0.0, 1.0));
     let b = d.screen(DVec3::new(1.0, 0.0, 2.0));
@@ -5928,7 +5942,7 @@ fn shift_click_gathers_edges_and_a_click_rounds_them() {
     d.click_px(b, true, false);
     assert_eq!(d.s.selection().edges.len(), 1);
     d.click_px(b, true, false);
-    d.click_px(a, false, false);
+    d.send(Input::Key { key: Key::Enter });
     assert_eq!(cylinders(&d), 2, "two edges meeting at a corner");
     valid(&d);
     undo(&mut d);
@@ -5973,10 +5987,11 @@ fn a_line_in_pieces_is_rounded_as_a_whole() {
     assert_eq!(pieces.len(), 2, "the edge is in two pieces");
     let run = prism_ops::rounds::straight_run(d.s.model(), pieces[0]);
     assert_eq!(run.len(), 2, "one straight run");
-    // A click on one piece rounds both.
+    // A click on one piece takes both.
     use prism_tools::session::FILLET;
     d.tool(FILLET);
     d.click(DVec3::new(0.5, 0.0, 2.0));
+    d.send(Input::Key { key: Key::Enter });
     assert_eq!(cylinders(&d), 2, "a round on each side of the split front");
     assert!(top_front(&d).is_empty(), "both pieces went");
     valid(&d);
@@ -6003,6 +6018,7 @@ fn a_face_is_rounded_inside_an_open_group() {
     d.tool(FILLET);
     d.typed("0.2");
     double_click(&mut d, DVec3::new(1.0, 1.0, 2.0));
+    d.send(Input::Key { key: Key::Enter });
     let rounds =
         d.s.work_model()
             .faces()
@@ -7632,4 +7648,81 @@ fn a_plane_picked_up_in_select_snaps_level_with_a_point() {
     d.click(corner);
     let (_, sec) = d.s.document().assembly().active_section().unwrap();
     assert!(sec.origin.z.abs() < 1e-9, "exactly level: {:?}", sec.origin);
+}
+
+// ---------- Fillet: collect, then Enter (owner, 2026-11-18) ----------
+
+#[test]
+fn clicks_collect_edges_that_meet_and_enter_rounds_them_together() {
+    let mut d = box_for_rounding();
+    let shown = |d: &Driver| d.s.display_scene().faces.len();
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.click(DVec3::new(1.0, 0.0, 2.0));
+    assert_eq!(d.s.selection().edges.len(), 2);
+    assert_eq!(d.faces(), 6, "nothing made yet");
+    assert!(shown(&d) > 6, "the set shows rounded");
+    // A click on a collected edge takes it out, another puts it back.
+    d.click(DVec3::new(1.0, 0.0, 2.0));
+    assert_eq!(d.s.selection().edges.len(), 1);
+    d.click(DVec3::new(1.0, 0.0, 2.0));
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(cylinders(&d), 2, "both, joined where they meet");
+    valid(&d);
+    undo(&mut d);
+    assert_eq!(d.faces(), 6, "one undo");
+}
+
+#[test]
+fn a_drag_from_an_edge_sets_the_size_and_enter_rounds() {
+    let mut d = box_for_rounding();
+    let a = d.screen(DVec3::new(2.0, 0.0, 1.0));
+    let b = d.screen(DVec3::new(1.7, 0.0, 1.0));
+    d.send(Input::Move { x: a.x, y: a.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: a.x,
+        y: a.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    for k in 1..=4 {
+        let p = a.lerp(b, f64::from(k) / 4.0);
+        d.send(Input::Move { x: p.x, y: p.y });
+    }
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(
+        d.s.selection().edges.len(),
+        1,
+        "the dragged edge is collected"
+    );
+    assert_eq!(d.faces(), 6, "a drag only sets the size");
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(radii(&d).len(), 1);
+    assert!((radii(&d)[0] - 0.3).abs() < 1e-6, "{:?}", radii(&d));
+    valid(&d);
+}
+
+#[test]
+fn a_typed_size_rounds_the_set_and_esc_or_leaving_makes_nothing() {
+    use prism_tools::session::FILLET;
+    let mut d = box_for_rounding();
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.typed("0.25");
+    assert!((radii(&d)[0] - 0.25).abs() < 1e-9, "{:?}", radii(&d));
+    undo(&mut d);
+    // Esc clears the set.
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.send(Input::Key { key: Key::Escape });
+    assert!(d.s.selection().is_empty());
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(d.faces(), 6, "nothing to round");
+    // Leaving the tool makes nothing.
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.tool(PUSH);
+    assert_eq!(d.faces(), 6);
+    assert_eq!(d.s.display_scene().faces.len(), 6, "no preview left");
+    let _ = FILLET;
 }

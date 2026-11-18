@@ -4708,3 +4708,14 @@ The owner found that an arrow-key lock before placing a section plane said "lock
 - **Snapping while moving:** the move goes level with what the inference engine snaps to (a corner, a midpoint, an edge, a guide; not a face, the ground or nothing), else follows the cursor's ray as before (`plane_t`). The same applies to a section plane, a construction plane or a dimension line picked up with Alt + click in Select: inference now runs during that move, and the move is updated after it (`ann_hover` moved to the end of `update_hover`).
 - Tests: a locked plane is square to red, not to the face; a moving plane goes exactly level with a midpoint; one picked up in Select goes exactly level with a corner.
 - Still left over (now in the feature map): points on the cut-away side still snap.
+
+## Fillet / Chamfer: collect, then Enter (owner, 2026-11-18)
+
+The owner found that rounding edges one click at a time blocks rounds that share a point (the first round takes the corner away), and asked for clicks to collect with a preview, Enter to commit, and a drag to size.
+- **Clicks collect:** a click on an edge collects its straight run (a click on a collected run takes it out); a double-click on a face collects its edges. The set is the selection, so edges selected before the tool start it, and Shift-click does the same as a click. The set shows rounded as a preview at the current size and kind (Ctrl held swaps it).
+- **Size:** dragging from an edge (past `DRAG_MIN`) collects it and sets the size live: how far the cursor is from the edge across the beside-face that faces the view most (`round_size_at`). The drag does not round. A typed size + Enter rounds the set at that size; Enter alone rounds it at the current size. All of it goes through the kernel together, so rounds that meet at a corner join; one undo step.
+- **Nothing without Enter (owner):** Esc clears the set; leaving the tool drops the preview and makes nothing (the edges stay selected, as any selection does).
+- A flat face's corner (two lines on a face) is still rounded by one click: it is a drawing step, not a solid's edge.
+- Right after a round, a typed size or the window's size / kind still change it, until an edge is collected again.
+- Tests: two edges meeting at a corner collected and rounded together (one undo), a click taking one out, a drag setting 0.3, a typed size rounding the set, Esc and leaving the tool making nothing; the older Fillet tests now press Enter after their clicks; MCP `use_tool` steps add the key Enter.
+- Not seen in the app yet (tests only).

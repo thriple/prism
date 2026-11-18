@@ -3,6 +3,7 @@
 - Lofts, revolves and other curved faces roll their surface grid across them. Moved, rotated and scaled things travel from where they were. Follow Me carries its profile along the path, Offset grows from the face's edge, a new group's box draws in, and new section planes, construction planes and dimensions trace themselves.
 - Turn it on or off with **Effects** in the menu bar (after Help), **View > Effects**, or **Edit > Preferences > Effects**, which also sets how long it lasts (1 second by default).
 - **Section planes:** an arrow-key lock now sets a new plane's direction, and moving a plane (in the tool, or picked up with Alt + click) snaps level with corners, midpoints, edges and guides.
+- **Fillet / Chamfer:** clicks now collect edges (a double-click collects a face's edges) and show them rounded as a preview; drag from an edge or type a size to set the size; Enter rounds them all together, so rounds that meet at a corner join. Esc clears; nothing is made without Enter.
 - **Snap to origin:** where the red, green and blue axes cross is now a snap point ("Origin") while the axes are shown.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.

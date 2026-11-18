@@ -862,6 +862,10 @@ impl Session {
     }
 
     pub(super) fn edit_release(&mut self, s: DVec2) {
+        if self.tool == FILLET {
+            self.round_release();
+            return;
+        }
         if self.tool == FOLLOW {
             self.follow_release(s);
             return;

@@ -5,12 +5,15 @@
 //! after a round changes it. A click near a flat face's corner rounds the
 //! corner (brief 24's fillet).
 //!
-//! Many edges at once (Fillet Joins step C, brief 32): a click takes the
-//! whole straight run of segments the edge is in; a double-click on a face
-//! rounds all its edges; edges or faces selected before (selected edges
-//! as picked, no more) are rounded by the first click or Enter; Shift-click
-//! adds a run to the selection or takes it away. Hover highlights what a
-//! click would round.
+//! Many edges at once (Fillet Joins step C, brief 32; owner, 2026-11-18):
+//! a click collects the whole straight run of segments the edge is in (a
+//! click on one already collected takes it out); a double-click on a face
+//! collects all its edges. The collected edges are the selection (edges or
+//! faces selected before the tool start it) and show rounded as a preview.
+//! Drag from an edge, or type a size, to set the size. Nothing is made
+//! until Enter (a typed size + Enter rounds them at that size): then they
+//! are rounded together, so rounds that meet at a corner join. Esc clears
+//! them; leaving the tool makes nothing.
 
 use std::collections::BTreeSet;
 
@@ -25,10 +28,10 @@ use super::{Event, Input, Session, pick};
 
 pub const FILLET: &str = "tool.fillet";
 
-const HOW: &str = "Click an edge to round it (a line in pieces as a whole) · double-click a face for all its edges · Shift-click adds edges, Enter rounds them · Ctrl swaps fillet and chamfer · type a size + Enter";
+const HOW: &str = "Click edges to collect them (a line in pieces as a whole) · double-click a face for all its edges · drag from an edge or type to set the size · Enter rounds them · Ctrl swaps fillet and chamfer";
 /// Said when no size fits the edges on its own (curved edges only).
 const NEED_SIZE: &str = "Type a size for these edges (curved edges have no size of their own)";
-const HOW_SET: &str = "Click or press Enter to round the selected edges · Shift-click adds or takes away edges · Ctrl swaps fillet and chamfer · type a size + Enter";
+const HOW_SET: &str = "Enter rounds the collected edges · click adds or takes away edges · drag from an edge or type a size + Enter · Esc clears · Ctrl swaps fillet and chamfer";
 
 /// A change from the Fillet window (recorded as `Input::Round`).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -53,6 +56,14 @@ pub struct RoundPanel {
     /// Why the hovered edge cannot be rounded, if it cannot.
     pub refused: Option<&'static str>,
     pub how: &'static str,
+}
+
+/// A press on an edge: a click collects it, a drag sets the size.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Down {
+    at: DVec2,
+    edges: BTreeSet<EdgeId>,
+    dragging: bool,
 }
 
 /// What a click would round.
@@ -169,6 +180,9 @@ impl Session {
     }
 
     pub(super) fn round_hover(&mut self, s: DVec2, view: &View) {
+        if self.round_drag(s, view) {
+            return;
+        }
         let h = super::edit::edge_pick(&self.scene, view, s, self.settings.aperture);
         self.set_hover_pick(h);
         self.round_at = Some(s);
@@ -212,47 +226,142 @@ impl Session {
         }
     }
 
-    pub(super) fn round_press(&mut self, s: DVec2, n_clicks: u32, shift: bool, ctrl: bool) {
+    pub(super) fn round_press(&mut self, s: DVec2, n_clicks: u32, _shift: bool, ctrl: bool) {
         self.round_notice = None;
-        // Shift: the run under the cursor joins the selection, or leaves it.
-        if shift {
-            if let Some(t) = self.round_hovered(s) {
-                let edges = match t {
-                    Target::Edge(e) => BTreeSet::from([e]),
-                    Target::Edges(set) => set,
-                    Target::Corner(_) => BTreeSet::new(),
-                };
-                let mut sel = self.selection.clone();
-                if edges.iter().all(|e| sel.edges.contains(e)) {
-                    sel.edges.retain(|e| !edges.contains(e));
-                } else {
-                    sel.edges.extend(edges);
-                }
-                self.set_selection(sel);
-                self.round_clear();
-                self.round_at = Some(s);
-                self.round_preview();
-            }
-            self.overlay_dirty = true;
-            self.refresh();
+        self.round_down = None;
+        // A double-click on a face: all its edges join the set.
+        if n_clicks == 2
+            && let Some(Hit::Face(f)) =
+                pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit)
+            && self.owner(Hit::Face(f)).is_none()
+        {
+            let edges: BTreeSet<EdgeId> = self
+                .work_model()
+                .face(f)
+                .map(|x| x.edge_ids().collect())
+                .unwrap_or_default();
+            self.round_collect(&edges, Some(true));
             return;
         }
-        // A double-click on a face: all its edges.
-        let t = if n_clicks == 2 && self.selection.is_empty() {
-            match pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit) {
-                Some(Hit::Face(f)) if self.owner(Hit::Face(f)).is_none() => self
-                    .work_model()
-                    .face(f)
-                    .map(|x| Target::Edges(x.edge_ids().collect())),
-                _ => self.round_target(s),
+        match self.round_hovered(s) {
+            // A flat face's corner is rounded at once (a drawing step).
+            Some(Target::Corner(c)) => self.round_go(Target::Corner(c), self.round_fillet(ctrl)),
+            Some(Target::Edge(e)) => {
+                self.round_down = Some(Down {
+                    at: s,
+                    edges: BTreeSet::from([e]),
+                    dragging: false,
+                });
             }
-        } else {
-            self.round_target(s)
-        };
-        let Some(t) = t else {
+            Some(Target::Edges(edges)) => {
+                self.round_down = Some(Down {
+                    at: s,
+                    edges,
+                    dragging: false,
+                });
+            }
+            None => {}
+        }
+    }
+
+    /// The button let go: a click (no drag) collects the edges, or takes
+    /// them out if they were all in.
+    pub(super) fn round_release(&mut self) {
+        if let Some(d) = self.round_down.take()
+            && !d.dragging
+        {
+            self.round_collect(&d.edges, None);
+        }
+    }
+
+    /// Add edges to the set (`Some(true)`), take them out, or (None) take
+    /// them out if all are in, else add them.
+    fn round_collect(&mut self, edges: &BTreeSet<EdgeId>, add: Option<bool>) {
+        if edges.is_empty() {
             return;
+        }
+        let mut sel = self.selection.clone();
+        let add = add.unwrap_or_else(|| !edges.iter().all(|e| sel.edges.contains(e)));
+        if add {
+            sel.edges.extend(edges.iter().copied());
+        } else {
+            sel.edges.retain(|e| !edges.contains(e));
+        }
+        // A new size or kind now applies to the set, not the last round.
+        self.round_last = None;
+        self.set_selection(sel);
+        self.round_shown = None;
+        self.round_preview();
+        self.overlay_dirty = true;
+        self.refresh();
+    }
+
+    /// While the button is held after a press on an edge: past a few
+    /// pixels it is a drag, which collects the edge and sets the size from
+    /// how far the cursor is from it across its face. True while dragging.
+    fn round_drag(&mut self, s: DVec2, view: &View) -> bool {
+        let Some(d) = self.round_down.clone() else {
+            return false;
         };
-        self.round_go(t, self.round_fillet(ctrl));
+        if !d.dragging {
+            if s.distance(d.at) < super::edit::DRAG_MIN {
+                return false;
+            }
+            self.round_down = Some(Down {
+                dragging: true,
+                ..d.clone()
+            });
+            self.round_collect(&d.edges, Some(true));
+        }
+        if let Some(size) = d
+            .edges
+            .first()
+            .and_then(|e| self.round_size_at(*e, s, view))
+        {
+            self.round_size = Some(size);
+            self.round_shown = None;
+            self.round_preview();
+        }
+        self.overlay_dirty = true;
+        self.dirty = true;
+        true
+    }
+
+    /// How far from edge `e` the cursor points, across the face beside it
+    /// that faces the view most.
+    fn round_size_at(&self, e: EdgeId, s: DVec2, view: &View) -> Option<f64> {
+        let edge = self.scene.edge(e)?;
+        let (o, d) = view.ray(s);
+        let dir = (edge.b - edge.a).try_normalize()?;
+        let face = edge
+            .faces
+            .iter()
+            .flatten()
+            .filter_map(|f| self.scene.face(*f))
+            .filter_map(|f| Some((f.flat_normal()?, f.origin)))
+            .max_by(|x, y| x.0.dot(d).abs().total_cmp(&y.0.dot(d).abs()))?;
+        let (n, origin) = face;
+        let den = n.dot(d);
+        if den.abs() < 1e-9 {
+            return None;
+        }
+        let p = o + d * (n.dot(origin - o) / den);
+        let w = p - edge.a;
+        let size = (w - dir * w.dot(dir)).length();
+        (size > self.scene.tol.dist).then_some(size)
+    }
+
+    /// Esc with edges collected: clear them. True if it did.
+    pub(super) fn round_escape(&mut self) -> bool {
+        if self.tool != FILLET || (self.selection.is_empty() && self.round_down.is_none()) {
+            return false;
+        }
+        self.round_down = None;
+        self.set_selection(prism_ops::Selection::default());
+        self.round_clear();
+        self.overlay_dirty = true;
+        self.refresh();
+        true
     }
 
     /// Round `t` now (a click, or Enter on the selection).
@@ -412,7 +521,15 @@ impl Session {
         if let Some(size) = self.number.length(text.trim()).map(f64::abs)
             && size > 0.0
         {
-            self.round_set(RoundOp::Size(Some(size)));
+            let set = self.round_selected();
+            if set.is_empty() {
+                // Right after a round: a new size for it.
+                self.round_set(RoundOp::Size(Some(size)));
+            } else {
+                // The collected edges are rounded at that size.
+                self.round_size = Some(size);
+                self.round_go(Target::Edges(set), self.round_fillet(self.ctrl_held));
+            }
         }
         true
     }

@@ -463,6 +463,7 @@ pub struct Session {
     round_at: Option<DVec2>,
     round_shown: Option<(round::Target, bool, Option<f64>)>,
     round_refused: Option<&'static str>,
+    round_down: Option<round::Down>,
     /// The Loft tool: the sides being picked, the threshold (degrees), the
     /// presets, the sides of the last loft (presets change it), and why it
     /// last refused.
@@ -712,6 +713,7 @@ impl Session {
             round_at: None,
             round_shown: None,
             round_refused: None,
+            round_down: None,
             lofting: lofting::Lofting::default(),
             loft_turn: prism_ops::sides::TURN_DEG,
             loft_preset: prism_ops::sides::Preset::default(),
@@ -1373,7 +1375,11 @@ impl Session {
                     let back = self.before_nav.clone();
                     self.set_tool(&back);
                     resp.tool = Some(back);
-                } else if self.surface_escape() || self.shell_escape() || self.loft_escape(resp) {
+                } else if self.surface_escape()
+                    || self.shell_escape()
+                    || self.loft_escape(resp)
+                    || self.round_escape()
+                {
                 } else if self.in_operation() {
                     self.cancel();
                     self.refresh();
