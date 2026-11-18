@@ -82,6 +82,15 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Edit > Axes > Reset Axes squares them again; Axes to Centre moves the origin to the middle.",
             ],
         ),
+        s::DIM_TOOL => g(
+            "Label a distance on the drawing.",
+            &[
+                "Click the first point, then the second: both snap like any other point.",
+                "Click where the dimension line goes: it sits square to the measured line, towards that point.",
+                "The label shows the length in the document's unit.",
+                "Click a dimension's line to move it; Esc leaves it. Edit > Dimension > Delete Dimension removes one; View > Dimensions hides them all.",
+            ],
+        ),
         s::SECTION_TOOL => g(
             "Cut the model open with a plane, to look inside it.",
             &[

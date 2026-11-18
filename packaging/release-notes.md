@@ -1,7 +1,7 @@
-**New in this build: section planes, and the program's icon on Windows.**
-- **Section planes (Tools > Section Plane).** Click a face to place a plane, slide it through the model, click to set it: everything on one side is cut away so you can look inside, and closed solids get a flat cap where they are cut. Edit > Section Plane flips it, turns its cutting off or on, or deletes it. View > Section Display and Section Planes hide the cut and the outlines. The model itself never changes, and the planes are saved in the file.
-- **Windows:** Prism.exe and its window now carry the program's icon (File Explorer, the taskbar, the title bar). Windows can keep showing the old icon for a while; moving or renaming the file refreshes it.
-- Also recent: Alt tapped with Ctrl or Cmd held no longer turns on New Loop, and New Loop shows a label at the cursor.
+**New in this build: dimensions.**
+- **Dimensions (Tools > Dimensions).** Click two points, then click where the dimension line goes: Prism draws the extension lines, arrowheads and the length in your document's unit. Click a dimension's line to move it; Edit > Dimension > Delete Dimension removes one; View > Dimensions hides them all. They are saved in the file and undo like any edit.
+- **Fixed:** section planes were drawn only while the Section Plane tool was active; they now stay drawn with any tool.
+- Also recent: section planes (Tools > Section Plane), the program's icon on Windows, and Alt tapped with Ctrl or Cmd held no longer turns on New Loop.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

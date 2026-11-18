@@ -52,6 +52,8 @@ pub struct ViewStyle {
     /// & Sections part 1), and whether the planes are drawn.
     pub section: bool,
     pub section_planes: bool,
+    /// Dimensions are drawn (Annotation & Sections part 2).
+    pub dimensions: bool,
     /// Points.
     pub line_width: f32,
     /// Points; 0 turns profiles off.
@@ -110,6 +112,7 @@ impl ViewStyle {
             hidden: false,
             section: true,
             section_planes: true,
+            dimensions: true,
             line_width: 1.5,
             // Profiles on by default (owner request, 2026-11-09).
             profile_width: 3.0,
@@ -247,6 +250,7 @@ impl ViewStyle {
             "view.hidden" => self.hidden,
             "view.section" => self.section,
             "view.sectionplanes" => self.section_planes,
+            "view.dimensions" => self.dimensions,
             "view.xray" => self.xray,
             "view.wireframe" => self.face_style == FaceStyle::Wireframe,
             "view.basecolour" => self.face_style == FaceStyle::BaseColour,
@@ -274,6 +278,7 @@ impl ViewStyle {
             "view.hidden" => &mut self.hidden,
             "view.section" => &mut self.section,
             "view.sectionplanes" => &mut self.section_planes,
+            "view.dimensions" => &mut self.dimensions,
             "view.xray" => &mut self.xray,
             "view.shadow" => &mut self.shadows,
             "view.textures" => &mut self.textures,
@@ -305,7 +310,7 @@ impl ViewStyle {
 }
 
 /// The View menu's toggles.
-pub const TOGGLES: [&str; 20] = [
+pub const TOGGLES: [&str; 21] = [
     "show.faces",
     "show.lines",
     "show.points",
@@ -316,6 +321,7 @@ pub const TOGGLES: [&str; 20] = [
     "view.hidden",
     "view.section",
     "view.sectionplanes",
+    "view.dimensions",
     "view.xray",
     "view.wireframe",
     "view.basecolour",

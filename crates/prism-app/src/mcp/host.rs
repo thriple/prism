@@ -67,6 +67,17 @@ impl Host for AppHost<'_> {
                     .map_or(GEOMETRY_LIMIT, |n| n as usize),
             ),
             "use_tool" => self.use_tool(args)?,
+            "list_dimensions" => self.dimensions(),
+            "add_dimension" => {
+                let get = |k: &str| args.get(k).and_then(parse_point);
+                let (Some(a), Some(b), Some(offset)) = (get("a"), get("b"), get("offset")) else {
+                    return Err("a, b and offset are [x, y, z]".into());
+                };
+                match self.viewport.session.add_dimension_line(a, b, offset) {
+                    Some(id) => json!({"id": id, "dimensions": self.dimensions()}),
+                    None => return Err("a and b must be two different points".into()),
+                }
+            }
             "list_sections" => self.sections(),
             "add_section" => {
                 let origin = args.get("origin").and_then(parse_point);
@@ -366,6 +377,28 @@ impl AppHost<'_> {
             "sheets": sheets,
             "refused": refused,
         }))
+    }
+
+    fn dimensions(&self) -> Value {
+        let rows: Vec<Value> = self
+            .viewport
+            .session
+            .document()
+            .assembly()
+            .dimensions()
+            .0
+            .iter()
+            .map(|(id, d)| {
+                json!({
+                    "id": id.0,
+                    "a": point(d.a),
+                    "b": point(d.b),
+                    "offset": point(d.offset),
+                    "length": round(d.length()),
+                })
+            })
+            .collect();
+        json!(rows)
     }
 
     fn sections(&self) -> Value {
@@ -969,6 +1002,34 @@ mod tests {
             },
         });
         assert_eq!(viewport.session.document().assembly().placed().len(), 0);
+    }
+
+    #[test]
+    fn dimensions_are_listed_and_added() {
+        let (mut chrome, mut viewport, mut files) = parts(prism_tools::scenes::pocket());
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        assert_eq!(value(h.call("list_dimensions", &json!({}))), json!([]));
+        let r = value(h.call(
+            "add_dimension",
+            &json!({"a": [0, 0, 0], "b": [3, 4, 0], "offset": [0, 0, 1]}),
+        ));
+        assert_eq!(r["id"], 0);
+        assert_eq!(r["dimensions"][0]["length"], 5.0);
+        assert!(
+            h.call(
+                "add_dimension",
+                &json!({"a": [1, 1, 1], "b": [1, 1, 1], "offset": [0, 0, 1]})
+            )
+            .is_err()
+        );
+        assert!(h.call("add_dimension", &json!({"a": [0, 0]})).is_err());
     }
 
     #[test]

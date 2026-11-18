@@ -282,6 +282,13 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "dim.delete",
+        name: "Delete Dimension",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "flip.x",
         name: "X (red)",
         key: "",
@@ -567,6 +574,13 @@ pub const ACTIONS: &[RawAction] = &[
     RawAction {
         id: "view.section",
         name: "Section Display",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "view.dimensions",
+        name: "Dimensions",
         key: "",
         proto_run: "",
         when: "",
@@ -1675,6 +1689,10 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                 ],
             ),
             Item::Sub(
+                "Dimension",
+                &[Item::Action("tool.dim"), Item::Action("dim.delete")],
+            ),
+            Item::Sub(
                 "Section Plane",
                 &[
                     Item::Action("tool.section"),
@@ -1766,6 +1784,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Separator,
             Item::Action("view.section"),
             Item::Action("view.sectionplanes"),
+            Item::Action("view.dimensions"),
         ],
     ),
     (
@@ -2404,6 +2423,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     (
         "Section planes: cut the model open in the viewport (Section Plane tool, Section Display)",
+        true,
+    ),
+    (
+        "Dimensions: measure between two points and label the length (Dimensions tool)",
         true,
     ),
     (

@@ -24,8 +24,12 @@ XL: five parts.
 - **Menus:** Tools > Section Plane; Edit > Section > Flip / Activate / Delete; View > Section Display, Section Planes; context menu on a plane. Every action has a menu path; none are greyed.
 - **MCP:** `list_sections` (plane, active), `add_section` (origin, normal), `set_section_active`.
 
-## Part 2: Dimensions (outline)
-- Click two inferred points, then the offset side; the label shows the length in the model's units. A dimension is a document object that follows its two points if the model moves (stored as points; moves with Move on its group). Style and size live in the theme. Angle and radius dimensions come after the linear one.
+## Part 2: Dimensions
+- **Document:** a dimension is `{ a, b, offset }` in world coordinates, a document object (schema 13, optional `dimensions.json`); commands `AddDimension`, `MoveDimension`, `DeleteDimension`, one undo step each. It changes no geometry.
+- **Dimensions tool** (Tools > Dimensions; greyed until now): click two points with inference, then the side: the line sits square to the measured line towards that point. The label shows the length in the document's unit. Click a dimension's line to move it; Esc cancels or leaves it. Edit > Dimension > Delete Dimension; View > Dimensions shows or hides them. Colours in `style.rs`.
+- **MCP:** `list_dimensions`, `add_dimension`.
+- **Built as:** NOTES "Annotation & Sections part 2". A dimension does not yet follow the model if it is moved (a later pass); angle and radius dimensions come after the linear one.
+- **Tests:** commands and exact undo; file round trip and golden; the tool's three clicks, Esc, pick-up, delete, the view toggle; the MCP calls.
 
 ## Part 3: Text (outline)
 - Screen labels (always face the screen) and 3D text (outline, face, solid, extruded depth; along a path later). Fonts: system fonts and bundled OFL fonts; shaping with `rustybuzz` (MIT), glyph outlines with `ttf-parser` (MIT/Apache-2.0). Add each to `docs/DEPENDENCIES.md` first, with whether it builds for wasm. System font listing differs on the web (bundled fonts only there).

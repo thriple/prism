@@ -13,8 +13,8 @@ pub mod image;
 pub mod material;
 
 pub use assembly::{
-    Assembly, Attributes, DefId, Definition, Instance, InstanceId, NESTED, Placed, ROOT, Section,
-    SectionId, SolidOp, TWO_SOLIDS, Tag, TagId,
+    Assembly, Attributes, DefId, Definition, DimId, Dimension, Instance, InstanceId, NESTED,
+    Placed, ROOT, Section, SectionId, SolidOp, TWO_SOLIDS, Tag, TagId,
 };
 pub use image::{Image, ImageId, Pixels, Texture};
 pub use material::{FaceSide, Material, Principled};
@@ -329,6 +329,20 @@ pub enum Command {
     DeleteSection {
         id: SectionId,
     },
+    /// A new linear dimension (Annotation & Sections part 2), in world
+    /// coordinates.
+    AddDimension {
+        a: DVec3,
+        b: DVec3,
+        offset: DVec3,
+    },
+    MoveDimension {
+        id: DimId,
+        offset: DVec3,
+    },
+    DeleteDimension {
+        id: DimId,
+    },
     /// Lock or unlock groups (anywhere: instance ids are unique).
     SetLocked {
         instances: BTreeSet<InstanceId>,
@@ -616,6 +630,9 @@ impl Command {
             Command::SetSectionActive { .. } => "Deactivate Section Plane",
             Command::RenameSection { .. } => "Rename Section Plane",
             Command::DeleteSection { .. } => "Delete Section Plane",
+            Command::AddDimension { .. } => "Dimension",
+            Command::MoveDimension { .. } => "Move Dimension",
+            Command::DeleteDimension { .. } => "Delete Dimension",
             Command::SetLocked { locked: true, .. } => "Lock",
             Command::SetLocked { .. } => "Unlock",
             Command::IntersectWith { .. } => "Intersect Faces",
@@ -873,6 +890,15 @@ impl Command {
                 asm.paste(ctx, clip, at);
             }
             Command::SetLocked { instances, locked } => asm.set_locked(instances, *locked),
+            Command::AddDimension { a, b, offset } => {
+                asm.add_dimension(Dimension {
+                    a: *a,
+                    b: *b,
+                    offset: *offset,
+                });
+            }
+            Command::MoveDimension { id, offset } => asm.move_dimension(*id, *offset),
+            Command::DeleteDimension { id } => asm.delete_dimension(*id),
             Command::AddSection { origin, normal } => {
                 asm.add_section(*origin, *normal);
             }
@@ -1284,6 +1310,9 @@ impl Command {
             | Command::Cut { .. }
             | Command::Paste { .. }
             | Command::SetLocked { .. }
+            | Command::AddDimension { .. }
+            | Command::MoveDimension { .. }
+            | Command::DeleteDimension { .. }
             | Command::AddSection { .. }
             | Command::MoveSection { .. }
             | Command::FlipSection { .. }

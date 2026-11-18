@@ -330,6 +330,47 @@ fn section_planes_round_trip() {
     assert_eq!(d2.assembly().sections().0.len(), 3);
 }
 
+/// Dimensions are saved and read back exactly (schema 13); a file with
+/// none has no `dimensions.json`.
+#[test]
+fn dimensions_round_trip() {
+    let mut d = prism_tools::scenes::pocket();
+    let plain = write(
+        &Contents {
+            assembly: d.assembly().clone(),
+            settings: Default::default(),
+        },
+        "test",
+    );
+    assert!(!String::from_utf8_lossy(&plain).contains("dimensions.json"));
+    d.run(Command::AddDimension {
+        a: DVec3::new(0.1, 1.0 / 3.0, 0.0),
+        b: DVec3::new(4.0, 0.7, 2.0),
+        offset: DVec3::new(0.0, -0.5, 1.0 / 7.0),
+    });
+    d.run(Command::AddDimension {
+        a: DVec3::ZERO,
+        b: DVec3::X,
+        offset: DVec3::Z,
+    });
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = write(&c, "test");
+    let back = read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    assert_eq!(back.assembly.dimensions().0.len(), 2);
+    assert_eq!(write(&back, "test"), bytes);
+    let mut d2 = prism_doc::Document::with_assembly(back.assembly);
+    d2.run(Command::AddDimension {
+        a: DVec3::ZERO,
+        b: DVec3::Y,
+        offset: DVec3::Z,
+    });
+    assert_eq!(d2.assembly().dimensions().0.len(), 3);
+}
+
 /// Curved faces are saved and read back exactly (Exact Curves 4a).
 #[test]
 fn cylinders_round_trip_exactly() {

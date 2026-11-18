@@ -47,6 +47,31 @@ pub struct Section {
     pub normal: DVec3,
 }
 
+/// A dimension's id (Annotation & Sections part 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct DimId(pub u32);
+
+/// A linear dimension: the distance between two points, drawn offset to
+/// one side. In world coordinates; it changes no geometry.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Dimension {
+    pub a: DVec3,
+    pub b: DVec3,
+    /// From the measured line to the dimension line (square to it).
+    pub offset: DVec3,
+}
+
+impl Dimension {
+    fn is_usable(&self) -> bool {
+        self.a.is_finite() && self.b.is_finite() && self.offset.is_finite() && self.a != self.b
+    }
+
+    /// The distance measured.
+    pub fn length(&self) -> f64 {
+        self.a.distance(self.b)
+    }
+}
+
 /// A tag: a name, and whether what is on it is shown.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tag {
@@ -152,6 +177,11 @@ pub struct Assembly {
     /// The plane that cuts, if any: only one does at a time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     active_section: Option<SectionId>,
+    /// Dimensions (Annotation & Sections part 2).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    dimensions: BTreeMap<DimId, Dimension>,
+    #[serde(default)]
+    next_dim: u32,
 }
 
 /// An instance's name, tag and whether it is hidden (for files).
@@ -197,6 +227,8 @@ impl Assembly {
             sections: BTreeMap::new(),
             next_section: 0,
             active_section: None,
+            dimensions: BTreeMap::new(),
+            next_dim: 0,
         }
     }
 
@@ -272,6 +304,8 @@ impl Assembly {
             sections: BTreeMap::new(),
             next_section: 0,
             active_section: None,
+            dimensions: BTreeMap::new(),
+            next_dim: 0,
         })
     }
 
@@ -375,6 +409,49 @@ impl Assembly {
     /// Whether a path of instances (an open group) goes through a locked one.
     pub fn path_locked(&self, path: &[InstanceId]) -> bool {
         path.iter().any(|i| self.is_locked(*i))
+    }
+
+    // ---------- dimensions (Annotation & Sections part 2) ----------
+
+    /// The dimensions, and the counter for new ones (for files).
+    pub fn dimensions(&self) -> (&BTreeMap<DimId, Dimension>, u32) {
+        (&self.dimensions, self.next_dim)
+    }
+
+    pub fn dimension(&self, id: DimId) -> Option<&Dimension> {
+        self.dimensions.get(&id)
+    }
+
+    /// Set the dimensions from a file; unusable ones (not finite, or both
+    /// points the same) are dropped.
+    pub fn with_dimensions(mut self, dims: BTreeMap<DimId, Dimension>, next: u32) -> Self {
+        self.dimensions = dims.into_iter().filter(|(_, d)| d.is_usable()).collect();
+        self.next_dim = next.max(self.dimensions.keys().next_back().map_or(0, |k| k.0 + 1));
+        self
+    }
+
+    /// Add a dimension. None if the points are not finite or are the same.
+    pub fn add_dimension(&mut self, d: Dimension) -> Option<DimId> {
+        if !d.is_usable() {
+            return None;
+        }
+        let id = DimId(self.next_dim);
+        self.next_dim += 1;
+        self.dimensions.insert(id, d);
+        Some(id)
+    }
+
+    /// Move a dimension's line to a new offset.
+    pub fn move_dimension(&mut self, id: DimId, offset: DVec3) {
+        if offset.is_finite()
+            && let Some(d) = self.dimensions.get_mut(&id)
+        {
+            d.offset = offset;
+        }
+    }
+
+    pub fn delete_dimension(&mut self, id: DimId) {
+        self.dimensions.remove(&id);
     }
 
     // ---------- section planes (Annotation & Sections part 1) ----------
@@ -726,6 +803,7 @@ impl Assembly {
     pub fn keep_counters_from(&mut self, newer: &Assembly) {
         self.next_material = self.next_material.max(newer.next_material);
         self.next_section = self.next_section.max(newer.next_section);
+        self.next_dim = self.next_dim.max(newer.next_dim);
         self.next_def = self.next_def.max(newer.next_def);
         self.next_instance = self.next_instance.max(newer.next_instance);
         for (id, d) in &newer.defs {

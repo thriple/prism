@@ -130,6 +130,13 @@ fn cases() -> Vec<(&'static str, Contents)> {
             },
         ),
         (
+            "dimensions.prism",
+            Contents {
+                assembly: dimensioned().assembly().clone(),
+                settings: Settings::default(),
+            },
+        ),
+        (
             "sections.prism",
             Contents {
                 assembly: sectioned().assembly().clone(),
@@ -137,6 +144,24 @@ fn cases() -> Vec<(&'static str, Contents)> {
             },
         ),
     ]
+}
+
+/// Two dimensions on the pocket (Annotation & Sections part 2, schema 13).
+fn dimensioned() -> prism_doc::Document {
+    use prism_doc::Command;
+    use prism_math::DVec3;
+    let mut d = prism_tools::scenes::pocket();
+    d.run(Command::AddDimension {
+        a: DVec3::ZERO,
+        b: DVec3::new(4.0, 0.0, 0.0),
+        offset: DVec3::new(0.0, -1.0, 0.0),
+    });
+    d.run(Command::AddDimension {
+        a: DVec3::new(4.0, 4.0, 0.0),
+        b: DVec3::new(4.0, 4.0, 2.0),
+        offset: DVec3::new(1.0, 0.0, 0.0),
+    });
+    d
 }
 
 /// Two section planes on the pocket, the second one cutting

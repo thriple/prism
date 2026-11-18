@@ -32,6 +32,7 @@ mod cage;
 mod clip;
 mod construct;
 mod curve;
+mod dimensions;
 mod draw;
 mod edit;
 mod follow;
@@ -58,6 +59,7 @@ pub use cage::PICK_FIRST;
 pub use clip::LOCKED;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use curve::{CURVE, curve_for};
+pub use dimensions::{DIM_TOOL, offset_towards};
 pub use draw::{FREEHAND, RRECT, freehand_curve, rrect_corners, simplify};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
@@ -90,7 +92,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 40] = [
+pub const TOOLS: [&str; 41] = [
     SELECT,
     LINE,
     RECT,
@@ -136,6 +138,8 @@ pub const TOOLS: [&str; 40] = [
     axes::AXES_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
+    // Annotation & Sections part 2.
+    dimensions::DIM_TOOL,
     // Solids & CAD part 2 (brief 39): the Solid menu's booleans.
     booleans::UNION,
     booleans::SUBTRACT,
@@ -581,6 +585,10 @@ pub struct Session {
     section_op: Option<sections::SectionOp>,
     section_sel: Option<prism_doc::SectionId>,
     section_ghost: Option<(DVec3, DVec3)>,
+    /// The Dimensions tool (part 2): the one being made or moved, and the
+    /// one picked.
+    dim_op: Option<dimensions::DimOp>,
+    dim_sel: Option<prism_doc::DimId>,
 }
 
 impl Session {
@@ -600,6 +608,8 @@ impl Session {
             section_op: None,
             section_sel: None,
             section_ghost: None,
+            dim_op: None,
+            dim_sel: None,
             cage: None,
             cage_notice: None,
             curve_through: false,
@@ -811,6 +821,7 @@ impl Session {
             || self.freehand.is_some()
             || self.axes_op.is_some()
             || self.section_op.is_some()
+            || self.dim_op.is_some()
             || self.solid_first.is_some()
             || self.cage_start().is_some()
             || self.boxing.is_some()
@@ -975,6 +986,7 @@ impl Session {
             .or_else(|| self.freehand_hint())
             .or_else(|| self.axes_hint())
             .or_else(|| self.section_hint())
+            .or_else(|| self.dim_hint())
             .or_else(|| self.solid_hint())
         {
             return h;
@@ -1288,6 +1300,7 @@ impl Session {
         self.axes_op = None;
         self.section_op = None;
         self.section_ghost = None;
+        self.dim_op = None;
         self.solid_first = None;
         self.cage_cancel();
         self.last_fillet = None;
@@ -1724,6 +1737,7 @@ impl Session {
             "axes.reset" => self.reset_axes(false),
             "axes.centre" => self.reset_axes(true),
             "section.flip" | "section.active" | "section.delete" => self.section_action(id),
+            "dim.delete" => self.dim_delete(),
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
@@ -1783,6 +1797,7 @@ impl Session {
             || self.tool == FREEHAND
             || self.tool == AXES_TOOL
             || self.tool == SECTION_TOOL
+            || self.tool == DIM_TOOL
             || self.cage_wants_inference()
             || self.edit_wants_inference()
             || self.pasting()
@@ -1826,6 +1841,10 @@ impl Session {
             RRECT => Context {
                 start: self.rrect.map(|r| r.b.unwrap_or(r.a)),
                 no_lock: self.rrect.is_some_and(|r| r.b.is_some()),
+                ..Default::default()
+            },
+            DIM_TOOL => Context {
+                start: self.dim_op.map(|o| o.b.map_or(o.a, |_| o.at)),
                 ..Default::default()
             },
             AXES_TOOL => Context {
@@ -1935,6 +1954,7 @@ impl Session {
             self.rrect_hover(s, &view);
             self.axes_hover();
             self.section_hover(s, &view);
+            self.dim_hover();
             self.arc_hover(s, &view);
             self.cage_hover();
             self.paste_hover(&view);
@@ -2054,6 +2074,7 @@ impl Session {
                 RRECT => self.rrect_press(s),
                 AXES_TOOL => self.axes_press(s),
                 SECTION_TOOL => self.section_press(s),
+                DIM_TOOL => self.dim_press(s),
                 FREEHAND => self.freehand_press(s, shift),
                 t if is_edit(t) => {
                     let n = self.clicks.press(self.time, s);
@@ -2543,6 +2564,9 @@ impl Session {
         self.surface_overlay(&mut o);
         self.shell_overlay(&mut o);
         self.window_overlay(&mut o);
+        // Section planes and dimensions stay drawn whatever the tool.
+        self.section_overlay(&mut o);
+        self.dim_overlay(&mut o);
         if !self.wants_inference() {
             return o;
         }
@@ -2656,7 +2680,6 @@ impl Session {
         self.curve_overlay(&mut o);
         self.rrect_overlay(&mut o);
         self.axes_overlay(&mut o);
-        self.section_overlay(&mut o);
         self.freehand_overlay(&mut o);
         self.cage_overlay(&mut o);
         // The snap: its target, glyph and label.

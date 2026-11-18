@@ -50,7 +50,8 @@ pub use migrate::{Raw, migrate};
 /// texture images (`images/`) and texture placement on faces (geometry
 /// layout 8). Schema 10: NURBS curves and patches (geometry layout 9). Schema 11:
 /// locked groups (`groups.json`). Schema 12: section planes (`sections.json`).
-pub const SCHEMA: u32 = 12;
+/// Schema 13: dimensions (`dimensions.json`).
+pub const SCHEMA: u32 = 13;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -62,6 +63,22 @@ const MODEL: &str = "geometry/model.bin";
 const GROUPS: &str = "groups.json";
 const MATERIALS: &str = "materials.json";
 const SECTIONS: &str = "sections.json";
+const DIMENSIONS: &str = "dimensions.json";
+
+/// The document's dimensions (schema 13).
+#[derive(Serialize, Deserialize)]
+struct DimensionsV1 {
+    next: u32,
+    dimensions: Vec<DimensionV1>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DimensionV1 {
+    id: u32,
+    a: [f64; 3],
+    b: [f64; 3],
+    offset: [f64; 3],
+}
 
 /// The document's section planes (schema 12).
 #[derive(Serialize, Deserialize)]
@@ -311,6 +328,27 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         };
         files.push((SECTIONS.to_owned(), pretty(&m)));
     }
+    let (dims, next_dim) = asm.dimensions();
+    if !dims.is_empty() {
+        manifest.entries.push(Entry {
+            path: DIMENSIONS.to_owned(),
+            kind: "dimensions".to_owned(),
+            version: 1,
+        });
+        let m = DimensionsV1 {
+            next: next_dim,
+            dimensions: dims
+                .iter()
+                .map(|(id, d)| DimensionV1 {
+                    id: id.0,
+                    a: d.a.to_array(),
+                    b: d.b.to_array(),
+                    offset: d.offset.to_array(),
+                })
+                .collect(),
+        };
+        files.push((DIMENSIONS.to_owned(), pretty(&m)));
+    }
     for image in asm.images().values() {
         let path = image_path(image);
         manifest.entries.push(Entry {
@@ -460,6 +498,26 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
                 .collect(),
             m.next,
             m.active.map(prism_doc::SectionId),
+        );
+    }
+    if let Some(json) = raw.files.get(DIMENSIONS) {
+        let m: DimensionsV1 = serde_json::from_slice(json)
+            .map_err(|e| FileError::Damaged(format!("{DIMENSIONS}: {e}")))?;
+        assembly = assembly.with_dimensions(
+            m.dimensions
+                .into_iter()
+                .map(|d| {
+                    (
+                        prism_doc::DimId(d.id),
+                        prism_doc::Dimension {
+                            a: prism_math::DVec3::from_array(d.a),
+                            b: prism_math::DVec3::from_array(d.b),
+                            offset: prism_math::DVec3::from_array(d.offset),
+                        },
+                    )
+                })
+                .collect(),
+            m.next,
         );
     }
     Ok(Contents { assembly, settings })

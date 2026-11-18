@@ -137,6 +137,8 @@ pub struct Feedback {
     /// cuts a solid (Annotation & Sections part 1).
     pub section: Rgba,
     pub section_cap: Rgba,
+    /// Dimensions' lines and arrowheads (Annotation & Sections part 2).
+    pub dimension: Rgba,
     pub guide_cross: Rgba,
     pub free: Rgba,
     /// Parallel guides and woken edges.
@@ -196,6 +198,7 @@ impl Default for Feedback {
             intersection: Rgba::rgb(0x11, 0x11, 0x11),
             section: Rgba::rgb(0xe8, 0x4a, 0x8f),
             section_cap: Rgba::rgb(0xd2, 0x5a, 0x78),
+            dimension: Rgba::rgb(0xf2, 0xc1, 0x4e),
             guide_cross: Rgba::rgb(0xb2, 0x1f, 0xc2),
             free: Rgba::rgb(0x6b, 0x72, 0x80),
             parallel: Rgba::rgb(0xb2, 0x1f, 0xc2),

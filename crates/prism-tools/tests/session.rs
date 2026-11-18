@@ -6642,3 +6642,127 @@ fn a_cut_away_face_cannot_be_clicked() {
     d.click(DVec3::new(0.4, 0.4, 2.0));
     assert!(!d.s.selection().faces.contains(&ring));
 }
+
+// ---------- Dimensions (Annotation & Sections part 2, brief 46) ----------
+
+fn dims(d: &Driver) -> Vec<prism_doc::Dimension> {
+    d.s.document()
+        .assembly()
+        .dimensions()
+        .0
+        .values()
+        .copied()
+        .collect()
+}
+
+#[test]
+fn the_dimension_tool_takes_two_points_and_a_side() {
+    use prism_tools::session::DIM_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.tool(DIM_TOOL);
+    assert!(d.s.hint().contains("first point"), "{}", d.s.hint());
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    assert!(d.s.hint().contains("second point"), "{}", d.s.hint());
+    d.click(DVec3::new(4.0, 0.0, 0.0));
+    assert!(d.s.hint().contains("dimension line goes"), "{}", d.s.hint());
+    assert!(dims(&d).is_empty(), "nothing yet");
+    // The side: a point in front of the box, on the ground.
+    d.click(DVec3::new(2.0, -1.5, 0.0));
+    let all = dims(&d);
+    assert_eq!(all.len(), 1);
+    let dim = all[0];
+    assert!((dim.length() - 4.0).abs() < 1e-6, "{}", dim.length());
+    assert!(dim.offset.y < -0.5, "{:?}", dim.offset);
+    assert!(dim.offset.x.abs() < 1e-6, "square to the measured line");
+    // The label shows the length in the document's unit.
+    let label =
+        d.s.overlay()
+            .labels
+            .iter()
+            .find(|l| l.text.contains('4'))
+            .cloned();
+    assert!(label.is_some(), "a label with the length");
+    // One undo step; the model never changed.
+    let model = d.s.document().model().clone();
+    act(&mut d, "edit.undo");
+    assert!(dims(&d).is_empty());
+    assert_eq!(d.s.document().model(), &model);
+}
+
+#[test]
+fn esc_cancels_a_dimension_and_a_pick_up_leaves_it() {
+    use prism_tools::session::DIM_TOOL;
+    let mut d = Driver::new(prism_tools::scenes::pocket());
+    d.tool(DIM_TOOL);
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.click(DVec3::new(4.0, 0.0, 0.0));
+    d.send(Input::Key { key: Key::Escape });
+    d.click(DVec3::new(2.0, -1.5, 0.0));
+    assert!(
+        dims(&d).is_empty(),
+        "the second click after Esc starts over"
+    );
+    d.send(Input::Key { key: Key::Escape });
+    // Make one, then pick it up by its line and move it.
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    d.click(DVec3::new(4.0, 0.0, 0.0));
+    d.click(DVec3::new(2.0, -1.0, 0.0));
+    let first = dims(&d)[0];
+    let on_line = first.a + first.offset + (first.b - first.a) * 0.25;
+    d.click(on_line);
+    assert!(d.s.hint().contains("dimension line goes"));
+    d.send(Input::Key { key: Key::Escape });
+    assert_eq!(dims(&d)[0], first, "Esc leaves it where it was");
+    d.click(on_line);
+    d.click(DVec3::new(2.0, -3.0, 0.0));
+    let moved = dims(&d);
+    assert_eq!(moved.len(), 1, "moved, not added");
+    assert!(
+        moved[0].offset.y < first.offset.y - 0.5,
+        "{:?}",
+        moved[0].offset
+    );
+    assert_eq!((moved[0].a, moved[0].b), (first.a, first.b));
+}
+
+#[test]
+fn delete_dimension_and_the_view_toggle() {
+    let mut doc = prism_tools::scenes::pocket();
+    doc.run(prism_doc::Command::AddDimension {
+        a: DVec3::ZERO,
+        b: DVec3::new(4.0, 0.0, 0.0),
+        offset: DVec3::new(0.0, -1.0, 0.0),
+    });
+    let mut d = Driver::new(doc);
+    d.send(Input::Move { x: 50.0, y: 50.0 });
+    assert!(d.s.has_dimensions());
+    let labelled = |d: &Driver| d.s.overlay().labels.iter().any(|l| l.text.contains('4'));
+    assert!(labelled(&d), "drawn");
+    let mut v = d.s.view_style().clone();
+    v.dimensions = false;
+    d.s.set_view_style(v);
+    assert!(!labelled(&d), "View > Dimensions off hides them");
+    act(&mut d, "dim.delete");
+    assert!(!d.s.has_dimensions());
+}
+
+#[test]
+fn section_planes_stay_drawn_with_any_tool() {
+    let mut doc = prism_tools::scenes::pocket();
+    doc.run(prism_doc::Command::AddSection {
+        origin: DVec3::new(0.0, 0.0, 1.0),
+        normal: DVec3::Z,
+    });
+    let mut d = Driver::new(doc);
+    d.tool(SELECT);
+    d.send(Input::Move { x: 50.0, y: 50.0 });
+    let lines = d.s.overlay().lines.len();
+    assert!(lines >= 5, "the plane's outline and arrow ({lines})");
+    let mut v = d.s.view_style().clone();
+    v.section_planes = false;
+    d.s.set_view_style(v);
+    assert!(
+        d.s.overlay().lines.len() < lines,
+        "Section Planes off hides it"
+    );
+}

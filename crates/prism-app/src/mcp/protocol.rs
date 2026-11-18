@@ -217,6 +217,26 @@ pub fn tools() -> Value {
             },
         },
         {
+            "name": "list_dimensions",
+            "title": "List dimensions",
+            "description": "The document's dimensions: id, the two points, the offset of the dimension line, and the measured length in metres. Dimensions label the drawing only; the model is not changed.",
+            "inputSchema": none,
+        },
+        {
+            "name": "add_dimension",
+            "title": "Add a dimension",
+            "description": "Add a linear dimension between points `a` and `b` ([x, y, z], metres), with its line `offset` ([x, y, z]) from the measured line. One undo step (run_action edit.undo). Returns its id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "a": {"type": "array", "items": {"type": "number"}},
+                    "b": {"type": "array", "items": {"type": "number"}},
+                    "offset": {"type": "array", "items": {"type": "number"}},
+                },
+                "required": ["a", "b", "offset"],
+            },
+        },
+        {
             "name": "list_sections",
             "title": "List section planes",
             "description": "The document's section planes: id, name, origin, normal (the side it points to is cut away) and whether it is the one that cuts. Sections cut the viewport only; the model is not changed.",
@@ -514,6 +534,8 @@ mod tests {
                 "list_actions",
                 "get_geometry",
                 "use_tool",
+                "list_dimensions",
+                "add_dimension",
                 "list_sections",
                 "add_section",
                 "set_section_active",
