@@ -5,10 +5,11 @@
 //! base and the features run again; a feature that cannot find its edges
 //! any more is marked broken and skipped, never silently dropped.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use prism_math::DVec3;
-use prism_topo::{EdgeId, Model};
+use prism_math::{DAffine3, DVec3};
+use prism_ops::select::Selection;
+use prism_topo::{EdgeId, FaceId, Model};
 use serde::{Deserialize, Serialize};
 
 /// An edge a feature points at: its id, and where its ends were, so it can
@@ -244,5 +245,211 @@ impl Stack {
             }
         }
         (Stack::new(want.clone()), want, n)
+    }
+}
+
+/// The faces of each connected solid of `m`: faces that share an edge are
+/// in the same one.
+fn shells(m: &Model) -> Vec<BTreeSet<FaceId>> {
+    let by_edge = m.edge_faces();
+    let mut seen: BTreeSet<FaceId> = BTreeSet::new();
+    let mut out = Vec::new();
+    for (start, _) in m.faces() {
+        if seen.contains(&start) {
+            continue;
+        }
+        let mut shell = BTreeSet::new();
+        let mut todo = vec![start];
+        while let Some(f) = todo.pop() {
+            if !shell.insert(f) {
+                continue;
+            }
+            if let Some(face) = m.face(f) {
+                for e in face.edge_ids() {
+                    todo.extend(by_edge.get(&e).into_iter().flatten().copied());
+                }
+            }
+        }
+        seen.extend(&shell);
+        out.push(shell);
+    }
+    out
+}
+
+/// The edge of `m` whose ends are where `r`'s were.
+fn edge_at(m: &Model, r: &EdgeRef) -> Option<EdgeId> {
+    m.edges().map(|(e, _)| e).find(|e| same_place(m, *e, r))
+}
+
+impl Feature {
+    fn refs(&self) -> &[EdgeRef] {
+        match self {
+            Feature::Round { edges, .. } => edges,
+        }
+    }
+
+    fn refs_mut(&mut self) -> &mut Vec<EdgeRef> {
+        match self {
+            Feature::Round { edges, .. } => edges,
+        }
+    }
+}
+
+impl Stack {
+    /// Move the base and where the features point, as a group is placed.
+    pub fn moved(&mut self, by: &DAffine3) {
+        prism_ops::transform::affine(&mut self.base, by);
+        for f in &mut self.features {
+            for r in f.refs_mut() {
+                r.a = by.transform_point3(r.a);
+                r.b = by.transform_point3(r.b);
+            }
+        }
+    }
+
+    /// Take on features from another body, whose base has been joined to
+    /// this one's: their edges are found again here by place.
+    pub fn adopt(&mut self, features: Vec<Feature>) {
+        for mut f in features {
+            for r in f.refs_mut() {
+                if let Some(id) = edge_at(&self.base, r) {
+                    r.id = id;
+                }
+            }
+            self.features.push(f);
+        }
+    }
+
+    /// Where each feature's edges are in `m` (found by place): their ids
+    /// there. None if one is not.
+    fn reref(features: &[Feature], m: &Model) -> Option<Vec<Feature>> {
+        let mut out = features.to_vec();
+        for f in &mut out {
+            for r in f.refs_mut() {
+                r.id = edge_at(m, r)?;
+            }
+        }
+        Some(out)
+    }
+
+    /// Make Group: take the solids `sel` selects out of the body, with
+    /// their features. Returns the shape taken (as drawn) and, if features
+    /// went with it, the stack for the new group. What stays keeps its
+    /// features and is not drawn from the taken part. Features a solid is
+    /// only partly selected for are baked first. `self.base` and
+    /// `self.features` are what stays (the caller draws them again).
+    pub fn take(&mut self, shown: &Model, sel: &Selection) -> (Model, Option<Stack>) {
+        // Which solid each feature is on, and how much of it is selected.
+        let (solid_of, carried_solids) = loop {
+            let solids = shells(&self.base);
+            let in_solid = |r: &EdgeRef| {
+                let e = self
+                    .base
+                    .edge(r.id)
+                    .filter(|_| same_place(&self.base, r.id, r));
+                let e = e
+                    .is_some()
+                    .then_some(r.id)
+                    .or_else(|| edge_at(&self.base, r))?;
+                let faces = self.base.edge_faces();
+                let f = faces.get(&e)?.first().copied()?;
+                solids.iter().position(|s| s.contains(&f))
+            };
+            let solid_of: Vec<Option<usize>> = self
+                .features
+                .iter()
+                .map(|f| {
+                    let mut which = f.refs().iter().map(in_solid);
+                    let first = which.next().flatten()?;
+                    which.all(|w| w == Some(first)).then_some(first)
+                })
+                .collect();
+            let status = |k: usize| {
+                let shown_here: BTreeSet<FaceId> = solids[k]
+                    .iter()
+                    .copied()
+                    .filter(|f| shown.face(*f).is_some())
+                    .collect();
+                let chosen = shown_here.iter().filter(|f| sel.faces.contains(f)).count();
+                (chosen, shown_here.len())
+            };
+            let bad = solid_of.iter().rposition(|w| match w {
+                None => true,
+                Some(k) => {
+                    let (chosen, all) = status(*k);
+                    chosen != 0 && chosen != all
+                }
+            });
+            match bad {
+                Some(i) => *self = self.bake_first(i + 1),
+                None => {
+                    let carried: BTreeSet<usize> = solids
+                        .iter()
+                        .enumerate()
+                        .filter(|(k, _)| {
+                            solid_of.contains(&Some(*k)) && {
+                                let (chosen, all) = status(*k);
+                                chosen == all && all > 0
+                            }
+                        })
+                        .map(|(k, _)| k)
+                        .collect();
+                    break (
+                        solid_of,
+                        carried
+                            .into_iter()
+                            .map(|k| (k, solids[k].clone()))
+                            .collect::<BTreeMap<_, _>>(),
+                    );
+                }
+            }
+        };
+        let mut base_sel = Selection {
+            vertices: sel
+                .vertices
+                .iter()
+                .copied()
+                .filter(|v| self.base.has_vertex(*v))
+                .collect(),
+            edges: sel
+                .edges
+                .iter()
+                .copied()
+                .filter(|e| self.base.edge(*e).is_some())
+                .collect(),
+            faces: sel
+                .faces
+                .iter()
+                .copied()
+                .filter(|f| self.base.face(*f).is_some())
+                .collect(),
+            guides: sel.guides.clone(),
+        };
+        for faces in carried_solids.values() {
+            base_sel.faces.extend(faces);
+        }
+        let taken = prism_ops::select::take(&mut self.base, &base_sel);
+        let (moved, stay): (Vec<_>, Vec<_>) = self
+            .features
+            .drain(..)
+            .zip(solid_of)
+            .partition(|(_, k)| k.is_some_and(|k| carried_solids.contains_key(&k)));
+        self.features = stay.into_iter().map(|(f, _)| f).collect();
+        let moved: Vec<Feature> = moved.into_iter().map(|(f, _)| f).collect();
+        if moved.is_empty() {
+            return (taken, None);
+        }
+        match Stack::reref(&moved, &taken) {
+            Some(features) => {
+                let mut s = Stack {
+                    base: taken,
+                    features,
+                };
+                let model = s.evaluate();
+                (model, Some(s))
+            }
+            // Not found in what was taken: it goes without them.
+            None => (taken, None),
+        }
     }
 }

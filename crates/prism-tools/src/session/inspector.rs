@@ -11,7 +11,7 @@
 
 use std::collections::BTreeSet;
 
-use prism_doc::{Change, Command, InstanceId};
+use prism_doc::{Change, Command, DefId, InstanceId};
 use prism_math::DVec3;
 use prism_ops::validate::validate;
 
@@ -104,6 +104,21 @@ fn agree<T: PartialEq>(mut values: impl Iterator<Item = T>) -> Option<T> {
 }
 
 impl Session {
+    /// The definition whose live features the Inspector shows and edits:
+    /// the one selected group's, or, with no group selected, the open
+    /// group's (the root for loose geometry).
+    pub(super) fn features_target(&self) -> Option<DefId> {
+        let asm = self.doc.assembly();
+        match self.groups.len() {
+            0 => asm.context_def(&self.ctx),
+            1 => {
+                let id = *self.groups.iter().next()?;
+                asm.context_def(&self.path_of(id))
+            }
+            _ => None,
+        }
+    }
+
     /// How many live features the document has.
     pub(super) fn live_features(&self) -> usize {
         self.doc
@@ -129,6 +144,14 @@ impl Session {
         };
         if self.groups.is_empty() {
             self.inspect_geometry(&mut out);
+            // The features of loose geometry, or of the open group.
+            if let Some(stack) = self
+                .features_target()
+                .and_then(|d| asm.def(d))
+                .and_then(|d| d.stack.as_ref())
+            {
+                out.sections.push(self.features_section(stack));
+            }
         } else {
             self.inspect_groups(&mut out);
         }
@@ -406,6 +429,13 @@ impl Session {
     /// Change a field. `key` is the field's key and `text` what was typed
     /// (lengths take units and expressions). One undo step.
     pub fn inspector_set(&mut self, key: &str, text: &str) -> Result<(), String> {
+        if key == "bake" || key.starts_with("feature.") {
+            let asm = self.doc.assembly();
+            if self.groups.iter().any(|g| asm.is_locked(*g)) {
+                return Err(LOCKED.into());
+            }
+            return self.feature_set(key, text);
+        }
         if self.groups.is_empty() {
             return Err("Select a group or component first".into());
         }
@@ -481,8 +511,6 @@ impl Session {
                     change,
                 });
             }
-            "bake" | "feature" => return self.feature_set(key, text),
-            k if k.starts_with("feature.") => return self.feature_set(k, text),
             _ => return Err(format!("{key:?} is not an Inspector field")),
         }
         Ok(())
@@ -491,20 +519,19 @@ impl Session {
     /// `bake`, `feature.N.size` and `feature.N.remove`, for the one
     /// selected body.
     fn feature_set(&mut self, key: &str, text: &str) -> Result<(), String> {
-        let [id] = self.groups.iter().copied().collect::<Vec<_>>()[..] else {
+        let Some(def) = self.features_target() else {
             return Err("Select one group to edit its features".into());
         };
         let asm = self.doc.assembly();
         let count = asm
-            .context_def(&self.path_of(id))
-            .and_then(|d| asm.def(d))
+            .def(def)
             .and_then(|d| d.stack.as_ref())
             .map_or(0, |s| s.features.len());
         if count == 0 {
             return Err("It has no live features".into());
         }
         let command = if key == "bake" {
-            Command::BakeFeatures { instance: id }
+            Command::BakeFeatures { def }
         } else {
             let mut parts = key.split('.').skip(1);
             let index: usize = parts
@@ -513,10 +540,7 @@ impl Session {
                 .filter(|n| *n < count)
                 .ok_or(format!("{key:?} is not an Inspector field"))?;
             match parts.next() {
-                Some("remove") => Command::RemoveFeature {
-                    instance: id,
-                    index,
-                },
+                Some("remove") => Command::RemoveFeature { def, index },
                 Some("size") => {
                     let size = self
                         .number
@@ -525,11 +549,7 @@ impl Session {
                     if size <= 0.0 {
                         return Err("A size must be more than zero".into());
                     }
-                    Command::SetFeatureSize {
-                        instance: id,
-                        index,
-                        size,
-                    }
+                    Command::SetFeatureSize { def, index, size }
                 }
                 _ => return Err(format!("{key:?} is not an Inspector field")),
             }

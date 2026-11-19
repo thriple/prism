@@ -417,20 +417,21 @@ pub enum Command {
         fillet: bool,
     },
     /// Change a live feature's size (Inspector part 2); the features run
-    /// again on the body's base.
+    /// again on the base. `def` is the group's definition, or the root for
+    /// loose geometry.
     SetFeatureSize {
-        instance: InstanceId,
+        def: DefId,
         index: usize,
         size: f64,
     },
-    /// Take a live feature off a body.
+    /// Take a live feature off.
     RemoveFeature {
-        instance: InstanceId,
+        def: DefId,
         index: usize,
     },
-    /// Turn a body's live features into plain geometry.
+    /// Turn the live features into plain geometry.
     BakeFeatures {
-        instance: InstanceId,
+        def: DefId,
     },
     /// Sweep a profile face along a path of lines (Follow Me, Exact Curves
     /// 5c).
@@ -982,8 +983,13 @@ impl Command {
                 selection,
                 instances,
             } => {
-                if let Some(d) = asm.def_mut(ctx) {
-                    prism_ops::remove(&mut d.model, selection);
+                if let Some(d) = asm.def_mut_live(ctx) {
+                    let t = stack::Targets {
+                        vertices: selection.vertices.clone(),
+                        edges: selection.edges.clone(),
+                        faces: selection.faces.clone(),
+                    };
+                    d.edit_direct(Some(t), |m| prism_ops::remove(m, selection));
                 }
                 asm.erase(ctx, instances);
             }
@@ -1036,32 +1042,21 @@ impl Command {
                     c.apply_in(asm, ctx);
                 }
             }
-            Command::SetFeatureSize {
-                instance,
-                index,
-                size,
-            } => {
-                if let Some((_, inst)) = asm.find_instance(*instance) {
-                    asm.set_feature_size(inst.def, *index, *size);
-                }
+            Command::SetFeatureSize { def, index, size } => {
+                asm.set_feature_size(*def, *index, *size);
             }
-            Command::RemoveFeature { instance, index } => {
-                if let Some((_, inst)) = asm.find_instance(*instance) {
-                    asm.remove_feature(inst.def, *index);
-                }
+            Command::RemoveFeature { def, index } => {
+                asm.remove_feature(*def, *index);
             }
-            Command::BakeFeatures { instance } => {
-                if let Some((_, inst)) = asm.find_instance(*instance) {
-                    asm.bake(inst.def);
-                }
+            Command::BakeFeatures { def } => {
+                asm.bake(*def);
             }
-            // Inside a group a round stays live; loose geometry is rounded
-            // outright.
+            // A round stays live, in a group and on loose geometry alike.
             Command::RoundEdges {
                 edges,
                 size,
                 fillet,
-            } if ctx != ROOT => {
+            } => {
                 asm.round_live(ctx, edges, *size, *fillet);
             }
             Command::MakeGroup {
@@ -1159,15 +1154,7 @@ impl Command {
             // notes).
             geometry => {
                 if let Some(d) = asm.def_mut_live(ctx) {
-                    match d.stack.take() {
-                        Some(stack) => {
-                            let (s, m, _) =
-                                stack.edit(&d.model, geometry.targets(), |m| geometry.apply(m));
-                            d.model = m;
-                            d.stack = (!s.features.is_empty()).then_some(s);
-                        }
-                        None => geometry.apply(&mut d.model),
-                    }
+                    d.edit_direct(geometry.targets(), |m| geometry.apply(m));
                 }
             }
         }
@@ -1230,11 +1217,9 @@ impl Command {
             | Command::PaintInstances { instances, .. }
             | Command::MakeGroup { instances, .. }
             | Command::MakeComponent { instances, .. } => any(instances),
-            Command::Explode { instance }
-            | Command::ChangeAxes { instance, .. }
-            | Command::SetFeatureSize { instance, .. }
-            | Command::RemoveFeature { instance, .. }
-            | Command::BakeFeatures { instance } => asm.is_locked(*instance),
+            Command::Explode { instance } | Command::ChangeAxes { instance, .. } => {
+                asm.is_locked(*instance)
+            }
             Command::Boolean { first, second, .. } => {
                 asm.is_locked(*first) || asm.is_locked(*second)
             }

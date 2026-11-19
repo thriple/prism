@@ -154,6 +154,31 @@ impl Definition {
     pub fn is_component(&self) -> bool {
         self.name.is_some()
     }
+
+    /// A direct edit of the body as drawn: to its base when it has live
+    /// features (see `Stack::edit`).
+    pub fn edit_direct(&mut self, targets: Option<crate::stack::Targets>, f: impl Fn(&mut Model)) {
+        match self.stack.take() {
+            Some(stack) => {
+                let (s, m, _) = stack.edit(&self.model, targets, f);
+                self.model = m;
+                self.stack = (!s.features.is_empty()).then_some(s);
+            }
+            None => f(&mut self.model),
+        }
+    }
+
+    /// Add geometry to the body: to its base when it has live features,
+    /// and the features run again.
+    fn add_geometry(&mut self, add: impl FnOnce(&mut Model)) {
+        match &mut self.stack {
+            Some(stack) => {
+                add(&mut stack.base);
+                self.model = stack.evaluate();
+            }
+            None => add(&mut self.model),
+        }
+    }
 }
 
 /// An instance as placed in the world, for drawing and picking.
@@ -1321,8 +1346,26 @@ impl Assembly {
         if sel.is_empty() && instances.is_empty() {
             return None;
         }
-        let parent = self.def_mut(ctx)?;
-        let mut geo = prism_ops::select::take(&mut parent.model, sel);
+        let parent = self.def_mut_live(ctx)?;
+        // A body with live features gives its solids' features to the group.
+        let mut carried: Option<Stack> = None;
+        let mut geo = match parent.stack.take() {
+            Some(mut stack) if !sel.is_empty() => {
+                let (taken, c) = stack.take(&parent.model, sel);
+                carried = c;
+                if stack.features.is_empty() {
+                    parent.model = stack.base;
+                } else {
+                    parent.model = stack.evaluate();
+                    parent.stack = Some(stack);
+                }
+                taken
+            }
+            other => {
+                parent.stack = other;
+                prism_ops::select::take(&mut parent.model, sel)
+            }
+        };
         let moved: Vec<(InstanceId, Instance)> = instances
             .iter()
             .filter_map(|i| parent.instances.remove(i).map(|inst| (*i, inst)))
@@ -1336,6 +1379,10 @@ impl Assembly {
         let origin = lo.unwrap_or(DVec3::ZERO);
         let back = DAffine3::from_translation(-origin);
         transform::affine(&mut geo, &back);
+        if let Some(c) = &mut carried {
+            c.moved(&back);
+            geo = c.evaluate();
+        }
         let inner = moved
             .into_iter()
             .map(|(i, inst)| {
@@ -1352,7 +1399,7 @@ impl Assembly {
             model: geo,
             instances: inner,
             name: None,
-            stack: None,
+            stack: carried,
         });
         let id = self.new_instance();
         self.def_mut_live(ctx)?.instances.insert(
@@ -1404,10 +1451,22 @@ impl Assembly {
         };
         let mut geo = child.model;
         transform::affine(&mut geo, &inst.transform);
-        let Some(parent) = self.def_mut(ctx) else {
+        let Some(parent) = self.def_mut_live(ctx) else {
             return false;
         };
-        join(&mut parent.model, &geo);
+        match child.stack {
+            // The body's live features go with it, on the base.
+            Some(mut carried) => {
+                carried.moved(&inst.transform);
+                let stack = parent
+                    .stack
+                    .get_or_insert_with(|| Stack::new(parent.model.clone()));
+                join(&mut stack.base, &carried.base);
+                stack.adopt(carried.features);
+                parent.model = stack.evaluate();
+            }
+            None => parent.add_geometry(|m| join(m, &geo)),
+        }
         parent.instances.remove(&id);
         for (cid, ci) in child.instances {
             parent.instances.insert(
@@ -1517,7 +1576,7 @@ impl Assembly {
                 continue;
             };
             let id = self.new_instance();
-            if let Some(d) = self.def_mut(ctx) {
+            if let Some(d) = self.def_mut_live(ctx) {
                 d.instances.insert(
                     id,
                     Instance {
@@ -1532,9 +1591,9 @@ impl Assembly {
         crate::material::remap(&mut geo, &map.materials);
         transform::affine(&mut geo, at);
         if geo.vertices().next().is_some()
-            && let Some(d) = self.def_mut(ctx)
+            && let Some(d) = self.def_mut_live(ctx)
         {
-            join(&mut d.model, &geo);
+            d.add_geometry(|m| join(m, &geo));
         }
         self.prune();
         true

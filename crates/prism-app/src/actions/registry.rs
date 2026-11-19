@@ -353,7 +353,6 @@ impl Registry {
                         None if r.id.starts_with("dim.") => When::HasDimensions,
                         None if r.id.starts_with("cplane.") => When::HasWorkPlanes,
                         None if r.id == "edit.explode"
-                            || r.id == "edit.bake"
                             || r.id == "edit.unique"
                             || r.id == "edit.hide"
                             || r.id == "edit.lock"

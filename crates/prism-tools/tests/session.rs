@@ -8116,3 +8116,42 @@ fn editing_what_a_live_round_made_bakes_it_and_says_so() {
     undo(&mut d);
     assert!(live(&d), "one undo step brings it back");
 }
+
+#[test]
+fn a_round_on_loose_geometry_is_live_and_shown_in_the_inspector() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("2");
+    d.tool(FILLET);
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.send(Input::Key { key: Key::Enter });
+    d.tool(SELECT);
+    let radius = |d: &Driver| radii_of(d.s.model());
+    assert_eq!(radius(&d).len(), 1, "rounded");
+    // Nothing selected: the Features of the top level show.
+    let titles: Vec<_> = d.s.inspector().sections.iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["Features"]);
+    let before = radius(&d)[0];
+    d.s.inspector_set("feature.0.size", "0.5").expect("changes");
+    assert!((radius(&d)[0] - 0.5).abs() < 1e-9 && (before - 0.5).abs() > 1e-9);
+    // Edit > Bake Features with nothing selected bakes them.
+    act(&mut d, "edit.bake");
+    assert!(d.s.document().assembly().root().stack.is_none());
+    assert_eq!(radius(&d).len(), 1, "the round stays");
+    let titles: Vec<_> = d.s.inspector().sections.iter().map(|s| s.title).collect();
+    assert!(titles.is_empty(), "{titles:?}");
+}
+
+fn radii_of(m: &prism_topo::Model) -> Vec<f64> {
+    m.faces()
+        .filter_map(|(_, f)| match f.surface.clone() {
+            prism_geom::Surface::Cylinder(c) => Some(c.radius),
+            _ => None,
+        })
+        .collect()
+}

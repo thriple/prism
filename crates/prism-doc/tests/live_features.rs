@@ -104,7 +104,7 @@ fn a_round_in_a_group_stays_live() {
 }
 
 #[test]
-fn loose_geometry_is_rounded_outright() {
+fn loose_geometry_stays_live_too() {
     let mut d = Document::new();
     d.run(Command::Rect {
         x0: 0.0,
@@ -126,7 +126,22 @@ fn loose_geometry_is_rounded_outright() {
         size: 0.25,
         fillet: true,
     }));
+    let stack = d.assembly().root().stack.as_ref().expect("live at the top");
+    assert_eq!(stack.features.len(), 1);
+    assert_eq!(d.model().face_count(), 7);
+    // Pulled out a metre, the round follows; baked, it is plain.
+    let wall = face_facing(d.model(), DVec3::X);
+    assert!(d.run(Command::PushPull {
+        face: wall,
+        distance: 1.0,
+        new_loop: false,
+    }));
+    assert!(d.assembly().root().stack.is_some());
+    assert!(d.run(Command::BakeFeatures {
+        def: prism_doc::ROOT,
+    }));
     assert!(d.assembly().root().stack.is_none());
+    assert_eq!(d.model().face_count(), 7);
 }
 
 #[test]
@@ -135,7 +150,7 @@ fn a_feature_changes_size_and_goes_back_with_undo() {
     round(&mut d, inst, def, 0.25);
     let small = model(&d, def).to_json();
     assert!(d.run(Command::SetFeatureSize {
-        instance: inst,
+        def,
         index: 0,
         size: 0.5,
     }));
@@ -144,7 +159,7 @@ fn a_feature_changes_size_and_goes_back_with_undo() {
     assert_eq!(stack.base.face_count(), 6, "the base did not change");
     assert!(
         !d.run(Command::SetFeatureSize {
-            instance: inst,
+            def,
             index: 0,
             size: 0.5,
         }),
@@ -205,10 +220,10 @@ fn bake_makes_the_round_plain_geometry() {
     let (mut d, inst, def) = grouped_cube();
     round(&mut d, inst, def, 0.25);
     let shown = model(&d, def).to_json();
-    assert!(d.run(Command::BakeFeatures { instance: inst }));
+    assert!(d.run(Command::BakeFeatures { def }));
     assert!(d.assembly().def(def).unwrap().stack.is_none());
     assert_eq!(model(&d, def).to_json(), shown, "the shape is the same");
-    assert!(!d.run(Command::BakeFeatures { instance: inst }));
+    assert!(!d.run(Command::BakeFeatures { def }));
     d.undo();
     assert!(d.assembly().def(def).unwrap().stack.is_some());
 }
@@ -218,10 +233,7 @@ fn a_feature_is_taken_off_and_the_cube_is_plain_again() {
     let (mut d, inst, def) = grouped_cube();
     let plain = model(&d, def).to_json();
     round(&mut d, inst, def, 0.25);
-    assert!(d.run(Command::RemoveFeature {
-        instance: inst,
-        index: 0,
-    }));
+    assert!(d.run(Command::RemoveFeature { def, index: 0 }));
     assert!(d.assembly().def(def).unwrap().stack.is_none());
     assert_eq!(model(&d, def).face_count(), 6);
     assert_eq!(model(&d, def).geometry_json(), {
@@ -329,4 +341,173 @@ fn only_the_features_up_to_the_one_touched_are_baked() {
     let stack = d.assembly().def(def).unwrap().stack.as_ref().unwrap();
     assert_eq!(stack.features.len(), 1, "only the first round was baked");
     assert!(!stack.features[0].is_broken());
+}
+
+// ---------- loose geometry, and features that go with their solid ----------
+
+/// A box `w` wide and `h` tall with its low corner at `at`, at the root.
+fn boxed(d: &mut Document, at: DVec3, w: f64, h: f64) {
+    d.run(Command::Rect {
+        x0: at.x,
+        y0: at.y,
+        x1: at.x + w,
+        y1: at.y + w,
+        z: at.z,
+    });
+    let f = prism_ops::face_at(d.model(), at + DVec3::new(w / 2.0, w / 2.0, 0.0)).expect("base");
+    let up = d.model().face(f).unwrap().plane().unwrap().normal.z > 0.0;
+    d.run(Command::PushPull {
+        face: f,
+        distance: if up { h } else { -h },
+        new_loop: false,
+    });
+}
+
+/// The vertical edge of the model nearest `near`.
+fn upright_edge_near(m: &Model, near: DVec3) -> EdgeId {
+    m.edges()
+        .filter(|(_, e)| (m.vertex(e.a).z - m.vertex(e.b).z).abs() > 0.5)
+        .min_by(|(_, a), (_, b)| {
+            let d = |e: &prism_topo::Edge| (m.vertex(e.a) - near).length();
+            d(a).total_cmp(&d(b))
+        })
+        .unwrap()
+        .0
+}
+
+/// What lies inside the box `lo`..`hi` at the root, as a selection.
+fn select_in(m: &Model, lo: DVec3, hi: DVec3) -> Selection {
+    let inside =
+        |p: DVec3| p.cmpge(lo - DVec3::splat(0.5)).all() && p.cmple(hi + DVec3::splat(0.5)).all();
+    let vertices: BTreeSet<_> = m
+        .vertices()
+        .filter(|(_, p)| inside(*p))
+        .map(|(v, _)| v)
+        .collect();
+    Selection {
+        edges: m
+            .edges()
+            .filter(|(_, e)| vertices.contains(&e.a) && vertices.contains(&e.b))
+            .map(|(id, _)| id)
+            .collect(),
+        faces: m
+            .faces()
+            .filter(|(_, f)| f.loops().flatten().all(|v| vertices.contains(v)))
+            .map(|(id, _)| id)
+            .collect(),
+        vertices,
+        guides: BTreeSet::new(),
+    }
+}
+
+/// Two loose boxes, the one at x 0 rounded at its far-left corner.
+fn two_boxes_one_rounded() -> Document {
+    let mut d = Document::new();
+    boxed(&mut d, DVec3::ZERO, 2.0, 2.0);
+    boxed(&mut d, DVec3::new(6.0, 0.0, 0.0), 2.0, 2.0);
+    let e = upright_edge_near(d.model(), DVec3::new(0.0, 0.0, 1.0));
+    assert!(d.run(Command::RoundEdges {
+        edges: [e].into(),
+        size: 0.25,
+        fillet: true,
+    }));
+    assert!(d.assembly().root().stack.is_some(), "live at the top");
+    d
+}
+
+fn new_group(d: &mut Document, sel: Selection) -> (InstanceId, DefId) {
+    let id = d.assembly().next_instance();
+    assert!(d.run(Command::MakeGroup {
+        selection: sel,
+        instances: BTreeSet::new(),
+    }));
+    (id, d.assembly().find_instance(id).unwrap().1.def)
+}
+
+#[test]
+fn grouping_the_rounded_box_takes_its_round_with_it() {
+    let mut d = two_boxes_one_rounded();
+    let sel = select_in(d.model(), DVec3::ZERO, DVec3::new(2.0, 2.0, 2.0));
+    let (_, def) = new_group(&mut d, sel);
+    let group = d.assembly().def(def).unwrap();
+    let stack = group.stack.as_ref().expect("the round went with its box");
+    assert_eq!(stack.features.len(), 1);
+    assert!(!stack.features[0].is_broken());
+    assert_eq!(group.model.face_count(), 7, "the box and its round");
+    // The other box is plain and nothing is live at the top any more.
+    assert!(d.assembly().root().stack.is_none());
+    assert_eq!(d.model().face_count(), 6);
+    // And the round can be changed in its new home.
+    assert!(d.run(Command::SetFeatureSize {
+        def,
+        index: 0,
+        size: 0.5,
+    }));
+    assert_eq!(d.assembly().def(def).unwrap().model.face_count(), 7);
+    d.undo();
+    d.undo();
+    assert!(
+        d.assembly().root().stack.is_some(),
+        "undo puts it back at the top"
+    );
+}
+
+#[test]
+fn grouping_the_other_box_leaves_the_round_live_at_the_top() {
+    let mut d = two_boxes_one_rounded();
+    let sel = select_in(
+        d.model(),
+        DVec3::new(6.0, 0.0, 0.0),
+        DVec3::new(8.0, 2.0, 2.0),
+    );
+    let (_, def) = new_group(&mut d, sel);
+    assert!(d.assembly().def(def).unwrap().stack.is_none());
+    let top = d.assembly().root().stack.as_ref().expect("still live");
+    assert_eq!(top.features.len(), 1);
+    assert!(!top.features[0].is_broken());
+    assert_eq!(d.model().face_count(), 7, "the rounded box");
+}
+
+#[test]
+fn grouping_part_of_a_rounded_box_bakes_its_round() {
+    let mut d = two_boxes_one_rounded();
+    // The top face of the rounded box alone.
+    let top = face_facing(d.model(), DVec3::Z);
+    let sel = Selection {
+        faces: [top].into(),
+        ..Selection::default()
+    };
+    let (_, def) = new_group(&mut d, sel);
+    assert!(
+        d.assembly().root().stack.is_none(),
+        "baked, not half-carried"
+    );
+    assert!(d.assembly().def(def).unwrap().stack.is_none());
+}
+
+#[test]
+fn exploding_a_group_gives_its_round_back_to_the_top() {
+    let mut d = two_boxes_one_rounded();
+    let sel = select_in(d.model(), DVec3::ZERO, DVec3::new(2.0, 2.0, 2.0));
+    let shown = d.model().face_count();
+    let (id, _) = new_group(&mut d, sel);
+    assert!(d.run(Command::Explode { instance: id }));
+    let top = d.assembly().root().stack.as_ref().expect("live again");
+    assert_eq!(top.features.len(), 1);
+    assert!(!top.features[0].is_broken());
+    assert_eq!(d.model().face_count(), shown, "the same two boxes");
+}
+
+#[test]
+fn a_group_made_beside_a_round_leaves_it_live() {
+    let mut d = two_boxes_one_rounded();
+    // A third box made after, then grouped: the top-level round stays.
+    boxed(&mut d, DVec3::new(12.0, 0.0, 0.0), 2.0, 2.0);
+    let sel = select_in(
+        d.model(),
+        DVec3::new(12.0, 0.0, 0.0),
+        DVec3::new(14.0, 2.0, 2.0),
+    );
+    let _ = new_group(&mut d, sel);
+    assert!(d.assembly().root().stack.is_some());
 }

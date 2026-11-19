@@ -577,19 +577,23 @@ impl Session {
         self.run(Command::Batch { commands });
     }
 
-    /// Bake Features: the selected groups' live features become plain
-    /// geometry, in one step.
+    /// Bake Features: the live features of the selected groups, or with
+    /// none selected of the open group (loose geometry at the top), become
+    /// plain geometry, in one step.
     pub(super) fn bake_features(&mut self) {
         let asm = self.doc.assembly();
-        let commands: Vec<Command> = self
-            .groups
-            .iter()
-            .filter(|g| {
-                asm.context_def(&self.path_of(**g))
-                    .and_then(|d| asm.def(d))
-                    .is_some_and(|d| d.stack.is_some())
-            })
-            .map(|g| Command::BakeFeatures { instance: *g })
+        let defs: Vec<_> = if self.groups.is_empty() {
+            self.features_target().into_iter().collect()
+        } else {
+            self.groups
+                .iter()
+                .filter_map(|g| asm.context_def(&self.path_of(*g)))
+                .collect()
+        };
+        let commands: Vec<Command> = defs
+            .into_iter()
+            .filter(|d| asm.def(*d).is_some_and(|d| d.stack.is_some()))
+            .map(|def| Command::BakeFeatures { def })
             .collect();
         if commands.is_empty() {
             return;

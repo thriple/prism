@@ -1,6 +1,7 @@
-**New in this build: live fillets bake themselves when you edit their own faces.**
-- **Live fillets:** edit a face next to a fillet (push/pull, move) and the fillet follows. Edit the fillet's own face, edge or corner (erase, split, drag) and that fillet is baked first, in the same undo step, with a red message in the status bar. Undo brings it back.
-- Fillet and Chamfer inside a group stay live: change the size under Window > Inspector > Features, or Edit > Bake Features. Saved in the file.
+**New in this build: fillets and chamfers stay live on loose geometry, and go with their solid.**
+- **A fillet or chamfer is live wherever you make it**, not only inside a group. Make Group and Make Component take the live fillets of the solids you group. Explode gives them back.
+- Window > Inspector > Features (nothing selected) edits the top level's or the open group's fillets. Edit > Bake Features bakes them.
+- Edit the fillet's own faces and that fillet is baked first, in the same undo step, with a red message. Undo brings it back.
 - **Effects** in the menu bar is now the kit's switch. **Offset** lights up the edge it snaps to.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
