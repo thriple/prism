@@ -272,6 +272,46 @@ impl Session {
         true
     }
 
+    /// A dashed outline of the second solid of the selected live boolean,
+    /// where the Inspector's cutter fields put it.
+    pub(super) fn cutter_overlay(&self, o: &mut Overlay) {
+        let Some(index) = self.selected_feature() else {
+            return;
+        };
+        let asm = self.doc.assembly();
+        let Some(def) = asm.context_def(&self.ctx) else {
+            return;
+        };
+        let Some(prism_doc::Feature::Boolean { tool, .. }) = asm
+            .def(def)
+            .and_then(|d| d.stack.as_ref())
+            .and_then(|s| s.features.get(index))
+        else {
+            return;
+        };
+        let fb = &self.style.feedback;
+        for (_, e) in tool.edges() {
+            let (a, b) = (tool.vertex(e.a), tool.vertex(e.b));
+            let steps = if e.curve.is_curved() { 16 } else { 1 };
+            let mut from = a;
+            for k in 1..=steps {
+                let to = if k == steps {
+                    b
+                } else {
+                    e.curve.point(a, b, f64::from(k) / f64::from(steps))
+                };
+                o.lines.push(Line {
+                    a: from,
+                    b: to,
+                    color: fb.guide,
+                    width: fb.target_width,
+                    dash: [6.0, 4.0],
+                });
+                from = to;
+            }
+        }
+    }
+
     /// The guide: the edge the feature works on (dashed), and the handle
     /// across a face from it.
     pub(super) fn handle_overlay(&self, o: &mut Overlay) {

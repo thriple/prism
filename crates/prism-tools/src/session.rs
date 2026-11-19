@@ -2764,6 +2764,7 @@ impl Session {
         self.paste_overlay(&mut o);
         self.smart_overlay(&mut o);
         self.round_overlay(&mut o);
+        self.cutter_overlay(&mut o);
         self.loft_overlay(&mut o);
         self.surface_overlay(&mut o);
         self.shell_overlay(&mut o);

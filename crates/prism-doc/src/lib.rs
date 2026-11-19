@@ -432,6 +432,12 @@ pub enum Command {
         min: prism_math::DVec3,
         max: prism_math::DVec3,
     },
+    /// Make a live boolean another kind (Inspector part 3b-2).
+    SetBoolKind {
+        def: DefId,
+        index: usize,
+        op: BoolKind,
+    },
     /// Take a live feature off.
     RemoveFeature {
         def: DefId,
@@ -725,7 +731,9 @@ impl Command {
             Command::IntersectWith { .. } => "Intersect Faces",
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
-            Command::SetFeatureSize { .. } | Command::SetCutter { .. } => "Change Feature",
+            Command::SetFeatureSize { .. }
+            | Command::SetCutter { .. }
+            | Command::SetBoolKind { .. } => "Change Feature",
             Command::ExplodeFeature { .. } => "Explode Feature",
             Command::RemoveFeature { .. } => "Remove Feature",
             Command::BakeFeatures { .. } => "Bake Features",
@@ -1066,6 +1074,9 @@ impl Command {
                 max,
             } => {
                 asm.set_cutter(*def, *index, *min, *max);
+            }
+            Command::SetBoolKind { def, index, op } => {
+                asm.set_bool_kind(*def, *index, *op);
             }
             Command::RemoveFeature { def, index } => {
                 asm.remove_feature(*def, *index);
@@ -1533,6 +1544,7 @@ impl Command {
             | Command::EraseInstances { .. }
             | Command::SetFeatureSize { .. }
             | Command::SetCutter { .. }
+            | Command::SetBoolKind { .. }
             | Command::RemoveFeature { .. }
             | Command::ExplodeFeature { .. }
             | Command::BakeFeatures { .. }

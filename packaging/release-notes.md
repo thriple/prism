@@ -1,8 +1,8 @@
-**New in this build: Offset goes as far as you ask, and keeps working.**
-- **Offset** now goes the whole distance you move or type, even past where its sides meet or turn round. The new lines cross the old ones and split them; tidy up what you do not want, as in SketchUp.
-- **Fix:** after an Offset taken as far as it could go, Offset no longer refuses every later try (on the thin leftover face, or on a rectangle drawn round it).
-- **Recordings** (`Prism_session_*.json`) now start with a short note saying what the file is.
-- Also in recent builds: the live boolean's cutter has position and size fields in the Inspector, and a union of boxes overlapping on shared planes is valid in either order.
+**New in this build: see and change a live cut.**
+- **Live Union, Subtract and Intersect:** when you open the body and select the cut, a dashed outline shows the cutter. In Inspector > Features you can change it between Union, Subtract and Intersect, and type its position and size. Undo puts each change back.
+- **Offset** goes as far as you ask, even past where its sides meet (the new lines cross and split the old ones), and no longer refuses to start again after a maximum offset.
+- **Fix:** a union of boxes that overlap on shared planes is valid whichever you pick first.
+- **Recordings** (`Prism_session_*.json`) start with a short note saying what the file is.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

@@ -424,6 +424,18 @@ fn edge_at(m: &Model, r: &EdgeRef) -> Option<EdgeId> {
 }
 
 impl Feature {
+    /// Make a live boolean a different one (Union, Subtract, Intersect).
+    /// False if it is not a boolean or already is that.
+    pub fn set_bool_kind(&mut self, new: BoolKind) -> bool {
+        match self {
+            Feature::Boolean { op, .. } if *op != new => {
+                *op = new;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The box round a boolean's second solid, in the body's own
     /// coordinates.
     pub fn tool_box(&self) -> Option<(DVec3, DVec3)> {

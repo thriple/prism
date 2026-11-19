@@ -8417,7 +8417,11 @@ fn a_subtract_by_the_tool_stays_live_in_the_inspector_until_baked() {
         .iter()
         .find(|f| f.key == "feature.0.kind")
         .expect("its row");
-    assert_eq!(kind.label, "Subtract");
+    assert_eq!(kind.text, "Subtract");
+    assert!(matches!(
+        kind.kind,
+        prism_tools::session::FieldKind::Choice(_)
+    ));
     // Bake makes it plain; the shape stays.
     act(&mut d, "edit.bake");
     let asm = d.s.document().assembly();
@@ -8497,4 +8501,52 @@ fn a_recording_says_what_it_is_at_the_top_and_old_ones_still_load() {
     let old: Recording = serde_json::from_value(value).expect("an old recording");
     assert_eq!(old.about, "");
     Session::replay(&old);
+}
+
+#[test]
+fn a_live_boolean_changes_kind_and_shows_a_ghost_of_its_cutter_when_selected() {
+    use prism_tools::session::SOLID_TOOLS;
+    let mut d = overlapping_groups();
+    d.tool(SOLID_TOOLS[1]);
+    d.click(DVec3::new(0.5, 0.0, 1.0));
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    d.tool(SELECT);
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    let g =
+        *d.s.document()
+            .assembly()
+            .root()
+            .instances
+            .iter()
+            .find(|(_, i)| i.transform.translation.x < 2.0)
+            .unwrap()
+            .0;
+    let dashed = |d: &Driver| {
+        d.s.overlay()
+            .lines
+            .iter()
+            .filter(|l| l.dash == [6.0, 4.0])
+            .count()
+    };
+    assert_eq!(dashed(&d), 0, "no ghost until the feature is selected");
+    // Open the body and select its cut: the cutter's box is drawn.
+    d.s.open_path_to(&[g]);
+    d.s.select_feature(0);
+    assert_eq!(d.s.selected_feature(), Some(0));
+    assert_eq!(dashed(&d), 12, "the cutter is a box");
+    // Subtract becomes Intersect: what was cut away is what is left.
+    assert!((group_volume(&d, g) - 4.0).abs() < 1e-9);
+    d.s.inspector_set("feature.0.kind", "Intersect")
+        .expect("changes");
+    assert_eq!(d.s.document().undo_name(), Some("Change Feature"));
+    assert!((group_volume(&d, g) - 4.0).abs() < 1e-9, "the shared part");
+    assert_eq!(inspector_text(&d, "feature.0.kind").0, "Intersect");
+    // Union with the cutter back in; the same kind again or a wrong word does nothing.
+    d.s.inspector_set("feature.0.kind", "union")
+        .expect("changes");
+    assert!((group_volume(&d, g) - 12.0).abs() < 1e-9);
+    assert!(d.s.inspector_set("feature.0.kind", "Union").is_err());
+    assert!(d.s.inspector_set("feature.0.kind", "Merge").is_err());
+    act(&mut d, "edit.undo");
+    assert_eq!(inspector_text(&d, "feature.0.kind").0, "Intersect");
 }

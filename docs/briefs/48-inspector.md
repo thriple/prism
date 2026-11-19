@@ -63,8 +63,11 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 ## Part 3b-1: the cutter's fields
 - **Six rows under a live boolean:** Cutter X, Y, Z (the corner of the box round the second solid) and Cutter width, depth, height, in the body's own coordinates (so a rotated or scaled group shows its own axes, not the world's). Typing one moves or stretches the cutter and runs the features again: `SetCutter` (one undo step, "Change Feature").
 - **Refused, nothing changes:** a size of zero or less, text that is not a length, the same value, or a change that breaks the shape (the result must stay a solid).
-- **Left for 3b-2:** a ghost of the cutter while the feature is selected; flipping Union, Subtract and Intersect.
-- **MCP:** `set_inspector` with `feature.N.cutter.x`, `.y`, `.z`, `.w`, `.d` or `.h`; read the rows with `get_inspector`.
+
+## Part 3b-2: the ghost and the kind
+- **Ghost:** with a live boolean selected (open its body, then select the cut from the Outliner or its faces), a dashed outline of the cutter is drawn where the cutter fields put it, under any tool. It is not selectable and not part of the model.
+- **Kind:** the feature's Inspector row is a choice, Union, Subtract or Intersect. Changing it runs the features again (`SetBoolKind`, one undo step, "Change Feature"). A kind that would leave nothing is refused and nothing changes.
+- **MCP:** `set_inspector` with `feature.N.cutter.x`, `.y`, `.z`, `.w`, `.d` or `.h`, and `feature.N.kind` with `Union`, `Subtract` or `Intersect`; read the rows with `get_inspector`.
 
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.

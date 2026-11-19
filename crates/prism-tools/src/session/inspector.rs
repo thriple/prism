@@ -371,12 +371,25 @@ impl Session {
                 } else {
                     "Kept live: the second solid is stored inside."
                 };
-                fields.push(field(
-                    &format!("feature.{i}.kind"),
-                    f.name(),
-                    FieldKind::Fixed,
-                    note.into(),
-                ));
+                if f.is_broken() {
+                    fields.push(field(
+                        &format!("feature.{i}.kind"),
+                        f.name(),
+                        FieldKind::Fixed,
+                        note.into(),
+                    ));
+                } else {
+                    fields.push(field(
+                        &format!("feature.{i}.kind"),
+                        "Boolean",
+                        FieldKind::Choice(
+                            ["Union", "Subtract", "Intersect"]
+                                .map(String::from)
+                                .to_vec(),
+                        ),
+                        f.name().into(),
+                    ));
+                }
                 if let Some((lo, hi)) = f.tool_box().filter(|_| !f.is_broken()) {
                     let size = hi - lo;
                     for (axis, label, v) in [
@@ -616,6 +629,15 @@ impl Session {
                         return Err("A size must be more than zero".into());
                     }
                     Command::SetFeatureSize { def, index, size }
+                }
+                Some("kind") => {
+                    let op = match text.to_ascii_lowercase().as_str() {
+                        "union" => prism_doc::BoolKind::Union,
+                        "subtract" => prism_doc::BoolKind::Subtract,
+                        "intersect" => prism_doc::BoolKind::Intersect,
+                        _ => return Err(format!("{text:?} is not Union, Subtract or Intersect")),
+                    };
+                    Command::SetBoolKind { def, index, op }
                 }
                 Some("cutter") => {
                     let axis = parts.next().unwrap_or_default();
