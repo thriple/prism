@@ -10,7 +10,7 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 ## Parts
 1. **The panel (built).** Schema-driven: the session returns sections of fields (`Session::inspector`), the window draws them, and `Session::inspector_set(key, text)` takes the typed text back. MCP `get_inspector` and `set_inspector` use the same two calls.
 2. **The modifier stack (built, first with the live round).** Features stored on a body's definition over its base geometry, re-run after direct edits, stable-ID references with a geometric fallback, "broken" and Bake. See Part 2 below.
-3. **Editable features.** Fillet and chamfer first (a distance changed after the fact; built, parts 2 to 2c), then booleans (owner chose, 2026-11-19: first, with the cutter kept inside the feature; 3a built, see Part 3a), then shell, hole, array and mirror.
+3. **Editable features.** Fillet and chamfer first (a distance changed after the fact; built, parts 2 to 2c), then booleans (owner chose, 2026-11-19: first, with the cutter kept inside the feature; 3a built, see Part 3a), then shell (owner chose it next, 2026-11-19; part 5a built, see Part 5a), hole, array and mirror.
 4. **Previews (4a built), pick references (4b built), named parameters.** Part 4a: typing in a feature's field shows the result on the body before Enter. Part 4b: a round can be pointed at edges picked in the viewport. Named parameters are not started.
 
 ## Part 1: the panel
@@ -79,6 +79,14 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 - **Where the edges are looked up:** the picked edges are matched by place in the model as it is just before that round runs, so edges the round (or a later feature) made cannot be picked for it. An edge that is not there, no edges, or a result the kernel refuses changes nothing.
 - **Not here:** picking edges for a round while it is selected as a feature; adding to its edges (it replaces them); pick references for other kinds of feature.
 - **MCP:** `set_inspector` with `feature.N.edges` (any text) uses the current selection; select the edges first with the selection tools.
+
+## Part 5a: live shell
+- **The Shell / Thicken tool stays live.** `Command::Shell` now adds a `Feature::Shell { faces, open, thickness }` (like a round): the shelled body, the faces left open and the thickness are kept, and direct edits run under it. The faces are kept by id and by place (the middle of the outline and the normal), so they are found again after other edits. A shell the kernel refuses is not made, as before.
+- **Inspector:** a Features row "Thickness (negative goes in)" sets the thickness (`feature.N.size`, one undo step; a shell may be negative, zero is refused), Explode, Remove and Bake as for the others; the Outliner lists it as "Shell 0.1 m". The typed value previews on the open body (part 4a).
+- **Moves with its body:** placing, exploding and Make Component carry it (its faces move with the body). Make Group on loose geometry bakes it (a shell has no edges to say which solid it is on).
+- **File:** schema 17 (a new kind of feature; no new files).
+- **Not here:** picking the open faces again in the viewport, a drag handle for the thickness, and a ghost; Shell on a curved face stays as the tool had it.
+- **MCP:** `set_inspector` with `feature.N.size` and a signed thickness, as for the fillet.
 
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.

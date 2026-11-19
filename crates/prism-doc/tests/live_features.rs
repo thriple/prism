@@ -589,3 +589,47 @@ fn a_broken_round_is_given_new_edges_and_runs_again() {
     assert!(!stack.set_edges(3, &[EdgeRef::of(&plain, far).unwrap()]));
     assert_eq!(stack, was);
 }
+
+/// A live shell in a group goes with the group when it is placed and
+/// exploded (Inspector part 5): its faces are followed to the new place.
+#[test]
+fn a_shell_in_a_group_stays_live_when_the_group_is_moved_and_exploded() {
+    use prism_doc::{Change, FaceRef};
+    let (mut d, inst, def) = grouped_cube();
+    let top = face_facing(model(&d, def), DVec3::Z);
+    let side = face_facing(model(&d, def), DVec3::X);
+    assert!(d.run_in(
+        &[inst],
+        Command::Shell {
+            faces: [side].into(),
+            open: [top].into(),
+            thickness: -0.1,
+        }
+    ));
+    let stack = d.assembly().def(def).unwrap().stack.as_ref().expect("live");
+    assert_eq!(stack.features[0].name(), "Shell");
+    let volume = |m: &Model| {
+        m.faces()
+            .map(|(id, _)| prism_ops::health::face_volume(m, id))
+            .sum::<f64>()
+    };
+    let tray = 8.0 - 1.8 * 1.8 * 1.9;
+    assert!((volume(model(&d, def)) - tray).abs() < 1e-6);
+    // Move the group, then explode it: the shell is live at the top, and
+    // pointing at the faces where they now are.
+    assert!(d.run(Command::Place {
+        instances: [inst].into(),
+        change: Change::Translate {
+            by: DVec3::new(5.0, 0.0, 0.0),
+        },
+    }));
+    assert!(d.run(Command::Explode { instance: inst }));
+    let top_stack = d.assembly().root().stack.as_ref().expect("live at the top");
+    let Some(prism_doc::Feature::Shell { faces, open, .. }) = top_stack.features.first() else {
+        panic!("a shell");
+    };
+    let (f, o): (&FaceRef, &FaceRef) = (&faces[0], &open[0]);
+    assert!(f.centre.x > 4.9 && o.centre.x > 4.9, "{f:?} {o:?}");
+    assert!(!top_stack.features[0].is_broken());
+    assert!((volume(d.model()) - tray).abs() < 1e-6);
+}

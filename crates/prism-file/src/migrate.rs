@@ -81,6 +81,8 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             14 => raw,
             // Schema 16 adds a live boolean's tool (an optional file).
             15 => raw,
+            // Schema 17 adds the live shell (a new kind of feature).
+            16 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

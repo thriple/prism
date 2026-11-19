@@ -378,6 +378,24 @@ impl Session {
                     ));
                 }
             }
+            prism_doc::Feature::Shell { thickness, .. } => {
+                let key = format!("feature.{i}.size");
+                if f.is_broken() {
+                    fields.push(field(
+                        &key,
+                        f.name(),
+                        FieldKind::Fixed,
+                        "Broken: its faces are gone or the thickness does not fit. Remove it or bake.".into(),
+                    ));
+                } else {
+                    fields.push(field(
+                        &key,
+                        "Thickness (negative goes in)",
+                        FieldKind::Length,
+                        self.number.show(*thickness),
+                    ));
+                }
+            }
             prism_doc::Feature::Boolean { .. } => {
                 let note = if f.is_broken() {
                     "Broken: the shapes no longer make a solid. Remove it or bake."
@@ -649,6 +667,7 @@ impl Session {
         match c {
             Command::SetFeatureSize { size, .. } => match f {
                 prism_doc::Feature::Round { size: s, .. } => *s = *size,
+                prism_doc::Feature::Shell { thickness, .. } => *thickness = *size,
                 prism_doc::Feature::Boolean { .. } => return None,
             },
             Command::SetCutter { min, max, .. } => {
@@ -692,7 +711,14 @@ impl Session {
                         .number
                         .expression(text)
                         .ok_or(format!("{text:?} is not a length"))?;
-                    if size <= 0.0 {
+                    // A shell's thickness may be negative (in); the rest are sizes.
+                    let signed = asm
+                        .def(def)
+                        .and_then(|d| d.stack.as_ref())
+                        .is_some_and(|s| {
+                            matches!(s.features[index], prism_doc::Feature::Shell { .. })
+                        });
+                    if size == 0.0 || (size < 0.0 && !signed) {
                         return Err("A size must be more than zero".into());
                     }
                     Command::SetFeatureSize { def, index, size }

@@ -4803,3 +4803,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Built:** `Command::SetFeatureEdges`, `Stack::set_edges` (looks the picks up by place in the model before that feature), `Assembly::set_feature_edges`, and the Inspector action `feature.N.edges` ("Round the N selected edges", shown while edges are selected). It mends a broken round and can also move a working one.
 - **Left over:** it replaces the edges (no add or remove one by one); picking while the round itself is selected; not checked on screen; other feature kinds have no pick references yet. Named parameters (part 4c) are not started.
 
+## Live shell, part 5a (brief 48, owner 2026-11-19)
+
+- **Built:** `Feature::Shell` and `FaceRef` (`prism-doc/src/stack.rs`; faces kept by id and by place), `Assembly::shell_live` (called for `Command::Shell`), the Inspector thickness row, Outliner label, file schema 17 (no-op migration 16 to 17, golden files re-saved).
+- **Left over:** re-picking the open faces; a handle and ghost for the thickness; Make Group of loose geometry bakes a shell (no edge refs to place it in a solid); a curved face's FaceRef is found by its middle only; not checked on screen. Hole, array and mirror are not started.
+

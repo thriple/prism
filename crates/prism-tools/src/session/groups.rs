@@ -458,6 +458,9 @@ impl Session {
                     prism_doc::Feature::Round { size, .. } => {
                         format!("{} {}", f.name(), self.number.show(*size))
                     }
+                    prism_doc::Feature::Shell { thickness, .. } => {
+                        format!("{} {}", f.name(), self.number.show(*thickness))
+                    }
                     prism_doc::Feature::Boolean { .. } => f.name().to_owned(),
                 },
                 broken: f.is_broken(),

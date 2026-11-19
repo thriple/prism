@@ -18,7 +18,7 @@ use prism_ops::transform;
 use prism_topo::{EdgeId, FaceId, MaterialId, Model, VertexId};
 
 use crate::material::Material;
-use crate::stack::{BoolKind, EdgeRef, Feature, Stack};
+use crate::stack::{BoolKind, EdgeRef, FaceRef, Feature, Stack};
 use serde::{Deserialize, Serialize};
 
 /// A definition's id.
@@ -988,6 +988,44 @@ impl Assembly {
         true
     }
 
+    /// Shell or thicken the bodies of `faces`, leaving `open` open, and
+    /// keep it live (like a round). False, and nothing changes, if the
+    /// kernel refuses.
+    pub fn shell_live(
+        &mut self,
+        ctx: DefId,
+        faces: &BTreeSet<FaceId>,
+        open: &BTreeSet<FaceId>,
+        thickness: f64,
+    ) -> bool {
+        let Some(d) = self.def_mut_live(ctx) else {
+            return false;
+        };
+        let refs = |set: &BTreeSet<FaceId>| -> Option<Vec<FaceRef>> {
+            set.iter().map(|f| FaceRef::of(&d.model, *f)).collect()
+        };
+        let (Some(faces), Some(open)) = (refs(faces), refs(open)) else {
+            return false;
+        };
+        let mut stack = d
+            .stack
+            .clone()
+            .unwrap_or_else(|| Stack::new(d.model.clone()));
+        stack.features.push(Feature::Shell {
+            faces,
+            open,
+            thickness,
+            broken: false,
+        });
+        let model = stack.evaluate();
+        if stack.features.last().is_some_and(Feature::is_broken) {
+            return false;
+        }
+        d.model = model;
+        d.stack = Some(stack);
+        true
+    }
+
     /// Change a live feature's size and run the features again.
     pub fn set_feature_size(&mut self, def: DefId, index: usize, new: f64) -> bool {
         let Some(d) = self.def_mut_live(def) else {
@@ -999,6 +1037,7 @@ impl Assembly {
         let mut next = stack.clone();
         match next.features.get_mut(index) {
             Some(Feature::Round { size, .. }) => *size = new,
+            Some(Feature::Shell { thickness, .. }) => *thickness = new,
             _ => return false,
         }
         // A size the kernel refuses is not taken.

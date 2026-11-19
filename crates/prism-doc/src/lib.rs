@@ -25,7 +25,7 @@ use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
 use prism_topo::{FaceId, Guide, Model, VertexId};
 use serde::{Deserialize, Serialize};
-pub use stack::{BoolKind, EdgeRef, Feature, GuideSide, SizeGuide, Stack};
+pub use stack::{BoolKind, EdgeRef, FaceRef, Feature, GuideSide, SizeGuide, Stack};
 
 /// One edit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1097,6 +1097,14 @@ impl Command {
             }
             Command::ExplodeFeature { def, index } => {
                 asm.explode_feature(*def, *index);
+            }
+            // A shell stays live too.
+            Command::Shell {
+                faces,
+                open,
+                thickness,
+            } => {
+                asm.shell_live(ctx, faces, open, *thickness);
             }
             // A round stays live, in a group and on loose geometry alike.
             Command::RoundEdges {

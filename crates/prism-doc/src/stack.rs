@@ -28,6 +28,40 @@ impl EdgeRef {
     }
 }
 
+/// A face a feature points at: its id, and where it was (the middle of its
+/// outline and its normal), so it can be found again by place.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FaceRef {
+    pub id: FaceId,
+    pub centre: DVec3,
+    /// Zero for a face that is not flat.
+    pub normal: DVec3,
+}
+
+impl FaceRef {
+    pub fn of(m: &Model, id: FaceId) -> Option<FaceRef> {
+        let f = m.face(id)?;
+        let pts: Vec<DVec3> = f.outer.iter().map(|v| m.vertex(*v)).collect();
+        if pts.is_empty() {
+            return None;
+        }
+        let centre = pts.iter().sum::<DVec3>() / pts.len() as f64;
+        let normal = f.plane().map_or(DVec3::ZERO, |p| p.normal);
+        Some(FaceRef { id, centre, normal })
+    }
+}
+
+fn same_face(m: &Model, id: FaceId, r: &FaceRef) -> bool {
+    FaceRef::of(m, id).is_some_and(|n| {
+        n.centre.distance(r.centre) <= m.tol().dist && (n.normal - r.normal).length() <= 1e-6
+    })
+}
+
+/// The face of `m` where `r` was.
+fn face_at(m: &Model, r: &FaceRef) -> Option<FaceId> {
+    m.faces().map(|(f, _)| f).find(|f| same_face(m, *f, r))
+}
+
 fn ends(m: &Model, id: EdgeId) -> Option<(DVec3, DVec3)> {
     let e = m.edge(id)?;
     Some((m.vertex(e.a), m.vertex(e.b)))
@@ -49,6 +83,17 @@ pub enum Feature {
         size: f64,
         fillet: bool,
         /// Set by the last run: the edges are gone, or the kernel refused.
+        #[serde(default)]
+        broken: bool,
+    },
+    /// A shell (or a sheet thickened): the bodies of `faces` made
+    /// `thickness` thick (out along their normals for more than zero, in
+    /// for less), with `open` left open.
+    Shell {
+        faces: Vec<FaceRef>,
+        open: Vec<FaceRef>,
+        thickness: f64,
+        /// Set by the last run: the faces are gone, or the kernel refused.
         #[serde(default)]
         broken: bool,
     },
@@ -91,6 +136,7 @@ impl Feature {
         match self {
             Feature::Round { fillet: true, .. } => "Fillet",
             Feature::Round { .. } => "Chamfer",
+            Feature::Shell { .. } => "Shell",
             Feature::Boolean {
                 op: BoolKind::Union,
                 ..
@@ -108,7 +154,9 @@ impl Feature {
 
     pub fn is_broken(&self) -> bool {
         match self {
-            Feature::Round { broken, .. } | Feature::Boolean { broken, .. } => *broken,
+            Feature::Round { broken, .. }
+            | Feature::Shell { broken, .. }
+            | Feature::Boolean { broken, .. } => *broken,
         }
     }
 
@@ -130,6 +178,27 @@ impl Feature {
                 let mut t = m.clone();
                 match prism_ops::rounds::round_edges(&mut t, &found, *size, *fillet) {
                     Ok(_) => {
+                        *m = t;
+                        *broken = false;
+                    }
+                    Err(_) => *broken = true,
+                }
+            }
+            Feature::Shell {
+                faces,
+                open,
+                thickness,
+                broken,
+            } => {
+                let found = resolve_faces(m, faces, on_base).filter(|s| !s.is_empty());
+                let open = resolve_faces(m, open, on_base);
+                let (Some(found), Some(open)) = (found, open) else {
+                    *broken = true;
+                    return;
+                };
+                let mut t = m.clone();
+                match prism_ops::shelling::shell(&mut t, &found, &open, *thickness) {
+                    Ok(()) => {
                         *m = t;
                         *broken = false;
                     }
@@ -171,6 +240,24 @@ fn resolve(m: &Model, refs: &mut [EdgeRef], on_base: bool) -> Option<BTreeSet<Ed
         out.insert(id);
     }
     (!out.is_empty()).then_some(out)
+}
+
+/// The faces a feature points at in `m`: by id, then by place. They are
+/// brought up to date, so a moved face is followed. None if one is gone.
+fn resolve_faces(m: &Model, refs: &mut [FaceRef], on_base: bool) -> Option<BTreeSet<FaceId>> {
+    let mut out = BTreeSet::new();
+    for r in refs.iter_mut() {
+        let id = if m.face(r.id).is_some() && (on_base || same_face(m, r.id, r)) {
+            Some(r.id)
+        } else {
+            face_at(m, r)
+        }?;
+        if let Some(now) = FaceRef::of(m, id) {
+            *r = now;
+        }
+        out.insert(id);
+    }
+    Some(out)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -467,7 +554,7 @@ impl Feature {
     pub fn tool_box(&self) -> Option<(DVec3, DVec3)> {
         match self {
             Feature::Boolean { tool, .. } => tool.bbox(),
-            Feature::Round { .. } => None,
+            Feature::Round { .. } | Feature::Shell { .. } => None,
         }
     }
 
@@ -495,6 +582,7 @@ impl Feature {
     pub fn size(&self) -> Option<f64> {
         match self {
             Feature::Round { size, .. } => Some(*size),
+            Feature::Shell { thickness, .. } => Some(*thickness),
             Feature::Boolean { .. } => None,
         }
     }
@@ -502,14 +590,22 @@ impl Feature {
     fn refs(&self) -> &[EdgeRef] {
         match self {
             Feature::Round { edges, .. } => edges,
-            Feature::Boolean { .. } => &[],
+            Feature::Boolean { .. } | Feature::Shell { .. } => &[],
         }
     }
 
     fn refs_mut(&mut self) -> &mut [EdgeRef] {
         match self {
             Feature::Round { edges, .. } => edges,
-            Feature::Boolean { .. } => &mut [],
+            Feature::Boolean { .. } | Feature::Shell { .. } => &mut [],
+        }
+    }
+
+    /// The faces it points at (a shell's).
+    fn face_refs_mut(&mut self) -> Vec<&mut FaceRef> {
+        match self {
+            Feature::Shell { faces, open, .. } => faces.iter_mut().chain(open.iter_mut()).collect(),
+            Feature::Round { .. } | Feature::Boolean { .. } => Vec::new(),
         }
     }
 }
@@ -522,6 +618,10 @@ impl Stack {
             for r in f.refs_mut() {
                 r.a = by.transform_point3(r.a);
                 r.b = by.transform_point3(r.b);
+            }
+            for r in f.face_refs_mut() {
+                r.centre = by.transform_point3(r.centre);
+                r.normal = by.transform_vector3(r.normal).normalize_or_zero();
             }
             if let Feature::Boolean { tool, .. } = f {
                 prism_ops::transform::affine(tool, by);
@@ -538,6 +638,11 @@ impl Stack {
                     r.id = id;
                 }
             }
+            for r in f.face_refs_mut() {
+                if let Some(id) = face_at(&self.base, r) {
+                    r.id = id;
+                }
+            }
             self.features.push(f);
         }
     }
@@ -549,6 +654,9 @@ impl Stack {
         for f in &mut out {
             for r in f.refs_mut() {
                 r.id = edge_at(m, r)?;
+            }
+            for r in f.face_refs_mut() {
+                r.id = face_at(m, r)?;
             }
         }
         Some(out)

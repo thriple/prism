@@ -650,3 +650,38 @@ fn live_booleans_round_trip() {
     }
     assert_eq!(prism_file::write(&back, "test"), bytes);
 }
+
+#[test]
+fn live_shells_round_trip() {
+    use prism_doc::{Command, Document};
+    let mut d = Document::new();
+    d.run(Command::Rect {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 2.0,
+        y1: 2.0,
+        z: 0.0,
+    });
+    let f = prism_ops::face_at(d.model(), DVec3::new(1.0, 1.0, 0.0)).unwrap();
+    let up = d.model().face(f).unwrap().plane().unwrap().normal.z;
+    d.run(Command::PushPull {
+        face: f,
+        distance: 2.0 * up,
+        new_loop: false,
+    });
+    let top = prism_ops::face_at(d.model(), DVec3::new(1.0, 1.0, 2.0)).unwrap();
+    let side = prism_ops::face_at(d.model(), DVec3::new(1.0, 0.0, 1.0)).unwrap();
+    assert!(d.run(Command::Shell {
+        faces: [side].into(),
+        open: [top].into(),
+        thickness: -0.1,
+    }));
+    assert!(d.assembly().root().stack.is_some(), "live");
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = prism_file::write(&c, "test");
+    let back = prism_file::read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+}

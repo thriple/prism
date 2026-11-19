@@ -8655,3 +8655,62 @@ fn a_round_is_pointed_at_the_edges_selected_in_the_viewport() {
     act(&mut d, "edit.undo");
     assert_eq!(refs(&d)[0].a, first[0].a);
 }
+
+#[test]
+fn a_shell_stays_live_and_its_thickness_is_changed_in_the_inspector() {
+    let mut d = Driver::empty();
+    box_2m(&mut d);
+    d.tool(SHELL);
+    d.hover(DVec3::new(1.0, 1.0, 2.0));
+    d.send(Input::Press {
+        button: Button::Left,
+        x: d.screen(DVec3::new(1.0, 1.0, 2.0)).x,
+        y: d.screen(DVec3::new(1.0, 1.0, 2.0)).y,
+        shift: true,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    d.hover(DVec3::new(1.0, 0.3, 1.2));
+    d.typed("0.1");
+    let tray = 8.0 - 1.8 * 1.8 * 1.9;
+    assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
+    // It stays a feature of the loose geometry, named in the Outliner list.
+    let stack =
+        d.s.document()
+            .assembly()
+            .root()
+            .stack
+            .clone()
+            .expect("a stack");
+    assert_eq!(stack.features.len(), 1);
+    assert_eq!(stack.features[0].name(), "Shell");
+    d.tool(SELECT);
+    d.s.select_feature(0);
+    assert_eq!(d.s.inspector().summary, "Shell");
+    // A thicker wall: one undo step; the shell runs again from the box.
+    d.s.inspector_set("feature.0.size", "-0.2")
+        .expect("changes");
+    assert_eq!(d.s.document().undo_name(), Some("Change Feature"));
+    let thick = 8.0 - 1.6 * 1.6 * 1.8;
+    assert!(
+        (model_volume(d.s.model()) - thick).abs() < 1e-6,
+        "{}",
+        model_volume(d.s.model())
+    );
+    assert!(d.s.inspector_set("feature.0.size", "0").is_err());
+    // Typed text shows the result before Enter, and makes nothing.
+    let log = d.s.document().log().count();
+    d.s.inspector_preview("feature.0.size", "-0.3");
+    d.s.inspector_preview_end();
+    assert_eq!(d.s.document().log().count(), log);
+    act(&mut d, "edit.undo");
+    assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
+    // Bake makes it plain geometry; the shape stays.
+    act(&mut d, "edit.bake");
+    assert!(d.s.document().assembly().root().stack.is_none());
+    assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
+}
