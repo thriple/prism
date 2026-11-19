@@ -9,7 +9,7 @@
   - The face under the cursor is tinted. Click it, move, and click to finish; or type a distance and press Enter.
   - The distance is how much nearer to or further from the face's outline the cursor has moved since the click, measured in the face's plane. Moving inward offsets inward; moving outward, outward.
   - Every loop of the face is offset: the outline and its holes.
-  - Corners are mitred. The offset stops just before the new outline would cross itself or another loop, so the result is always valid.
+  - Corners are mitred. The offset goes as far as it is asked, even past where sides meet or turn round (owner, 2026-11-19): the lines cross, sticky geometry splits them, and tidying up is the user's. The result is still a valid model.
   - The new loop splits the face (inward) or adds a ring around it (outward), through the same sticky geometry as drawing.
   - With a face selected, it offsets that face wherever you click.
   - **Double-click** a face repeats the last distance. Typing right after an offset changes it.
@@ -47,7 +47,7 @@ Offset of edge chains and curves (that waits for arcs), Tape Measure's resize-th
 ## Tests
 - `prism-ops`:
   - Offset of a square, an L shape and a face with a hole, inward and outward. Each result has the expected area and passes `check`.
-  - The clamp: an offset larger than the face is stopped short, and the result is still valid.
+  - No clamp for lines: an offset larger than the face is made as asked, and the result is still valid. (Arcs that would need no radius still stop short.)
   - Property: a random convex polygon offset inward by a valid distance stays inside the original, and its edges stay parallel to the original edges.
 - `prism-doc`: undo and redo of Offset, guide and erase-guide commands are exact.
 - `prism-infer`: snapping to a stored guide line, a guide point, a guide crossing an edge, and two stored guides crossing.
