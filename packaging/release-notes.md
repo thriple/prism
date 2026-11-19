@@ -1,5 +1,6 @@
-**New in this build: Union, Subtract and Intersect stay live.**
-- **Solid > Union, Subtract and Intersect** of two groups now keep the first solid inside the result as a live feature (like fillets): Edit > Bake Features makes it plain, Remove takes it off, and pulling a wall the cut does not touch runs the cut again underneath. Trim and Split are unchanged. Files made with this build need this build or later.
+**New in this build: edit a live cut's cutter, and a booleans fix.**
+- **Inspector > Features:** a live Union, Subtract or Intersect now shows its cutter's position (X, Y, Z) and size (width, depth, height). Type a value and the cut runs again; Undo puts it back.
+- **Fix:** a union, subtract or intersect of two boxes that overlap on faces lying in the same plane no longer gives a broken result when the solids are picked in the other order.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

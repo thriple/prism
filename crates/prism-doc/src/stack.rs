@@ -424,6 +424,34 @@ fn edge_at(m: &Model, r: &EdgeRef) -> Option<EdgeId> {
 }
 
 impl Feature {
+    /// The box round a boolean's second solid, in the body's own
+    /// coordinates.
+    pub fn tool_box(&self) -> Option<(DVec3, DVec3)> {
+        match self {
+            Feature::Boolean { tool, .. } => tool.bbox(),
+            Feature::Round { .. } => None,
+        }
+    }
+
+    /// Move and stretch a boolean's second solid so its box is `min..max`.
+    /// False if it is not a boolean, has no volume, or the new box has none.
+    pub fn set_tool_box(&mut self, min: DVec3, max: DVec3) -> bool {
+        let Some((lo, hi)) = self.tool_box() else {
+            return false;
+        };
+        let (from, to) = (hi - lo, max - min);
+        if from.min_element() <= 0.0 || to.min_element() <= 0.0 {
+            return false;
+        }
+        let by = DAffine3::from_translation(min)
+            * DAffine3::from_scale(to / from)
+            * DAffine3::from_translation(-lo);
+        if let Feature::Boolean { tool, .. } = self {
+            prism_ops::transform::affine(tool, &by);
+        }
+        true
+    }
+
     /// The feature's size: a fillet's radius or a chamfer's distance. None
     /// for a feature with no size.
     pub fn size(&self) -> Option<f64> {

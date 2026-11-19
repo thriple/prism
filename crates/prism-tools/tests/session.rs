@@ -8434,3 +8434,46 @@ fn a_subtract_by_the_tool_stays_live_in_the_inspector_until_baked() {
         .unwrap();
     assert!((group_volume(&d, *g) - 4.0).abs() < 1e-9);
 }
+
+#[test]
+fn the_cutter_of_a_live_subtract_is_moved_and_sized_in_the_inspector() {
+    use prism_tools::session::SOLID_TOOLS;
+    let mut d = overlapping_groups();
+    d.tool(SOLID_TOOLS[1]);
+    d.click(DVec3::new(0.5, 0.0, 1.0));
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    d.tool(SELECT);
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    let body = |d: &Driver| {
+        *d.s.document()
+            .assembly()
+            .root()
+            .instances
+            .iter()
+            .find(|(_, i)| i.transform.translation.x < 2.0)
+            .unwrap()
+            .0
+    };
+    let g = body(&d);
+    assert!((group_volume(&d, g) - 4.0).abs() < 1e-9);
+    let (width, _) = inspector_text(&d, "feature.0.cutter.w");
+    let width: f64 = width.trim_end_matches(" m").parse().unwrap();
+    assert!((width - 2.0).abs() < 1e-9, "the cutter is 2 m wide");
+    // Shorter: it cuts half as deep.
+    d.s.inspector_set("feature.0.cutter.w", "1.5")
+        .expect("changes");
+    assert_eq!(d.s.document().undo_name(), Some("Change Feature"));
+    assert!((group_volume(&d, g) - 6.0).abs() < 1e-9);
+    // Moved along x: it now cuts from 0.5 to 2.
+    d.s.inspector_set("feature.0.cutter.x", "0.5")
+        .expect("changes");
+    assert!((group_volume(&d, g) - 2.0).abs() < 1e-9);
+    // Nothing for a size of nothing, a name, or no change.
+    assert!(d.s.inspector_set("feature.0.cutter.d", "0").is_err());
+    assert!(d.s.inspector_set("feature.0.cutter.w", "wide").is_err());
+    assert!(d.s.inspector_set("feature.0.cutter.x", "0.5").is_err());
+    assert!(d.s.inspector_set("feature.0.cutter.q", "1").is_err());
+    act(&mut d, "edit.undo");
+    act(&mut d, "edit.undo");
+    assert!((group_volume(&d, g) - 4.0).abs() < 1e-9);
+}

@@ -377,6 +377,24 @@ impl Session {
                     FieldKind::Fixed,
                     note.into(),
                 ));
+                if let Some((lo, hi)) = f.tool_box().filter(|_| !f.is_broken()) {
+                    let size = hi - lo;
+                    for (axis, label, v) in [
+                        ("x", "Cutter X", lo.x),
+                        ("y", "Cutter Y", lo.y),
+                        ("z", "Cutter Z", lo.z),
+                        ("w", "Cutter width", size.x),
+                        ("d", "Cutter depth", size.y),
+                        ("h", "Cutter height", size.z),
+                    ] {
+                        fields.push(field(
+                            &format!("feature.{i}.cutter.{axis}"),
+                            label,
+                            FieldKind::Length,
+                            self.number.show(v),
+                        ));
+                    }
+                }
             }
         }
         fields.push(field(
@@ -562,7 +580,8 @@ impl Session {
         Ok(())
     }
 
-    /// `bake`, `feature.N.size` and `feature.N.remove`, for the one
+    /// `bake`, `feature.N.size`, `feature.N.cutter.x` and the like, and
+    /// `feature.N.remove`, for the one
     /// selected body.
     fn feature_set(&mut self, key: &str, text: &str) -> Result<(), String> {
         let Some(def) = self.features_target() else {
@@ -598,6 +617,43 @@ impl Session {
                     }
                     Command::SetFeatureSize { def, index, size }
                 }
+                Some("cutter") => {
+                    let axis = parts.next().unwrap_or_default();
+                    let value = self
+                        .number
+                        .expression(text)
+                        .ok_or(format!("{text:?} is not a length"))?;
+                    let (mut lo, mut hi) = asm
+                        .def(def)
+                        .and_then(|d| d.stack.as_ref())
+                        .and_then(|s| s.features[index].tool_box())
+                        .ok_or("This feature has no cutter")?;
+                    let size = hi - lo;
+                    let (corner, extent) = match axis {
+                        "x" => (0, None),
+                        "y" => (1, None),
+                        "z" => (2, None),
+                        "w" => (0, Some(())),
+                        "d" => (1, Some(())),
+                        "h" => (2, Some(())),
+                        _ => return Err(format!("{key:?} is not an Inspector field")),
+                    };
+                    if extent.is_some() {
+                        if value <= 0.0 {
+                            return Err("A size must be more than zero".into());
+                        }
+                        hi[corner] = lo[corner] + value;
+                    } else {
+                        lo[corner] = value;
+                        hi[corner] = value + size[corner];
+                    }
+                    Command::SetCutter {
+                        def,
+                        index,
+                        min: lo,
+                        max: hi,
+                    }
+                }
                 _ => return Err(format!("{key:?} is not an Inspector field")),
             }
         };
@@ -605,7 +661,7 @@ impl Session {
         if self.run(command) {
             Ok(())
         } else {
-            Err("Nothing changed: the size is the same, or it does not fit these edges".into())
+            Err("Nothing changed: the value is the same, or it would not fit".into())
         }
     }
 }

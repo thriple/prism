@@ -424,6 +424,14 @@ pub enum Command {
         index: usize,
         size: f64,
     },
+    /// Move and stretch a live boolean's second solid so its box is
+    /// `min..max`, in the body's own coordinates (Inspector part 3b).
+    SetCutter {
+        def: DefId,
+        index: usize,
+        min: prism_math::DVec3,
+        max: prism_math::DVec3,
+    },
     /// Take a live feature off.
     RemoveFeature {
         def: DefId,
@@ -717,7 +725,7 @@ impl Command {
             Command::IntersectWith { .. } => "Intersect Faces",
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
-            Command::SetFeatureSize { .. } => "Change Feature",
+            Command::SetFeatureSize { .. } | Command::SetCutter { .. } => "Change Feature",
             Command::ExplodeFeature { .. } => "Explode Feature",
             Command::RemoveFeature { .. } => "Remove Feature",
             Command::BakeFeatures { .. } => "Bake Features",
@@ -1050,6 +1058,14 @@ impl Command {
             }
             Command::SetFeatureSize { def, index, size } => {
                 asm.set_feature_size(*def, *index, *size);
+            }
+            Command::SetCutter {
+                def,
+                index,
+                min,
+                max,
+            } => {
+                asm.set_cutter(*def, *index, *min, *max);
             }
             Command::RemoveFeature { def, index } => {
                 asm.remove_feature(*def, *index);
@@ -1516,6 +1532,7 @@ impl Command {
             | Command::CopyInstances { .. }
             | Command::EraseInstances { .. }
             | Command::SetFeatureSize { .. }
+            | Command::SetCutter { .. }
             | Command::RemoveFeature { .. }
             | Command::ExplodeFeature { .. }
             | Command::BakeFeatures { .. }

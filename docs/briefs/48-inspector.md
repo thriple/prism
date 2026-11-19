@@ -56,9 +56,15 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 ## Part 3a: live booleans (owner chose, 2026-11-19)
 - **Union, Subtract and Intersect of two groups stay live.** The result is the second solid (its own features kept) with a `Feature::Boolean { op, tool }` after them; the first solid is the tool, kept inside the feature in the body's own coordinates (so it works in components and undo, and the Inspector later edits it). Trim and Split still make plain groups.
 - **It runs like the fillet:** direct edits go under it (an edit that names a face the boolean made, such as one it cut, bakes it first with the red notice); a result the kernel refuses marks it broken; Bake and Remove work (`edit.bake`, `RemoveFeature`); it is selectable (the faces it made), listed in the Outliner and moves with Make Group, Make Component and Explode.
-- **Inspector:** a Features row shows the kind ("Subtract") and a note; no size. Part 3b: the tool's position and size as fields, and a ghost of the tool while the feature is selected.
+- **Inspector:** a Features row shows the kind ("Subtract") and a note; no size. Part 3b-1 adds the tool's fields; the ghost is still to come.
 - **File:** schema 16. The tool is saved as `geometry/defs/<id>.tool<k>.bin` beside the base.
 - **MCP:** the Solid tools and `set_inspector` (`feature.N.*`) as for the fillet.
+
+## Part 3b-1: the cutter's fields
+- **Six rows under a live boolean:** Cutter X, Y, Z (the corner of the box round the second solid) and Cutter width, depth, height, in the body's own coordinates (so a rotated or scaled group shows its own axes, not the world's). Typing one moves or stretches the cutter and runs the features again: `SetCutter` (one undo step, "Change Feature").
+- **Refused, nothing changes:** a size of zero or less, text that is not a length, the same value, or a change that breaks the shape (the result must stay a solid).
+- **Left for 3b-2:** a ghost of the cutter while the feature is selected; flipping Union, Subtract and Intersect.
+- **MCP:** `set_inspector` with `feature.N.cutter.x`, `.y`, `.z`, `.w`, `.d` or `.h`; read the rows with `get_inspector`.
 
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.
