@@ -6,15 +6,45 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use prism_doc::{Command, DefId};
+use prism_doc::{Command, DefId, SizeGuide};
+use prism_math::{DVec2, DVec3};
 use prism_ops::select::Selection;
 use prism_topo::FaceId;
+use prism_view::View;
+use prism_view::overlay::{Line, Mark, Overlay, Shape};
 
-use super::Session;
+use super::{Session, round};
 
 /// The faces each feature made, for the model version and group they
 /// were worked out for.
 pub type FeatureCache = RefCell<Option<(u64, DefId, Vec<BTreeSet<FaceId>>)>>;
+
+/// A selected feature's size guide, for the model version, group and
+/// feature it was worked out for.
+pub type GuideCache = RefCell<Option<(u64, DefId, usize, Option<SizeGuide>)>>;
+
+/// A drag of the size handle in progress.
+#[derive(Clone, Debug)]
+pub(super) struct Handle {
+    def: DefId,
+    index: usize,
+    guide: SizeGuide,
+    side: usize,
+    start: f64,
+    size: f64,
+}
+
+/// How close (in pixels, before the aperture) the cursor must be to grab
+/// the handle.
+const GRAB: f64 = 12.0;
+
+impl Handle {
+    /// Where the handle is for `size`: across the side face from the middle
+    /// of the edge.
+    fn at(guide: &SizeGuide, side: usize, size: f64) -> DVec3 {
+        (guide.a + guide.b) * 0.5 + guide.sides[side].across * size
+    }
+}
 
 impl Session {
     /// The faces each live feature of the open group (the top level for
@@ -111,5 +141,174 @@ impl Session {
             self.cancel();
             self.run(Command::RemoveFeature { def, index });
         }
+    }
+
+    /// The selected feature's size guide and size, while the Fillet tool is
+    /// active (a feature shows no guides under any other tool).
+    fn handle_guide(&self) -> Option<(DefId, usize, SizeGuide, f64)> {
+        if self.tool != round::FILLET {
+            return None;
+        }
+        let index = self.selected_feature()?;
+        let asm = self.doc.assembly();
+        let def = asm.context_def(&self.ctx)?;
+        let stack = asm.def(def)?.stack.as_ref()?;
+        let size = stack.features.get(index)?.size();
+        if let Some((v, d, i, g)) = &*self.guide_cache.borrow()
+            && *v == self.version
+            && *d == def
+            && *i == index
+        {
+            return g.clone().map(|g| (def, index, g, size));
+        }
+        let guide = stack.size_guide(index);
+        *self.guide_cache.borrow_mut() = Some((self.version, def, index, guide.clone()));
+        guide.map(|g| (def, index, g, size))
+    }
+
+    /// The side face the handle is measured across: the one facing the view most.
+    fn handle_side(guide: &SizeGuide, view: &View) -> usize {
+        let to_eye = view.eye - (guide.a + guide.b) * 0.5;
+        (0..guide.sides.len())
+            .max_by(|x, y| {
+                let f = |k: usize| guide.sides[k].normal.dot(to_eye).abs();
+                f(*x).total_cmp(&f(*y))
+            })
+            .unwrap_or(0)
+    }
+
+    /// A press on the size handle starts dragging it. True if it did.
+    pub(super) fn handle_press(&mut self, s: DVec2) -> bool {
+        let Some((def, index, guide, size)) = self.handle_guide() else {
+            return false;
+        };
+        let view = self.view();
+        let side = Self::handle_side(&guide, &view);
+        let at = Handle::at(&guide, side, size);
+        let near = view
+            .to_screen(at)
+            .is_some_and(|(q, _)| q.distance(s) < GRAB * self.settings.aperture);
+        if near {
+            self.round_handle = Some(Handle {
+                def,
+                index,
+                guide,
+                side,
+                start: size,
+                size,
+            });
+        }
+        near
+    }
+
+    /// While the handle is held: the size is how far across the side face
+    /// the cursor is from the edge, shown on the body. True while dragging.
+    pub(super) fn handle_drag(&mut self, s: DVec2, view: &View) -> bool {
+        let Some(h) = self.round_handle.clone() else {
+            return false;
+        };
+        let side = h.guide.sides[h.side];
+        let (o, d) = view.ray(s);
+        let den = side.normal.dot(d);
+        if den.abs() > 1e-9 {
+            let p = o + d * (side.normal.dot(side.origin - o) / den);
+            let size = (p - h.guide.a).dot(side.across);
+            if size > self.scene.tol.dist
+                && size != h.size
+                && let Some(m) = self.feature_at_size(h.def, h.index, size)
+            {
+                if let Some(h) = &mut self.round_handle {
+                    h.size = size;
+                }
+                self.set_preview(Some(m));
+            }
+        }
+        self.overlay_dirty = true;
+        self.dirty = true;
+        true
+    }
+
+    /// The body with feature `index` at `size`, or None if the kernel
+    /// refuses that size.
+    fn feature_at_size(&self, def: DefId, index: usize, size: f64) -> Option<prism_topo::Model> {
+        let mut stack = self.doc.assembly().def(def)?.stack.clone()?;
+        match stack.features.get_mut(index)? {
+            prism_doc::Feature::Round { size: s, .. } => *s = size,
+        }
+        let m = stack.evaluate();
+        (!stack.features[index].is_broken()).then_some(m)
+    }
+
+    /// The button let go on the handle: the size it was dragged to is
+    /// set, in one undo step.
+    pub(super) fn handle_release(&mut self) -> bool {
+        let Some(h) = self.round_handle.take() else {
+            return false;
+        };
+        self.set_preview(None);
+        if h.size != h.start {
+            self.run(Command::SetFeatureSize {
+                def: h.def,
+                index: h.index,
+                size: h.size,
+            });
+            // The feature's faces are new ones: keep it selected.
+            self.select_feature(h.index);
+        }
+        self.overlay_dirty = true;
+        self.refresh();
+        true
+    }
+
+    /// Esc while dragging the handle: the size stays as it was.
+    pub(super) fn handle_cancel(&mut self) -> bool {
+        if self.round_handle.take().is_none() {
+            return false;
+        }
+        self.set_preview(None);
+        self.overlay_dirty = true;
+        self.refresh();
+        true
+    }
+
+    /// The guide: the edge the feature works on (dashed), and the handle
+    /// across a face from it.
+    pub(super) fn handle_overlay(&self, o: &mut Overlay) {
+        let Some((_, _, guide, size)) = self.handle_guide() else {
+            return;
+        };
+        let view = self.view();
+        let drag = self.round_handle.as_ref();
+        let side = drag.map_or_else(|| Self::handle_side(&guide, &view), |h| h.side);
+        let size = drag.map_or(size, |h| h.size);
+        let at = Handle::at(&guide, side, size);
+        let mid = (guide.a + guide.b) * 0.5;
+        let fb = &self.style.feedback;
+        let over = drag.is_some()
+            || self.round_at.is_some_and(|s| {
+                view.to_screen(at)
+                    .is_some_and(|(q, _)| q.distance(s) < GRAB * self.settings.aperture)
+            });
+        let color = if over { self.style.hover } else { fb.guide };
+        o.lines.push(Line {
+            a: guide.a,
+            b: guide.b,
+            color: fb.guide,
+            width: fb.target_width,
+            dash: [6.0, 4.0],
+        });
+        o.lines.push(Line {
+            a: mid,
+            b: at,
+            color,
+            width: fb.target_width,
+            dash: [0.0, 0.0],
+        });
+        o.marks.push(Mark {
+            at,
+            shape: Shape::Square,
+            color,
+            size: fb.glyph_size,
+        });
     }
 }

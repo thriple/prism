@@ -46,6 +46,13 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 - **Outliner:** a "Features (n)" row under the top level and under each group with features; it opens to list them ("Fillet 0.300 m"); clicking one selects it, opening its group first.
 - **File:** loose geometry's features are saved too (the root's base is `geometry/defs/0.base.bin`).
 
+## Part 2c: the Fillet tool's handle
+- **Only with the Fillet tool active and a feature selected** a guide is drawn: the sharp edge the feature rounds (dashed), and a square handle across the flat face that most faces the view, as far from the edge as the feature's size. No guides show under any other tool.
+- **Drag the handle** and the body shows the new size live; let go and it is set (`SetFeatureSize`, one undo step) with the feature still selected. Esc while dragging leaves the size as it was. A size the kernel refuses is not taken (the preview stays at the last size that worked). Typing a size + Enter sets it too.
+- **The guide** comes from `Stack::size_guide(index)` (pure, in `prism-doc`): the first edge of the feature as it was before the feature ran, and the flat faces beside it. None for a broken feature, a curved edge, or an edge with no flat face beside it; the Inspector still sets the size then.
+- **With a feature selected** the tool does not treat its faces as edges to round; a click on an edge starts a new set.
+- **MCP:** the size is `set_inspector` `feature.N.size`; the handle itself is a pointer drag (press, move, release) like the tool's other drags.
+
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.
 - Name, tag, hide and lock; refusals change nothing.

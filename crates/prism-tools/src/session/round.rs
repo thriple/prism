@@ -31,6 +31,7 @@ pub const FILLET: &str = "tool.fillet";
 const HOW: &str = "Click edges to collect them (a line in pieces as a whole) · double-click a face for all its edges · drag from an edge or type to set the size · Enter rounds them · Ctrl swaps fillet and chamfer";
 /// Said when no size fits the edges on its own (curved edges only).
 const NEED_SIZE: &str = "Type a size for these edges (curved edges have no size of their own)";
+const HOW_FEATURE: &str = "Drag the square handle or type a size + Enter to change the selected fillet or chamfer · click an edge to round more · Esc deselects";
 const HOW_SET: &str = "Enter rounds the collected edges · click adds or takes away edges · drag from an edge or type a size + Enter · Esc clears · Ctrl swaps fillet and chamfer";
 
 /// A change from the Fillet window (recorded as `Input::Round`).
@@ -84,6 +85,10 @@ impl Session {
     /// The edges the selection names: its edges as picked, and every edge
     /// of its faces. Empty with nothing selected.
     fn round_selected(&self) -> BTreeSet<EdgeId> {
+        // A selected feature is not edges to round (its handle sets its size).
+        if self.selected_feature().is_some() {
+            return BTreeSet::new();
+        }
         let m = self.work_model();
         let mut out = self.selection.edges.clone();
         for f in &self.selection.faces {
@@ -180,8 +185,12 @@ impl Session {
     }
 
     pub(super) fn round_hover(&mut self, s: DVec2, view: &View) {
-        if self.round_drag(s, view) {
+        if self.handle_drag(s, view) || self.round_drag(s, view) {
             return;
+        }
+        if self.selected_feature().is_some() {
+            // The handle lights up when the cursor is near it.
+            self.overlay_dirty = true;
         }
         let h = super::edit::edge_pick(&self.scene, view, s, self.settings.aperture);
         self.set_hover_pick(h);
@@ -219,6 +228,7 @@ impl Session {
 
     /// Take the preview away (leaving the tool, Esc, after a click).
     pub(super) fn round_clear(&mut self) {
+        self.round_handle = None;
         self.round_refused = None;
         self.round_at = None;
         if (self.round_shown.take().is_some() || self.tool == FILLET) && self.preview.is_some() {
@@ -229,6 +239,9 @@ impl Session {
     pub(super) fn round_press(&mut self, s: DVec2, n_clicks: u32, _shift: bool, ctrl: bool) {
         self.round_notice = None;
         self.round_down = None;
+        if self.handle_press(s) {
+            return;
+        }
         // A double-click on a face: all its edges join the set.
         if n_clicks == 2
             && let Some(Hit::Face(f)) =
@@ -267,6 +280,9 @@ impl Session {
     /// The button let go: a click (no drag) collects the edges, or takes
     /// them out if they were all in.
     pub(super) fn round_release(&mut self) {
+        if self.handle_release() {
+            return;
+        }
         if let Some(d) = self.round_down.take()
             && !d.dragging
         {
@@ -280,7 +296,12 @@ impl Session {
         if edges.is_empty() {
             return;
         }
-        let mut sel = self.selection.clone();
+        // A selected feature is left; the edges start a new set.
+        let mut sel = if self.selected_feature().is_some() {
+            prism_ops::Selection::default()
+        } else {
+            self.selection.clone()
+        };
         let add = add.unwrap_or_else(|| !edges.iter().all(|e| sel.edges.contains(e)));
         if add {
             sel.edges.extend(edges.iter().copied());
@@ -353,6 +374,9 @@ impl Session {
 
     /// Esc with edges collected: clear them. True if it did.
     pub(super) fn round_escape(&mut self) -> bool {
+        if self.handle_cancel() {
+            return true;
+        }
         if self.tool != FILLET || (self.selection.is_empty() && self.round_down.is_none()) {
             return false;
         }
@@ -395,6 +419,7 @@ impl Session {
     /// The edges a click would round, drawn over the model while hovering
     /// (the selection shows as selected already).
     pub(super) fn round_overlay(&self, o: &mut Overlay) {
+        self.handle_overlay(o);
         if self.tool != FILLET || !self.selection.is_empty() || self.round_refused.is_some() {
             return;
         }
@@ -510,6 +535,21 @@ impl Session {
         if self.tool != FILLET {
             return false;
         }
+        // A selected feature: a typed size is its new size.
+        if let Some(index) = self.selected_feature()
+            && let Some(def) = self.doc.assembly().context_def(&self.ctx)
+        {
+            if let Some(size) = self.number.length(text.trim()).map(f64::abs)
+                && size > 0.0
+            {
+                if self.run(Command::SetFeatureSize { def, index, size }) {
+                    self.select_feature(index);
+                } else {
+                    self.round_notice = Some("The feature cannot be that size");
+                }
+            }
+            return true;
+        }
         // Enter alone rounds the selected edges.
         if text.trim().is_empty() {
             let set = self.round_selected();
@@ -541,7 +581,9 @@ impl Session {
     }
 
     fn round_how(&self) -> &'static str {
-        if self.selection.is_empty() {
+        if self.selected_feature().is_some() {
+            HOW_FEATURE
+        } else if self.selection.is_empty() {
             HOW
         } else {
             HOW_SET

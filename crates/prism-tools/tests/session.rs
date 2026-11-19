@@ -8292,3 +8292,106 @@ fn the_outliner_lists_live_features_and_selects_them() {
     assert_eq!(d.s.selected_feature(), Some(0));
     assert_eq!(d.s.inspector().summary, "Fillet");
 }
+
+/// The squares in the overlay: the size handle is one.
+fn squares(d: &Driver) -> Vec<DVec3> {
+    d.s.overlay()
+        .marks
+        .iter()
+        .filter(|m| m.shape == prism_view::overlay::Shape::Square)
+        .map(|m| m.at)
+        .collect()
+}
+
+#[test]
+fn the_fillet_tool_shows_a_handle_on_the_selected_fillet_and_dragging_it_sets_the_size() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    let at = rounded_box(&mut d);
+    d.click(at);
+    assert_eq!(d.s.selected_feature(), Some(0));
+    let was = radii_of(d.s.model())[0];
+    // Select shows no guide; the Fillet tool does.
+    let none = squares(&d).len();
+    d.tool(FILLET);
+    assert_eq!(d.s.selected_feature(), Some(0), "still the feature");
+    let marks = squares(&d);
+    assert_eq!(marks.len(), none + 1, "a handle appears");
+    let handle = *marks.last().unwrap();
+    // It is across a wall from the edge, `was` away.
+    let guide =
+        d.s.document()
+            .assembly()
+            .root()
+            .stack
+            .as_ref()
+            .unwrap()
+            .size_guide(0)
+            .expect("a guide");
+    let mid = (guide.a + guide.b) * 0.5;
+    assert!(((handle - mid).length() - was).abs() < 1e-9);
+    let along = (handle - mid).normalize();
+    // Drag it out to 0.6 and let go: one undo step.
+    let log = d.s.document().log().count();
+    let from = d.screen(handle);
+    d.send(Input::Move {
+        x: from.x,
+        y: from.y,
+    });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: from.x,
+        y: from.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    let to = d.screen(mid + along * 0.6);
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert_eq!(
+        d.s.document().log().count(),
+        log,
+        "nothing is made until the button is let go"
+    );
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(d.s.document().log().count(), log + 1);
+    assert!((radii_of(d.s.model())[0] - 0.6).abs() < 1e-3);
+    assert_eq!(d.s.selected_feature(), Some(0), "still selected");
+    act(&mut d, "edit.undo");
+    assert!((radii_of(d.s.model())[0] - was).abs() < 1e-9);
+}
+
+#[test]
+fn escape_while_dragging_the_handle_leaves_the_size_and_a_typed_size_sets_it() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    let at = rounded_box(&mut d);
+    d.click(at);
+    let was = radii_of(d.s.model())[0];
+    d.tool(FILLET);
+    let handle = *squares(&d).last().expect("a handle");
+    let from = d.screen(handle);
+    d.send(Input::Press {
+        button: Button::Left,
+        x: from.x,
+        y: from.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Move {
+        x: from.x + 20.0,
+        y: from.y,
+    });
+    d.send(Input::Key { key: Key::Escape });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert!((radii_of(d.s.model())[0] - was).abs() < 1e-9);
+    // A typed size is the feature's new size.
+    d.typed("0.4");
+    assert!((radii_of(d.s.model())[0] - 0.4).abs() < 1e-9);
+    assert_eq!(d.s.selected_feature(), Some(0));
+}

@@ -491,6 +491,10 @@ pub struct Session {
     round_shown: Option<(round::Target, bool, Option<f64>)>,
     round_refused: Option<&'static str>,
     round_down: Option<round::Down>,
+    /// The size handle of the selected feature, while it is dragged, and
+    /// its guide.
+    round_handle: Option<features::Handle>,
+    guide_cache: features::GuideCache,
     /// The Loft tool: the sides being picked, the threshold (degrees), the
     /// presets, the sides of the last loft (presets change it), and why it
     /// last refused.
@@ -744,6 +748,8 @@ impl Session {
             round_shown: None,
             round_refused: None,
             round_down: None,
+            round_handle: None,
+            guide_cache: Default::default(),
             lofting: lofting::Lofting::default(),
             loft_turn: prism_ops::sides::TURN_DEG,
             loft_preset: prism_ops::sides::Preset::default(),

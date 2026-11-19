@@ -138,6 +138,24 @@ impl Stack {
     }
 }
 
+/// A flat face beside the edge a feature works on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GuideSide {
+    pub normal: DVec3,
+    pub origin: DVec3,
+    /// Unit, in the face's plane, from the edge into the face.
+    pub across: DVec3,
+}
+
+/// The edge a feature works on and the flat faces beside it: how far from
+/// the edge a point lies across a face is the feature's size.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SizeGuide {
+    pub a: DVec3,
+    pub b: DVec3,
+    pub sides: Vec<GuideSide>,
+}
+
 /// The elements of a model an edit names.
 #[derive(Clone, Debug, Default)]
 pub struct Targets {
@@ -177,6 +195,47 @@ fn signature(m: &Model) -> Signature {
 }
 
 impl Stack {
+    /// What a drag handle for feature `index`'s size needs: the first edge
+    /// it works on (where it was, before the feature ran) and the flat faces
+    /// beside that edge. None for a broken feature, a curved edge, or an
+    /// edge with no flat face beside it.
+    pub fn size_guide(&self, index: usize) -> Option<SizeGuide> {
+        let feature = self.features.get(index)?;
+        if feature.is_broken() {
+            return None;
+        }
+        let mut m = self.base.clone();
+        for (i, f) in self.features.iter().take(index).enumerate() {
+            f.clone().run(&mut m, i == 0);
+        }
+        let e = edge_at(&m, feature.refs().first()?)?;
+        if m.edge(e)?.curve.is_curved() {
+            return None;
+        }
+        let (a, b) = ends(&m, e)?;
+        let dir = (b - a).try_normalize()?;
+        let mid = (a + b) * 0.5;
+        let by_edge = m.edge_faces();
+        let sides: Vec<GuideSide> = by_edge
+            .get(&e)?
+            .iter()
+            .filter_map(|f| {
+                let face = m.face(*f)?;
+                let plane = face.plane()?;
+                let pts = m.loop_points(face, 0);
+                let centre = pts.iter().copied().sum::<DVec3>() / pts.len().max(1) as f64;
+                let w = centre - mid;
+                let across = (w - dir * w.dot(dir)).try_normalize()?;
+                Some(GuideSide {
+                    normal: plane.normal,
+                    origin: plane.origin,
+                    across,
+                })
+            })
+            .collect();
+        (!sides.is_empty()).then_some(SizeGuide { a, b, sides })
+    }
+
     /// The faces each feature made (ids in the model as drawn): what each
     /// one adds when it runs. A broken feature made none.
     pub fn made_faces(&self) -> Vec<BTreeSet<FaceId>> {
@@ -306,6 +365,13 @@ fn edge_at(m: &Model, r: &EdgeRef) -> Option<EdgeId> {
 }
 
 impl Feature {
+    /// The feature's size: a fillet's radius or a chamfer's distance.
+    pub fn size(&self) -> f64 {
+        match self {
+            Feature::Round { size, .. } => *size,
+        }
+    }
+
     fn refs(&self) -> &[EdgeRef] {
         match self {
             Feature::Round { edges, .. } => edges,

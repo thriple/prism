@@ -4764,9 +4764,14 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** `session/features.rs`: the faces each feature made (`Stack::made_faces`, cached by model version), `selected_feature`, `select_feature`, `select_feature_at` (Outliner), `feature_click` (right-click). Select picks a feature by clicking a face it made; Explode and Remove act on the selected feature (`Command::ExplodeFeature`, `RemoveFeature`).
 - **Fixed on the way:** the top level's live features were not saved to the file; they are now (a root with only a stack writes `groups.json`).
-- **Left over:** the Fillet tool's drag handle for the selected feature (part 3 of this plan); Alt + click cannot tell a round from its feature because a round is one smooth surface; Explode bakes the features before it too; the Outliner's disclosure sign is a plain + and -. Checked on screen: the Inspector and Outliner show a selected fillet (file opened with live fillets at the top level and in a group).
+- **Left over:** Alt + click cannot tell a round from its feature because a round is one smooth surface; Explode bakes the features before it too; the Outliner's disclosure sign is a plain + and -. Checked on screen: the Inspector and Outliner show a selected fillet (file opened with live fillets at the top level and in a group).
 
 ## Dialogs: the backdrop stayed above the card (owner report, 2026-11-19)
 
 - **Bug:** a dialog opened again after its backdrop had been clicked showed dimmed, and any click closed it (seen with a second dropped .glb). egui keeps the stacking of areas between openings, and a clicked backdrop moves above the card.
 - **Fix:** `SoftDialog` draws the backdrop and the card in one layer (`prism-ui/src/widgets/dialog.rs`); a click closes it only outside the card. Undimmed dialogs still cover only their card. Tests: reopen after a backdrop click, click straight after opening, unfocused window, undimmed. Checked in the app with About (open, backdrop click, reopen, Done).
+
+## The Fillet tool's handle (brief 48 part 2c, owner 2026-11-19)
+
+- **Built:** `Stack::size_guide` (pure), and in `session/features.rs` the handle: shown only with the Fillet tool and a selected feature, dragged with a live preview, set on release as one `SetFeatureSize`; Esc cancels; a typed size + Enter sets it. With a feature selected the tool no longer treats its faces as edges to round. Tests: guide geometry, drag + undo, Esc and typed size. Checked on screen (file with live fillets: handle, drag, release).
+- **Left over:** no handle for curved edges or an edge with no flat face beside it (the Inspector sets the size); a feature on several edges has one handle, on its first edge.

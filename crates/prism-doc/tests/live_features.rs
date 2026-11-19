@@ -511,3 +511,26 @@ fn a_group_made_beside_a_round_leaves_it_live() {
     let _ = new_group(&mut d, sel);
     assert!(d.assembly().root().stack.is_some());
 }
+
+#[test]
+fn a_feature_gives_the_edge_and_faces_its_size_is_measured_across() {
+    let (mut d, inst, def) = grouped_cube();
+    round(&mut d, inst, def, 0.25);
+    let stack = d.assembly().def(def).unwrap().stack.as_ref().unwrap();
+    let g = stack
+        .size_guide(0)
+        .expect("a straight edge between flat faces");
+    // The cube's low upright corner, where the round was made.
+    assert!((g.a.x + g.a.y).abs() < 1e-9 && (g.b.x + g.b.y).abs() < 1e-9);
+    assert!((g.a - g.b).length() > 1.9);
+    assert_eq!(g.sides.len(), 2, "the two walls beside the corner");
+    for s in &g.sides {
+        // Across a wall from the edge: along the wall, away from the edge,
+        // square to it.
+        assert!((s.across.length() - 1.0).abs() < 1e-9);
+        assert!(s.across.dot(g.b - g.a).abs() < 1e-9);
+        assert!(s.across.dot(s.normal).abs() < 1e-9);
+        assert!(s.across.x + s.across.y > 0.9, "into the wall, not away");
+    }
+    assert!(stack.size_guide(1).is_none(), "no such feature");
+}
