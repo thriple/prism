@@ -131,3 +131,20 @@ fn an_open_box_is_refused() {
     let b = block(1.0, 1.0, 0.0, 3.0, 3.0, 2.0);
     assert_eq!(boolean(&a, &b, Op::Union), Err(NOT_SOLID));
 }
+
+#[test]
+fn boxes_overlapping_along_one_axis_union_in_either_order() {
+    // Four faces of each lie on the other's planes, and overlap it.
+    let a = block(0.0, 0.0, 0.0, 2.0, 2.0, 2.0);
+    let b = block(1.0, 0.0, 0.0, 3.0, 2.0, 2.0);
+    for (x, y) in [(&a, &b), (&b, &a)] {
+        let u = boolean(x, y, Op::Union).unwrap();
+        close(solid_volume(&u), 12.0);
+        no_seams(&u);
+        assert_eq!(u.faces().count(), 6, "one long box");
+        let i = boolean(x, y, Op::Intersect).unwrap();
+        close(solid_volume(&i), 4.0);
+        let s = boolean(x, y, Op::Subtract).unwrap();
+        close(solid_volume(&s), 4.0);
+    }
+}

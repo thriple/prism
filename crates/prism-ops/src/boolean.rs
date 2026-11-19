@@ -67,8 +67,10 @@ pub fn boolean(a: &Model, b: &Model, op: Op) -> Result<Model, &'static str> {
     crate::intersect::intersect_with(&mut ma, b);
     let mut mb = b.clone();
     crate::intersect::intersect_with(&mut mb, a);
-    let pa = places(&ma, b, &tol).ok_or(UNSURE)?;
-    let pb = places(&mb, a, &tol).ok_or(UNSURE)?;
+    let mut pa = places(&ma, b, &tol).ok_or(UNSURE)?;
+    let mut pb = places(&mb, a, &tol).ok_or(UNSURE)?;
+    drop_membranes(&mut ma, &mut pa, a, &tol).ok_or(UNSURE)?;
+    drop_membranes(&mut mb, &mut pb, b, &tol).ok_or(UNSURE)?;
     let (keep_a, keep_b): (&[Place], &[Place]) = match op {
         Op::Union => (&[Place::Outside, Place::Same], &[Place::Outside]),
         Op::Intersect => (&[Place::Inside, Place::Same], &[Place::Inside]),
@@ -90,27 +92,58 @@ pub fn boolean(a: &Model, b: &Model, op: Op) -> Result<Model, &'static str> {
 /// Each face of `m` placed against the solid `other`. None if one cannot
 /// be told.
 fn places(m: &Model, other: &Model, tol: &prism_math::Tol) -> Option<BTreeMap<FaceId, Place>> {
-    let faces: Vec<ShellFace> = other
-        .faces()
-        .filter_map(|(id, _)| ShellFace::of(other, id))
-        .collect();
-    let step = crate::solid::step(tol);
-    let inside = |p| shell::winding(&faces, p, tol).map(|w| w >= 1);
+    let faces = shell_faces(other);
     m.faces()
-        .map(|(id, _)| {
-            let (front, back) = shell::interior(m, id)
-                .into_iter()
-                .find_map(|(c, n)| Some((inside(c + n * step)?, inside(c - n * step)?)))?;
-            let place = match (front, back) {
-                (true, true) => Place::Inside,
-                (false, false) => Place::Outside,
-                // The other solid is behind it, as this one is.
-                (false, true) => Place::Same,
-                (true, false) => Place::Opposite,
-            };
-            Some((id, place))
-        })
+        .map(|(id, _)| Some((id, place_of(m, id, &faces, tol)?)))
         .collect()
+}
+
+fn shell_faces(m: &Model) -> Vec<ShellFace> {
+    m.faces()
+        .filter_map(|(id, _)| ShellFace::of(m, id))
+        .collect()
+}
+
+/// Face `id` of `m` against the solid made of `faces`.
+fn place_of(m: &Model, id: FaceId, faces: &[ShellFace], tol: &prism_math::Tol) -> Option<Place> {
+    let step = crate::solid::step(tol);
+    let inside = |p| shell::winding(faces, p, tol).map(|w| w >= 1);
+    let (front, back) = shell::interior(m, id)
+        .into_iter()
+        .find_map(|(c, n)| Some((inside(c + n * step)?, inside(c - n * step)?)))?;
+    Some(match (front, back) {
+        (true, true) => Place::Inside,
+        (false, false) => Place::Outside,
+        // The other solid is behind it, as this one is.
+        (false, true) => Place::Same,
+        (true, false) => Place::Opposite,
+    })
+}
+
+/// Cutting a solid by a face that runs right across it leaves that face
+/// inside it, with the solid on both sides. If the other solid's face lies
+/// on it, it is placed as Same or Opposite and would be kept. A face that
+/// is not on its own solid's boundary is no part of the result: remove it.
+/// `m` is `own` cut by the other; `None` if a face could not be told.
+fn drop_membranes(
+    m: &mut Model,
+    places: &mut BTreeMap<FaceId, Place>,
+    own: &Model,
+    tol: &prism_math::Tol,
+) -> Option<()> {
+    let faces = shell_faces(own);
+    let on_other: Vec<FaceId> = places
+        .iter()
+        .filter(|(_, p)| matches!(p, Place::Same | Place::Opposite))
+        .map(|(id, _)| *id)
+        .collect();
+    for id in on_other {
+        if place_of(m, id, &faces, tol)? == Place::Inside {
+            m.remove_face(id);
+            places.remove(&id);
+        }
+    }
+    Some(())
 }
 
 /// Add `b`'s faces to `out`, sharing its points and edges where they
