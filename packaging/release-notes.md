@@ -1,6 +1,7 @@
 **New in this build: see and change a live cut.**
 - **Live Union, Subtract and Intersect:** when you open the body and select the cut, a dashed outline shows the cutter. In Inspector > Features you can change it between Union, Subtract and Intersect, and type its position and size. Undo puts each change back.
 - **Offset** goes as far as you ask, even past where its sides meet (the new lines cross and split the old ones), and no longer refuses to start again after a maximum offset.
+- **Fillet and chamfer edges:** select edges in the viewport, then in Inspector > Features press "Round the N selected edges" under a fillet or chamfer to point it at them (this also repairs one whose edges were lost).
 - **Previews:** in Inspector > Features, type a new size or cutter value and the open body shows the result before you press Enter.
 - **Fix:** a union of boxes that overlap on shared planes is valid whichever you pick first.
 - **Recordings** (`Prism_session_*.json`) start with a short note saying what the file is.

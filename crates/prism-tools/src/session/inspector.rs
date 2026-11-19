@@ -354,7 +354,7 @@ impl Session {
                         &key,
                         f.name(),
                         FieldKind::Fixed,
-                        "Broken: its edges are gone. Remove it or bake.".into(),
+                        "Broken: its edges are gone. Select edges and use them here, or remove it or bake.".into(),
                     ));
                 } else {
                     fields.push(field(
@@ -362,6 +362,19 @@ impl Session {
                         label,
                         FieldKind::Length,
                         self.number.show(*size),
+                    ));
+                }
+                // Edges picked in the viewport can replace the round's.
+                let picked = self.selection.edges.len();
+                if picked > 0 && self.groups.is_empty() {
+                    fields.push(field(
+                        &format!("feature.{i}.edges"),
+                        "",
+                        FieldKind::Action,
+                        format!(
+                            "Round the {picked} selected edge{}",
+                            if picked == 1 { "" } else { "s" }
+                        ),
                     ));
                 }
             }
@@ -683,6 +696,19 @@ impl Session {
                         return Err("A size must be more than zero".into());
                     }
                     Command::SetFeatureSize { def, index, size }
+                }
+                Some("edges") => {
+                    let m = self.work_model();
+                    let edges: Vec<prism_doc::EdgeRef> = self
+                        .selection
+                        .edges
+                        .iter()
+                        .filter_map(|e| prism_doc::EdgeRef::of(m, *e))
+                        .collect();
+                    if edges.is_empty() {
+                        return Err("Select the edges to round first".into());
+                    }
+                    Command::SetFeatureEdges { def, index, edges }
                 }
                 Some("kind") => {
                     let op = match text.to_ascii_lowercase().as_str() {

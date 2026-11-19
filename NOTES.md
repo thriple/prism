@@ -4797,3 +4797,9 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** `Session::inspector_preview` / `inspector_preview_end` (`prism-tools/src/session/inspector.rs`); `feature_set` now builds its command with `feature_command`, which the preview shares. The window sends `PanelOp::InspectPreview` as a `feature.*` field's text changes and `InspectPreviewEnd` when it is left.
 - **Left over:** a group's own Position and Size fields have no preview; the cutter's dashed ghost does not follow typed text (the body does); no preview for a group seen from outside (open it); not checked on screen. Part 4 still has re-picking a broken feature's edges in the viewport, and named parameters.
+
+## Inspector part 4b: pick a round's edges in the viewport (brief 48)
+
+- **Built:** `Command::SetFeatureEdges`, `Stack::set_edges` (looks the picks up by place in the model before that feature), `Assembly::set_feature_edges`, and the Inspector action `feature.N.edges` ("Round the N selected edges", shown while edges are selected). It mends a broken round and can also move a working one.
+- **Left over:** it replaces the edges (no add or remove one by one); picking while the round itself is selected; not checked on screen; other feature kinds have no pick references yet. Named parameters (part 4c) are not started.
+

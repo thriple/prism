@@ -534,3 +534,58 @@ fn a_feature_gives_the_edge_and_faces_its_size_is_measured_across() {
     }
     assert!(stack.size_guide(1).is_none(), "no such feature");
 }
+
+/// A round whose edges are gone is broken; pointing it at edges that are
+/// there brings it back (Inspector part 4b).
+#[test]
+fn a_broken_round_is_given_new_edges_and_runs_again() {
+    use prism_doc::{EdgeRef, Feature, Stack};
+    let (d, _, def) = grouped_cube();
+    let base = model(&d, def).clone();
+    let corner = corner_edge(&base);
+    let mut stack = Stack::new(base.clone());
+    stack.features.push(Feature::Round {
+        edges: vec![EdgeRef::of(&base, corner).unwrap()],
+        size: 0.3,
+        fillet: true,
+        broken: false,
+    });
+    // The edge it points at is moved away: nothing is there any more.
+    if let Feature::Round { edges, .. } = &mut stack.features[0] {
+        edges[0].id = EdgeId(9999);
+        edges[0].a += DVec3::new(9.0, 9.0, 9.0);
+        edges[0].b += DVec3::new(9.0, 9.0, 9.0);
+    }
+    let plain = stack.evaluate();
+    assert!(stack.features[0].is_broken());
+    assert_eq!(
+        plain.face_count(),
+        base.face_count(),
+        "a broken round does nothing"
+    );
+    // The far corner's edge, picked as it looks now, is the one rounded.
+    let far = base
+        .edges()
+        .filter(|(_, e)| (base.vertex(e.a).z - base.vertex(e.b).z).abs() > 1.0)
+        .max_by(|(_, a), (_, b)| {
+            let s = |e: &prism_topo::Edge| base.vertex(e.a).x + base.vertex(e.a).y;
+            s(a).total_cmp(&s(b))
+        })
+        .unwrap()
+        .0;
+    assert!(stack.set_edges(0, &[EdgeRef::of(&plain, far).unwrap()]));
+    let rounded = stack.evaluate();
+    assert!(!stack.features[0].is_broken());
+    assert!(rounded.face_count() > base.face_count());
+    // Edges that are not there, or none, change nothing.
+    let was = stack.clone();
+    let nowhere = EdgeRef {
+        id: far,
+        a: DVec3::new(50.0, 0.0, 0.0),
+        b: DVec3::new(51.0, 0.0, 0.0),
+    };
+    assert!(!stack.set_edges(0, &[nowhere]));
+    assert!(!stack.set_edges(0, &[]));
+    assert!(!stack.set_edges(3, &[EdgeRef::of(&plain, far).unwrap()]));
+    assert_eq!(stack, was);
+}

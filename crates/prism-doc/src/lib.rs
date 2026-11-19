@@ -432,6 +432,13 @@ pub enum Command {
         min: prism_math::DVec3,
         max: prism_math::DVec3,
     },
+    /// Point a live round at other edges, given as they are now (Inspector
+    /// part 4b). They are found by place before the round runs.
+    SetFeatureEdges {
+        def: DefId,
+        index: usize,
+        edges: Vec<EdgeRef>,
+    },
     /// Make a live boolean another kind (Inspector part 3b-2).
     SetBoolKind {
         def: DefId,
@@ -733,7 +740,8 @@ impl Command {
             Command::RoundEdge { .. } => "Chamfer",
             Command::SetFeatureSize { .. }
             | Command::SetCutter { .. }
-            | Command::SetBoolKind { .. } => "Change Feature",
+            | Command::SetBoolKind { .. }
+            | Command::SetFeatureEdges { .. } => "Change Feature",
             Command::ExplodeFeature { .. } => "Explode Feature",
             Command::RemoveFeature { .. } => "Remove Feature",
             Command::BakeFeatures { .. } => "Bake Features",
@@ -1074,6 +1082,9 @@ impl Command {
                 max,
             } => {
                 asm.set_cutter(*def, *index, *min, *max);
+            }
+            Command::SetFeatureEdges { def, index, edges } => {
+                asm.set_feature_edges(*def, *index, edges);
             }
             Command::SetBoolKind { def, index, op } => {
                 asm.set_bool_kind(*def, *index, *op);
@@ -1545,6 +1556,7 @@ impl Command {
             | Command::SetFeatureSize { .. }
             | Command::SetCutter { .. }
             | Command::SetBoolKind { .. }
+            | Command::SetFeatureEdges { .. }
             | Command::RemoveFeature { .. }
             | Command::ExplodeFeature { .. }
             | Command::BakeFeatures { .. }

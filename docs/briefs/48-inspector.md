@@ -11,7 +11,7 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 1. **The panel (built).** Schema-driven: the session returns sections of fields (`Session::inspector`), the window draws them, and `Session::inspector_set(key, text)` takes the typed text back. MCP `get_inspector` and `set_inspector` use the same two calls.
 2. **The modifier stack (built, first with the live round).** Features stored on a body's definition over its base geometry, re-run after direct edits, stable-ID references with a geometric fallback, "broken" and Bake. See Part 2 below.
 3. **Editable features.** Fillet and chamfer first (a distance changed after the fact; built, parts 2 to 2c), then booleans (owner chose, 2026-11-19: first, with the cutter kept inside the feature; 3a built, see Part 3a), then shell, hole, array and mirror.
-4. **Previews (4a built), pick references, named parameters.** Part 4a: typing in a feature's field shows the result on the body before Enter. Re-picking a broken feature's edges in the viewport and named parameters are not started.
+4. **Previews (4a built), pick references (4b built), named parameters.** Part 4a: typing in a feature's field shows the result on the body before Enter. Part 4b: a round can be pointed at edges picked in the viewport. Named parameters are not started.
 
 ## Part 1: the panel
 - **Window > Inspector** (`win.inspector`), in the side column with Entity Info.
@@ -73,6 +73,12 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 - **What:** while a feature's size, cutter or similar field has the keys and its text is not yet committed, the body is drawn with that value (a preview, like the Fillet handle's). Enter commits it as before (one undo step); leaving the field takes the preview away. Text that is not valid, or a value the kernel refuses (the shape would break), shows the body as it is. Nothing is added to the document until Enter.
 - **Where:** the body that is open (a group seen from outside is not previewed; open it first). `Session::inspector_preview(key, text)` and `inspector_preview_end()`; the window sends them as the text changes and when the field is left.
 - **MCP:** nothing new; `set_inspector` sets the value directly, so there is nothing to preview there.
+
+## Part 4b: pick the edges of a round in the viewport
+- **How:** open the body (or work on loose geometry), select edges with the Select tool; the Inspector's Features list shows, under each fillet or chamfer, a button "Round the N selected edges". It points that round at those edges (`SetFeatureEdges`, one undo step, "Change Feature"), which also mends a broken round whose edges were gone.
+- **Where the edges are looked up:** the picked edges are matched by place in the model as it is just before that round runs, so edges the round (or a later feature) made cannot be picked for it. An edge that is not there, no edges, or a result the kernel refuses changes nothing.
+- **Not here:** picking edges for a round while it is selected as a feature; adding to its edges (it replaces them); pick references for other kinds of feature.
+- **MCP:** `set_inspector` with `feature.N.edges` (any text) uses the current selection; select the edges first with the selection tools.
 
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.

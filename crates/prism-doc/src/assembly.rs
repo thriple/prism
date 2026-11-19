@@ -1037,6 +1037,28 @@ impl Assembly {
         true
     }
 
+    /// Point a live round at other edges and run the features again. Edges
+    /// that are not there, or a result the kernel refuses, change nothing.
+    pub fn set_feature_edges(&mut self, def: DefId, index: usize, edges: &[EdgeRef]) -> bool {
+        let Some(d) = self.def_mut_live(def) else {
+            return false;
+        };
+        let Some(stack) = &mut d.stack else {
+            return false;
+        };
+        let mut next = stack.clone();
+        if !next.set_edges(index, edges) {
+            return false;
+        }
+        let model = next.evaluate();
+        if next.features[index].is_broken() {
+            return false;
+        }
+        d.model = model;
+        d.stack = Some(next);
+        true
+    }
+
     /// Make a live boolean another kind and run the features again. A kind
     /// that breaks the shape (nothing left, say) is not taken.
     pub fn set_bool_kind(&mut self, def: DefId, index: usize, op: BoolKind) -> bool {

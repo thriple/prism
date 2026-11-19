@@ -8608,3 +8608,50 @@ fn a_feature_field_shows_its_result_while_typed_and_nothing_is_made() {
     assert!((area(&d) - was).abs() < 1e-9);
     assert_eq!(d.s.document().log().count(), log);
 }
+
+#[test]
+fn a_round_is_pointed_at_the_edges_selected_in_the_viewport() {
+    let mut d = Driver::empty();
+    rounded_box(&mut d);
+    let refs = |d: &Driver| match &d
+        .s
+        .document()
+        .assembly()
+        .root()
+        .stack
+        .as_ref()
+        .unwrap()
+        .features[0]
+    {
+        prism_doc::Feature::Round { edges, .. } => edges.clone(),
+        _ => panic!("a round"),
+    };
+    let first = refs(&d);
+    assert!(
+        first[0].a.x > 1.5 || first[0].b.x > 1.5,
+        "the edge at x = 2"
+    );
+    // With nothing picked there is no such row.
+    let has = |d: &Driver| {
+        d.s.inspector()
+            .sections
+            .iter()
+            .flat_map(|s| &s.fields)
+            .any(|f| f.key == "feature.0.edges")
+    };
+    assert!(!has(&d));
+    assert!(d.s.inspector_set("feature.0.edges", "").is_err());
+    // Pick the edge at the near corner: the round moves to it, in one step.
+    d.click(DVec3::new(0.0, 0.0, 1.0));
+    assert_eq!(d.s.selection().edges.len(), 1);
+    assert!(has(&d));
+    let log = d.s.document().log().count();
+    d.s.inspector_set("feature.0.edges", "").expect("changes");
+    assert_eq!(d.s.document().log().count(), log + 1);
+    let now = refs(&d);
+    assert_eq!(now.len(), 1);
+    assert!(now[0].a.x < 0.5 && now[0].a.y < 0.5, "{now:?}");
+    assert_eq!(d.s.document().undo_name(), Some("Change Feature"));
+    act(&mut d, "edit.undo");
+    assert_eq!(refs(&d)[0].a, first[0].a);
+}

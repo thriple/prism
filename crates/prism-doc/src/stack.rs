@@ -187,6 +187,32 @@ impl Stack {
         }
     }
 
+    /// Point the round at `index` at other edges (given as they look now:
+    /// by place, in any model the features have run on). They are looked up
+    /// in the model as it is just before that feature. False if it is not a
+    /// round, there are none, or one is not there at that point.
+    pub fn set_edges(&mut self, index: usize, picks: &[EdgeRef]) -> bool {
+        if !matches!(self.features.get(index), Some(Feature::Round { .. })) {
+            return false;
+        }
+        let mut before = Stack {
+            base: self.base.clone(),
+            features: self.features[..index].to_vec(),
+        };
+        let m = before.evaluate();
+        let found: Option<Vec<EdgeRef>> = picks
+            .iter()
+            .map(|r| edge_at(&m, r).and_then(|e| EdgeRef::of(&m, e)))
+            .collect();
+        let Some(found) = found.filter(|f| !f.is_empty()) else {
+            return false;
+        };
+        if let Some(Feature::Round { edges, .. }) = self.features.get_mut(index) {
+            *edges = found;
+        }
+        true
+    }
+
     /// The base with every feature applied in order.
     pub fn evaluate(&mut self) -> Model {
         let mut m = self.base.clone();
