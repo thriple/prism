@@ -2,7 +2,7 @@
 
 **Goal.** Shell / Thicken works on shapes like a boat hull: several freeform (NURBS) faces joined along their edges, with flat faces beside them, open or closed. Today it refuses them ("takes a freeform face on its own, but not one joined to other faces"). Blender (Solidify) and Fusion 360 (Thicken, Shell) do this: every face is offset, and the offsets are joined at the corners.
 
-**Read first:** brief 42 (the tool), `prism-ops/src/shelling.rs` and `thicken.rs` (a lone freeform face, and `offset_surface`), brief 48 part 5a (the live shell), NOTES "Live shell, part 5a". The owner's test file is `docs/acceptance/files/boat-half-hull.prism` (a half hull: three NURBS faces and two flat faces, an open sheet, two instances of one component that touch along the centre plane).
+**Read first:** brief 42 (the tool), `prism-ops/src/shelling.rs` and `thicken.rs` (a lone freeform face, and `offset_surface`), brief 48 part 5a (the live shell), NOTES "Live shell, part 5a". The owner's test file is `docs/acceptance/models/boat-half-hull.prism` (a half hull: three NURBS faces and two flat faces, an open sheet, two instances of one component that touch along the centre plane).
 
 ## Size
 XL. Owner chose (2026-11-19) to build the smooth and creased joins together, with sharp mitres by default. Parts, each pushed and tested on its own:

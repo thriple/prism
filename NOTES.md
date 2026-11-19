@@ -4810,7 +4810,7 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 ## Shell of joined freeform faces: owner request and design (brief 49, 2026-11-19)
 
-- **Owner report:** Shell did nothing on a half boat hull (`docs/acceptance/files/boat-half-hull.prism`, three NURBS faces and two flat faces, an open sheet, two touching instances of one component). Blender and Fusion 360 do it.
+- **Owner report:** Shell did nothing on a half boat hull (`docs/acceptance/models/boat-half-hull.prism`, three NURBS faces and two flat faces, an open sheet, two touching instances of one component). Blender and Fusion 360 do it.
 - **Found:** the kernel refuses with "takes a freeform face on its own, but not one joined to other faces" (`prism-ops/src/shelling.rs`, `freeform_alone`). Nothing is wrong with the file.
 - **Owner chose:** sharp mitres by default; smooth and creased joins built together; and asked for a ghost of what will happen, then handles with snapping, to place each new edge (the touching halves would clash).
 - **Plan:** brief 49 (four parts). Not started; the design question (rim styles: Square, Flush to a plane, Custom; handles that snap) is in the brief for the owner to react to.
