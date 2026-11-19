@@ -1,4 +1,4 @@
-//! Offset of faces: inward, outward, with holes, and clamped.
+//! Offset of faces: inward, outward, with holes, and past where sides meet.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -94,26 +94,50 @@ fn a_face_with_a_hole_offsets_both_loops() {
     close(&areas(&m), &[4.0, 12.0, 36.0, 48.0]);
 }
 
+/// Owner feedback (session 15, 2026-11-19): an offset goes as far as it is
+/// asked, past where its sides meet. The lines cross, sticky geometry splits
+/// them, and tidying up is the user's.
 #[test]
-fn too_far_stops_short_and_stays_valid() {
+fn too_far_goes_the_whole_way_and_stays_valid() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 2.0, 0.0);
     let f = face(&m, 1.0, 1.0);
-    let used = offset::offset(&mut m, f, 5.0).expect("a clamped offset");
-    assert!(used < 1.0 && used > 0.99, "{used}");
+    assert_eq!(offset::offset(&mut m, f, 5.0), Some(5.0));
     ok(&m);
-    assert_eq!(m.face_count(), 2);
+    // The sides passed each other: the new outline is turned round, round
+    // the old one, and still drawn.
+    assert_eq!(m.edges().count(), 8);
 }
 
 #[test]
-fn holes_that_would_meet_the_outline_stop_short() {
+fn holes_that_meet_the_outline_are_offset_through_it() {
     let mut m = Model::new();
     prism_ops::add_rect(&mut m, 0.0, 0.0, 10.0, 10.0, 0.0);
     prism_ops::add_rect(&mut m, 2.0, 2.0, 4.0, 4.0, 0.0);
     let f = face(&m, 8.0, 8.0);
     // The hole grows and the outline shrinks: they meet at 1.
-    let used = offset::offset(&mut m, f, 3.0).expect("clamped");
-    assert!(used < 1.0 && used > 0.99, "{used}");
+    assert_eq!(offset::offset(&mut m, f, 3.0), Some(3.0));
+    ok(&m);
+}
+
+/// An offset never refuses a face because of where its loops are: after one
+/// that takes the inner face down to a hair's width, the next offset still
+/// works, on the sliver, on the ring, and on a rectangle drawn round it.
+#[test]
+fn offsets_keep_working_after_one_that_closes_up() {
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 4.0, 2.0, 0.0);
+    let f = face(&m, 0.5, 1.0);
+    offset::offset(&mut m, f, 1.0 - 1e-9);
+    ok(&m);
+    for (x, y) in [(2.0, 1.0), (0.5, 1.0)] {
+        let g = face(&m, x, y);
+        assert!(offset::offset(&mut m, g, 0.2).is_some(), "at {x}, {y}");
+        ok(&m);
+    }
+    prism_ops::add_rect(&mut m, -3.0, -3.0, 7.0, 5.0, 0.0);
+    let ring = face(&m, -2.0, -2.0);
+    assert_eq!(offset::offset(&mut m, ring, 0.5), Some(0.5));
     ok(&m);
 }
 

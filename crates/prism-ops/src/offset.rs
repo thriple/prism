@@ -2,9 +2,11 @@
 //! same distance into the face (positive) or out of it (negative), with
 //! mitred corners.
 //!
-//! The offset never makes an invalid outline: if the distance asked for
-//! would make an edge vanish or turn round, or two edges cross or touch,
-//! it stops just short of that.
+//! The offset goes as far as it is asked, even past where edges meet or turn
+//! round: the new lines cross the old ones and each other, sticky geometry
+//! splits them there, and tidying up is the user's job (as when an offset
+//! is taken too far in SketchUp). The only limits are what cannot be built:
+//! a corner with no mitre, a spline, an arc that would shrink to nothing.
 
 use std::f64::consts::{PI, TAU};
 
@@ -72,78 +74,20 @@ fn offset_loop(l: &[DVec2], d: f64) -> Option<Vec<DVec2>> {
         .collect()
 }
 
-/// The distance between segments `a`–`b` and `c`–`d` (0 if they cross).
-fn segment_gap(a: DVec2, b: DVec2, c: DVec2, d: DVec2) -> f64 {
-    let cross = |o: DVec2, p: DVec2, q: DVec2| (p - o).perp_dot(q - o);
-    let (d1, d2) = (cross(a, b, c), cross(a, b, d));
-    let (d3, d4) = (cross(c, d, a), cross(c, d, b));
-    if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
-        return 0.0;
-    }
-    let to_seg = |p: DVec2, a: DVec2, b: DVec2| {
-        let e = b - a;
-        let t = ((p - a).dot(e) / e.length_squared().max(f64::MIN_POSITIVE)).clamp(0.0, 1.0);
-        p.distance(a + e * t)
-    };
-    to_seg(a, c, d)
-        .min(to_seg(b, c, d))
-        .min(to_seg(c, a, b))
-        .min(to_seg(d, a, b))
-}
-
-/// Whether offset loops are a valid result: no edge vanished or turned
-/// round, and no two edges that are not neighbours come within `gap`.
-fn valid(before: &[Vec<DVec2>], after: &[Vec<DVec2>], gap: f64) -> bool {
-    let mut segs: Vec<(usize, usize, DVec2, DVec2)> = Vec::new();
-    for (li, (l0, l1)) in before.iter().zip(after).enumerate() {
-        let n = l0.len();
-        for i in 0..n {
-            let (a0, b0) = (l0[i], l0[(i + 1) % n]);
-            let (a1, b1) = (l1[i], l1[(i + 1) % n]);
-            let (e0, e1) = (b0 - a0, b1 - a1);
-            // The edge must keep its direction and a usable length.
-            if e1.dot(e0) <= 0.0 || e1.length() < gap {
-                return false;
-            }
-            segs.push((li, i, a1, b1));
-        }
-    }
-    for x in 0..segs.len() {
-        for y in x + 1..segs.len() {
-            let (lx, ix, a, b) = segs[x];
-            let (ly, iy, c, d) = segs[y];
-            if lx == ly {
-                let n = after[lx].len();
-                if (ix + 1) % n == iy || (iy + 1) % n == ix {
-                    continue;
-                }
-            }
-            if segment_gap(a, b, c, d) < gap {
-                return false;
-            }
-        }
-    }
-    true
-}
-
 /// The loops of `face` offset by `distance` (positive into the face), in
-/// 3D, outline first, and the distance actually used: `distance`, or less
-/// if that would make an invalid outline. None if the face has no valid
-/// offset at all.
+/// 3D, outline first, and the distance used, which is `distance`. None if
+/// a corner has no mitre (an edge doubles straight back).
 pub fn offset_loops(model: &Model, face: FaceId, distance: f64) -> Option<(Vec<Vec<DVec3>>, f64)> {
     let (flat, loops) = flat_loops(model, face)?;
-    let tol = model.tol();
-    let gap = tol.dist * 10.0;
-    let at = |d: f64| -> Option<Vec<Vec<DVec2>>> {
-        let out: Option<Vec<_>> = loops.iter().map(|l| offset_loop(l, d)).collect();
-        out.filter(|o| valid(&loops, o, gap))
-    };
-    let (out, used) = largest_valid(distance, gap, tol.dist, at)?;
+    let out: Vec<Vec<DVec2>> = loops
+        .iter()
+        .map(|l| offset_loop(l, distance))
+        .collect::<Option<_>>()?;
     Some((
         out.iter()
             .map(|l| l.iter().map(|p| flat.to_3d(*p)).collect())
             .collect(),
-        used,
+        distance,
     ))
 }
 
@@ -295,9 +239,11 @@ fn join(p: &Piece, q: &Piece, n: DVec3, eps: f64) -> Option<DVec3> {
         .min_by(|x, y| x.distance(near).total_cmp(&y.distance(near)))
 }
 
-/// The pieces of a loop moved `d` to their left and joined, or None if a
-/// piece vanished or turned round. An arc whose radius would reach zero is
-/// dropped, and its neighbours join directly.
+/// The pieces of a loop moved `d` to their left and joined, or None if an
+/// arc cannot be built (it would shrink to nothing or turn inside out). A
+/// line may shrink away or turn round: that is the user's to tidy. An arc
+/// whose radius would reach zero is dropped, and its neighbours join
+/// directly.
 fn offset_pieces(l: &[Piece], n: DVec3, d: f64, gap: f64) -> Option<Vec<Piece>> {
     let kept: Vec<(&Piece, Piece)> = l
         .iter()
@@ -325,7 +271,7 @@ fn offset_pieces(l: &[Piece], n: DVec3, d: f64, gap: f64) -> Option<Vec<Piece>> 
     for ((p, _), q) in kept.iter().zip(&out) {
         let ok = match q.curve {
             Curve::Spline(_) => false,
-            Curve::Line => (q.b - q.a).dot(p.b - p.a) > 0.0 && q.a.distance(q.b) >= gap,
+            Curve::Line => q.a.distance(q.b) >= gap,
             Curve::Arc { radius, .. } => {
                 let (s0, s1) = (p.curve.sweep(p.a, p.b), q.curve.sweep(q.a, q.b));
                 radius >= gap && s1 * radius >= gap && (s1 - s0).abs() < PI && s1 < TAU
@@ -338,45 +284,6 @@ fn offset_pieces(l: &[Piece], n: DVec3, d: f64, gap: f64) -> Option<Vec<Piece>> 
     Some(out)
 }
 
-/// A piece drawn as points in the face's 2D frame.
-fn piece_points(flat: &Flat, p: &Piece) -> Vec<DVec2> {
-    std::iter::once(p.a)
-        .chain(p.curve.inner_points(p.a, p.b))
-        .chain(std::iter::once(p.b))
-        .map(|x| flat.to_2d(x))
-        .collect()
-}
-
-/// Whether offset pieces keep apart: no two pieces that are not neighbours
-/// come within `gap`.
-fn pieces_apart(flat: &Flat, loops: &[Vec<Piece>], gap: f64) -> bool {
-    let mut segs: Vec<(usize, usize, DVec2, DVec2)> = Vec::new();
-    for (li, l) in loops.iter().enumerate() {
-        for (pi, p) in l.iter().enumerate() {
-            let pts = piece_points(flat, p);
-            for w in pts.windows(2) {
-                segs.push((li, pi, w[0], w[1]));
-            }
-        }
-    }
-    for x in 0..segs.len() {
-        for y in x + 1..segs.len() {
-            let (lx, px, a, b) = segs[x];
-            let (ly, py, c, d) = segs[y];
-            if lx == ly {
-                let k = loops[lx].len();
-                if px == py || (px + 1) % k == py || (py + 1) % k == px {
-                    continue;
-                }
-            }
-            if segment_gap(a, b, c, d) < gap {
-                return false;
-            }
-        }
-    }
-    true
-}
-
 /// [`offset_loops`] for a face with arcs: its loops as pieces.
 pub fn offset_arc_loops(
     model: &Model,
@@ -385,7 +292,6 @@ pub fn offset_arc_loops(
 ) -> Option<(Vec<Vec<Piece>>, f64)> {
     let f = model.face(face)?;
     let n = f.plane()?.normal;
-    let flat = Flat::new(model.vertex(*f.outer.first()?), n);
     let loops = face_pieces(model, face)?;
     let tol = model.tol();
     let gap = tol.dist * 10.0;
@@ -394,7 +300,7 @@ pub fn offset_arc_loops(
             .iter()
             .map(|l| offset_pieces(l, n, d, gap))
             .collect::<Option<_>>()?;
-        pieces_apart(&flat, &out, gap).then_some(out)
+        Some(out)
     };
     largest_valid(distance, gap, tol.dist, at)
 }

@@ -282,6 +282,10 @@ pub struct Event {
 /// ended with.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Recording {
+    /// What this file is (see [`Recording::ABOUT`]); written first so a person
+    /// opening the file sees it at the top.
+    #[serde(default)]
+    pub about: String,
     pub model: Model,
     pub camera: Camera,
     pub tool: String,
@@ -330,6 +334,9 @@ pub struct Recording {
 }
 
 impl Recording {
+    /// The note saved at the top of every recording.
+    pub const ABOUT: &'static str = "This is a recorded Prism session: Prism's own format for replaying and debugging a session, not a model file. The fields from `model` down to `selected` are the state when recording began. `events` are every input in order (`t` is seconds; `input` is a Move, Press, Release, Wheel, Key, Action, Tool, Held or Time), and `Session::replay` in the prism-tools crate plays them back exactly: the tests use it. `result` and `result_assembly` are the geometry at the end, for checking a replay against. Send the whole file with a bug report.";
+
     /// Whether `doc` is the document this recording ended with: the top
     /// level as [`Recording::ends_with`] says and, when the recording kept
     /// the groups and components, all of them.
@@ -1108,6 +1115,7 @@ impl Session {
 
     pub fn start_recording(&mut self) {
         self.recording = Some(Recording {
+            about: Recording::ABOUT.to_owned(),
             model: self.doc.model().clone(),
             camera: self.camera(),
             tool: self.tool.clone(),

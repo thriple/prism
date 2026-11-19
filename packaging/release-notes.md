@@ -1,6 +1,8 @@
-**New in this build: edit a live cut's cutter, and a booleans fix.**
-- **Inspector > Features:** a live Union, Subtract or Intersect now shows its cutter's position (X, Y, Z) and size (width, depth, height). Type a value and the cut runs again; Undo puts it back.
-- **Fix:** a union, subtract or intersect of two boxes that overlap on faces lying in the same plane no longer gives a broken result when the solids are picked in the other order.
+**New in this build: Offset goes as far as you ask, and keeps working.**
+- **Offset** now goes the whole distance you move or type, even past where its sides meet or turn round. The new lines cross the old ones and split them; tidy up what you do not want, as in SketchUp.
+- **Fix:** after an Offset taken as far as it could go, Offset no longer refuses every later try (on the thin leftover face, or on a rectangle drawn round it).
+- **Recordings** (`Prism_session_*.json`) now start with a short note saying what the file is.
+- Also in recent builds: the live boolean's cutter has position and size fields in the Inspector, and a union of boxes overlapping on shared planes is valid in either order.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

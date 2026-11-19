@@ -41,6 +41,7 @@ impl Driver {
     fn look(&mut self, c: Camera) {
         // A replay starts from a camera; tests set it the same way.
         let r = Recording {
+            about: String::new(),
             model: self.s.model().clone(),
             camera: c,
             tool: self.s.tool().to_owned(),
@@ -8476,4 +8477,24 @@ fn the_cutter_of_a_live_subtract_is_moved_and_sized_in_the_inspector() {
     act(&mut d, "edit.undo");
     act(&mut d, "edit.undo");
     assert!((group_volume(&d, g) - 4.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_recording_says_what_it_is_at_the_top_and_old_ones_still_load() {
+    let mut d = Driver::empty();
+    d.s.start_recording();
+    d.tool(RECT);
+    let json = d.s.stop_recording().expect("recording");
+    let first = json.lines().nth(1).expect("a first field");
+    assert!(
+        first
+            .trim_start()
+            .starts_with("\"about\": \"This is a recorded Prism session")
+    );
+    // A file saved before the note existed has none, and plays as before.
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    value.as_object_mut().unwrap().remove("about");
+    let old: Recording = serde_json::from_value(value).expect("an old recording");
+    assert_eq!(old.about, "");
+    Session::replay(&old);
 }
