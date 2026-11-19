@@ -12,7 +12,7 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | `edit.weld` | Weld | Solids & CAD |
 | `conv.curve` | Curve Chain ↔ NURBS Curve | Solids & CAD |
 | `conv.patch` | Faces ↔ Smooth Patch | Solids & CAD |
-| `tool.shell` | Shell / Thicken | Tool Pass |
+| `tool.shell` | Shell / Thicken (joined freeform faces: planned, brief 49) | Tool Pass |
 | `edit.center` | Center / Align | Shapes & Placement |
 | `tool.prim` | Primitives | Shapes & Placement |
 | `prim.box` | Box | Shapes & Placement |
