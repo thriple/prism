@@ -323,6 +323,29 @@ fn a_curve_that_crosses_itself_is_cut_there_and_its_loop_is_a_face() {
     assert!(crossing.is_some(), "the crossing joins four edges");
 }
 
+/// Found by the random test: two crossings close together, one found a
+/// little off the curve and dropped, left two edges crossing with no
+/// vertex, and the faces overlapped.
+#[test]
+fn two_crossings_close_together_are_both_cut() {
+    let pts: Vec<DVec3> = [
+        (2.3672579880698446, 0.3621933252675966),
+        (2.8763464125277998, 5.20279420474764),
+        (5.756140685676364, 5.071911734284596),
+        (4.89469928112379, 0.47855848818975155),
+        (2.264018759221257, 3.563245925955571),
+        (3.1473407269706075, 2.415752283881834),
+    ]
+    .iter()
+    .map(|(x, y)| DVec3::new(*x, *y, 0.0))
+    .collect();
+    let mut m = Model::new();
+    add_spline(&mut m, &Nurbs::closed(&pts, 3).unwrap());
+    clean(&m);
+    // A big loop, a sliver between the two crossings, and a small loop.
+    assert_eq!(m.face_count(), 3);
+}
+
 #[test]
 fn a_figure_eight_is_two_faces() {
     let mut m = Model::new();

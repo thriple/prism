@@ -700,8 +700,13 @@ fn self_crossings(curve: &prism_geom::Nurbs, tol: &Tol) -> Vec<(f64, f64)> {
                 if joints.iter().any(|q| tol.same_point(*q, x)) {
                     continue;
                 }
-                let s = curve.closest(x, cuts[i], cuts[i + 1]);
-                let t = curve.closest(x, cuts[j], cuts[j + 1]);
+                // The meeting point is only good to within tolerance:
+                // close in on where the two strands truly meet.
+                let (s, t) = settle(
+                    curve,
+                    curve.closest(x, cuts[i], cuts[i + 1]),
+                    curve.closest(x, cuts[j], cuts[j + 1]),
+                );
                 let p = curve.eval(s);
                 if out.iter().any(|&(s0, _)| tol.same_point(curve.eval(s0), p)) {
                     continue;
@@ -729,6 +734,38 @@ fn self_crossings(curve: &prism_geom::Nurbs, tol: &Tol) -> Vec<(f64, f64)> {
         }
     }
     out
+}
+
+/// Where two strands of a curve near `s` and `t` meet: Newton steps on
+/// C(s) = C(t). Strands that only pass close by do not settle, and the
+/// pair is given back no closer than it was.
+fn settle(curve: &prism_geom::Nurbs, s: f64, t: f64) -> (f64, f64) {
+    let (d0, d1) = curve.domain();
+    let gap = |s: f64, t: f64| curve.eval(s).distance(curve.eval(t));
+    let (mut a, mut b) = (s, t);
+    for _ in 0..16 {
+        let ((p, dp), (q, dq)) = (curve.eval_d(a), curve.eval_d(b));
+        let r = p - q;
+        // Least squares for the steps (da, db) with dp·da − dq·db = −r.
+        let (aa, ab, bb) = (dp.dot(dp), -dp.dot(dq), dq.dot(dq));
+        let det = aa * bb - ab * ab;
+        if det.is_nan() || det <= 1e-12 * aa * bb {
+            break;
+        }
+        let (ra, rb) = (-dp.dot(r), dq.dot(r));
+        let da = (ra * bb - rb * ab) / det;
+        let db = (rb * aa - ra * ab) / det;
+        a = (a + da).clamp(d0, d1);
+        b = (b + db).clamp(d0, d1);
+        if da.abs().max(db.abs()) <= 1e-15 * (d1 - d0) {
+            break;
+        }
+    }
+    if gap(a, b) < gap(s, t) {
+        (a, b)
+    } else {
+        (s, t)
+    }
 }
 
 /// Add a NURBS curve (Freeform NURBS part 1). Like a segment or an arc, it
