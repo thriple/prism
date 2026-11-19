@@ -14,12 +14,16 @@ XL. Owner chose (2026-11-19) to build the smooth and creased joins together, wit
 ## Everything physical (owner, 2026-11-19)
 Typing a number is the fallback, not the way. The live shell already has a **thickness handle** (brief 48 part 5b): drag it along the wall. For joined freeform faces the same handle works from a point on the offset surface, and the rim handles below place the edges. The ghost shows the whole result while any handle is dragged.
 
-## The open question: where each new edge goes
-At an open edge of a sheet, or where one part touches another, the new wall's edge can be cut in different ways. The owner asked for a ghost of what is about to happen, then handles with snapping. Proposed design:
-- **Rim style, for each open boundary:** *Square* (cut across the surface, the default for a free edge), *Flush to a plane* (the wall ends in a plane: the plane of the face it touches, a guide, a work plane or an axis plane), and *Custom* (the plane is set by a handle).
+## Where each new edge goes
+At an open edge of a sheet, or where one part touches another, the new wall's edge can be cut in different ways. The owner asked for a ghost of what is about to happen, then handles with snapping. A drawing of the three styles at the half hull's keel was shown to the owner.
+
+**Decided (owner, 2026-11-19):** Flush is picked automatically as below; the Custom handle only **tilts** the cut about the edge (no sliding: a cut moved off a plane is made by snapping flush to a guide placed there); the style is set **per open boundary**, not edge by edge.
+
+The design:
+- **Rim style, for each open boundary** (a whole loop of open edges, such as the keel line or the gunwale line): *Square* (cut across the surface, the default for a free edge), *Flush to a plane* (the wall ends in a plane: the plane of the face it touches, a guide, a work plane or an axis plane), and *Custom* (the plane is set by a handle).
 - **Defaults are chosen for the user:** a boundary that lies in a plane (as the half hull's centre line does) or touches another part defaults to *Flush to that plane*, so two halves meet exactly with no double wall. Everything else is *Square*.
 - **Ghost:** while the Shell window is open and a thickness is being set, the result is drawn as a ghost (the tool already does this for flat faces); rims show in their style, and a rim that the default placed by itself is marked.
-- **Handles:** each open rim has a handle (like the Fillet tool's). Dragging it tilts or slides the cutting plane; the drag snaps to the planes of nearby faces, guides, axes and work planes with the usual inference marks. Letting go sets the style to *Custom* (one undo step).
+- **Handles:** each open rim has a handle (like the Fillet tool's). Dragging it tilts the cutting plane about the edge; the drag snaps to the planes of nearby faces, guides, axes and work planes with the usual inference marks. Letting go sets the style to *Custom* (one undo step).
 - **Live:** the style and plane are stored in the Shell feature, so they stay editable (Inspector rows and the same handle).
 
 ## Not in this brief
