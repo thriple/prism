@@ -8395,3 +8395,42 @@ fn escape_while_dragging_the_handle_leaves_the_size_and_a_typed_size_sets_it() {
     assert!((radii_of(d.s.model())[0] - 0.4).abs() < 1e-9);
     assert_eq!(d.s.selected_feature(), Some(0));
 }
+
+#[test]
+fn a_subtract_by_the_tool_stays_live_in_the_inspector_until_baked() {
+    use prism_tools::session::SOLID_TOOLS;
+    let mut d = overlapping_groups();
+    d.tool(SOLID_TOOLS[1]);
+    d.click(DVec3::new(0.5, 0.0, 1.0));
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    d.tool(SELECT);
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    let i = d.s.inspector();
+    let features = i
+        .sections
+        .iter()
+        .find(|s| s.title == "Features")
+        .expect("a Features section for the live subtract");
+    let kind = features
+        .fields
+        .iter()
+        .find(|f| f.key == "feature.0.kind")
+        .expect("its row");
+    assert_eq!(kind.label, "Subtract");
+    // Bake makes it plain; the shape stays.
+    act(&mut d, "edit.bake");
+    let asm = d.s.document().assembly();
+    assert!(
+        asm.root()
+            .instances
+            .values()
+            .all(|i| asm.def(i.def).unwrap().stack.is_none())
+    );
+    let (g, _) = asm
+        .root()
+        .instances
+        .iter()
+        .find(|(_, i)| i.transform.translation.x < 2.0)
+        .unwrap();
+    assert!((group_volume(&d, *g) - 4.0).abs() < 1e-9);
+}

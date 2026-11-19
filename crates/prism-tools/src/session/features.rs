@@ -153,7 +153,7 @@ impl Session {
         let asm = self.doc.assembly();
         let def = asm.context_def(&self.ctx)?;
         let stack = asm.def(def)?.stack.as_ref()?;
-        let size = stack.features.get(index)?.size();
+        let size = stack.features.get(index)?.size()?;
         if let Some((v, d, i, g)) = &*self.guide_cache.borrow()
             && *v == self.version
             && *d == def
@@ -234,6 +234,7 @@ impl Session {
         let mut stack = self.doc.assembly().def(def)?.stack.clone()?;
         match stack.features.get_mut(index)? {
             prism_doc::Feature::Round { size: s, .. } => *s = size,
+            _ => return None,
         }
         let m = stack.evaluate();
         (!stack.features[index].is_broken()).then_some(m)

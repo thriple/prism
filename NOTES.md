@@ -4775,3 +4775,11 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** `Stack::size_guide` (pure), and in `session/features.rs` the handle: shown only with the Fillet tool and a selected feature, dragged with a live preview, set on release as one `SetFeatureSize`; Esc cancels; a typed size + Enter sets it. With a feature selected the tool no longer treats its faces as edges to round. Tests: guide geometry, drag + undo, Esc and typed size. Checked on screen (file with live fillets: handle, drag, release).
 - **Left over:** no handle for curved edges or an edge with no flat face beside it (the Inspector sets the size); a feature on several edges has one handle, on its first edge.
+
+## Live booleans, part 3a (brief 48, owner 2026-11-19)
+
+- **Owner chose:** booleans first, with the cutter kept inside the feature (not a separate group).
+- **Built:** `Feature::Boolean { op, tool, broken }` and `BoolKind` (`prism-doc/src/stack.rs`); `Assembly::boolean` makes Union, Subtract and Intersect live (`live_boolean`: the second solid's stack plus the first as the tool, in the second's coordinates; a result the kernel refuses falls back to a plain group); `Stack::moved` moves the tool too; file schema 16 (the tool is `geometry/defs/<id>.tool<k>.bin`); the Inspector shows a kind row; goldens re-saved.
+- **Rule seen in the tests:** a face the cut reshaped (the top of a body notched by the cut) counts as made by the feature, so pushing it bakes the boolean with the red notice; a wall the cut does not touch stays live, and the cut runs on under it.
+- **Found:** the kernel gives a different answer for a union of boxes with coplanar overlapping faces when the operands are swapped or moved (an invalid, zero-volume result in one order). The live feature runs Union and Intersect tool-first like the group tools, and `Assembly::boolean` only keeps it live if it makes the same shape (face and corner counts) as the plain boolean; otherwise the result is a plain group. The cause in `prism_ops::boolean` is worth a look.
+- **Left over (part 3b):** the tool's position and size as Inspector fields and a ghost of it while the feature is selected; flipping the kind; the Fillet handle does not apply (no size). Trim and Split stay plain. Copy of loose geometry still bakes. Not checked on screen (covered by tests).

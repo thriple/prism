@@ -52,6 +52,38 @@ pub enum Feature {
         #[serde(default)]
         broken: bool,
     },
+    /// The body joined with, cut by, or cut down to a second solid kept
+    /// inside the feature (in the body's own coordinates). The tool's
+    /// geometry is saved beside the base, not in the feature's JSON.
+    Boolean {
+        op: BoolKind,
+        #[serde(skip, default = "Model::new")]
+        tool: Model,
+        /// Set by the last run: the kernel refused (the shapes no longer
+        /// make a solid).
+        #[serde(default)]
+        broken: bool,
+    },
+}
+
+/// What a live boolean does with its tool.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BoolKind {
+    Union,
+    /// The body minus the tool.
+    Subtract,
+    /// Only where the body and the tool overlap.
+    Intersect,
+}
+
+impl BoolKind {
+    fn op(self) -> prism_ops::boolean::Op {
+        match self {
+            BoolKind::Union => prism_ops::boolean::Op::Union,
+            BoolKind::Subtract => prism_ops::boolean::Op::Subtract,
+            BoolKind::Intersect => prism_ops::boolean::Op::Intersect,
+        }
+    }
 }
 
 impl Feature {
@@ -59,12 +91,24 @@ impl Feature {
         match self {
             Feature::Round { fillet: true, .. } => "Fillet",
             Feature::Round { .. } => "Chamfer",
+            Feature::Boolean {
+                op: BoolKind::Union,
+                ..
+            } => "Union",
+            Feature::Boolean {
+                op: BoolKind::Subtract,
+                ..
+            } => "Subtract",
+            Feature::Boolean {
+                op: BoolKind::Intersect,
+                ..
+            } => "Intersect",
         }
     }
 
     pub fn is_broken(&self) -> bool {
         match self {
-            Feature::Round { broken, .. } => *broken,
+            Feature::Round { broken, .. } | Feature::Boolean { broken, .. } => *broken,
         }
     }
 
@@ -87,6 +131,21 @@ impl Feature {
                 match prism_ops::rounds::round_edges(&mut t, &found, *size, *fillet) {
                     Ok(_) => {
                         *m = t;
+                        *broken = false;
+                    }
+                    Err(_) => *broken = true,
+                }
+            }
+            Feature::Boolean { op, tool, broken } => {
+                // The tool first for Union and Intersect, as the group tools
+                // always ran them.
+                let run = match op {
+                    BoolKind::Subtract => prism_ops::boolean::boolean(m, tool, op.op()),
+                    _ => prism_ops::boolean::boolean(tool, m, op.op()),
+                };
+                match run {
+                    Ok(r) => {
+                        *m = r;
                         *broken = false;
                     }
                     Err(_) => *broken = true,
@@ -365,22 +424,26 @@ fn edge_at(m: &Model, r: &EdgeRef) -> Option<EdgeId> {
 }
 
 impl Feature {
-    /// The feature's size: a fillet's radius or a chamfer's distance.
-    pub fn size(&self) -> f64 {
+    /// The feature's size: a fillet's radius or a chamfer's distance. None
+    /// for a feature with no size.
+    pub fn size(&self) -> Option<f64> {
         match self {
-            Feature::Round { size, .. } => *size,
+            Feature::Round { size, .. } => Some(*size),
+            Feature::Boolean { .. } => None,
         }
     }
 
     fn refs(&self) -> &[EdgeRef] {
         match self {
             Feature::Round { edges, .. } => edges,
+            Feature::Boolean { .. } => &[],
         }
     }
 
-    fn refs_mut(&mut self) -> &mut Vec<EdgeRef> {
+    fn refs_mut(&mut self) -> &mut [EdgeRef] {
         match self {
             Feature::Round { edges, .. } => edges,
+            Feature::Boolean { .. } => &mut [],
         }
     }
 }
@@ -393,6 +456,9 @@ impl Stack {
             for r in f.refs_mut() {
                 r.a = by.transform_point3(r.a);
                 r.b = by.transform_point3(r.b);
+            }
+            if let Feature::Boolean { tool, .. } = f {
+                prism_ops::transform::affine(tool, by);
             }
         }
     }

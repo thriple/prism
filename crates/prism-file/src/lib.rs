@@ -51,9 +51,9 @@ pub use migrate::{Raw, migrate};
 /// layout 8). Schema 10: NURBS curves and patches (geometry layout 9). Schema 11:
 /// locked groups (`groups.json`). Schema 12: section planes (`sections.json`).
 /// Schema 13: dimensions (`dimensions.json`). Schema 14: construction
-/// planes (`planes.json`). Schema 15: live features (`features` in
+/// planes (`planes.json`). Schema 16: a live boolean's tool is saved beside the base (`<id>.tool<k>.bin`). Schema 15: live features (`features` in
 /// `groups.json`, the base in `geometry/defs/<id>.base.bin`).
-pub const SCHEMA: u32 = 15;
+pub const SCHEMA: u32 = 16;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -151,6 +151,10 @@ fn def_path(id: u32) -> String {
 /// The geometry a definition's live features are applied to.
 fn base_path(id: u32) -> String {
     format!("geometry/defs/{id}.base.bin")
+}
+/// The tool of a live boolean: the `k`th feature of a definition.
+fn tool_path(id: u32, k: usize) -> String {
+    format!("geometry/defs/{id}.tool{k}.bin")
 }
 /// The largest entry read (a damaged size field must not exhaust memory).
 const MAX_ENTRY: u64 = 1 << 32;
@@ -496,6 +500,16 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                     kind: "geometry".to_owned(),
                     version: geometry::VERSION,
                 });
+                for (k, f) in stack.features.iter().enumerate() {
+                    if let prism_doc::Feature::Boolean { tool, .. } = f {
+                        files.push((tool_path(id.0, k), geometry::encode(tool)));
+                        manifest.entries.push(Entry {
+                            path: tool_path(id.0, k),
+                            kind: "geometry".to_owned(),
+                            version: geometry::VERSION,
+                        });
+                    }
+                }
             }
         }
     }
@@ -680,9 +694,24 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
                 .files
                 .get(&path)
                 .ok_or_else(|| FileError::Damaged(format!("no {path}")))?;
+            let mut features = d.features.clone();
+            for (k, f) in features.iter_mut().enumerate() {
+                if let prism_doc::Feature::Boolean { tool, .. } = f {
+                    let path = tool_path(d.id, k);
+                    let version = raw
+                        .entry(&path)
+                        .map(|e| e.version)
+                        .ok_or_else(|| FileError::Damaged(format!("no {path} in the manifest")))?;
+                    let bin = raw
+                        .files
+                        .get(&path)
+                        .ok_or_else(|| FileError::Damaged(format!("no {path}")))?;
+                    *tool = geometry::decode(bin, version)?;
+                }
+            }
             Some(prism_doc::Stack {
                 base: geometry::decode(bin, version)?,
-                features: d.features.clone(),
+                features,
             })
         };
         for i in &d.instances {

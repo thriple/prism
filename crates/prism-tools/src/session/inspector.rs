@@ -338,30 +338,46 @@ impl Session {
         }
     }
 
-    /// One feature's rows: its size, and Explode and Remove.
+    /// One feature's rows: its size (a round's), and Explode and Remove.
     fn feature_fields(&self, i: usize, f: &prism_doc::Feature) -> Vec<Field> {
-        let prism_doc::Feature::Round { size, fillet, .. } = f;
-        let label = if *fillet {
-            "Fillet radius"
-        } else {
-            "Chamfer size"
-        };
-        let key = format!("feature.{i}.size");
         let mut fields = Vec::new();
-        if f.is_broken() {
-            fields.push(field(
-                &key,
-                f.name(),
-                FieldKind::Fixed,
-                "Broken: its edges are gone. Remove it or bake.".into(),
-            ));
-        } else {
-            fields.push(field(
-                &key,
-                label,
-                FieldKind::Length,
-                self.number.show(*size),
-            ));
+        match f {
+            prism_doc::Feature::Round { size, fillet, .. } => {
+                let label = if *fillet {
+                    "Fillet radius"
+                } else {
+                    "Chamfer size"
+                };
+                let key = format!("feature.{i}.size");
+                if f.is_broken() {
+                    fields.push(field(
+                        &key,
+                        f.name(),
+                        FieldKind::Fixed,
+                        "Broken: its edges are gone. Remove it or bake.".into(),
+                    ));
+                } else {
+                    fields.push(field(
+                        &key,
+                        label,
+                        FieldKind::Length,
+                        self.number.show(*size),
+                    ));
+                }
+            }
+            prism_doc::Feature::Boolean { .. } => {
+                let note = if f.is_broken() {
+                    "Broken: the shapes no longer make a solid. Remove it or bake."
+                } else {
+                    "Kept live: the second solid is stored inside."
+                };
+                fields.push(field(
+                    &format!("feature.{i}.kind"),
+                    f.name(),
+                    FieldKind::Fixed,
+                    note.into(),
+                ));
+            }
         }
         fields.push(field(
             &format!("feature.{i}.explode"),

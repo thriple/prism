@@ -10,7 +10,7 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 ## Parts
 1. **The panel (built).** Schema-driven: the session returns sections of fields (`Session::inspector`), the window draws them, and `Session::inspector_set(key, text)` takes the typed text back. MCP `get_inspector` and `set_inspector` use the same two calls.
 2. **The modifier stack (built, first with the live round).** Features stored on a body's definition over its base geometry, re-run after direct edits, stable-ID references with a geometric fallback, "broken" and Bake. See Part 2 below.
-3. **Editable features (not started).** Fillet and chamfer first (a distance changed after the fact), then booleans, shell, hole, array and mirror.
+3. **Editable features.** Fillet and chamfer first (a distance changed after the fact; built, parts 2 to 2c), then booleans (owner chose, 2026-11-19: first, with the cutter kept inside the feature; 3a built, see Part 3a), then shell, hole, array and mirror.
 4. **Pick references, previews, named parameters (not started).**
 
 ## Part 1: the panel
@@ -52,6 +52,13 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 - **The guide** comes from `Stack::size_guide(index)` (pure, in `prism-doc`): the first edge of the feature as it was before the feature ran, and the flat faces beside it. None for a broken feature, a curved edge, or an edge with no flat face beside it; the Inspector still sets the size then.
 - **With a feature selected** the tool does not treat its faces as edges to round; a click on an edge starts a new set.
 - **MCP:** the size is `set_inspector` `feature.N.size`; the handle itself is a pointer drag (press, move, release) like the tool's other drags.
+
+## Part 3a: live booleans (owner chose, 2026-11-19)
+- **Union, Subtract and Intersect of two groups stay live.** The result is the second solid (its own features kept) with a `Feature::Boolean { op, tool }` after them; the first solid is the tool, kept inside the feature in the body's own coordinates (so it works in components and undo, and the Inspector later edits it). Trim and Split still make plain groups.
+- **It runs like the fillet:** direct edits go under it (an edit that names a face the boolean made, such as one it cut, bakes it first with the red notice); a result the kernel refuses marks it broken; Bake and Remove work (`edit.bake`, `RemoveFeature`); it is selectable (the faces it made), listed in the Outliner and moves with Make Group, Make Component and Explode.
+- **Inspector:** a Features row shows the kind ("Subtract") and a note; no size. Part 3b: the tool's position and size as fields, and a ghost of the tool while the feature is selected.
+- **File:** schema 16. The tool is saved as `geometry/defs/<id>.tool<k>.bin` beside the base.
+- **MCP:** the Solid tools and `set_inspector` (`feature.N.*`) as for the fillet.
 
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.

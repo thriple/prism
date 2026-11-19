@@ -18,7 +18,7 @@ use prism_ops::transform;
 use prism_topo::{EdgeId, FaceId, MaterialId, Model, VertexId};
 
 use crate::material::Material;
-use crate::stack::{EdgeRef, Feature, Stack};
+use crate::stack::{BoolKind, EdgeRef, Feature, Stack};
 use serde::{Deserialize, Serialize};
 
 /// A definition's id.
@@ -999,7 +999,7 @@ impl Assembly {
         let mut next = stack.clone();
         match next.features.get_mut(index) {
             Some(Feature::Round { size, .. }) => *size = new,
-            None => return false,
+            _ => return false,
         }
         // A size the kernel refuses is not taken.
         let model = next.evaluate();
@@ -1948,7 +1948,63 @@ impl Assembly {
         } else {
             [first, second].into()
         };
-        Ok(self.replace_with(ctx, &gone, results))
+        // Union, Subtract and Intersect stay live: the second solid with the
+        // first kept inside as the tool, until the stack is baked.
+        let live = match op {
+            SolidOp::Union => Some(BoolKind::Union),
+            SolidOp::Subtract => Some(BoolKind::Subtract),
+            SolidOp::Intersect => Some(BoolKind::Intersect),
+            SolidOp::Trim | SolidOp::Split => None,
+        }
+        .and_then(|kind| {
+            let plain = &results.first()?.1;
+            self.live_boolean(ctx, kind, first, second, plain)
+        });
+        let made = self.replace_with(ctx, &gone, results);
+        if let (Some((stack, model)), [id]) = (live, made.as_slice())
+            && let Some(def) = self
+                .def(ctx)
+                .and_then(|d| d.instances.get(id))
+                .map(|i| i.def)
+            && let Some(d) = self.def_mut_live(def)
+        {
+            d.model = model;
+            d.stack = Some(stack);
+        }
+        Ok(made)
+    }
+
+    /// The stack of a live boolean: `second`'s body (with its own features)
+    /// then `first` as the tool, in `second`'s coordinates, and what it
+    /// makes. None if the kernel refuses it that way, or makes something
+    /// other than the plain boolean `plain` did (coplanar faces can come out
+    /// differently with the solids in another place or order).
+    fn live_boolean(
+        &self,
+        ctx: DefId,
+        kind: BoolKind,
+        first: InstanceId,
+        second: InstanceId,
+        plain: &Model,
+    ) -> Option<(Stack, Model)> {
+        let (_, mut tool) = self.solid_in(ctx, first).ok()?;
+        let at = *self.def(ctx)?.instances.get(&second)?;
+        let body = self.def(at.def)?;
+        transform::affine(&mut tool, &at.transform.inverse());
+        let mut stack = body
+            .stack
+            .clone()
+            .unwrap_or_else(|| Stack::new(body.model.clone()));
+        stack.features.push(Feature::Boolean {
+            op: kind,
+            tool,
+            broken: false,
+        });
+        let model = stack.evaluate();
+        let ok = stack.features.last().is_some_and(|f| !f.is_broken())
+            && model.face_count() == plain.face_count()
+            && model.vertices().count() == plain.vertices().count();
+        ok.then_some((stack, model))
     }
 
     /// Outer Shell: the union of all of `instances` (in id order), at the

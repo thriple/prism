@@ -144,3 +144,159 @@ fn a_locked_group_refuses() {
     });
     assert_eq!(*d.assembly(), before);
 }
+
+// ---- Live booleans (Inspector & Features part 3a) ----
+
+fn the_group(d: &Document) -> (InstanceId, prism_doc::DefId) {
+    let (id, inst) = d
+        .assembly()
+        .root()
+        .instances
+        .iter()
+        .next()
+        .expect("a group");
+    (*id, inst.def)
+}
+
+fn body_volume(d: &Document, def: prism_doc::DefId) -> f64 {
+    let m = &d.assembly().def(def).unwrap().model;
+    prism_ops::validate::validate(m)
+        .iter()
+        .map(|c| c.volume.unwrap())
+        .sum()
+}
+
+#[test]
+fn a_subtract_stays_live_and_can_be_removed_or_baked() {
+    let (mut d, a, b) = two();
+    assert!(d.run(Command::Boolean {
+        op: SolidOp::Subtract,
+        first: a,
+        second: b,
+    }));
+    let (_, def) = the_group(&d);
+    let stack = d.assembly().def(def).unwrap().stack.as_ref().expect("live");
+    assert_eq!(stack.features.len(), 1);
+    assert_eq!(stack.features[0].name(), "Subtract");
+    close(body_volume(&d, def), 6.0);
+    // Taking the feature off brings the whole box back.
+    assert!(d.run(Command::RemoveFeature { def, index: 0 }));
+    close(body_volume(&d, def), 8.0);
+    assert!(d.assembly().def(def).unwrap().stack.is_none());
+    d.undo();
+    close(body_volume(&d, def), 6.0);
+    // Bake keeps the cut and drops the stack.
+    assert!(d.run(Command::BakeFeatures { def }));
+    assert!(d.assembly().def(def).unwrap().stack.is_none());
+    close(body_volume(&d, def), 6.0);
+}
+
+#[test]
+fn union_and_intersect_are_live_too() {
+    for (op, name, volume) in [
+        (SolidOp::Union, "Union", 14.0),
+        (SolidOp::Intersect, "Intersect", 2.0),
+    ] {
+        let (mut d, a, b) = two();
+        assert!(d.run(Command::Boolean {
+            op,
+            first: a,
+            second: b,
+        }));
+        let (_, def) = the_group(&d);
+        let stack = d.assembly().def(def).unwrap().stack.as_ref().expect("live");
+        assert_eq!(stack.features[0].name(), name);
+        close(body_volume(&d, def), volume);
+    }
+}
+
+#[test]
+fn trim_and_split_are_not_live() {
+    for op in [SolidOp::Trim, SolidOp::Split] {
+        let (mut d, a, b) = two();
+        assert!(d.run(Command::Boolean {
+            op,
+            first: a,
+            second: b,
+        }));
+        for inst in d.assembly().root().instances.values() {
+            assert!(d.assembly().def(inst.def).unwrap().stack.is_none());
+        }
+    }
+}
+
+#[test]
+fn a_pull_on_the_body_runs_under_the_cut() {
+    let (mut d, a, b) = two();
+    assert!(d.run(Command::Boolean {
+        op: SolidOp::Subtract,
+        first: a,
+        second: b,
+    }));
+    let (inst, def) = the_group(&d);
+    // The far wall, which the cut does not touch, pulled out a metre: the
+    // cut still goes through the part that was there.
+    let m = &d.assembly().def(def).unwrap().model;
+    let far = m.vertices().map(|(_, p)| p.x).fold(f64::MIN, f64::max);
+    let face = m
+        .faces()
+        .find(|(_, f)| {
+            f.plane()
+                .is_some_and(|p| p.normal.x > 0.99 && (p.origin.x - far).abs() < 1e-9)
+        })
+        .expect("the far wall")
+        .0;
+    assert!(d.run_in(
+        &[inst],
+        Command::PushPull {
+            face,
+            distance: 1.0,
+            new_loop: false,
+        }
+    ));
+    let stack = d
+        .assembly()
+        .def(def)
+        .unwrap()
+        .stack
+        .as_ref()
+        .expect("still live");
+    assert_eq!(stack.features.len(), 1);
+    assert!(!stack.features[0].is_broken());
+    close(body_volume(&d, def), 12.0 - 2.0);
+}
+
+#[test]
+fn a_second_boolean_adds_another_feature() {
+    let (mut d, a, b) = two();
+    let c = boxed_group(&mut d, v(0.0, 2.5, 0.0), 1.0, 1.0);
+    assert!(d.run(Command::Boolean {
+        op: SolidOp::Subtract,
+        first: a,
+        second: b,
+    }));
+    let (made, _) = d
+        .assembly()
+        .root()
+        .instances
+        .iter()
+        .map(|(i, x)| (*i, x.def))
+        .find(|(i, _)| *i != c)
+        .expect("the result");
+    assert!(d.run(Command::Boolean {
+        op: SolidOp::Union,
+        first: c,
+        second: made,
+    }));
+    let id = d
+        .assembly()
+        .root()
+        .instances
+        .iter()
+        .next()
+        .map(|(_, i)| i.def)
+        .unwrap();
+    let stack = d.assembly().def(id).unwrap().stack.as_ref().expect("live");
+    let names: Vec<_> = stack.features.iter().map(|f| f.name()).collect();
+    assert_eq!(names, ["Subtract", "Union"]);
+}

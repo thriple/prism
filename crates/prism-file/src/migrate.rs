@@ -79,6 +79,8 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             13 => raw,
             // Schema 15 adds live features (an optional field and file).
             14 => raw,
+            // Schema 16 adds a live boolean's tool (an optional file).
+            15 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

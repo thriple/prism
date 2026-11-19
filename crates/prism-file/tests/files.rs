@@ -585,3 +585,68 @@ fn live_features_on_loose_geometry_round_trip() {
     );
     assert_eq!(prism_file::write(&back, "test"), bytes);
 }
+
+/// A live boolean is saved with its tool and read back exactly (schema 16).
+#[test]
+fn live_booleans_round_trip() {
+    use prism_doc::{Command, Document, SolidOp};
+    let mut d = Document::new();
+    let group = |d: &mut Document, at: f64| {
+        d.run(Command::Rect {
+            x0: at,
+            y0: at,
+            x1: at + 2.0,
+            y1: at + 2.0,
+            z: 0.0,
+        });
+        let f = prism_ops::face_at(d.model(), DVec3::new(at + 1.0, at + 1.0, 0.0)).unwrap();
+        let up = d.model().face(f).unwrap().plane().unwrap().normal.z;
+        d.run(Command::PushPull {
+            face: f,
+            distance: 2.0 * up,
+            new_loop: false,
+        });
+        let m = d.model();
+        let sel = prism_ops::Selection {
+            vertices: m.vertices().map(|(id, _)| id).collect(),
+            edges: m.edges().map(|(id, _)| id).collect(),
+            faces: m.faces().map(|(id, _)| id).collect(),
+            ..Default::default()
+        };
+        let g = d.assembly().next_instance();
+        assert!(d.run(Command::MakeGroup {
+            selection: sel,
+            instances: Default::default(),
+        }));
+        g
+    };
+    let a = group(&mut d, 0.0);
+    let b = group(&mut d, 1.0);
+    assert!(d.run(Command::Boolean {
+        op: SolidOp::Subtract,
+        first: a,
+        second: b,
+    }));
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = prism_file::write(&c, "test");
+    let back = prism_file::read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    let def = back.assembly.root().instances.values().next().unwrap().def;
+    let stack = back
+        .assembly
+        .def(def)
+        .unwrap()
+        .stack
+        .as_ref()
+        .expect("live");
+    match &stack.features[0] {
+        prism_doc::Feature::Boolean { tool, .. } => {
+            assert!(tool.face_count() > 0, "the tool came back")
+        }
+        f => panic!("{f:?}"),
+    }
+    assert_eq!(prism_file::write(&back, "test"), bytes);
+}
