@@ -4793,3 +4793,7 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Recorder:** every recording now starts with an `about` note saying what the file is and how to replay it (`Recording::ABOUT`); older files load without it.
 - **Left over:** the owner's recording `Prism_session_15.json` does not replay to its recorded end state in the current build (the final geometry differs), so the exact clicks could not be rebuilt. The cause of the drift is not found; a replay check at the end of each recording (`ends_with_document`) shows it. Offset on curved faces and splines is still not built.
 
+## Inspector part 4a: previews while typing (brief 48)
+
+- **Built:** `Session::inspector_preview` / `inspector_preview_end` (`prism-tools/src/session/inspector.rs`); `feature_set` now builds its command with `feature_command`, which the preview shares. The window sends `PanelOp::InspectPreview` as a `feature.*` field's text changes and `InspectPreviewEnd` when it is left.
+- **Left over:** a group's own Position and Size fields have no preview; the cutter's dashed ghost does not follow typed text (the body does); no preview for a group seen from outside (open it); not checked on screen. Part 4 still has re-picking a broken feature's edges in the viewport, and named parameters.

@@ -25,6 +25,10 @@ pub enum PanelOp {
     Tag(prism_tools::TagOp),
     /// The Inspector: a field's key and what was typed or picked.
     Inspect(String, String),
+    /// A field's text changed while it has the keys: show the result.
+    InspectPreview(String, String),
+    /// The field was left: the preview goes.
+    InspectPreviewEnd,
     /// Model Health: select a row's items, or run its fix.
     HealthSelect(&'static str),
     HealthFix(&'static str),

@@ -49,10 +49,18 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                 let hint = if f.mixed { "—" } else { "" };
                 let w = field(ui, &mut text, hint, 140.0);
                 if w.has_focus() {
+                    let changed = w.changed() && text.trim() != f.text;
                     p.inspector_edit = Some((f.key.clone(), text.clone()));
+                    // A feature's size shows on the body as it is typed.
+                    if changed && f.key.starts_with("feature.") {
+                        ops.push(PanelOp::InspectPreview(f.key.clone(), text.clone()));
+                    }
                 }
                 if w.lost_focus() {
                     p.inspector_edit = None;
+                    if f.key.starts_with("feature.") {
+                        ops.push(PanelOp::InspectPreviewEnd);
+                    }
                     if text.trim() != f.text && !text.trim().is_empty() {
                         ops.push(PanelOp::Inspect(f.key.clone(), text));
                     }

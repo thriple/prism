@@ -486,6 +486,10 @@ impl App {
                     crate::chrome::PanelOp::Inspect(key, text) => {
                         chrome.panels.inspector_error = s.inspector_set(&key, &text).err();
                     }
+                    crate::chrome::PanelOp::InspectPreview(key, text) => {
+                        s.inspector_preview(&key, &text);
+                    }
+                    crate::chrome::PanelOp::InspectPreviewEnd => s.inspector_preview_end(),
                     crate::chrome::PanelOp::HealthSelect(k) => s.select_health(k),
                     crate::chrome::PanelOp::HealthFix(k) => s.health_fix(k),
                     crate::chrome::PanelOp::SolidSelect(of) => s.select_solid(&of),

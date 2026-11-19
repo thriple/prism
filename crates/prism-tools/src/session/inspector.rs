@@ -594,9 +594,63 @@ impl Session {
     }
 
     /// `bake`, `feature.N.size`, `feature.N.cutter.x` and the like, and
-    /// `feature.N.remove`, for the one
-    /// selected body.
+    /// `feature.N.remove`, for the one selected body.
     fn feature_set(&mut self, key: &str, text: &str) -> Result<(), String> {
+        let command = self.feature_command(key, text)?;
+        self.cancel();
+        if self.run(command) {
+            Ok(())
+        } else {
+            Err("Nothing changed: the value is the same, or it would not fit".into())
+        }
+    }
+
+    /// While a feature's field is being typed, before Enter: show the body
+    /// (the open one: a group seen from outside is not previewed) as it
+    /// would be with that text. Text that is not valid, or a change
+    /// the kernel refuses, shows the body as it is.
+    pub fn inspector_preview(&mut self, key: &str, text: &str) {
+        let model = (key.starts_with("feature.") && self.groups.is_empty())
+            .then(|| self.feature_command(key, text).ok())
+            .flatten()
+            .and_then(|c| self.feature_preview_of(&c));
+        self.set_preview(model);
+    }
+
+    /// The typing is over (committed or abandoned): the preview goes.
+    pub fn inspector_preview_end(&mut self) {
+        self.set_preview(None);
+    }
+
+    /// The body with a size or cutter change made, or None if the command
+    /// is another kind or the features would break.
+    fn feature_preview_of(&self, c: &Command) -> Option<prism_topo::Model> {
+        let (def, index) = match c {
+            Command::SetFeatureSize { def, index, .. } | Command::SetCutter { def, index, .. } => {
+                (*def, *index)
+            }
+            _ => return None,
+        };
+        let mut stack = self.doc.assembly().def(def)?.stack.clone()?;
+        let f = stack.features.get_mut(index)?;
+        match c {
+            Command::SetFeatureSize { size, .. } => match f {
+                prism_doc::Feature::Round { size: s, .. } => *s = *size,
+                prism_doc::Feature::Boolean { .. } => return None,
+            },
+            Command::SetCutter { min, max, .. } => {
+                if !f.set_tool_box(*min, *max) {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        let m = stack.evaluate();
+        (!stack.features[index].is_broken()).then_some(m)
+    }
+
+    /// The command a feature field's text asks for.
+    fn feature_command(&self, key: &str, text: &str) -> Result<Command, String> {
         let Some(def) = self.features_target() else {
             return Err("Select one group to edit its features".into());
         };
@@ -679,11 +733,6 @@ impl Session {
                 _ => return Err(format!("{key:?} is not an Inspector field")),
             }
         };
-        self.cancel();
-        if self.run(command) {
-            Ok(())
-        } else {
-            Err("Nothing changed: the value is the same, or it would not fit".into())
-        }
+        Ok(command)
     }
 }

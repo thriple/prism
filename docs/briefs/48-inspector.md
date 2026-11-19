@@ -11,7 +11,7 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 1. **The panel (built).** Schema-driven: the session returns sections of fields (`Session::inspector`), the window draws them, and `Session::inspector_set(key, text)` takes the typed text back. MCP `get_inspector` and `set_inspector` use the same two calls.
 2. **The modifier stack (built, first with the live round).** Features stored on a body's definition over its base geometry, re-run after direct edits, stable-ID references with a geometric fallback, "broken" and Bake. See Part 2 below.
 3. **Editable features.** Fillet and chamfer first (a distance changed after the fact; built, parts 2 to 2c), then booleans (owner chose, 2026-11-19: first, with the cutter kept inside the feature; 3a built, see Part 3a), then shell, hole, array and mirror.
-4. **Pick references, previews, named parameters (not started).**
+4. **Previews (4a built), pick references, named parameters.** Part 4a: typing in a feature's field shows the result on the body before Enter. Re-picking a broken feature's edges in the viewport and named parameters are not started.
 
 ## Part 1: the panel
 - **Window > Inspector** (`win.inspector`), in the side column with Entity Info.
@@ -68,6 +68,11 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 - **Ghost:** with a live boolean selected (open its body, then select the cut from the Outliner or its faces), a dashed outline of the cutter is drawn where the cutter fields put it, under any tool. It is not selectable and not part of the model.
 - **Kind:** the feature's Inspector row is a choice, Union, Subtract or Intersect. Changing it runs the features again (`SetBoolKind`, one undo step, "Change Feature"). A kind that would leave nothing is refused and nothing changes.
 - **MCP:** `set_inspector` with `feature.N.cutter.x`, `.y`, `.z`, `.w`, `.d` or `.h`, and `feature.N.kind` with `Union`, `Subtract` or `Intersect`; read the rows with `get_inspector`.
+
+## Part 4a: previews while typing
+- **What:** while a feature's size, cutter or similar field has the keys and its text is not yet committed, the body is drawn with that value (a preview, like the Fillet handle's). Enter commits it as before (one undo step); leaving the field takes the preview away. Text that is not valid, or a value the kernel refuses (the shape would break), shows the body as it is. Nothing is added to the document until Enter.
+- **Where:** the body that is open (a group seen from outside is not previewed; open it first). `Session::inspector_preview(key, text)` and `inspector_preview_end()`; the window sends them as the text changes and when the field is left.
+- **MCP:** nothing new; `set_inspector` sets the value directly, so there is nothing to preview there.
 
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.

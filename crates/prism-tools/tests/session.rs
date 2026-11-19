@@ -8550,3 +8550,61 @@ fn a_live_boolean_changes_kind_and_shows_a_ghost_of_its_cutter_when_selected() {
     act(&mut d, "edit.undo");
     assert_eq!(inspector_text(&d, "feature.0.kind").0, "Intersect");
 }
+
+#[test]
+fn a_feature_field_shows_its_result_while_typed_and_nothing_is_made() {
+    use prism_tools::session::SOLID_TOOLS;
+    let mut d = overlapping_groups();
+    d.tool(SOLID_TOOLS[1]);
+    d.click(DVec3::new(0.5, 0.0, 1.0));
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    d.tool(SELECT);
+    d.click(DVec3::new(2.5, 0.0, 1.0));
+    let g =
+        *d.s.document()
+            .assembly()
+            .root()
+            .instances
+            .iter()
+            .find(|(_, i)| i.transform.translation.x < 2.0)
+            .unwrap()
+            .0;
+    d.s.open_path_to(&[g]);
+    d.s.select_feature(0);
+    // The area of what is drawn: the cut is 2 wide, then 1.5 wide.
+    let area = |d: &Driver| -> f64 {
+        d.s.display_scene()
+            .faces
+            .iter()
+            .map(|f| {
+                let shoelace = |p: &[prism_math::DVec2]| {
+                    (0..p.len())
+                        .map(|i| p[i].perp_dot(p[(i + 1) % p.len()]))
+                        .sum::<f64>()
+                        .abs()
+                        / 2.0
+                };
+                shoelace(&f.outer) - f.holes.iter().map(|h| shoelace(h)).sum::<f64>()
+            })
+            .sum()
+    };
+    let was = area(&d);
+    let log = d.s.document().log().count();
+    d.s.inspector_preview("feature.0.cutter.w", "1.5");
+    assert!(
+        (area(&d) - was).abs() > 1e-6,
+        "the body is drawn with the shorter cut"
+    );
+    assert_eq!(d.s.document().log().count(), log, "nothing is made");
+    // Text that is not a length, or a size of nothing: the body as it is.
+    d.s.inspector_preview("feature.0.cutter.w", "wide");
+    assert!((area(&d) - was).abs() < 1e-9);
+    d.s.inspector_preview("feature.0.cutter.w", "1.5");
+    d.s.inspector_preview("feature.0.cutter.w", "0");
+    assert!((area(&d) - was).abs() < 1e-9);
+    // Leaving the field takes the preview away.
+    d.s.inspector_preview("feature.0.cutter.w", "1.5");
+    d.s.inspector_preview_end();
+    assert!((area(&d) - was).abs() < 1e-9);
+    assert_eq!(d.s.document().log().count(), log);
+}
