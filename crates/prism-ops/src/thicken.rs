@@ -29,11 +29,11 @@ pub const ROUND: &str =
     "Refused: a freeform face that goes all the way round cannot be pushed or pulled yet.";
 
 /// How many times the pieces may be split.
-const ROUNDS: usize = 8;
+pub(crate) const ROUNDS: usize = 8;
 
 /// The degree of the offset's pieces: high, so few pieces are needed (the
 /// kernel's checks take longer the more pieces two faces have).
-const DEGREE: usize = 5;
+pub(crate) const DEGREE: usize = 5;
 
 /// The slab a face sweeps: closed, facing out, and which of its faces is
 /// the copy of the face.
@@ -267,14 +267,14 @@ pub(crate) fn offset_surface(
 /// Whether `error` is above `eps` a quarter, half or three quarters of
 /// the way across `span` (a fit through Greville points is not exact at
 /// its nodes, so the middle alone is not enough).
-fn off_between(span: &[f64], error: &dyn Fn(f64) -> f64, eps: f64) -> bool {
+pub(crate) fn off_between(span: &[f64], error: &dyn Fn(f64) -> f64, eps: f64) -> bool {
     [0.25, 0.5, 0.75]
         .iter()
         .any(|x| error(span[0] + (span[1] - span[0]) * x) > eps)
 }
 
 /// The nodes with the marked intervals cut in two.
-fn halved(nodes: &[f64], split: &[bool]) -> Vec<f64> {
+pub(crate) fn halved(nodes: &[f64], split: &[bool]) -> Vec<f64> {
     let mut out = vec![nodes[0]];
     for (w, s) in nodes.windows(2).zip(split) {
         if *s {

@@ -22,9 +22,18 @@
 //! freeform faces, joined only where they meet smoothly (the same normal
 //! along the shared edge, so each side's offset already meets the
 //! other's there), offsets each face on its own and shares the fitted
-//! offset of a join between its two faces. A crease (a join that is not
-//! smooth) is not yet done (part 2) and is refused by name. Flat and
-//! freeform faces joined together are not yet done either.
+//! offset of a join between its two faces.
+//!
+//! Creases (part 2): a body may also mix flat (and other analytic) faces
+//! with freeform ones. Where two kept faces join at an angle, their
+//! offsets no longer meet by themselves: the true mitre is found by
+//! marching along the shared edge and, at each point, solving for where
+//! both offsets meet exactly (Newton, in the plane of their two normals,
+//! as `corner` does for an exact flat corner). An inside corner (the
+//! mitre trims back within each face's own edge) is cut this way; an
+//! outside corner (the mitre would reach past a freeform face's own
+//! edge, which does not extend) is refused by name, so is a fold too
+//! sharp to mitre at all (close to doubling back on itself).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -42,8 +51,8 @@ pub const MIXED: &str =
 pub const BRANCHES: &str = "Refused: more than two faces meet at an edge here.";
 pub const CORNER: &str = "Refused: more than three faces meet at a corner on the rim here, or round a curved face, and their moved copies do not meet at one point. Not yet.";
 pub const TOO_THICK: &str = "Refused: that thickness turns a face inside out. Try a smaller one.";
-pub const CREASE: &str =
-    "Refused: these freeform faces meet at an angle here, not smoothly. Not yet.";
+pub const SHARP: &str = "Refused: these faces fold back too sharply here to cut a mitre. A rounded corner there is not done yet.";
+pub const EXTEND: &str = "Refused: this crease's mitre reaches past a freeform face's own edge (an outside corner). Not yet; try the other direction.";
 
 /// The faces joined to `seeds` by edges: their sheets or bodies.
 pub fn body(model: &Model, seeds: &BTreeSet<FaceId>) -> BTreeSet<FaceId> {
@@ -394,13 +403,15 @@ fn freeform_alone(
     Some(crate::thicken::slab(model, f, d).map(|s| (s.model, body)))
 }
 
-/// A body of two or more freeform faces, joined smoothly (brief 49 part
-/// 1): each face is offset as a lone face is (`thicken::offset_surface`),
-/// and where two kept faces share an edge smoothly, their offsets meet
-/// along the offset of that edge, fitted once and used by both. A rim (an
-/// edge with one kept face, at a free boundary or an open face) gets a
-/// ruled wall, cut square across. A crease (an interior join that is not
-/// smooth) is not yet done (part 2), and is refused specifically.
+/// A body of two or more faces, at least one of them freeform, joined
+/// smoothly or at a crease (brief 49 parts 1 and 2): each face is offset
+/// on its own (a freeform face as `thicken::offset_surface` fits it, a
+/// flat or other analytic face exactly); where two kept faces share an
+/// edge smoothly, their offsets already meet there; where they meet at an
+/// angle, the mitre is found (`crease_curve`). A rim (an edge with one
+/// kept face, at a free boundary or an open face) gets a ruled wall, cut
+/// square across. A body with no freeform face at all is left to `plan`,
+/// which already does flat and curved analytic faces exactly.
 fn freeform_joined(
     model: &Model,
     faces: &BTreeSet<FaceId>,
@@ -411,9 +422,12 @@ fn freeform_joined(
     if body.len() < 2 {
         return None;
     }
-    if body
+    if body.iter().any(|f| model.face(*f).is_none()) {
+        return None;
+    }
+    if !body
         .iter()
-        .any(|f| model.face(*f).is_none_or(|x| x.surface.patch().is_none()))
+        .any(|f| model.face(*f).is_some_and(|x| x.surface.patch().is_some()))
     {
         return None;
     }
@@ -435,8 +449,9 @@ fn smooth_join(model: &Model, e: EdgeId, fa: FaceId, fb: FaceId, tol: &Tol) -> b
     })
 }
 
-/// The slab of a joined freeform body: each kept face offset on its own,
-/// sharing an offset edge with its smooth neighbour, walled at its rims.
+/// The slab of a joined body with at least one freeform face: each kept
+/// face offset on its own, sharing an offset edge with its neighbour
+/// (smoothly, or mitred at a crease), walled at its rims.
 fn freeform_slab(
     model: &Model,
     body: &BTreeSet<FaceId>,
@@ -453,7 +468,10 @@ fn freeform_slab(
         return Err(ALL_OPEN);
     }
     for id in &kept {
-        if crate::crossing::Laid::new(model, *id).is_none_or(|l| l.wraps()) {
+        let f = model.face(*id).ok_or(NOTHING)?;
+        if f.surface.patch().is_some()
+            && crate::crossing::Laid::new(model, *id).is_none_or(|l| l.wraps())
+        {
             return Err(crate::thicken::ROUND);
         }
     }
@@ -470,6 +488,7 @@ fn freeform_slab(
     }
     let mut rims: Vec<(EdgeId, VertexId, VertexId, FaceId)> = Vec::new();
     let mut driver: BTreeMap<EdgeId, FaceId> = BTreeMap::new();
+    let mut creases: Vec<(EdgeId, FaceId, FaceId)> = Vec::new();
     for (e, u) in &uses {
         if u.len() > 2 {
             return Err(BRANCHES);
@@ -484,40 +503,67 @@ fn freeform_slab(
                 if x.1 == y.1 {
                     return Err(MIXED);
                 }
-                if !smooth_join(model, *e, x.3, y.3, &tol) {
-                    return Err(CREASE);
+                if smooth_join(model, *e, x.3, y.3, &tol) {
+                    driver.insert(*e, x.3);
+                } else {
+                    creases.push((*e, x.3, y.3));
                 }
-                driver.insert(*e, x.3);
             }
             _ => {}
         }
     }
     let mut s = Model::new();
     let eps = tol.dist * 0.1;
-    // Base and offset points of everywhere a kept face reaches.
-    let mut base: BTreeMap<VertexId, VertexId> = BTreeMap::new();
-    let mut up: BTreeMap<VertexId, VertexId> = BTreeMap::new();
+    // Each kept face's own offset surface: a freeform one fitted (its
+    // own edge still bounds it), a flat or other analytic one exact and
+    // already unbounded.
+    let mut offsets: BTreeMap<FaceId, Surface> = BTreeMap::new();
     for id in &kept {
         let f = model.face(*id).ok_or(NOTHING)?;
-        let patch = f.surface.patch().ok_or(NOTHING)?;
+        let surface = if let Some(patch) = f.surface.patch() {
+            let laid = crate::crossing::Laid::new(model, *id).ok_or(TOO_THICK)?;
+            let top =
+                crate::thicken::offset_surface(patch, &laid.polys[0], d, eps).ok_or(TOO_THICK)?;
+            Surface::Nurbs(Patch {
+                flipped: patch.flipped,
+                ..Patch::whole(top)
+            })
+        } else {
+            offset_surface(&f.surface, d, &tol).ok_or(TOO_THICK)?
+        };
+        offsets.insert(*id, surface);
+    }
+    // Where each point a kept face reaches moves to: the exact corner of
+    // every kept face there (`plan`'s own move_point, which already works
+    // on any surface, flat or freeform).
+    let mut at_vertex: BTreeMap<VertexId, Vec<FaceId>> = BTreeMap::new();
+    for id in &kept {
+        let f = model.face(*id).ok_or(NOTHING)?;
         for v in f.loops().flatten() {
-            if base.contains_key(v) {
-                continue;
+            let fs = at_vertex.entry(*v).or_default();
+            if !fs.contains(id) {
+                fs.push(*id);
             }
-            let p = model.vertex(*v);
-            base.insert(*v, s.add_vertex(p));
-            up.insert(*v, s.add_vertex(p + patch.normal_at(p) * d));
         }
     }
-    // Each original edge's offset is fitted once, by whichever kept face
-    // drives it (a smooth neighbour agrees within tolerance), and shared
-    // by every face that uses it.
+    let mut base: BTreeMap<VertexId, VertexId> = BTreeMap::new();
+    let mut up: BTreeMap<VertexId, VertexId> = BTreeMap::new();
+    let mut moved: BTreeMap<VertexId, DVec3> = BTreeMap::new();
+    for (v, fs) in &at_vertex {
+        let p = model.vertex(*v);
+        base.insert(*v, s.add_vertex(p));
+        let q = move_point(model, fs, p, d, &tol)?;
+        moved.insert(*v, q);
+        up.insert(*v, s.add_vertex(q));
+    }
+    // Each original edge's offset is fitted once, shared by every face
+    // that uses it: a rim or a smooth join by whichever kept face drives
+    // it, a crease by solving where its two faces' offsets truly meet.
     let mut bottom_of: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
     let mut top_of: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
     let mut fitted: BTreeMap<EdgeId, (Nurbs, Nurbs)> = BTreeMap::new();
     for id in &kept {
         let f = model.face(*id).ok_or(NOTHING)?;
-        let patch = f.surface.patch().ok_or(NOTHING)?;
         for side in f.sides() {
             if bottom_of.contains_key(&side.edge) || driver.get(&side.edge) != Some(id) {
                 continue;
@@ -525,8 +571,20 @@ fn freeform_slab(
             let e = model.edge(side.edge).ok_or(NOTHING)?;
             let (pa, pb) = (model.vertex(e.a), model.vertex(e.b));
             let along = |t: f64| e.curve.point(pa, pb, t);
-            let off = |p: DVec3| p + patch.normal_at(p) * d;
-            let breaks = crate::thicken::kinks(&e.curve, &along, patch);
+            let naive = |p: DVec3| p + f.surface.normal_at(p) * d;
+            // Corrected to meet the vertex's true corner at each end (it
+            // may be mitred with a face this edge does not touch); blended
+            // smoothly across the edge, zero where there is no mitre.
+            let (corr_a, corr_b) = (moved[&e.a] - naive(pa), moved[&e.b] - naive(pb));
+            let span = (pb - pa).length_squared().max(1e-300);
+            let off = |p: DVec3| {
+                let t = ((p - pa).dot(pb - pa) / span).clamp(0.0, 1.0);
+                naive(p) + corr_a * (1.0 - t) + corr_b * t
+            };
+            let breaks = match f.surface.patch() {
+                Some(patch) => crate::thicken::kinks(&e.curve, &along, patch),
+                None => vec![0.0, 1.0],
+            };
             let (low, high) =
                 crate::thicken::edge_pair(&along, &off, &breaks, eps).ok_or(TOO_THICK)?;
             let b = edge(&mut s, base[&e.a], base[&e.b], e.curve.clone(), None)?;
@@ -541,6 +599,82 @@ fn freeform_slab(
             top_of.insert(side.edge, t);
             fitted.insert(side.edge, (low, high));
         }
+    }
+    for (e, fa, fb) in &creases {
+        let edge_data = model.edge(*e).ok_or(NOTHING)?;
+        let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+        let along = |t: f64| edge_data.curve.point(pa, pb, t);
+        let (face_a, face_b) = (
+            model.face(*fa).ok_or(NOTHING)?,
+            model.face(*fb).ok_or(NOTHING)?,
+        );
+        let (off_a, off_b) = (&offsets[fa], &offsets[fb]);
+        // Too sharp a fold has no mitre (close to doubling back on
+        // itself): checked up front, at the same points `smooth_join`
+        // samples, so the reason is specific.
+        let sharp = (0..=8).any(|i| {
+            let p = along(i as f64 / 8.0);
+            let ns = [face_a.surface.normal_at(p), face_b.surface.normal_at(p)];
+            corner(&ns, d, &tol).is_none()
+        });
+        if sharp {
+            return Err(SHARP);
+        }
+        let raw_meet = |p: DVec3| {
+            let ns = [face_a.surface.normal_at(p), face_b.surface.normal_at(p)];
+            let guess = corner(&ns, d, &tol).map_or(p, |x| p + x);
+            meet(off_a, off_b, guess, &tol)
+        };
+        // An outside corner, where the mitre reaches past a freeform
+        // face's own edge, is not done yet: checked up front, so the
+        // refusal says why (a flat or other analytic face has no edge to
+        // reach past).
+        let extends = (0..=8).any(|i| {
+            let x = raw_meet(along(i as f64 / 8.0));
+            !truly_on(off_a, x, &tol) || !truly_on(off_b, x, &tol)
+        });
+        if extends {
+            return Err(EXTEND);
+        }
+        // Corrected to meet the vertex's true corner at each end (it may
+        // involve a third face this crease does not touch); blended
+        // smoothly across the edge, zero where there is no such face.
+        let (corr_a, corr_b) = (
+            moved[&edge_data.a] - raw_meet(pa),
+            moved[&edge_data.b] - raw_meet(pb),
+        );
+        let span = (pb - pa).length_squared().max(1e-300);
+        let meet_at = |t: f64| -> DVec3 {
+            let p = along(t);
+            let bt = ((p - pa).dot(pb - pa) / span).clamp(0.0, 1.0);
+            raw_meet(p) + corr_a * (1.0 - bt) + corr_b * bt
+        };
+        let mut breaks = match face_a.surface.patch() {
+            Some(patch) => crate::thicken::kinks(&edge_data.curve, &along, patch),
+            None => vec![0.0, 1.0],
+        };
+        if let Some(patch) = face_b.surface.patch() {
+            breaks.extend(crate::thicken::kinks(&edge_data.curve, &along, patch));
+            breaks.sort_by(f64::total_cmp);
+            breaks.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+        }
+        let curve = crease_curve(&meet_at, off_a, off_b, &breaks, eps).ok_or(TOO_THICK)?;
+        let b = edge(
+            &mut s,
+            base[&edge_data.a],
+            base[&edge_data.b],
+            edge_data.curve.clone(),
+            None,
+        )?;
+        let t = edge(
+            &mut s,
+            up[&edge_data.a],
+            up[&edge_data.b],
+            Curve::Spline(Spline::whole(curve)),
+            None,
+        )?;
+        bottom_of.insert(*e, b);
+        top_of.insert(*e, t);
     }
     let copy = |map: &BTreeMap<VertexId, VertexId>,
                 edges: &BTreeMap<EdgeId, EdgeId>,
@@ -560,20 +694,8 @@ fn freeform_slab(
     };
     for id in &kept {
         let f = model.face(*id).ok_or(NOTHING)?;
-        let patch = f.surface.patch().ok_or(NOTHING)?.clone();
-        let laid = crate::crossing::Laid::new(model, *id).ok_or(TOO_THICK)?;
-        let top =
-            crate::thicken::offset_surface(&patch, &laid.polys[0], d, eps).ok_or(TOO_THICK)?;
         let mut low = copy(&base, &bottom_of, f, f.surface.clone());
-        let mut high = copy(
-            &up,
-            &top_of,
-            f,
-            Surface::Nurbs(Patch {
-                flipped: patch.flipped,
-                ..Patch::whole(top)
-            }),
-        );
+        let mut high = copy(&up, &top_of, f, offsets[id].clone());
         if d > 0.0 {
             low.reverse();
         } else {
@@ -620,6 +742,107 @@ fn freeform_slab(
         return Err(TOO_THICK);
     }
     Ok((s, body.clone()))
+}
+
+/// The point of `s` nearest `x`, and its normal there: for a freeform
+/// face past its own edge (an outside corner's mitre can reach past
+/// it), its surface does not extend, so the edge's own point and normal
+/// stand for it there, as a straight continuation would (a flat or
+/// other analytic surface already has no edge to reach past).
+fn probe(s: &Surface, x: DVec3) -> (DVec3, DVec3) {
+    match s {
+        Surface::Nurbs(patch) => {
+            let q = patch.project(x);
+            (q, patch.normal_at(q))
+        }
+        _ => (s.project(x), s.normal_at(x)),
+    }
+}
+
+/// Whether `x` is genuinely on `s` (within tolerance of its nearest
+/// point): a flat or other analytic surface always is (unbounded); a
+/// freeform one is not once `x` is past its own edge.
+fn truly_on(s: &Surface, x: DVec3, tol: &Tol) -> bool {
+    match s {
+        Surface::Nurbs(patch) => patch.project(x).distance(x) <= tol.dist,
+        _ => true,
+    }
+}
+
+/// How far `x` is from `s`, signed by its normal (`probe`'s tangent
+/// stands in for the true surface past a freeform face's own edge).
+fn offset_distance(s: &Surface, x: DVec3) -> f64 {
+    let (q, n) = probe(s, x);
+    (x - q).dot(n)
+}
+
+/// The point on both `a` and `b` closest to `guess`: Newton, moving only
+/// in the plane of their two normals (as `corner` does exactly for flat
+/// surfaces; a curved one is only locally flat, so this is iterated).
+/// Falls back to the last point tried if it does not converge; the
+/// caller checks the result against the true surfaces itself.
+fn meet(a: &Surface, b: &Surface, guess: DVec3, tol: &Tol) -> DVec3 {
+    let mut x = guess;
+    for _ in 0..20 {
+        let (qa, na) = probe(a, x);
+        let (qb, nb) = probe(b, x);
+        let (fa, fb) = ((x - qa).dot(na), (x - qb).dot(nb));
+        if tol.is_zero(fa) && tol.is_zero(fb) {
+            return x;
+        }
+        let Some(step) = solve2(na, nb, fa, fb, tol) else {
+            return x;
+        };
+        x -= step;
+    }
+    x
+}
+
+/// The vector in the plane of unit `a` and `b` with `a·v = p` and
+/// `b·v = q`; None where they are too nearly parallel to separate (as
+/// `corner` finds a fold too sharp to move both ways at once).
+fn solve2(a: DVec3, b: DVec3, p: f64, q: f64, tol: &Tol) -> Option<DVec3> {
+    if tol.parallel(a, b) {
+        return None;
+    }
+    let c = a.dot(b);
+    let denom = 1.0 - c * c;
+    let s = (p - q * c) / denom;
+    let t = (q - p * c) / denom;
+    Some(a * s + b * t)
+}
+
+/// The curve where two creased faces' offsets truly meet: `meet_at(t)`
+/// for the nodes given, fitted to a NURBS curve of degree 5, split until
+/// the fit itself lies on both true offset surfaces within `eps` (as
+/// `thicken::edge_pair` checks a face's own offset).
+fn crease_curve(
+    meet_at: &dyn Fn(f64) -> DVec3,
+    off_a: &Surface,
+    off_b: &Surface,
+    nodes: &[f64],
+    eps: f64,
+) -> Option<prism_geom::Nurbs> {
+    let mut ts = nodes.to_vec();
+    for _ in 0..crate::thicken::ROUNDS {
+        let knots = prism_geom::knots_over(crate::thicken::DEGREE, &ts, nodes)?;
+        let curve = prism_geom::Nurbs::fitted(meet_at, crate::thicken::DEGREE, knots)?;
+        let error = |t: f64| {
+            let p = curve.eval(t);
+            offset_distance(off_a, p)
+                .abs()
+                .max(offset_distance(off_b, p).abs())
+        };
+        let split: Vec<bool> = ts
+            .windows(2)
+            .map(|w| crate::thicken::off_between(w, &error, eps))
+            .collect();
+        if !split.contains(&true) {
+            return Some(curve);
+        }
+        ts = crate::thicken::halved(&ts, &split);
+    }
+    None
 }
 
 fn edge(

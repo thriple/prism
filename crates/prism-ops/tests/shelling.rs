@@ -614,21 +614,42 @@ fn folded_patches() -> (Model, FaceId, FaceId) {
     let b = m.add_face(Face::with_edges(
         vec![vq, sb_v, rb, vp],
         vec![],
-        Surface::Nurbs(Patch::whole(
-            Arc::try_unwrap(sb).unwrap_or_else(|a| (*a).clone()),
-        )),
+        Surface::Nurbs(Patch {
+            flipped: true,
+            ..Patch::whole(Arc::try_unwrap(sb).unwrap_or_else(|a| (*a).clone()))
+        }),
         vec![vec![e4, e5, e6, shared]],
     ));
     (m, a, b)
 }
 
+/// Two unit squares at a right angle (`folded_patches`) thicken to a
+/// sharp mitre on an inside corner (trimmed, by hand: the two offset
+/// rectangles are short of a `d` by `d` square where they meet, so
+/// `area = 2|d| - d^2`, times the 1 m fold gives the volume). An outside
+/// corner (the other sign of `d`) would need the mitre to reach past a
+/// freeform face's own edge; not done yet, so it is refused by name.
 #[test]
-fn a_crease_between_freeform_faces_is_refused_specifically() {
+fn a_crease_between_freeform_faces_gets_a_sharp_mitre() {
+    let d: f64 = -0.3;
+    let area = 2.0 * d.abs() - d * d;
+    let (mut m, a, b) = folded_patches();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    assert_eq!(shelling::refusal(&m, &body, &BTreeSet::new(), d), None);
+    shelling::shell(&mut m, &body, &BTreeSet::new(), d).unwrap();
+    sound(&m);
+    near_enough(volume(&m).abs(), area);
+}
+
+#[test]
+fn an_outside_corner_mitre_past_a_freeform_edge_is_refused_specifically() {
     let (m, a, b) = folded_patches();
     let body: BTreeSet<FaceId> = [a, b].into();
     let before = m.clone();
-    let r = shelling::refusal(&m, &body, &BTreeSet::new(), 0.3);
-    assert_eq!(r, Some(shelling::CREASE));
+    assert_eq!(
+        shelling::refusal(&m, &body, &BTreeSet::new(), 0.3),
+        Some(shelling::EXTEND)
+    );
     let mut m2 = m.clone();
     assert!(shelling::shell(&mut m2, &body, &BTreeSet::new(), 0.3).is_err());
     assert_eq!(m, before, "a refusal changes nothing");
