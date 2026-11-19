@@ -16,6 +16,9 @@ use super::Chrome;
 #[derive(Clone, Debug, PartialEq)]
 pub enum PanelOp {
     Select(Vec<InstanceId>),
+    /// A live feature in the Outliner: the group's path (empty for the top
+    /// level) and its index.
+    SelectFeature(Vec<InstanceId>, usize),
     Open(Vec<InstanceId>),
     Hide(InstanceId, bool),
     Name(InstanceId, String),
@@ -50,6 +53,8 @@ pub enum PanelOp {
 #[derive(Clone, Debug, Default)]
 pub struct PanelData {
     pub outline: Vec<OutlineRow>,
+    /// The live features of the loose geometry at the top level.
+    pub top_features: Vec<prism_tools::session::FeatureItem>,
     pub info: Option<EntityInfo>,
     /// The Inspector window's fields.
     pub inspector: prism_tools::session::Inspector,
@@ -80,6 +85,9 @@ pub struct PanelData {
 #[derive(Clone, Debug, Default)]
 pub struct Panels {
     pub outliner: bool,
+    /// The groups whose Features row is open in the Outliner (empty path
+    /// for the top level).
+    pub features_open: std::collections::BTreeSet<Vec<InstanceId>>,
     /// Help > Tool Hint Panel.
     pub hints: bool,
     pub info: bool,
@@ -212,6 +220,62 @@ pub(super) fn after_card(
     r.close
 }
 
+/// A body's live features: one "Features" row that opens to list them.
+fn features_rows(
+    ui: &mut Ui,
+    p: &mut Panels,
+    path: &[InstanceId],
+    depth: usize,
+    items: &[prism_tools::session::FeatureItem],
+    ops: &mut Vec<PanelOp>,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let open = p.features_open.contains(path);
+    ui.horizontal(|ui| {
+        ui.add_space(depth as f32 * 14.0);
+        let head = format!(
+            "{} Features ({})",
+            if open { "-" } else { "+" },
+            items.len()
+        );
+        let any = items.iter().any(|i| i.selected);
+        let color = if any { color::ACCENT } else { color::MUTED };
+        if ui
+            .add(egui::Label::new(RichText::new(head).color(color)).sense(egui::Sense::click()))
+            .clicked()
+        {
+            if open {
+                p.features_open.remove(path);
+            } else {
+                p.features_open.insert(path.to_vec());
+            }
+        }
+    });
+    if !open {
+        return;
+    }
+    for (i, item) in items.iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.add_space((depth + 1) as f32 * 14.0);
+            let text = RichText::new(&item.label).color(if item.broken {
+                color::WARN
+            } else if item.selected {
+                color::ACCENT
+            } else {
+                color::INK
+            });
+            if ui
+                .add(egui::Label::new(text).sense(egui::Sense::click()))
+                .clicked()
+            {
+                ops.push(PanelOp::SelectFeature(path.to_vec(), i));
+            }
+        });
+    }
+}
+
 fn outliner(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
     if !p.outliner {
         return;
@@ -226,6 +290,7 @@ fn outliner(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp
             egui::ScrollArea::vertical()
                 .max_height(360.0)
                 .show(ui, |ui| {
+                    features_rows(ui, p, &[], 0, &data.top_features, ops);
                     for row in &data.outline {
                         ui.horizontal(|ui| {
                             ui.add_space(row.depth as f32 * 14.0);
@@ -262,6 +327,7 @@ fn outliner(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp
                                 );
                             }
                         });
+                        features_rows(ui, p, &row.path, row.depth + 1, &row.features, ops);
                     }
                 });
         });

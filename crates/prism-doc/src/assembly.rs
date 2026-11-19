@@ -1030,6 +1030,28 @@ impl Assembly {
         true
     }
 
+    /// Bake one feature (and the ones before it).
+    pub fn explode_feature(&mut self, def: DefId, index: usize) -> bool {
+        let Some(d) = self.def_mut_live(def) else {
+            return false;
+        };
+        let Some(stack) = &d.stack else {
+            return false;
+        };
+        if index >= stack.features.len() {
+            return false;
+        }
+        let next = stack.explode(index);
+        d.model = next.base.clone();
+        d.stack = None;
+        if !next.features.is_empty() {
+            let mut next = next;
+            d.model = next.evaluate();
+            d.stack = Some(next);
+        }
+        true
+    }
+
     /// Turn the live features into plain geometry.
     pub fn bake(&mut self, def: DefId) -> bool {
         match self.def_mut_live(def) {

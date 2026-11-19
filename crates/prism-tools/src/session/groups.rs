@@ -422,11 +422,56 @@ impl Session {
                         && path.starts_with(&self.ctx)
                         && self.groups.contains(last),
                     open: self.ctx == path,
+                    features: self.feature_items(&path),
                     path,
                 });
             }
         }
         out
+    }
+
+    /// The live features of the loose geometry at the top level.
+    pub fn top_features(&self) -> Vec<FeatureItem> {
+        self.feature_items(&[])
+    }
+
+    /// The live features of the group at `path` (the top level for none),
+    /// for the Outliner.
+    fn feature_items(&self, path: &[InstanceId]) -> Vec<FeatureItem> {
+        let asm = self.doc.assembly();
+        let Some(stack) = asm
+            .context_def(path)
+            .and_then(|d| asm.def(d))
+            .and_then(|d| d.stack.as_ref())
+        else {
+            return Vec::new();
+        };
+        let chosen = (self.ctx == path)
+            .then(|| self.selected_feature())
+            .flatten();
+        stack
+            .features
+            .iter()
+            .enumerate()
+            .map(|(i, f)| FeatureItem {
+                label: match f {
+                    prism_doc::Feature::Round { size, .. } => {
+                        format!("{} {}", f.name(), self.number.show(*size))
+                    }
+                },
+                broken: f.is_broken(),
+                selected: chosen == Some(i),
+            })
+            .collect()
+    }
+
+    /// Select a feature of the group at `path` (the top level for none):
+    /// the Outliner's Features row.
+    pub fn select_feature_at(&mut self, path: &[InstanceId], index: usize) {
+        if self.ctx != path {
+            self.open_path_to(path);
+        }
+        self.select_feature(index);
     }
 
     /// Select an instance anywhere in the tree (the Outliner): its parent
@@ -925,6 +970,17 @@ pub struct OutlineRow {
     pub selected: bool,
     /// It is the open group.
     pub open: bool,
+    /// Its live fillets and chamfers.
+    pub features: Vec<FeatureItem>,
+}
+
+/// One live feature in the Outliner.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeatureItem {
+    /// "Fillet 0.200 m".
+    pub label: String,
+    pub broken: bool,
+    pub selected: bool,
 }
 
 /// What Entity Info shows.

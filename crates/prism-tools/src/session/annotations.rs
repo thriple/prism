@@ -50,7 +50,7 @@ const BORDER_PX: f64 = 8.0;
 
 impl Session {
     /// What is picked, if anything.
-    fn ann_picked(&self) -> Option<Ann> {
+    pub(super) fn ann_picked(&self) -> Option<Ann> {
         let asm = self.doc.assembly();
         self.dim_sel
             .filter(|id| asm.dimension(*id).is_some())
@@ -131,7 +131,7 @@ impl Session {
     /// What is under the cursor: a dimension's line first, then a section
     /// plane's outline, then a construction plane's (the ones that are
     /// drawn).
-    fn ann_pick(&self, s: DVec2, view: &View) -> Option<Ann> {
+    pub(super) fn ann_pick(&self, s: DVec2, view: &View) -> Option<Ann> {
         if self.view.dimensions
             && let Some(id) = self.dim_at(s, view)
         {

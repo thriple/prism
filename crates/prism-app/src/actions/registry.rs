@@ -28,6 +28,8 @@ pub enum When {
     HasSelection,
     /// Groups are selected (Explode).
     HasGroups,
+    /// A live feature is selected (Explode Fillet / Chamfer).
+    HasFeature,
     /// The document has a section plane (Annotation & Sections part 1).
     HasSections,
     /// The document has a dimension (Annotation & Sections part 2).
@@ -96,6 +98,8 @@ pub struct Context {
     pub has_selection: bool,
     /// Groups are selected.
     pub has_groups: bool,
+    /// A live feature (a fillet or chamfer) is selected.
+    pub has_feature: bool,
     /// The document has a section plane.
     pub has_sections: bool,
     /// The document has a dimension.
@@ -224,6 +228,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "edit.group"
         || id == "edit.explode"
         || id == "edit.bake"
+        || id == "edit.explode_feature"
+        || id == "edit.remove_feature"
         // Part 2: components and mirroring.
         || id == "edit.comp"
         || id == "edit.unique"
@@ -352,6 +358,9 @@ impl Registry {
                         None if r.id.starts_with("section.") => When::HasSections,
                         None if r.id.starts_with("dim.") => When::HasDimensions,
                         None if r.id.starts_with("cplane.") => When::HasWorkPlanes,
+                        None if r.id == "edit.explode_feature" || r.id == "edit.remove_feature" => {
+                            When::HasFeature
+                        }
                         None if r.id == "edit.explode"
                             || r.id == "edit.unique"
                             || r.id == "edit.hide"
@@ -398,6 +407,7 @@ impl Registry {
                     When::CanRedo => ctx.can_redo,
                     When::HasSelection => ctx.has_selection,
                     When::HasGroups => ctx.has_groups,
+                    When::HasFeature => ctx.has_feature,
                     When::HasSections => ctx.has_sections,
                     When::HasDimensions => ctx.has_dimensions,
                     When::HasWorkPlanes => ctx.has_work_planes,
@@ -418,6 +428,7 @@ impl Registry {
             When::CanRedo if !ctx.can_redo => Some("Nothing to redo"),
             When::HasSelection if !ctx.has_selection => Some("Select something first"),
             When::HasGroups if !ctx.has_groups => Some("Select a group first"),
+            When::HasFeature if !ctx.has_feature => Some("Select a fillet or chamfer first"),
             When::HasSections if !ctx.has_sections => Some("Place a section plane first"),
             When::HasDimensions if !ctx.has_dimensions => Some("Make a dimension first"),
             When::HasWorkPlanes if !ctx.has_work_planes => Some("Place a construction plane first"),
@@ -488,6 +499,8 @@ pub struct Selection {
     /// A section plane, dimension or construction plane picked with
     /// Alt + click or by right-click: "section", "dimension" or "cplane".
     pub annotation: Option<&'static str>,
+    /// A live feature is selected: "Fillet" or "Chamfer".
+    pub feature: Option<&'static str>,
 }
 
 impl Selection {
@@ -502,6 +515,9 @@ impl Selection {
             Some("dimension") => return "Dimension".to_owned(),
             Some("cplane") => return "Construction plane".to_owned(),
             _ => {}
+        }
+        if let Some(name) = self.feature {
+            return name.to_owned();
         }
         let parts: Vec<String> = [
             (self.groups, "group"),
@@ -537,6 +553,16 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         Some("cplane") => return vec![A("cplane.active"), S, A("cplane.delete")],
         _ => {}
     }
+    if sel.feature.is_some() {
+        return vec![
+            A("edit.explode_feature"),
+            A("edit.remove_feature"),
+            A("edit.bake"),
+            S,
+            A("edit.desel"),
+            A("win.info"),
+        ];
+    }
     if sel.is_empty() {
         return vec![
             A("edit.paste"),
@@ -565,6 +591,8 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         A("edit.comp"),
         A("edit.explode"),
         A("edit.bake"),
+        A("edit.explode_feature"),
+        A("edit.remove_feature"),
         A("edit.unique"),
         Sub(
             "Axes",
@@ -824,6 +852,7 @@ mod tests {
                 points: 0,
                 groups: 1,
                 annotation: None,
+                feature: None,
             },
             Selection {
                 annotation: Some("section"),
@@ -977,6 +1006,7 @@ mod tests {
                 points: 0,
                 groups: 0,
                 annotation: None,
+                feature: None,
             }
             .label(),
             "1 face, 3 edges"

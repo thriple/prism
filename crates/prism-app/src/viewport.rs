@@ -206,6 +206,7 @@ impl Viewport {
             points: s.vertices.len(),
             groups: self.session.selected_groups().len(),
             annotation: self.session.picked_annotation(),
+            feature: self.session.selected_feature_name(),
         }
     }
 

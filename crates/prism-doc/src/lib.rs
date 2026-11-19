@@ -429,6 +429,11 @@ pub enum Command {
         def: DefId,
         index: usize,
     },
+    /// Turn one live feature, and those before it, into plain geometry.
+    ExplodeFeature {
+        def: DefId,
+        index: usize,
+    },
     /// Turn the live features into plain geometry.
     BakeFeatures {
         def: DefId,
@@ -713,6 +718,7 @@ impl Command {
             Command::RoundEdge { fillet: true, .. } => "Fillet",
             Command::RoundEdge { .. } => "Chamfer",
             Command::SetFeatureSize { .. } => "Change Feature",
+            Command::ExplodeFeature { .. } => "Explode Feature",
             Command::RemoveFeature { .. } => "Remove Feature",
             Command::BakeFeatures { .. } => "Bake Features",
             Command::RoundEdges { fillet: true, .. } => "Fillet",
@@ -1050,6 +1056,9 @@ impl Command {
             }
             Command::BakeFeatures { def } => {
                 asm.bake(*def);
+            }
+            Command::ExplodeFeature { def, index } => {
+                asm.explode_feature(*def, *index);
             }
             // A round stays live, in a group and on loose geometry alike.
             Command::RoundEdges {
@@ -1508,6 +1517,7 @@ impl Command {
             | Command::EraseInstances { .. }
             | Command::SetFeatureSize { .. }
             | Command::RemoveFeature { .. }
+            | Command::ExplodeFeature { .. }
             | Command::BakeFeatures { .. }
             | Command::Cut { .. }
             | Command::Paste { .. }

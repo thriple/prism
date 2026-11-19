@@ -1,8 +1,8 @@
-**New in this build: fillets and chamfers stay live on loose geometry, and go with their solid.**
-- **A fillet or chamfer is live wherever you make it**, not only inside a group. Make Group and Make Component take the live fillets of the solids you group. Explode gives them back.
-- Window > Inspector > Features (nothing selected) edits the top level's or the open group's fillets. Edit > Bake Features bakes them.
-- Edit the fillet's own faces and that fillet is baked first, in the same undo step, with a red message. Undo brings it back.
-- **Effects** in the menu bar is now the kit's switch. **Offset** lights up the edge it snaps to.
+**New in this build: fillets and chamfers are things you can select.**
+- **Click a fillet or chamfer with Select** to pick the feature. It shows in Window > Inspector (size, Explode, Remove) and lights up. Right-click it for Explode Fillet / Chamfer, Remove, or Bake Features.
+- **Window > Outliner** lists each body's fillets and chamfers under a "Features" row; click one to select it.
+- Fillets and chamfers stay live on loose geometry as well as in groups, go with their solid when you group it, and are saved in the file (loose geometry's were not saved before).
+- Editing a fillet's own face bakes it first, with a red message; Undo brings it back. **Effects** in the menu bar is the kit's switch. **Offset** lights up the edge it snaps to.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

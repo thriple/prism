@@ -177,6 +177,30 @@ fn signature(m: &Model) -> Signature {
 }
 
 impl Stack {
+    /// The faces each feature made (ids in the model as drawn): what each
+    /// one adds when it runs. A broken feature made none.
+    pub fn made_faces(&self) -> Vec<BTreeSet<FaceId>> {
+        let mut m = self.base.clone();
+        let mut out = Vec::new();
+        for (i, f) in self.features.iter().enumerate() {
+            let before: BTreeSet<FaceId> = m.faces().map(|(id, _)| id).collect();
+            f.clone().run(&mut m, i == 0);
+            out.push(
+                m.faces()
+                    .map(|(id, _)| id)
+                    .filter(|id| !before.contains(id))
+                    .collect(),
+            );
+        }
+        out
+    }
+
+    /// Bake feature `index`, and the ones before it (they made what it
+    /// works on).
+    pub fn explode(&self, index: usize) -> Stack {
+        self.bake_first((index + 1).min(self.features.len()))
+    }
+
     /// The first `j` features turned into geometry: the base is what they
     /// make, and the rest still run on it.
     fn bake_first(&self, j: usize) -> Stack {

@@ -83,6 +83,7 @@ pub(crate) fn rules(viewport: &Viewport, recent: usize) -> crate::actions::Conte
         can_redo: viewport.can_redo(),
         has_selection: !viewport.counts().is_empty(),
         has_groups: viewport.counts().groups > 0,
+        has_feature: viewport.counts().feature.is_some(),
         has_sections: viewport.session.has_sections(),
         has_dimensions: viewport.session.has_dimensions(),
         has_work_planes: viewport.session.has_work_planes(),
@@ -453,6 +454,7 @@ impl App {
                 };
                 chrome.panel_data = crate::chrome::PanelData {
                     outline: s.outline(),
+                    top_features: s.top_features(),
                     info: Some(s.entity_info()),
                     inspector: if chrome.panels.inspector {
                         s.inspector()
@@ -476,6 +478,7 @@ impl App {
                 let s = &mut viewport.session;
                 match op {
                     crate::chrome::PanelOp::Select(path) => s.select_path(&path),
+                    crate::chrome::PanelOp::SelectFeature(path, i) => s.select_feature_at(&path, i),
                     crate::chrome::PanelOp::Open(path) => s.open_path_to(&path),
                     crate::chrome::PanelOp::Hide(id, hidden) => s.set_hidden(id, hidden),
                     crate::chrome::PanelOp::Name(id, name) => s.name_instance(id, &name),

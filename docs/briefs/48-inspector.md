@@ -38,6 +38,14 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 - **File:** schema 15. `groups.json` lists a body's `features`, and the base is `geometry/defs/<id>.base.bin`.
 - **Left for later:** re-picking a broken feature's edges; other feature kinds (part 3); pick-in-viewport (part 4); a ghost of the change; features on loose geometry.
 
+## Part 2b: features you can select
+- **The selection of exactly the faces a feature made is the feature selected** (`Session::selected_feature`). So the highlight, the Inspector and the menus work from the ordinary selection.
+- **Select:** a click on a face a feature made picks the feature (all its faces). A round is one smooth surface, so Alt + click on it picks the same faces; on other faces it picks the face as before. Alt + click still picks a plane or dimension first.
+- **Right-click** on a feature offers Explode Fillet / Chamfer, Remove Fillet / Chamfer and Bake Features (Edit menu too: `edit.explode_feature`, `edit.remove_feature`). Explode bakes that feature and the ones before it (they made what it works on).
+- **Inspector:** a selected feature shows its size, Explode and Remove.
+- **Outliner:** a "Features (n)" row under the top level and under each group with features; it opens to list them ("Fillet 0.300 m"); clicking one selects it, opening its group first.
+- **File:** loose geometry's features are saved too (the root's base is `geometry/defs/0.base.bin`).
+
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.
 - Name, tag, hide and lock; refusals change nothing.

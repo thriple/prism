@@ -540,3 +540,48 @@ fn live_features_round_trip() {
     assert!(back.assembly.def(def).unwrap().stack.is_some());
     assert_eq!(prism_file::write(&back, "test"), bytes);
 }
+
+/// Live features on loose geometry (the root) are saved too.
+#[test]
+fn live_features_on_loose_geometry_round_trip() {
+    use prism_doc::{Command, Document};
+    let mut d = Document::new();
+    d.run(Command::Rect {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 2.0,
+        y1: 2.0,
+        z: 0.0,
+    });
+    let f = d.model().faces().next().unwrap().0;
+    let up = d.model().face(f).unwrap().plane().unwrap().normal.z;
+    d.run(Command::PushPull {
+        face: f,
+        distance: 2.0 * up,
+        new_loop: false,
+    });
+    let edge = d
+        .model()
+        .edges()
+        .find(|(_, e)| (d.model().vertex(e.a).z - d.model().vertex(e.b).z).abs() > 1.0)
+        .unwrap()
+        .0;
+    assert!(d.run(Command::RoundEdges {
+        edges: [edge].into(),
+        size: 0.25,
+        fillet: true,
+    }));
+    assert!(d.assembly().root().stack.is_some());
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = prism_file::write(&c, "test");
+    let back = prism_file::read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    assert!(
+        back.assembly.root().stack.is_some(),
+        "still live after saving"
+    );
+    assert_eq!(prism_file::write(&back, "test"), bytes);
+}

@@ -37,6 +37,7 @@ mod dimensions;
 mod draw;
 mod edit;
 mod effects;
+mod features;
 mod follow;
 mod groups;
 mod health;
@@ -69,7 +70,7 @@ pub use draw::{FREEHAND, RRECT, freehand_curve, rrect_corners, simplify};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
-pub use groups::{EntityInfo, OutlineRow, Owner, TagOp};
+pub use groups::{EntityInfo, FeatureItem, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
 pub use inspector::{Field, FieldKind, Inspector, Section};
 pub use lofting::{LOFT, LoftOp, LoftPanel};
@@ -539,6 +540,7 @@ pub struct Session {
     effects_on: bool,
     effects_length: f64,
     /// The Inspector's volume, for the selection it was worked out for.
+    feature_cache: features::FeatureCache,
     inspector_volume: inspector::VolumeCache,
     effects: Vec<prism_view::effects::Effect>,
     dirty: bool,
@@ -775,6 +777,7 @@ impl Session {
             reduce_motion: false,
             effects_on: true,
             effects_length: prism_view::effects::DURATION,
+            feature_cache: Default::default(),
             inspector_volume: Default::default(),
             effects: Vec::new(),
             dirty: true,
@@ -1849,6 +1852,8 @@ impl Session {
             "flip.z" => self.flip(2),
             "edit.explode" => self.explode(),
             "edit.bake" => self.bake_features(),
+            "edit.explode_feature" => self.explode_selected_feature(),
+            "edit.remove_feature" => self.remove_selected_feature(),
             "edit.undo" => {
                 self.cancel();
                 // Undo of an edit inside a group opens that group again.
@@ -2244,7 +2249,10 @@ impl Session {
                         Some(Owner::Outside) => {}
                         None if !has => {
                             self.set_groups(BTreeSet::new());
-                            self.set_selection(click_select(self.work_model(), Some(h.hit), 1));
+                            let named = self
+                                .feature_click(h.hit)
+                                .unwrap_or_else(|| click_select(self.work_model(), Some(h.hit), 1));
+                            self.set_selection(named);
                         }
                         None => {}
                     }
@@ -2329,10 +2337,15 @@ impl Session {
             self.ann_set(s);
             return;
         }
-        if self.press_alt {
+        // Alt + click picks a plane or dimension; with none there, it picks
+        // the plain face (not the feature that made it).
+        if self.press_alt
+            && (self.ann_picked().is_some() || self.ann_pick(s, &self.view()).is_some())
+        {
             self.ann_press(s);
             return;
         }
+        let plain = self.press_alt;
         self.ann_clear();
         let n = self.clicks.press(self.time, s);
         let hit = pick::pick(&self.scene, &self.view(), s, self.settings.aperture).map(|p| p.hit);
@@ -2388,9 +2401,19 @@ impl Session {
         }
         // What this click names: the item, a face and its edges (double),
         // or everything connected (triple).
-        let named = match hit {
-            Some(h) => click_select(self.work_model(), Some(h), n.min(3)),
-            None => Selection::default(),
+        // A face a live feature made picks the feature (Alt picks the face).
+        let feature = match hit {
+            Some(Hit::Face(f)) if n == 1 && !plain => self.feature_of_face(f),
+            _ => None,
+        }
+        .and_then(|i| self.feature_faces().get(i).cloned());
+        let named = match (&feature, hit) {
+            (Some(faces), _) => Selection {
+                faces: faces.clone(),
+                ..Selection::default()
+            },
+            (None, Some(h)) => click_select(self.work_model(), Some(h), n.min(3)),
+            (None, None) => Selection::default(),
         };
         // With Shift or Ctrl, a double or triple click works from the
         // selection as it was before the series started, so other
@@ -2398,7 +2421,10 @@ impl Session {
         // clicked item was already selected, and adds them otherwise.
         let base = &self.series_pre;
         let sel = if shift || ctrl {
-            let was = hit.is_some_and(|h| contains(base, h));
+            let was = match &feature {
+                Some(faces) => faces.is_subset(&base.faces),
+                None => hit.is_some_and(|h| contains(base, h)),
+            };
             let mut out = base.clone();
             if shift && was {
                 remove_all(&mut out, &named);

@@ -430,7 +430,11 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         files.push((path, image.bytes.as_ref().clone()));
     }
     let (tags, next_tag) = asm.tags();
-    if asm.defs().count() > 1 || asm.has_instances() || !tags.is_empty() {
+    if asm.defs().count() > 1
+        || asm.has_instances()
+        || !tags.is_empty()
+        || asm.root().stack.is_some()
+    {
         let (next_def, next_instance) = asm.counters();
         let attrs = asm.attributes();
         let groups = GroupsV1 {
@@ -476,13 +480,15 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
             kind: "groups".to_owned(),
             version: 1,
         });
-        for (id, d) in asm.defs().filter(|(id, _)| *id != ROOT) {
-            files.push((def_path(id.0), geometry::encode(&d.model)));
-            manifest.entries.push(Entry {
-                path: def_path(id.0),
-                kind: "geometry".to_owned(),
-                version: geometry::VERSION,
-            });
+        for (id, d) in asm.defs() {
+            if id != ROOT {
+                files.push((def_path(id.0), geometry::encode(&d.model)));
+                manifest.entries.push(Entry {
+                    path: def_path(id.0),
+                    kind: "geometry".to_owned(),
+                    version: geometry::VERSION,
+                });
+            }
             if let Some(stack) = &d.stack {
                 files.push((base_path(id.0), geometry::encode(&stack.base)));
                 manifest.entries.push(Entry {

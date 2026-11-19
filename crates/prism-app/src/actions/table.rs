@@ -240,6 +240,20 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "edit.explode_feature",
+        name: "Explode Fillet / Chamfer",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "edit.remove_feature",
+        name: "Remove Fillet / Chamfer",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "edit.unique",
         name: "Make Unique",
         key: "",
@@ -1722,6 +1736,8 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("edit.comp"),
             Item::Action("edit.explode"),
             Item::Action("edit.bake"),
+            Item::Action("edit.explode_feature"),
+            Item::Action("edit.remove_feature"),
             Item::Action("edit.unique"),
             Item::Sub(
                 "Axes",

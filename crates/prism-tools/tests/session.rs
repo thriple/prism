@@ -8155,3 +8155,140 @@ fn radii_of(m: &prism_topo::Model) -> Vec<f64> {
         })
         .collect()
 }
+
+/// A rounded box at the top level, the Select tool active. Returns where
+/// the round's face is, to click.
+fn rounded_box(d: &mut Driver) -> DVec3 {
+    use prism_tools::session::FILLET;
+    rect_on_ground(d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("2");
+    d.tool(FILLET);
+    d.hover(DVec3::new(2.0, 0.0, 1.0));
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    d.send(Input::Key { key: Key::Enter });
+    d.tool(SELECT);
+    round_centre(d)
+}
+
+/// The middle of the face the live round made.
+fn round_centre(d: &Driver) -> DVec3 {
+    let m = d.s.model();
+    let base =
+        d.s.document()
+            .assembly()
+            .root()
+            .stack
+            .as_ref()
+            .expect("live")
+            .base
+            .clone();
+    let (_, round) = m
+        .faces()
+        .find(|(f, _)| base.face(*f).is_none())
+        .expect("the round's face");
+    round
+        .loops()
+        .flatten()
+        .map(|v| m.vertex(*v))
+        .fold(DVec3::ZERO, |a, p| a + p)
+        / round.loops().flatten().count() as f64
+}
+
+#[test]
+fn clicking_a_round_selects_the_feature() {
+    let mut d = Driver::empty();
+    let at = rounded_box(&mut d);
+    assert_eq!(d.s.selected_feature(), None);
+    d.click(at);
+    assert_eq!(
+        d.s.selected_feature(),
+        Some(0),
+        "the click picked the feature"
+    );
+    assert_eq!(d.s.selected_feature_name(), Some("Fillet"));
+    let i = d.s.inspector();
+    assert_eq!(i.summary, "Fillet");
+    let titles: Vec<_> = i.sections.iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["Feature"]);
+    // Its size changes from here.
+    d.s.inspector_set("feature.0.size", "0.5").expect("changes");
+    assert!((radii_of(d.s.model())[0] - 0.5).abs() < 1e-9);
+    // Alt + click on the round gets the plain face, not the feature.
+    let at = round_centre(&d);
+    d.send(Input::Held {
+        ctrl: false,
+        alt: true,
+    });
+    d.click(at);
+    d.send(Input::Held {
+        ctrl: false,
+        alt: false,
+    });
+    // A round is one smooth surface, so its face selects as the same set.
+    assert!(!d.s.selection().faces.is_empty());
+    d.click(DVec3::new(0.0, 1.0, 1.0));
+    assert_eq!(
+        d.s.selected_feature(),
+        None,
+        "a flat wall is not the feature"
+    );
+}
+
+#[test]
+fn exploding_the_selected_feature_bakes_it_and_remove_takes_it_off() {
+    let mut d = Driver::empty();
+    let at = rounded_box(&mut d);
+    d.click(at);
+    assert_eq!(d.s.selected_feature(), Some(0));
+    act(&mut d, "edit.explode_feature");
+    assert!(d.s.document().assembly().root().stack.is_none());
+    assert_eq!(
+        radii_of(d.s.model()).len(),
+        1,
+        "the round stays as geometry"
+    );
+    undo(&mut d);
+    assert!(d.s.document().assembly().root().stack.is_some());
+    d.click(at);
+    act(&mut d, "edit.remove_feature");
+    assert!(d.s.document().assembly().root().stack.is_none());
+    assert!(radii_of(d.s.model()).is_empty(), "the box is plain again");
+}
+
+#[test]
+fn the_outliner_lists_live_features_and_selects_them() {
+    let mut d = Driver::empty();
+    rounded_box(&mut d);
+    let top = d.s.top_features();
+    assert_eq!(top.len(), 1);
+    assert!(top[0].label.starts_with("Fillet "), "{}", top[0].label);
+    assert!(!top[0].selected);
+    d.s.select_feature_at(&[], 0);
+    assert_eq!(d.s.selected_feature(), Some(0));
+    assert!(d.s.top_features()[0].selected);
+    // A group's features are on its row, and picking one opens the group.
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.s.open_path_to(&[g]);
+    {
+        use prism_tools::session::FILLET;
+        d.tool(FILLET);
+        d.hover(DVec3::new(2.0, 0.0, 1.0));
+        d.click(DVec3::new(2.0, 0.0, 1.0));
+        d.send(Input::Key { key: Key::Enter });
+    }
+    d.tool(SELECT);
+    d.s.open_path_to(&[]);
+    let row =
+        d.s.outline()
+            .into_iter()
+            .find(|r| r.path == [g])
+            .expect("the group");
+    assert_eq!(row.features.len(), 1);
+    d.s.select_feature_at(&[g], 0);
+    assert_eq!(d.s.selected_feature(), Some(0));
+    assert_eq!(d.s.inspector().summary, "Fillet");
+}

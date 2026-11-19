@@ -78,7 +78,9 @@ pub(super) const FEATURE_BAKED: &str =
 /// Whether the command is one that takes features off on purpose.
 pub(super) fn takes_features_off(c: &Command) -> bool {
     match c {
-        Command::BakeFeatures { .. } | Command::RemoveFeature { .. } => true,
+        Command::BakeFeatures { .. }
+        | Command::RemoveFeature { .. }
+        | Command::ExplodeFeature { .. } => true,
         Command::Batch { commands } => commands.iter().any(takes_features_off),
         Command::In { command, .. } => takes_features_off(command),
         _ => false,
@@ -142,7 +144,22 @@ impl Session {
             path,
             ..Default::default()
         };
-        if self.groups.is_empty() {
+        let chosen = self
+            .selected_feature()
+            .zip(
+                self.features_target()
+                    .and_then(|d| asm.def(d))
+                    .and_then(|d| d.stack.as_ref()),
+            )
+            .and_then(|(i, s)| s.features.get(i).map(|f| (i, f)));
+        if let Some((i, f)) = chosen {
+            // A feature picked in the viewport or the Outliner.
+            out.summary = f.name().to_owned();
+            out.sections.push(Section {
+                title: "Feature",
+                fields: self.feature_fields(i, f),
+            });
+        } else if self.groups.is_empty() {
             self.inspect_geometry(&mut out);
             // The features of loose geometry, or of the open group.
             if let Some(stack) = self
@@ -312,40 +329,53 @@ impl Session {
     fn features_section(&self, stack: &prism_doc::Stack) -> Section {
         let mut fields = Vec::new();
         for (i, f) in stack.features.iter().enumerate() {
-            let prism_doc::Feature::Round { size, fillet, .. } = f;
-            let label = if *fillet {
-                "Fillet radius"
-            } else {
-                "Chamfer size"
-            };
-            let key = format!("feature.{i}.size");
-            if f.is_broken() {
-                fields.push(field(
-                    &key,
-                    f.name(),
-                    FieldKind::Fixed,
-                    "Broken: its edges are gone. Remove it or bake.".into(),
-                ));
-            } else {
-                fields.push(field(
-                    &key,
-                    label,
-                    FieldKind::Length,
-                    self.number.show(*size),
-                ));
-            }
-            fields.push(field(
-                &format!("feature.{i}.remove"),
-                "",
-                FieldKind::Action,
-                format!("Remove {}", f.name()),
-            ));
+            fields.extend(self.feature_fields(i, f));
         }
-        fields.push(field("bake", "", FieldKind::Action, "Bake".into()));
+        fields.push(field("bake", "", FieldKind::Action, "Bake all".into()));
         Section {
             title: "Features",
             fields,
         }
+    }
+
+    /// One feature's rows: its size, and Explode and Remove.
+    fn feature_fields(&self, i: usize, f: &prism_doc::Feature) -> Vec<Field> {
+        let prism_doc::Feature::Round { size, fillet, .. } = f;
+        let label = if *fillet {
+            "Fillet radius"
+        } else {
+            "Chamfer size"
+        };
+        let key = format!("feature.{i}.size");
+        let mut fields = Vec::new();
+        if f.is_broken() {
+            fields.push(field(
+                &key,
+                f.name(),
+                FieldKind::Fixed,
+                "Broken: its edges are gone. Remove it or bake.".into(),
+            ));
+        } else {
+            fields.push(field(
+                &key,
+                label,
+                FieldKind::Length,
+                self.number.show(*size),
+            ));
+        }
+        fields.push(field(
+            &format!("feature.{i}.explode"),
+            "",
+            FieldKind::Action,
+            format!("Explode {}", f.name()),
+        ));
+        fields.push(field(
+            &format!("feature.{i}.remove"),
+            "",
+            FieldKind::Action,
+            format!("Remove {}", f.name()),
+        ));
+        fields
     }
 
     fn mixed_field(&self, key: &str, label: &str, kind: FieldKind, value: Option<String>) -> Field {
@@ -541,6 +571,7 @@ impl Session {
                 .ok_or(format!("{key:?} is not an Inspector field"))?;
             match parts.next() {
                 Some("remove") => Command::RemoveFeature { def, index },
+                Some("explode") => Command::ExplodeFeature { def, index },
                 Some("size") => {
                     let size = self
                         .number
