@@ -11,6 +11,9 @@ XL. Owner chose (2026-11-19) to build the smooth and creased joins together, wit
 3. **Where each new edge goes** (the owner's open question, below): rim styles, a ghost, and handles with snapping.
 4. **Live and Inspector.** It is the live Shell feature (brief 48 part 5a), so the thickness, the open faces and the rim style are editable afterwards.
 
+## Everything physical (owner, 2026-11-19)
+Typing a number is the fallback, not the way. The live shell already has a **thickness handle** (brief 48 part 5b): drag it along the wall. For joined freeform faces the same handle works from a point on the offset surface, and the rim handles below place the edges. The ghost shows the whole result while any handle is dragged.
+
 ## The open question: where each new edge goes
 At an open edge of a sheet, or where one part touches another, the new wall's edge can be cut in different ways. The owner asked for a ghost of what is about to happen, then handles with snapping. Proposed design:
 - **Rim style, for each open boundary:** *Square* (cut across the surface, the default for a free edge), *Flush to a plane* (the wall ends in a plane: the plane of the face it touches, a guide, a work plane or an axis plane), and *Custom* (the plane is set by a handle).

@@ -36,7 +36,7 @@ pub(super) struct Handle {
 
 /// How close (in pixels, before the aperture) the cursor must be to grab
 /// the handle.
-const GRAB: f64 = 12.0;
+pub(super) const GRAB: f64 = 12.0;
 
 impl Handle {
     /// Where the handle is for `size`: across the side face from the middle

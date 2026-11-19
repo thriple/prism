@@ -88,6 +88,12 @@ L. Owner chose (2026-11-18): panel first, then the rest.
 - **Not here:** picking the open faces again in the viewport, a drag handle for the thickness, and a ghost; Shell on a curved face stays as the tool had it.
 - **MCP:** `set_inspector` with `feature.N.size` and a signed thickness, as for the fillet.
 
+## Part 5b: the live shell's thickness handle (owner, 2026-11-19)
+- **Why:** a number typed in a field is not how this app should feel; changing a thing should be physical. The Fillet tool already has a drag handle (part 2c); the live shell gets one the same way.
+- **What:** with the Shell tool active and a live shell selected (click a face it made with Select, or pick it in the Outliner, then choose Shell), a square handle sits on the wall: the middle of the first face shelled, moved out along that face's normal by the thickness. Drag it along that line: the body shows the new thickness live, through the face turns it the other way (inside or outside). Let go: it is set (`SetFeatureSize`, one undo step) with the feature still selected. Esc while dragging leaves it as it was. A thickness the kernel refuses is not taken (the preview stays at the last one that worked). The hint line says so.
+- **Not yet:** snapping the thickness to nearby geometry or guides (comes with the rim handles, brief 49 part 3), and a handle for a shell whose first face is curved.
+- **MCP:** the handle is a pointer drag (press, move, release); `set_inspector` `feature.N.size` still sets a number.
+
 ## Tests
 - Fields for a group, an edit and its undo, for position and size.
 - Name, tag, hide and lock; refusals change nothing.

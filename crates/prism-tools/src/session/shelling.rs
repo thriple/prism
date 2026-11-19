@@ -12,21 +12,34 @@
 
 use std::collections::BTreeSet;
 
-use prism_doc::Command;
+use prism_doc::{Command, DefId, Feature};
 use prism_math::{DVec2, DVec3};
 use prism_topo::FaceId;
-use prism_view::overlay::{Line, Overlay};
+use prism_view::overlay::{Line, Mark, Overlay, Shape};
 use prism_view::{Hit, View};
 use serde::{Deserialize, Serialize};
 
 use super::Session;
 use super::edit::along_line;
+use super::features::GRAB;
 
 pub const SHELL: &str = "tool.shell";
 
 const HOW: &str = "Click a face to shell its body or thicken its sheet · Shift+click faces of a closed body to leave them open";
+const HANDLE: &str = "Drag the handle to change the shell's thickness (through the face makes it go the other way) · or click a face to shell another";
 const FIXED: &str = "Click a face to shell or thicken it by the window's thickness · Shift+click faces of a closed body to leave them open · clear the thickness to size by the pointer";
 const SIZING: &str = "Move to set the thickness (out of the face grows outside, into it inside) · click or type a thickness + Enter · Shift+click leaves a face open · Esc steps back";
+
+/// A drag of a live shell's thickness handle in progress.
+#[derive(Clone, Debug)]
+pub(super) struct ShellHandle {
+    def: DefId,
+    index: usize,
+    centre: DVec3,
+    normal: DVec3,
+    start: f64,
+    size: f64,
+}
 
 /// A change from the Shell / Thicken window (recorded as `Input::Shell`).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -79,6 +92,9 @@ impl Session {
     }
 
     pub(super) fn shell_hover(&mut self, s: DVec2, view: &View) {
+        if self.shell_handle_drag(s, view) {
+            return;
+        }
         let (o, dir) = view.ray(s);
         let h = self
             .scene
@@ -220,7 +236,10 @@ impl Session {
         })
     }
 
-    pub(super) fn shell_press(&mut self, shift: bool) {
+    pub(super) fn shell_press(&mut self, s: DVec2, shift: bool) {
+        if !shift && self.shell_handle_press(s) {
+            return;
+        }
         let face = self.shell_face();
         if shift {
             if let Some(f) = face {
@@ -355,6 +374,12 @@ impl Session {
         if self.tool != SHELL {
             return false;
         }
+        if self.shell_handle.take().is_some() {
+            self.set_preview(None);
+            self.overlay_dirty = true;
+            self.refresh();
+            return true;
+        }
         if self.shell_op.take().is_none() {
             if self.shell_open.is_empty() {
                 return false;
@@ -367,8 +392,110 @@ impl Session {
         true
     }
 
+    /// The selected live shell's handle: its definition, index, where the
+    /// handle's line starts (the middle of the first face shelled, as it
+    /// was), the face's normal and the thickness. Only with the Shell tool,
+    /// and nothing being sized.
+    fn shell_anchor(&self) -> Option<(DefId, usize, DVec3, DVec3, f64)> {
+        if self.tool != SHELL || self.shell_op.is_some() {
+            return None;
+        }
+        let index = self.selected_feature()?;
+        let asm = self.doc.assembly();
+        let def = asm.context_def(&self.ctx)?;
+        let Feature::Shell {
+            faces,
+            thickness,
+            broken: false,
+            ..
+        } = asm.def(def)?.stack.as_ref()?.features.get(index)?
+        else {
+            return None;
+        };
+        let f = faces.first().filter(|f| f.normal != DVec3::ZERO)?;
+        Some((def, index, f.centre, f.normal, *thickness))
+    }
+
+    /// A press on the thickness handle starts dragging it. True if it did.
+    fn shell_handle_press(&mut self, s: DVec2) -> bool {
+        let Some((def, index, centre, normal, t)) = self.shell_anchor() else {
+            return false;
+        };
+        let near = self
+            .view()
+            .to_screen(centre + normal * t)
+            .is_some_and(|(q, _)| q.distance(s) < GRAB * self.settings.aperture);
+        if near {
+            self.shell_handle = Some(ShellHandle {
+                def,
+                index,
+                centre,
+                normal,
+                start: t,
+                size: t,
+            });
+        }
+        near
+    }
+
+    /// While the handle is held: the thickness is how far along the face's
+    /// normal the pointer is, shown on the body. True while dragging.
+    fn shell_handle_drag(&mut self, s: DVec2, view: &View) -> bool {
+        let Some(h) = self.shell_handle.clone() else {
+            return false;
+        };
+        let (o, d) = view.ray(s);
+        if let Some(t) = along_line(o, d, h.centre, h.normal)
+            && t.abs() > self.scene.tol.dist
+            && t != h.size
+            && let Some(m) = self.shell_at_thickness(h.def, h.index, t)
+        {
+            if let Some(h) = &mut self.shell_handle {
+                h.size = t;
+            }
+            self.set_preview(Some(m));
+        }
+        self.overlay_dirty = true;
+        self.dirty = true;
+        true
+    }
+
+    /// The body with shell `index` at thickness `t`, or None if the kernel
+    /// refuses it.
+    fn shell_at_thickness(&self, def: DefId, index: usize, t: f64) -> Option<prism_topo::Model> {
+        let mut stack = self.doc.assembly().def(def)?.stack.clone()?;
+        match stack.features.get_mut(index)? {
+            Feature::Shell { thickness, .. } => *thickness = t,
+            _ => return None,
+        }
+        let m = stack.evaluate();
+        (!stack.features[index].is_broken()).then_some(m)
+    }
+
+    /// The button let go on the handle: the thickness it was dragged to is
+    /// set, in one undo step. True if a handle was held.
+    pub(super) fn shell_handle_release(&mut self) -> bool {
+        let Some(h) = self.shell_handle.take() else {
+            return false;
+        };
+        self.set_preview(None);
+        if h.size != h.start {
+            self.run(Command::SetFeatureSize {
+                def: h.def,
+                index: h.index,
+                size: h.size,
+            });
+            // The feature's faces are new ones: keep it selected.
+            self.select_feature(h.index);
+        }
+        self.overlay_dirty = true;
+        self.refresh();
+        true
+    }
+
     pub(super) fn shell_clear(&mut self) {
         self.shell_op = None;
+        self.shell_handle = None;
         self.shell_open.clear();
     }
 
@@ -380,6 +507,7 @@ impl Session {
                 .filter(|r| *r != prism_ops::shelling::ZERO)
                 .unwrap_or(if op.fixed { FIXED } else { SIZING }),
             None if self.shell_size.is_some() => FIXED,
+            None if self.shell_anchor().is_some() => HANDLE,
             None => HOW,
         }
     }
@@ -420,6 +548,28 @@ impl Session {
                     });
                 }
             }
+        }
+        if let Some((_, _, centre, normal, t)) = self.shell_anchor() {
+            let drag = self.shell_handle.as_ref();
+            let at = centre + normal * drag.map_or(t, |h| h.size);
+            let color = if drag.is_some() {
+                self.style.hover
+            } else {
+                fb.guide
+            };
+            o.lines.push(Line {
+                a: centre,
+                b: at,
+                color,
+                width: fb.target_width,
+                dash: [6.0, 4.0],
+            });
+            o.marks.push(Mark {
+                at,
+                shape: Shape::Square,
+                color,
+                size: fb.glyph_size,
+            });
         }
         if let Some(op) = &self.shell_op {
             for [a, b] in &op.ghost {

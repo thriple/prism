@@ -4815,3 +4815,9 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Owner chose:** sharp mitres by default; smooth and creased joins built together; and asked for a ghost of what will happen, then handles with snapping, to place each new edge (the touching halves would clash).
 - **Plan:** brief 49 (four parts). Not started; the design question (rim styles: Square, Flush to a plane, Custom; handles that snap) is in the brief for the owner to react to.
 
+## Live shell, part 5b: the thickness handle (brief 48, owner 2026-11-19)
+
+- **Owner point:** typing a number goes against the spirit of the app; changing things should be physical. So the live shell gets a drag handle like the fillet's, and brief 49 plans handles (and snapping) for the rim edges too.
+- **Built:** `shell_anchor`, `shell_handle_press / drag / release` and the overlay handle in `prism-tools/src/session/shelling.rs`; a press on the handle starts a drag, a drag previews on a stack clone, release is one `SetFeatureSize`.
+- **Left over:** snapping the thickness; a handle where the first face is curved; the handle sits on the first face shelled only (a shell of several faces has one handle); not checked on screen. The same wish ("every number has a handle") applies to the Offset tool's last distance, the cutter fields of a live boolean (drag the cutter) and Position/Size in the Inspector.
+

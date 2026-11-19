@@ -8714,3 +8714,111 @@ fn a_shell_stays_live_and_its_thickness_is_changed_in_the_inspector() {
     assert!(d.s.document().assembly().root().stack.is_none());
     assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
 }
+
+#[test]
+fn a_live_shell_has_a_handle_that_drags_its_thickness() {
+    let mut d = Driver::empty();
+    box_2m(&mut d);
+    d.tool(SHELL);
+    d.hover(DVec3::new(1.0, 1.0, 2.0));
+    d.send(Input::Press {
+        button: Button::Left,
+        x: d.screen(DVec3::new(1.0, 1.0, 2.0)).x,
+        y: d.screen(DVec3::new(1.0, 1.0, 2.0)).y,
+        shift: true,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    d.click(DVec3::new(1.0, 0.0, 1.0));
+    d.hover(DVec3::new(1.0, 0.3, 1.2));
+    d.typed("0.1");
+    let tray = 8.0 - 1.8 * 1.8 * 1.9;
+    assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
+    // No handle until the feature is selected.
+    let none = squares(&d).len();
+    d.s.select_feature(0);
+    let marks = squares(&d);
+    assert_eq!(marks.len(), none + 1, "a handle appears");
+    let handle = *marks.last().unwrap();
+    // It is on the wall: the middle of the face shelled, 0.1 in from it.
+    assert!(
+        (handle - DVec3::new(1.0, 0.1, 1.0)).length() < 1e-9,
+        "{handle:?}"
+    );
+    let log = d.s.document().log().count();
+    // Grab it and drag it in to 0.2: the body shows it, nothing is made yet.
+    let from = d.screen(handle);
+    d.send(Input::Move {
+        x: from.x,
+        y: from.y,
+    });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: from.x,
+        y: from.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    let to = d.screen(DVec3::new(1.0, 0.2, 1.0));
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert_eq!(d.s.document().log().count(), log, "nothing until let go");
+    let drawn = |s: &prism_view::Scene| -> f64 {
+        s.faces
+            .iter()
+            .map(|f| {
+                let p = &f.outer;
+                (0..p.len())
+                    .map(|i| p[i].perp_dot(p[(i + 1) % p.len()]))
+                    .sum::<f64>()
+                    .abs()
+                    / 2.0
+            })
+            .sum()
+    };
+    assert!(
+        (drawn(d.s.display_scene()) - drawn(d.s.scene())).abs() > 1e-6,
+        "the body is drawn with the new thickness"
+    );
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(d.s.document().log().count(), log + 1, "one step");
+    assert_eq!(d.s.selected_feature(), Some(0), "still selected");
+    let thick = 8.0 - 1.6 * 1.6 * 1.8;
+    assert!(
+        (model_volume(d.s.model()) - thick).abs() < 0.05,
+        "{}",
+        model_volume(d.s.model())
+    );
+    act(&mut d, "edit.undo");
+    assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
+    // Esc while dragging leaves it as it was.
+    d.s.select_feature(0);
+    let handle = *squares(&d).last().unwrap();
+    let from = d.screen(handle);
+    d.send(Input::Move {
+        x: from.x,
+        y: from.y,
+    });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: from.x,
+        y: from.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    d.send(Input::Move {
+        x: from.x + 15.0,
+        y: from.y,
+    });
+    d.send(Input::Key { key: Key::Escape });
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
+}

@@ -501,6 +501,8 @@ pub struct Session {
     /// The size handle of the selected feature, while it is dragged, and
     /// its guide.
     round_handle: Option<features::Handle>,
+    /// A drag of a live shell's thickness handle.
+    shell_handle: Option<shelling::ShellHandle>,
     guide_cache: features::GuideCache,
     /// The Loft tool: the sides being picked, the threshold (degrees), the
     /// presets, the sides of the last loft (presets change it), and why it
@@ -756,6 +758,7 @@ impl Session {
             round_refused: None,
             round_down: None,
             round_handle: None,
+            shell_handle: None,
             guide_cache: Default::default(),
             lofting: lofting::Lofting::default(),
             loft_turn: prism_ops::sides::TURN_DEG,

@@ -830,7 +830,7 @@ impl Session {
             t if super::booleans::is_solid_tool(t) => self.solid_press(s),
             TEXTURE => self.texpos_press(s),
             FILLET => self.round_press(s, n_clicks, shift, ctrl),
-            SHELL => self.shell_press(shift),
+            SHELL => self.shell_press(s, shift),
             LOFT => self.loft_press(shift),
             FOLLOW => self.follow_press(s),
             PUSH => self.push_press(s, n_clicks),
@@ -864,6 +864,9 @@ impl Session {
     }
 
     pub(super) fn edit_release(&mut self, s: DVec2) {
+        if self.tool == SHELL && self.shell_handle_release() {
+            return;
+        }
         if self.tool == FILLET {
             self.round_release();
             return;
