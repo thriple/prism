@@ -189,7 +189,14 @@ pub(crate) fn offset_surface(
                 .iter()
                 .flat_map(|x| turns.iter().map(move |t| x + t * period))
                 .filter(|x| *x > a && *x < b)
-                .map(|x| (x - a) / (b - a)),
+                .map(|x| (x - a) / (b - a))
+                // A knot this close to the box's own edge, in fraction,
+                // is that edge: a round trip through a different path
+                // (the box came from the trimmed face, the knot from the
+                // surface it trims) can leave the two a few ULPs apart,
+                // which would otherwise read as a crease a hair inside
+                // the edge and shorten the fit to just short of it.
+                .filter(|f| *f > 1e-9 && *f < 1.0 - 1e-9),
         );
         out.sort_by(f64::total_cmp);
         out.dedup_by(|x, y| (*x - *y).abs() < 1e-12);

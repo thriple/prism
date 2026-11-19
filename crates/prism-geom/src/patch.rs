@@ -611,9 +611,22 @@ impl Patch {
         self.surface.eval(u, v)
     }
 
-    /// Which way the face points at (`u`, `v`).
+    /// Which way the face points at (`u`, `v`): a hair inside the
+    /// patch's own edge, not exactly on it. Where that edge lands on a
+    /// knot the surface repeats (to join another face at an angle, not
+    /// smoothly, as two trimmed from the same surface can), landing on
+    /// the knot exactly reads whichever side a knot's own convention
+    /// favours, not necessarily this patch's own.
     pub fn normal(&self, u: f64, v: f64) -> DVec3 {
-        let n = self.surface.normal(u, v);
+        let inward = |t: f64, (lo, hi): (f64, f64)| {
+            if hi > lo && t >= hi {
+                hi - (hi - lo) * 1e-9
+            } else {
+                t
+            }
+        };
+        let (iu, iv) = (inward(u, self.u), inward(v, self.v));
+        let n = self.surface.normal(iu, iv);
         if self.flipped { -n } else { n }
     }
 
@@ -737,6 +750,55 @@ mod tests {
         let q = patch.transformed(&m);
         let mirrored = DVec3::new(-n.x, n.y, n.z);
         assert!(q.normal(u, v).distance(mirrored) < 1e-9);
+    }
+
+    /// One surface folded in a right angle part way across v (an L bend,
+    /// degree 1 so a single knot already makes a sharp corner), trimmed
+    /// into two patches that share that fold as their boundary.
+    fn folded_surface() -> NurbsSurface {
+        let p = |x: f64, y: f64, z: f64| DVec3::new(x, y, z);
+        NurbsSurface::new(
+            [1, 1],
+            [vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 0.5, 1.0, 1.0]],
+            [2, 3],
+            vec![
+                p(0.0, 0.0, 0.0),
+                p(0.0, 1.0, 0.0),
+                p(0.0, 1.0, 1.0),
+                p(1.0, 0.0, 0.0),
+                p(1.0, 1.0, 0.0),
+                p(1.0, 1.0, 1.0),
+            ],
+            vec![1.0; 6],
+            [false, false],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_trimmed_patch_reads_its_own_side_of_a_fold_at_its_edge() {
+        use std::sync::Arc;
+        let s = Arc::new(folded_surface());
+        let below = Patch {
+            surface: s.clone(),
+            u: (0.0, 1.0),
+            v: (0.0, 0.5),
+            flipped: false,
+        };
+        let above = Patch {
+            surface: s,
+            u: (0.0, 1.0),
+            v: (0.5, 1.0),
+            flipped: false,
+        };
+        // Each patch's own interior, just off the fold.
+        let n_below = below.normal(0.5, 0.25);
+        let n_above = above.normal(0.5, 0.75);
+        assert!(n_below.distance(n_above) > 1.0, "the fold is a right angle");
+        // At the fold itself, each patch still reads its own side, not
+        // the other's (the knot there is right-continuous by default).
+        assert!(below.normal(0.5, 0.5).distance(n_below) < 1e-6);
+        assert!(above.normal(0.5, 0.5).distance(n_above) < 1e-6);
     }
 
     #[test]
