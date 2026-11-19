@@ -6,7 +6,7 @@
 
 ## Size
 XL. Owner chose (2026-11-19) to build the smooth and creased joins together, with sharp mitres by default. Parts, each pushed and tested on its own:
-1. **Offset a joined set of freeform faces.** Each face is offset (as a lone face is now); where two faces join smoothly (the same surface direction along the shared edge, within a tolerance) their offsets meet along the offset of the shared edge. The sheet becomes a slab with square rims. Refusals stay specific.
+1. **Offset a joined set of freeform faces (done).** Each face is offset (as a lone face is now); where two faces join smoothly (the same surface direction along the shared edge, within a tolerance) their offsets meet along the offset of the shared edge. The sheet becomes a slab with square rims. Refusals stay specific. Freeform joined to flat is not in this part (still refused); that is folded into part 2.
 2. **Creases.** Where joined faces meet at an angle (hull to flat face, patch to patch with a crease), the two offsets are extended and trimmed to meet in a sharp mitre, found by intersecting the offset surfaces (the boolean code already crosses freeform faces along cubics). Inside corners trim, outside corners extend. Rounded corners are not in this part.
 3. **Where each new edge goes** (the owner's open question, below): rim styles, a ghost, and handles with snapping.
 4. **Live and Inspector.** It is the live Shell feature (brief 48 part 5a), so the thickness, the open faces and the rim style are editable afterwards.

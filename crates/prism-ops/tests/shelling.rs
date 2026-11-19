@@ -410,6 +410,40 @@ fn a_freeform_face_on_its_own_becomes_a_slab() {
     assert!(volume(&m).abs() > 0.1, "{}", volume(&m));
 }
 
+/// A loft-like sheet of three smooth NURBS faces (brief 49 part 1): four
+/// open curves lofted give one surface cut into three faces, sharing the
+/// middle two curves as smooth interior joins.
+#[test]
+fn a_loft_like_sheet_of_smooth_freeform_faces_thickens_to_a_valid_solid() {
+    let mut m = Model::new();
+    let wave = |z: f64, bump: f64| {
+        prism_geom::Nurbs::open(
+            &[
+                DVec3::new(0.0, 0.0, z),
+                DVec3::new(1.0, bump, z),
+                DVec3::new(3.0, -bump, z),
+                DVec3::new(4.0, 0.0, z),
+            ],
+            3,
+        )
+        .unwrap()
+    };
+    for (z, bump) in [(0.0, 2.0), (2.0, 0.5), (4.0, 1.0), (6.0, 0.5)] {
+        prism_ops::sticky::add_spline(&mut m, &wave(z, bump));
+    }
+    let edges: BTreeSet<_> = m.edges().map(|(id, _)| id).collect();
+    let faces = prism_ops::loft::loft(&mut m, &edges).unwrap();
+    assert_eq!(faces.len(), 3, "one face between each pair of curves");
+    let body: BTreeSet<FaceId> = faces.into_iter().collect();
+    let area: f64 = body.iter().map(|f| m.face_area(*f)).sum();
+    let d = 0.3;
+    assert!(shelling::refusal(&m, &body, &BTreeSet::new(), d).is_none());
+    shelling::shell(&mut m, &body, &BTreeSet::new(), d).unwrap();
+    assert!(is_solid(&m));
+    let v = volume(&m);
+    assert!((v - area * d).abs() < 0.05 * v, "{v} {area}");
+}
+
 #[test]
 fn a_sphere_is_hollowed() {
     // A sphere of radius 1, by Follow Me of a half disc round a circle far
@@ -525,4 +559,77 @@ fn a_rim_corner_of_four_faces_is_still_refused() {
         shelling::refusal(&m, &any_face(&m), &[side].into(), -0.05),
         Some(CORNER)
     );
+}
+
+/// Two flat quads, each stored as a NURBS patch (not simplified to a
+/// plane), folded at a right angle along their shared edge.
+fn folded_patches() -> (Model, FaceId, FaceId) {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_topo::Face;
+    use std::sync::Arc;
+
+    let square = |p00: DVec3, p01: DVec3, p10: DVec3, p11: DVec3| {
+        let k = vec![0.0, 0.0, 1.0, 1.0];
+        Arc::new(
+            NurbsSurface::new(
+                [1, 1],
+                [k.clone(), k],
+                [2, 2],
+                vec![p00, p01, p10, p11],
+                vec![1.0; 4],
+                [false, false],
+            )
+            .unwrap(),
+        )
+    };
+    // The shared edge: the line x = 0, y = 0, z from 0 to 1.
+    let (p, q) = (DVec3::new(0.0, 0.0, 0.0), DVec3::new(0.0, 0.0, 1.0));
+    let sa = square(p, q, DVec3::new(1.0, 0.0, 0.0), DVec3::new(1.0, 0.0, 1.0));
+    let sb = square(p, q, DVec3::new(0.0, 1.0, 0.0), DVec3::new(0.0, 1.0, 1.0));
+
+    let mut m = Model::new();
+    let vp = m.add_vertex(p);
+    let vq = m.add_vertex(q);
+    let shared = m.add_edge(vp, vq).unwrap();
+
+    let ra = m.add_vertex(DVec3::new(1.0, 0.0, 0.0));
+    let sa_v = m.add_vertex(DVec3::new(1.0, 0.0, 1.0));
+    let e1 = m.add_edge(vp, ra).unwrap();
+    let e2 = m.add_edge(ra, sa_v).unwrap();
+    let e3 = m.add_edge(sa_v, vq).unwrap();
+    let a = m.add_face(Face::with_edges(
+        vec![vp, ra, sa_v, vq],
+        vec![],
+        Surface::Nurbs(Patch::whole(
+            Arc::try_unwrap(sa).unwrap_or_else(|a| (*a).clone()),
+        )),
+        vec![vec![e1, e2, e3, shared]],
+    ));
+
+    let rb = m.add_vertex(DVec3::new(0.0, 1.0, 0.0));
+    let sb_v = m.add_vertex(DVec3::new(0.0, 1.0, 1.0));
+    let e4 = m.add_edge(vq, sb_v).unwrap();
+    let e5 = m.add_edge(sb_v, rb).unwrap();
+    let e6 = m.add_edge(rb, vp).unwrap();
+    let b = m.add_face(Face::with_edges(
+        vec![vq, sb_v, rb, vp],
+        vec![],
+        Surface::Nurbs(Patch::whole(
+            Arc::try_unwrap(sb).unwrap_or_else(|a| (*a).clone()),
+        )),
+        vec![vec![e4, e5, e6, shared]],
+    ));
+    (m, a, b)
+}
+
+#[test]
+fn a_crease_between_freeform_faces_is_refused_specifically() {
+    let (m, a, b) = folded_patches();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let before = m.clone();
+    let r = shelling::refusal(&m, &body, &BTreeSet::new(), 0.3);
+    assert_eq!(r, Some(shelling::CREASE));
+    let mut m2 = m.clone();
+    assert!(shelling::shell(&mut m2, &body, &BTreeSet::new(), 0.3).is_err());
+    assert_eq!(m, before, "a refusal changes nothing");
 }

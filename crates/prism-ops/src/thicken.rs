@@ -157,7 +157,12 @@ pub fn slab(model: &Model, face: FaceId, d: f64) -> Result<Slab, &'static str> {
 
 /// The surface `d` along the patch's normal from it over the box of
 /// `outline` in (u, v), within `eps` of the true offset.
-fn offset_surface(patch: &Patch, outline: &[DVec2], d: f64, eps: f64) -> Option<NurbsSurface> {
+pub(crate) fn offset_surface(
+    patch: &Patch,
+    outline: &[DVec2],
+    d: f64,
+    eps: f64,
+) -> Option<NurbsSurface> {
     let (lo, hi) = outline
         .iter()
         .fold((DVec2::INFINITY, DVec2::NEG_INFINITY), |(a, b), p| {
@@ -283,7 +288,7 @@ fn halved(nodes: &[f64], split: &[bool]) -> Vec<f64> {
 /// The ends of an edge (as fractions along it) and where its offset bends
 /// sharply between: its own curve's knots, and where it crosses the
 /// surface's knot lines.
-fn kinks(curve: &Curve, along: &dyn Fn(f64) -> DVec3, patch: &Patch) -> Vec<f64> {
+pub(crate) fn kinks(curve: &Curve, along: &dyn Fn(f64) -> DVec3, patch: &Patch) -> Vec<f64> {
     let mut out = Vec::new();
     if let Curve::Spline(sp) = curve {
         let (a, b) = (sp.t0, sp.t1);
@@ -324,7 +329,7 @@ fn kinks(curve: &Curve, along: &dyn Fn(f64) -> DVec3, patch: &Patch) -> Vec<f64>
 /// An edge as a curve of degree 5, and its offset with the same knots,
 /// both within `eps` of the edge and of its offset: fitted on knots at
 /// `nodes` (where they may bend), split until close.
-fn edge_pair(
+pub(crate) fn edge_pair(
     along: &dyn Fn(f64) -> DVec3,
     off: &dyn Fn(DVec3) -> DVec3,
     nodes: &[f64],
@@ -353,7 +358,7 @@ fn edge_pair(
 
 /// The ruled surface from `low` (at v = 0) to `high` (at v = 1), two
 /// curves with the same knots.
-fn ruled(low: &Nurbs, high: &Nurbs) -> Option<NurbsSurface> {
+pub(crate) fn ruled(low: &Nurbs, high: &Nurbs) -> Option<NurbsSurface> {
     let n = low.points().len();
     if high.points().len() != n || low.knots() != high.knots() {
         return None;
@@ -377,7 +382,7 @@ fn ruled(low: &Nurbs, high: &Nurbs) -> Option<NurbsSurface> {
 /// The plane a side lies in (all its control points within `eps` of it),
 /// facing the way the side faces: a flat side is a flat face (pulling a
 /// wall out gives flat ends), which is also far quicker to check.
-fn flat(side: &Patch, eps: f64) -> Option<Surface> {
+pub(crate) fn flat(side: &Patch, eps: f64) -> Option<Surface> {
     let s = &side.surface;
     let n = side.normal(0.5, 0.5);
     let o = s.eval(0.5, 0.5);
