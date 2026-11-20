@@ -614,14 +614,20 @@ fn freeform_slab(
         // samples, so the reason is specific.
         let sharp = (0..=8).any(|i| {
             let p = along(i as f64 / 8.0);
-            let ns = [face_a.surface.normal_at(p), face_b.surface.normal_at(p)];
+            let ns = unique_normals(
+                &[face_a.surface.normal_at(p), face_b.surface.normal_at(p)],
+                &tol,
+            );
             corner(&ns, d, &tol).is_none()
         });
         if sharp {
             return Err(SHARP);
         }
         let raw_meet = |p: DVec3| {
-            let ns = [face_a.surface.normal_at(p), face_b.surface.normal_at(p)];
+            let ns = unique_normals(
+                &[face_a.surface.normal_at(p), face_b.surface.normal_at(p)],
+                &tol,
+            );
             let guess = corner(&ns, d, &tol).map_or(p, |x| p + x);
             meet(off_a, off_b, guess, &tol)
         };
@@ -1175,11 +1181,9 @@ fn move_point(
 ) -> Result<DVec3, &'static str> {
     let mut ns: Vec<DVec3> = Vec::new();
     for f in fs {
-        let n = model.face(*f).ok_or(NOTHING)?.surface.normal_at(p);
-        if !ns.iter().any(|m| tol.parallel(*m, n) && m.dot(n) > 0.0) {
-            ns.push(n);
-        }
+        ns.push(model.face(*f).ok_or(NOTHING)?.surface.normal_at(p));
     }
+    let ns = unique_normals(&ns, tol);
     corner(&ns, d, tol).map(|x| p + x).ok_or(CORNER)
 }
 
@@ -1197,6 +1201,23 @@ fn circumcentre(a: DVec3, b: DVec3, c: DVec3) -> Option<DVec3> {
     (nn > 0.0).then(|| {
         a + (ac.cross(n) * ab.length_squared() + n.cross(ab) * ac.length_squared()) / (2.0 * nn)
     })
+}
+
+/// `ns`, with any pointing the same way (within tolerance) as an
+/// earlier one dropped: `corner` only wants to see each direction once,
+/// and only refuses for directions that truly oppose (it reads a
+/// surface merely tangent to another one, not creased, the same way).
+fn unique_normals(ns: &[DVec3], tol: &Tol) -> Vec<DVec3> {
+    let mut out: Vec<DVec3> = Vec::new();
+    for n in ns {
+        if !out
+            .iter()
+            .any(|m: &DVec3| tol.parallel(*m, *n) && m.dot(*n) > 0.0)
+        {
+            out.push(*n);
+        }
+    }
+    out
 }
 
 /// The shortest move that puts a point `d` along each unit normal in

@@ -623,6 +623,103 @@ fn folded_patches() -> (Model, FaceId, FaceId) {
     (m, a, b)
 }
 
+/// Two NURBS patches sharing an edge, creased along most of it but
+/// exactly tangent (the same normal) at one end: a real boat hull has
+/// a join like this, fading out to flat at one end of a chine line.
+fn tapering_fold() -> (Model, FaceId, FaceId) {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_topo::Face;
+    use std::sync::Arc;
+
+    let k = vec![0.0, 0.0, 1.0, 1.0];
+    let (p, q) = (DVec3::new(0.0, 0.0, 0.0), DVec3::new(0.0, 0.0, 1.0));
+    let sa = Arc::new(
+        NurbsSurface::new(
+            [1, 1],
+            [k.clone(), k.clone()],
+            [2, 2],
+            vec![p, q, DVec3::new(1.0, 0.0, 0.0), DVec3::new(1.0, 0.0, 1.0)],
+            vec![1.0; 4],
+            [false, false],
+        )
+        .unwrap(),
+    );
+    // Tangent to A (the same normal) at p, a 90 degree crease at q.
+    let sb = Arc::new(
+        NurbsSurface::new(
+            [1, 1],
+            [k.clone(), k],
+            [2, 2],
+            vec![p, q, DVec3::new(1.0, 0.0, 1.0), DVec3::new(0.0, 1.0, 1.0)],
+            vec![1.0; 4],
+            [false, false],
+        )
+        .unwrap(),
+    );
+
+    let mut m = Model::new();
+    let vp = m.add_vertex(p);
+    let vq = m.add_vertex(q);
+    let shared = m.add_edge(vp, vq).unwrap();
+
+    let ra = m.add_vertex(DVec3::new(1.0, 0.0, 0.0));
+    let sa_v = m.add_vertex(DVec3::new(1.0, 0.0, 1.0));
+    let e1 = m.add_edge(vp, ra).unwrap();
+    let e2 = m.add_edge(ra, sa_v).unwrap();
+    let e3 = m.add_edge(sa_v, vq).unwrap();
+    let a = m.add_face(Face::with_edges(
+        vec![vp, ra, sa_v, vq],
+        vec![],
+        Surface::Nurbs(Patch::whole(
+            Arc::try_unwrap(sa).unwrap_or_else(|a| (*a).clone()),
+        )),
+        vec![vec![e1, e2, e3, shared]],
+    ));
+
+    let rb = m.add_vertex(DVec3::new(1.0, 0.0, 1.0));
+    let sb_v = m.add_vertex(DVec3::new(0.0, 1.0, 1.0));
+    let e4 = m.add_edge(vq, sb_v).unwrap();
+    let e5 = m.add_edge(sb_v, rb).unwrap();
+    let e6 = m.add_edge(rb, vp).unwrap();
+    let b = m.add_face(Face::with_edges(
+        vec![vq, sb_v, rb, vp],
+        vec![],
+        Surface::Nurbs(Patch::whole(
+            Arc::try_unwrap(sb).unwrap_or_else(|a| (*a).clone()),
+        )),
+        vec![vec![e4, e5, e6, shared]],
+    ));
+    (m, a, b)
+}
+
+#[test]
+fn a_crease_tangent_at_one_end_is_not_mistaken_for_a_fold_back() {
+    let (m, a, b) = tapering_fold();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let tol = m.tol();
+    let fa = m.face(a).unwrap();
+    let fb = m.face(b).unwrap();
+    // The fixture's own premise: exactly tangent at one end of the
+    // shared edge (p = origin), a real crease at the other (q).
+    let (p, q) = (DVec3::ZERO, DVec3::new(0.0, 0.0, 1.0));
+    let (na0, nb0) = (fa.surface.normal_at(p), fb.surface.normal_at(p));
+    assert!(tol.parallel(na0, nb0) && na0.dot(nb0) > 0.0, "tangent at p");
+    let (na1, nb1) = (fa.surface.normal_at(q), fb.surface.normal_at(q));
+    assert!(na1.dot(nb1).abs() < 0.1, "a real crease at q");
+
+    // Neither sign is "too sharp" (the bug): a tangent end is not a
+    // fold back. Whether either is an outside corner (extends, brief
+    // 49's own separate, open part, given this crease's own shape) is
+    // not what this test is about.
+    for d in [0.1, -0.1] {
+        assert_ne!(
+            shelling::refusal(&m, &body, &BTreeSet::new(), d),
+            Some(shelling::SHARP),
+            "d={d}"
+        );
+    }
+}
+
 /// Two unit squares at a right angle (`folded_patches`) thicken to a
 /// sharp mitre on an inside corner (trimmed, by hand: the two offset
 /// rectangles are short of a `d` by `d` square where they meet, so

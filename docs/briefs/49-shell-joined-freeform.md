@@ -32,7 +32,7 @@ Rounded corners (a style choice later), Union of freeform solids (the touching h
 ## Tests
 - A loft-like sheet of three smooth NURBS faces thickens to a valid solid whose volume is close to area x thickness.
 - A sheet with a crease (a flat face and a freeform face at an angle) gets a sharp mitre; the result is valid.
-- The half-hull file thickens inward and outward, valid, both rims square; with the centre-plane face left open it is flush to that plane. **Not yet reachable** (2026-11-19, part 2): found while testing this, a pre-existing part 3c issue (not a part 49 one) kept two of the hull's three NURBS faces from offsetting at all, even alone — now fixed (NOTES "Offset-fit issue"). The third face (a thin sliver between two knuckles, its own rim running along one of them) still refuses with a distinct, not yet understood fitting error; needs its own look before this line can be checked.
+- The half-hull file thickens inward and outward, valid, both rims square; with the centre-plane face left open it is flush to that plane. **Not yet reachable** (2026-11-19, part 2): two pre-existing issues found while testing this, both fixed (NOTES "Offset-fit issue", "A found-while-testing false 'too sharp' refusal") — a trimmed patch misreading a shared knuckle knot, and `corner` refusing a vertex where a crease fades to tangent. The hull itself now reaches, and is blocked only by, part 2b's own outside-corner limit (`EXTEND`), in both directions — the real remaining gap, not an accident.
 - A refused case says why and changes nothing; the live feature runs again after a size change.
 
 ## MCP
