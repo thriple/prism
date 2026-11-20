@@ -685,7 +685,12 @@ fn freeform_slab(
             let span = (pb - pa).length_squared().max(1e-300);
             let off = |p: DVec3| {
                 let t = ((p - pa).dot(pb - pa) / span).clamp(0.0, 1.0);
-                naive(p) + corr_a * (1.0 - t) + corr_b * t
+                let blended = naive(p) + corr_a * (1.0 - t) + corr_b * t;
+                // The straight-line blend of a correction can stray off
+                // a curved face's own offset even where each of its own
+                // ends is truly on it; snapped back onto it (never past
+                // its own edge, since a mitred end is already there).
+                offsets[id].project(blended)
             };
             let breaks = match f.surface.patch() {
                 Some(patch) => crate::thicken::kinks(&e.curve, &along, patch),
@@ -730,17 +735,23 @@ fn freeform_slab(
             // straight offset edge instead of a mitre that would reach
             // past one of them, bridged by a small face between the two
             // once the rims below give it the risers it closes against.
-            let corrected = |surface: &Surface, face_id: FaceId, p: DVec3| -> DVec3 {
+            let corrected = |surface: &Surface, offset: &Surface, face_id: FaceId, p: DVec3| {
                 let naive = |q: DVec3| q + surface.normal_at(q) * d;
                 let t = ((p - pa).dot(pb - pa) / span).clamp(0.0, 1.0);
                 let (ea, eb) = (
                     point_for(edge_data.a, face_id),
                     point_for(edge_data.b, face_id),
                 );
-                naive(p) + (ea - naive(pa)) * (1.0 - t) + (eb - naive(pb)) * t
+                let blended = naive(p) + (ea - naive(pa)) * (1.0 - t) + (eb - naive(pb)) * t;
+                // The straight-line blend of a correction can stray off a
+                // curved face's own offset even where each of its own
+                // ends (checked by `truly_on`) does not; snapped back
+                // onto it (never past its own edge, since a split end is
+                // already there, not beyond it).
+                offset.project(blended)
             };
-            let fn_a = |t: f64| corrected(&face_a.surface, *fa, along(t));
-            let fn_b = |t: f64| corrected(&face_b.surface, *fb, along(t));
+            let fn_a = |t: f64| corrected(&face_a.surface, off_a, *fa, along(t));
+            let fn_b = |t: f64| corrected(&face_b.surface, off_b, *fb, along(t));
             let (high_a, high_b) =
                 crate::thicken::twin_fit(&fn_a, &fn_b, &breaks, eps).ok_or(TOO_THICK)?;
             let b = edge(
@@ -767,13 +778,6 @@ fn freeform_slab(
             bottom_of.insert(*e, b);
             crease_top.insert((*e, *fa), ta);
             crease_top.insert((*e, *fb), tb);
-            // The bridge faces the way both faces do (their un-offset
-            // normals, which still point away from the material on
-            // either side of the gap).
-            let out_ref = {
-                let mid = along(0.5);
-                (face_a.surface.normal_at(mid) + face_b.surface.normal_at(mid)).normalize_or_zero()
-            };
             bridges.push(Bridge {
                 fa: *fa,
                 fb: *fb,
@@ -783,7 +787,6 @@ fn freeform_slab(
                 tb,
                 high_a,
                 high_b,
-                out_ref,
             });
             continue;
         }
@@ -925,12 +928,13 @@ fn freeform_slab(
     // `close_bridge_end` (a triangle where both of this bridge's own
     // faces split there, part 2c's plain shared edge where only one
     // does, nothing where neither does: a third face there kept the one
-    // shared corner for both).
+    // shared corner for both). Built before the surface's own `flipped`
+    // is chosen, so that choice can match the loop's own winding
+    // directly (part 2c: pinched to a triangle at an end nothing
+    // splits, the loop is shorter, but still the one true winding to
+    // match, found the same way regardless).
     let mut asym_cap: BTreeMap<VertexId, EdgeId> = BTreeMap::new();
     for br in bridges {
-        let raw = Patch::whole(crate::thicken::ruled(&br.high_a, &br.high_b).ok_or(TOO_THICK)?);
-        let flipped = raw.normal(0.5, 0.5).dot(br.out_ref) < 0.0;
-        let bridge = Patch { flipped, ..raw };
         // Each end's own cap faces past that end, along the crease: the
         // same direction its two rim walls' own end caps already face
         // (where it is a triangle against risers, which must match).
@@ -968,6 +972,9 @@ fn freeform_slab(
             loop_e.push(cap);
             loop_v.push(v);
         }
+        let raw = Patch::whole(crate::thicken::ruled(&br.high_a, &br.high_b).ok_or(TOO_THICK)?);
+        let flipped = raw.normal(0.5, 0.5).dot(loop_normal(&s, &loop_v)) < 0.0;
+        let bridge = Patch { flipped, ..raw };
         s.add_face(Face::with_edges(
             loop_v,
             vec![],
@@ -992,7 +999,6 @@ struct Bridge {
     tb: EdgeId,
     high_a: Nurbs,
     high_b: Nurbs,
-    out_ref: DVec3,
 }
 
 /// The small flat face closing the gap, at one end of an outside
