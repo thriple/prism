@@ -623,6 +623,105 @@ fn folded_patches() -> (Model, FaceId, FaceId) {
     (m, a, b)
 }
 
+/// Three faces meeting at one vertex (part 2c): a NURBS patch `a` (as
+/// `folded_patches`) and two flat faces `b`, `c`, each a 90 degree fold
+/// from `a` (so `a`'s crease with each of them can be an outside
+/// corner, same as `folded_patches`), but `b` and `c` meet each other
+/// smoothly... no: at a plain inside corner (both flat, so never
+/// "outside" themselves). The shared vertex `q` therefore has `a` as
+/// the one face an outside corner's mitre there can reach past, while
+/// `b` and `c` keep the one shared corner between themselves.
+fn three_face_corner() -> (Model, FaceId, FaceId, FaceId) {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_math::Plane;
+    use prism_topo::Face;
+    use std::sync::Arc;
+
+    let p = DVec3::new(0.0, 0.0, 0.0);
+    let q = DVec3::new(0.0, 0.0, 1.0);
+    let ra = DVec3::new(1.0, 0.0, 0.0);
+    let sa_v = DVec3::new(1.0, 0.0, 1.0);
+    let rb = DVec3::new(0.0, 1.0, 0.0);
+    let sb_v = DVec3::new(0.0, 1.0, 1.0);
+    let cc = DVec3::new(1.0, 1.0, 1.0);
+
+    let k = vec![0.0, 0.0, 1.0, 1.0];
+    let sa = Arc::new(
+        NurbsSurface::new(
+            [1, 1],
+            [k.clone(), k],
+            [2, 2],
+            vec![p, q, ra, sa_v],
+            vec![1.0; 4],
+            [false, false],
+        )
+        .unwrap(),
+    );
+
+    let mut m = Model::new();
+    let vp = m.add_vertex(p);
+    let vq = m.add_vertex(q);
+    let shared_ab = m.add_edge(vp, vq).unwrap();
+
+    let v_ra = m.add_vertex(ra);
+    let v_sa = m.add_vertex(sa_v);
+    let e1 = m.add_edge(vp, v_ra).unwrap();
+    let e2 = m.add_edge(v_ra, v_sa).unwrap();
+    let e3 = m.add_edge(v_sa, vq).unwrap();
+    let a = m.add_face(Face::with_edges(
+        vec![vp, v_ra, v_sa, vq],
+        vec![],
+        Surface::Nurbs(Patch::whole(
+            Arc::try_unwrap(sa).unwrap_or_else(|a| (*a).clone()),
+        )),
+        vec![vec![e1, e2, e3, shared_ab]],
+    ));
+
+    let v_rb = m.add_vertex(rb);
+    let v_sb = m.add_vertex(sb_v);
+    let shared_bc = m.add_edge(vq, v_sb).unwrap();
+    let e5 = m.add_edge(v_sb, v_rb).unwrap();
+    let e6 = m.add_edge(v_rb, vp).unwrap();
+    let b = m.add_face(Face::with_edges(
+        vec![vq, v_sb, v_rb, vp],
+        vec![],
+        Surface::Plane(Plane::new(p, DVec3::new(-1.0, 0.0, 0.0))),
+        vec![vec![shared_bc, e5, e6, shared_ab]],
+    ));
+
+    let v_cc = m.add_vertex(cc);
+    let e_ac = m.add_edge(v_sa, v_cc).unwrap();
+    let e_cb = m.add_edge(v_cc, v_sb).unwrap();
+    let c = m.add_face(Face::with_edges(
+        vec![vq, v_sa, v_cc, v_sb],
+        vec![],
+        Surface::Plane(Plane::new(q, DVec3::new(0.0, 0.0, 1.0))),
+        vec![vec![e3, e_ac, e_cb, shared_bc]],
+    ));
+    (m, a, b, c)
+}
+
+/// Three faces at a corner (part 2c): `a`'s mitre with each of `b` and
+/// `c` is its own outside corner (as `an_outside_corner_past_a_freeform_edge_is_bridged`),
+/// but `b` and `c` meet each other at a plain inside corner, and are
+/// themselves flat (no edge of their own to miss), so only `a` ever
+/// splits away; wherever the shared corner is still truly on `b` or
+/// `c`, it keeps it, exactly as the three faces' plain, unbounded
+/// corner would. By hand: the three faces are the faces of a unit
+/// cube's own corner, so thickening it outward by `d` grows it to a
+/// cube of side `1 + d` less the original, `(1 + d)^3 - 1`.
+#[test]
+fn three_faces_at_a_corner_bridge_two_outside_creases_and_mitre_the_third() {
+    let d: f64 = 0.3;
+    let vol = (1.0 + d).powi(3) - 1.0;
+    let (mut m, a, b, c) = three_face_corner();
+    let body: BTreeSet<FaceId> = [a, b, c].into();
+    assert_eq!(shelling::refusal(&m, &body, &BTreeSet::new(), d), None);
+    shelling::shell(&mut m, &body, &BTreeSet::new(), d).unwrap();
+    sound(&m);
+    near_enough(volume(&m), vol);
+}
+
 /// Two NURBS patches sharing an edge, creased along most of it but
 /// exactly tangent (the same normal) at one end: a real boat hull has
 /// a join like this, fading out to flat at one end of a chine line.

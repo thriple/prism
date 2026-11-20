@@ -597,26 +597,50 @@ fn freeform_slab(
         });
         outside.insert(*e, extends);
     }
-    // At an outside corner's end, where only the two creased faces meet,
-    // they no longer reach one shared point: each gets its own there,
-    // the plain offset of that end along its own normal (there is
-    // nothing else at a corner like that to correct it towards). Where a
-    // third face also meets there, bridging it is not done yet (as more
-    // than three faces at a corner on the rim already is): refused by
-    // the same name, rather than built wrong.
+    // At an outside corner's end, a face whose own offset the shared
+    // corner misses splits away there, to the plain offset of that end
+    // along its own normal (there is nothing else at a corner like
+    // that to correct it towards); one whose own offset the shared
+    // corner is truly still on keeps it (part 2c: a crease that samples
+    // outside along its length can still land truly on both its own
+    // faces right at this particular end, most often a crease fading
+    // towards tangent there, as `unique_normals` already allows along
+    // its length). The ordinary two-face corner splits both, both
+    // always missing the one point there is only room to share between
+    // them; three or more faces with more than one missing it (untried:
+    // which of them the gap is between is no longer obvious) is refused
+    // by the same name as a true multi-face corner, rather than built
+    // wrong.
     let mut split: BTreeMap<(VertexId, FaceId), VertexId> = BTreeMap::new();
     let mut split_pt: BTreeMap<(VertexId, FaceId), DVec3> = BTreeMap::new();
-    for (e, fa, fb) in &creases {
+    let mut checked: BTreeSet<VertexId> = BTreeSet::new();
+    for (e, _fa, _fb) in &creases {
         if !outside[e] {
             continue;
         }
         let edge_data = model.edge(*e).ok_or(NOTHING)?;
         for v in [edge_data.a, edge_data.b] {
-            if at_vertex[&v].len() != 2 {
-                return Err(CORNER);
+            if !checked.insert(v) {
+                continue;
             }
             let p = model.vertex(v);
-            for f in [*fa, *fb] {
+            let bad: Vec<FaceId> = at_vertex[&v]
+                .iter()
+                .copied()
+                .filter(|f| !truly_on(&offsets[f], moved[&v], &tol))
+                .collect();
+            // None of them misses the shared corner: nothing to split,
+            // even though this crease alone looked outside along the
+            // way. One does: it splits on its own. Both of an ordinary
+            // two-face corner do: the usual case, both split. More than
+            // one among three or more faces is refused, as above.
+            match bad.len() {
+                0 => continue,
+                1 => {}
+                n if n == at_vertex[&v].len() && n == 2 => {}
+                _ => return Err(CORNER),
+            }
+            for f in bad {
                 let q = p + model.face(f).ok_or(NOTHING)?.surface.normal_at(p) * d;
                 split_pt.insert((v, f), q);
                 split.insert((v, f), s.add_vertex(q));
@@ -897,34 +921,52 @@ fn freeform_slab(
         ));
     }
     // Each outside corner's own bridge (part 2b): a ruled face between
-    // the two faces' top edges, closed at either end that split by a cap
-    // between their own corners and a small triangle against the risers
-    // either side of it (left as the one shared point, with no cap, at
-    // an end nothing split: a third face there kept its single corner).
+    // the two faces' top edges, closed at either end that splits by
+    // `close_bridge_end` (a triangle where both of this bridge's own
+    // faces split there, part 2c's plain shared edge where only one
+    // does, nothing where neither does: a third face there kept the one
+    // shared corner for both).
+    let mut asym_cap: BTreeMap<VertexId, EdgeId> = BTreeMap::new();
     for br in bridges {
         let raw = Patch::whole(crate::thicken::ruled(&br.high_a, &br.high_b).ok_or(TOO_THICK)?);
         let flipped = raw.normal(0.5, 0.5).dot(br.out_ref) < 0.0;
         let bridge = Patch { flipped, ..raw };
-        // Each end's own cap triangle faces past that end, along the
-        // crease: the same direction its two rim walls' own end caps
-        // already face, which the risers it shares with them must match.
+        // Each end's own cap faces past that end, along the crease: the
+        // same direction its two rim walls' own end caps already face
+        // (where it is a triangle against risers, which must match).
         let tangent = model.vertex(br.eb) - model.vertex(br.ea);
         let mut loop_v = vec![vertex_for(br.ea, br.fa), vertex_for(br.eb, br.fa)];
         let mut loop_e = vec![br.ta];
-        if let (Some(&pa_v), Some(&pb_v)) = (split.get(&(br.eb, br.fa)), split.get(&(br.eb, br.fb)))
-        {
-            loop_e.push(corner_triangle(
-                &mut s, br.eb, br.fa, br.fb, pa_v, pb_v, tangent, &base, &rise,
-            )?);
-            loop_v.push(pb_v);
+        if let Some((cap, v)) = close_bridge_end(
+            &mut s,
+            br.eb,
+            br.fa,
+            br.fb,
+            tangent,
+            &base,
+            &up,
+            &rise,
+            &split,
+            &mut asym_cap,
+        )? {
+            loop_e.push(cap);
+            loop_v.push(v);
         }
         loop_e.push(br.tb);
-        let ea_fb = vertex_for(br.ea, br.fb);
-        if ea_fb != loop_v[0] {
-            loop_e.push(corner_triangle(
-                &mut s, br.ea, br.fa, br.fb, loop_v[0], ea_fb, -tangent, &base, &rise,
-            )?);
-            loop_v.push(ea_fb);
+        if let Some((cap, v)) = close_bridge_end(
+            &mut s,
+            br.ea,
+            br.fa,
+            br.fb,
+            -tangent,
+            &base,
+            &up,
+            &rise,
+            &split,
+            &mut asym_cap,
+        )? {
+            loop_e.push(cap);
+            loop_v.push(v);
         }
         s.add_face(Face::with_edges(
             loop_v,
@@ -955,24 +997,23 @@ struct Bridge {
 
 /// The small flat face closing the gap, at one end of an outside
 /// corner's bridge, between the base vertex and the two faces' own
-/// corners there (`pa_v`, `pb_v`): against the rim risers either side of
-/// it, facing `out_ref` (past that end, along the crease). Returns the
-/// new edge between the two corners, which the bridge itself also uses.
+/// corners there (`pa_v`, `pb_v`): against the risers `ra`, `rb` either
+/// side of it (each a face's own where it split there, or the one
+/// shared riser of whichever there did not, part 2c), facing `out_ref`
+/// (past that end, along the crease). Returns the new edge between the
+/// two corners, which the bridge itself also uses.
 #[allow(clippy::too_many_arguments)]
 fn corner_triangle(
     s: &mut Model,
     v: VertexId,
-    fa: FaceId,
-    fb: FaceId,
+    ra: EdgeId,
+    rb: EdgeId,
     pa_v: VertexId,
     pb_v: VertexId,
     out_ref: DVec3,
     base: &BTreeMap<VertexId, VertexId>,
-    rise: &BTreeMap<(VertexId, Option<FaceId>), EdgeId>,
 ) -> Result<EdgeId, &'static str> {
     let cap = edge(s, pa_v, pb_v, Curve::Line, None)?;
-    let ra = *rise.get(&(v, Some(fa))).ok_or(TOO_THICK)?;
-    let rb = *rise.get(&(v, Some(fb))).ok_or(TOO_THICK)?;
     let pts = [s.vertex(base[&v]), s.vertex(pa_v), s.vertex(pb_v)];
     let n = (pts[1] - pts[0]).cross(pts[2] - pts[0]).normalize_or_zero();
     let (tri_v, tri_e, n) = if n.dot(out_ref) >= 0.0 {
@@ -987,6 +1028,59 @@ fn corner_triangle(
         vec![tri_e.to_vec()],
     ));
     Ok(cap)
+}
+
+/// Closes one end of an outside corner's bridge, where `fa` and `fb`
+/// (this bridge's two faces) may or may not themselves have split
+/// there (part 2c: a third face can keep the shared corner for
+/// whichever of `fa`, `fb` it is truly on). Their two points there
+/// equal (neither split, or a third face's own split happened to land
+/// on both anyway): nothing to close, the top edges already meet.
+/// Otherwise, wherever each of the two is on the rim has its own riser
+/// there already (its own where it split, the one shared riser of
+/// whichever did not) to close `corner_triangle` against; with no rim
+/// at all there (an interior corner, part 2c), a plain edge between
+/// the two points does it instead, built once per vertex and reused by
+/// every bridge meeting there (always the same pair, since at most one
+/// face there ever splits away from the rest). Returns the new edge,
+/// and the vertex at its far end, for the bridge's own loop.
+#[allow(clippy::too_many_arguments)]
+fn close_bridge_end(
+    s: &mut Model,
+    v: VertexId,
+    fa: FaceId,
+    fb: FaceId,
+    out_ref: DVec3,
+    base: &BTreeMap<VertexId, VertexId>,
+    up: &BTreeMap<VertexId, VertexId>,
+    rise: &BTreeMap<(VertexId, Option<FaceId>), EdgeId>,
+    split: &BTreeMap<(VertexId, FaceId), VertexId>,
+    asym_cap: &mut BTreeMap<VertexId, EdgeId>,
+) -> Result<Option<(EdgeId, VertexId)>, &'static str> {
+    let key = |f: FaceId| (v, split.contains_key(&(v, f)).then_some(f));
+    let pa_v = split.get(&(v, fa)).copied().unwrap_or(up[&v]);
+    let pb_v = split.get(&(v, fb)).copied().unwrap_or(up[&v]);
+    if pa_v == pb_v {
+        return Ok(None);
+    }
+    match (rise.get(&key(fa)), rise.get(&key(fb))) {
+        (Some(&ra), Some(&rb)) => Ok(Some((
+            corner_triangle(s, v, ra, rb, pa_v, pb_v, out_ref, base)?,
+            pb_v,
+        ))),
+        (None, None) => {
+            let cap = match asym_cap.get(&v) {
+                Some(e) => *e,
+                None => {
+                    let e = edge(s, pa_v, pb_v, Curve::Line, None)?;
+                    asym_cap.insert(v, e);
+                    e
+                }
+            };
+            Ok(Some((cap, pb_v)))
+        }
+        _ => Err(TOO_THICK),
+    }
 }
 
 /// The point of `s` nearest `x`, and its normal there: for a freeform

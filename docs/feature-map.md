@@ -12,7 +12,7 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | `edit.weld` | Weld | Solids & CAD |
 | `conv.curve` | Curve Chain ↔ NURBS Curve | Solids & CAD |
 | `conv.patch` | Faces ↔ Smooth Patch | Solids & CAD |
-| `tool.shell` | Shell / Thicken (joined freeform faces, brief 49: part 1 built, part 2 built for creases, inside and outside (part 2b) corners both; the real boat hull hits a new, named limit at a true corner of three faces mixing an outside crease with another kind (NOTES "part 2b"), not yet built; rim styles and live editing next) | Tool Pass |
+| `tool.shell` | Shell / Thicken (joined freeform faces, brief 49: part 1 built, part 2 built for creases, inside, outside (part 2b) and a true corner of three or more faces (part 2c) all built; the real boat hull now reaches its own three-face corner but hits a further, separate winding bug at its other outside corner (NOTES "part 2c"), not yet fixed; rim styles and live editing next) | Tool Pass |
 | `edit.center` | Center / Align | Shapes & Placement |
 | `tool.prim` | Primitives | Shapes & Placement |
 | `prim.box` | Box | Shapes & Placement |
