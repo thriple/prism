@@ -342,21 +342,36 @@ pub(crate) fn edge_pair(
     nodes: &[f64],
     eps: f64,
 ) -> Option<(Nurbs, Nurbs)> {
-    let high_at = |t: f64| off(along(t));
+    twin_fit(along, &|t| off(along(t)), nodes, eps)
+}
+
+/// Two curves of degree 5 on the same knots, each within `eps` of its own
+/// target function (`f` and `g`): fitted on knots at `nodes` (where
+/// either may bend), split until both are close. `edge_pair` is this for
+/// an edge and its offset; a crease whose mitre would reach past one
+/// face's own edge (brief 49 part 2b) uses it directly, for the two
+/// faces' own offset edges, which need to share one knot vector to be
+/// ruled between.
+pub(crate) fn twin_fit(
+    f: &dyn Fn(f64) -> DVec3,
+    g: &dyn Fn(f64) -> DVec3,
+    nodes: &[f64],
+    eps: f64,
+) -> Option<(Nurbs, Nurbs)> {
     let mut ts = nodes.to_vec();
     for _ in 0..ROUNDS {
         let knots = knots_over(DEGREE, &ts, nodes)?;
-        let low = Nurbs::fitted(along, DEGREE, knots.clone())?;
-        let high = Nurbs::fitted(&high_at, DEGREE, knots)?;
+        let cf = Nurbs::fitted(f, DEGREE, knots.clone())?;
+        let cg = Nurbs::fitted(g, DEGREE, knots)?;
         let split: Vec<bool> = ts
             .windows(2)
             .map(|w| {
-                off_between(w, &|t| low.eval(t).distance(along(t)), eps)
-                    || off_between(w, &|t| high.eval(t).distance(high_at(t)), eps)
+                off_between(w, &|t| cf.eval(t).distance(f(t)), eps)
+                    || off_between(w, &|t| cg.eval(t).distance(g(t)), eps)
             })
             .collect();
         if !split.contains(&true) {
-            return Some((low, high));
+            return Some((cf, cg));
         }
         ts = halved(&ts, &split);
     }

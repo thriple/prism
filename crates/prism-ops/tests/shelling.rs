@@ -723,9 +723,7 @@ fn a_crease_tangent_at_one_end_is_not_mistaken_for_a_fold_back() {
 /// Two unit squares at a right angle (`folded_patches`) thicken to a
 /// sharp mitre on an inside corner (trimmed, by hand: the two offset
 /// rectangles are short of a `d` by `d` square where they meet, so
-/// `area = 2|d| - d^2`, times the 1 m fold gives the volume). An outside
-/// corner (the other sign of `d`) would need the mitre to reach past a
-/// freeform face's own edge; not done yet, so it is refused by name.
+/// `area = 2|d| - d^2`, times the 1 m fold gives the volume).
 #[test]
 fn a_crease_between_freeform_faces_gets_a_sharp_mitre() {
     let d: f64 = -0.3;
@@ -738,16 +736,21 @@ fn a_crease_between_freeform_faces_gets_a_sharp_mitre() {
     near_enough(volume(&m).abs(), area);
 }
 
+/// An outside corner (the other sign of `d`, brief 49 part 2b): the
+/// mitre would reach past each freeform face's own edge, which a NURBS
+/// surface cannot extend to meet, so each face keeps its own straight
+/// offset edge, bridged by a small flat face at the gap. By hand: the
+/// two offset rectangles now fall short of each other (no overlap to
+/// trim away), and the gap between their near edges is a right-angled
+/// triangle of legs `d`, so `area = 2|d| + d^2 / 2`.
 #[test]
-fn an_outside_corner_mitre_past_a_freeform_edge_is_refused_specifically() {
-    let (m, a, b) = folded_patches();
+fn an_outside_corner_past_a_freeform_edge_is_bridged() {
+    let d: f64 = 0.3;
+    let area = 2.0 * d.abs() + d * d / 2.0;
+    let (mut m, a, b) = folded_patches();
     let body: BTreeSet<FaceId> = [a, b].into();
-    let before = m.clone();
-    assert_eq!(
-        shelling::refusal(&m, &body, &BTreeSet::new(), 0.3),
-        Some(shelling::EXTEND)
-    );
-    let mut m2 = m.clone();
-    assert!(shelling::shell(&mut m2, &body, &BTreeSet::new(), 0.3).is_err());
-    assert_eq!(m, before, "a refusal changes nothing");
+    assert_eq!(shelling::refusal(&m, &body, &BTreeSet::new(), d), None);
+    shelling::shell(&mut m, &body, &BTreeSet::new(), d).unwrap();
+    sound(&m);
+    near_enough(volume(&m).abs(), area);
 }
