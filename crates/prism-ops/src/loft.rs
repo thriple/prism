@@ -6,7 +6,7 @@
 //! along its length wherever a section has a vertex, and across at every
 //! section, so each section's own edges become the faces' sides.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use prism_geom::{Curve, Nurbs, NurbsSurface, Patch, Spline, Surface};
@@ -576,7 +576,7 @@ pub fn loft(model: &mut Model, edges: &BTreeSet<EdgeId>) -> Result<Vec<FaceId>, 
     Ok(faces)
 }
 
-pub const NO_AXIS: &str = "Select the curves to turn and one straight line to turn them about (a line that touches none of the others).";
+pub const NO_AXIS: &str = "Select the outline or curves to turn (any shape, open or closed) and one straight line to turn them about (a line that touches none of the others).";
 pub const TOUCHES_AXIS: &str = "Refused: a curve touches or crosses the axis. For shapes that close on the axis, use Follow Me with lines and arcs.";
 
 /// The model with the selected curves turned a full turn about the
@@ -616,6 +616,10 @@ pub fn revolved(
         let d = p - origin;
         (d - dir * d.dot(dir)).length()
     };
+    // The profile as seen in a plane through the axis (distance from the
+    // axis, height along it), when its curves close up.
+    let frame = (origin, dir);
+    let image = closed_image(model, &rest, &list, &frame);
     let mut w = model.clone();
     let mut faces = Vec::new();
     for s in list {
@@ -644,16 +648,124 @@ pub fn revolved(
             vs.insert(1, (lo + hi) / 2.0);
         }
         let rows: Vec<(f64, Vec<EdgeId>)> = vs.iter().map(|v| (*v, Vec::new())).collect();
-        // Facing away from the axis.
         let [(u0, _), _] = surface.domain();
-        let v = (vs[0] + vs[1]) / 2.0;
-        let p = surface.eval(u0, v);
-        let d = p - origin;
-        let out = d - dir * d.dot(dir);
-        let flipped = surface.normal(u0, v).dot(out) < 0.0;
+        // A closed profile makes a solid: every face looks out of it (so
+        // the inner wall looks toward the axis). Anything else faces away
+        // from the axis.
+        let flipped = match &image {
+            Some(image) => {
+                out_of_profile(&surface, u0, (vs[0], *vs.last().unwrap()), image, &frame)
+            }
+            None => None,
+        }
+        .unwrap_or_else(|| {
+            let v = (vs[0] + vs[1]) / 2.0;
+            let p = surface.eval(u0, v);
+            let d = p - origin;
+            let out = d - dir * d.dot(dir);
+            surface.normal(u0, v).dot(out) < 0.0
+        });
         faces.extend(lay(&mut w, surface, &rows, flipped)?);
     }
     Ok((w, faces))
+}
+
+/// A point as (distance from the axis, height along it).
+fn rz(p: DVec3, (origin, dir): &(DVec3, DVec3)) -> (f64, f64) {
+    let d = p - *origin;
+    let h = d.dot(*dir);
+    ((d - *dir * h).length(), h)
+}
+
+/// The turned curves drawn in a plane through the axis, as short
+/// straight pieces, if every point where edges meet has an even number of
+/// them (the curves close up: a profile with an inside). Turning a curve
+/// about an axis gives the same surface as turning that drawing.
+fn closed_image(
+    model: &Model,
+    edges: &BTreeSet<EdgeId>,
+    list: &[Section],
+    frame: &(DVec3, DVec3),
+) -> Option<Vec<[(f64, f64); 2]>> {
+    let mut count: BTreeMap<VertexId, u32> = BTreeMap::new();
+    for e in edges.iter().filter_map(|e| model.edge(*e)) {
+        *count.entry(e.a).or_default() += 1;
+        *count.entry(e.b).or_default() += 1;
+    }
+    if count.is_empty() || count.values().any(|n| n % 2 != 0) {
+        return None;
+    }
+    let mut out = Vec::new();
+    for s in list {
+        let (lo, hi) = s.curve.domain();
+        let pts: Vec<(f64, f64)> = (0..=96)
+            .map(|i| rz(s.curve.eval(lo + (hi - lo) * f64::from(i) / 96.0), frame))
+            .collect();
+        out.extend(pts.windows(2).map(|w| [w[0], w[1]]));
+    }
+    Some(out)
+}
+
+/// Whether the turned surface (as it comes from the kernel) looks into the
+/// solid its profile makes, so must be flipped. Tried at several heights
+/// along the curve, and the majority decides. None if it can not be told.
+fn out_of_profile(
+    surface: &NurbsSurface,
+    u0: f64,
+    (v0, v1): (f64, f64),
+    image: &[[(f64, f64); 2]],
+    frame: &(DVec3, DVec3),
+) -> Option<bool> {
+    let (origin, dir) = *frame;
+    let size = image
+        .iter()
+        .flatten()
+        .fold(0.0_f64, |m, (r, z)| m.max(r.abs()).max(z.abs()));
+    let (mut inward, mut outward) = (0, 0);
+    for k in 1..=7 {
+        let v = v0 + (v1 - v0) * f64::from(k) / 8.0;
+        let p = surface.eval(u0, v);
+        let n = surface.normal(u0, v);
+        let d = p - origin;
+        let radial = (d - dir * d.dot(dir)).try_normalize()?;
+        let (nr, nz) = (n.dot(radial), n.dot(dir));
+        let len = nr.hypot(nz);
+        if len < 1e-9 {
+            continue;
+        }
+        let (r, z) = rz(p, frame);
+        // A step off the curve along the normal: inside the profile or not.
+        let step = size * 1e-4;
+        let probe = (r + nr / len * step, z + nz / len * step);
+        if inside(image, probe) {
+            inward += 1;
+        } else {
+            outward += 1;
+        }
+    }
+    (inward != outward).then_some(inward > outward)
+}
+
+/// Whether a point is inside the drawing (an odd number of pieces cross a
+/// ray from it).
+fn inside(image: &[[(f64, f64); 2]], (x, y): (f64, f64)) -> bool {
+    // An odd direction, so it meets no corner of a tidy drawing.
+    let (dx, dy) = (0.8137, 0.5812);
+    let mut hits = 0;
+    for [a, b] in image {
+        let (ex, ey) = (b.0 - a.0, b.1 - a.1);
+        let den = dx * ey - dy * ex;
+        if den.abs() < 1e-14 {
+            continue;
+        }
+        let (ax, ay) = (a.0 - x, a.1 - y);
+        let t = (ax * ey - ay * ex) / den;
+        let s = (ax * dy - ay * dx) / den;
+        if t > 0.0 && (0.0..1.0).contains(&s) {
+            hits += 1;
+        }
+    }
+    hits % 2 == 1
 }
 
 /// Turn curves about an axis line ([`revolved`]). The model is left alone

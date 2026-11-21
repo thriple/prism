@@ -48,7 +48,7 @@ fn how(action: &str) -> &'static str {
     match action {
         "surf.loft" => "Loft: click the curves to loft through · Enter makes it · Esc leaves",
         "surf.revolve" => {
-            "Revolve: click the curves to turn, and the straight line to turn them about · Enter makes it · Esc leaves"
+            "Revolve: click the outline or curves to turn (any shape, open or closed) and the straight line to turn them about · Enter makes it · Esc leaves"
         }
         "surf.sweep" => {
             "Sweep: click the profile and the path it runs along · Enter makes it · Esc leaves"
@@ -60,7 +60,7 @@ fn how(action: &str) -> &'static str {
 fn ready(action: &str) -> &'static str {
     match action {
         "surf.loft" => "Enter makes the loft · click curves to add or take out · Esc leaves",
-        "surf.revolve" => "Enter makes the revolve · click curves to add or take out · Esc leaves",
+        "surf.revolve" => "Enter makes the revolve · click edges to add or take out · Esc leaves",
         "surf.sweep" => "Enter makes the sweep · click curves to add or take out · Esc leaves",
         _ => "Enter makes the patch · click curves to add or take out · Esc leaves",
     }

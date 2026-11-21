@@ -5012,4 +5012,12 @@ The owner found that rounding edges one click at a time blocks rounds that share
 ## Owner recording 16 and the Revolve fix to come (2026-11-21)
 
 - **Saved:** the owner's `Prism_session_16.json` is `crates/prism-tools/tests/data/owner-session-16-revolve.json` (about 11,000 inputs, recorded with the new build, so it carries the start state and outside edits).
-- **To do (scheduled for after midnight Guam time):** Revolve (`surf.revolve`) works for a rectangle, hexagon, circle and a box with one arc side, but some of the faces it makes come out inside-out. Every face of a watertight result must point outward, for any profile and either way round. The tool tip says "curves"; it should say any flat outline works (and it must).
+- **Done (see "Revolve: faces look out of the solid" below).**
+
+## Revolve: faces look out of the solid (2026-11-22)
+
+- **Cause:** `loft::revolved` turned every face to look away from the axis. That is right for an outer wall but wrong for a closed profile's inner wall (and for the sides that face along the axis), so a turned rectangle, hexagon, circle or box with an arc side came out with some faces inside-out. A circle was worst: one flip chosen at a point where the test is a coin toss.
+- **Fix:** when the selected curves close up (every meeting point has an even number of edges), the profile is drawn in a plane through the axis (distance from the axis, height along it; turning that drawing gives the same surface, so a tilted profile works too). For each section, a small step off the curve along the surface's normal is tested against the drawing (odd/even crossings of a ray); if the step lands inside the profile the face is flipped. Seven heights along the section vote. Profiles with holes work the same way (the hole's faces look into the hole). Open curves still face away from the axis.
+- **Tests (`prism-ops/tests/loft.rs`):** rectangle, hexagon, circle and arc box, each upright, on its side and leaning, with the profile's plane tilted off the axis or not; a square ring (a hole). They failed before (the rectangle's inner wall) and pass now.
+- **Text:** the Revolve hint and the refusal say any outline or curve works, open or closed.
+- **Left over:** a profile that touches the axis is still refused (a cone, a bowl: the pole needs three-sided faces); two closed profiles that cross each other are not looked at; a Model Health "reversed faces" check is not run on freeform faces.

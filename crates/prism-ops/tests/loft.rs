@@ -352,3 +352,188 @@ fn circles_drawn_from_different_starts_loft_without_a_twist() {
         assert!(n.dot(DVec3::new(p.x, p.y, 0.0)) > 0.0, "{n} at {p}");
     }
 }
+
+/// A closed profile (rectangle, hexagon, circle, or a box with one arc
+/// side) turned about a line makes a solid whose every face looks out of
+/// it: away from the profile's middle, in the plane through the axis (the
+/// owner found inside-out faces, 2026-11-21). `t` moves the whole drawing
+/// to another place and direction; `tilt` turns the profile's own plane
+/// about the red line through its middle, so it no longer holds the axis.
+fn turned_faces_look_out(name: &str, profile: &str, t: &dyn Fn(DVec3) -> DVec3, tilt: f64) {
+    use prism_math::DQuat;
+    let tilt_q = DQuat::from_axis_angle(DVec3::X, tilt);
+    let centre = DVec3::new(3.0, 0.0, 0.0);
+    // Local drawing: axis up the z line, profile in the x-z plane.
+    let local = |p: DVec3| t(centre + tilt_q * (p - centre));
+    let dir_of = |d: DVec3| (t(d) - t(DVec3::ZERO)).normalize();
+    let mut m = Model::new();
+    let (o, a) = (t(DVec3::new(0.0, 0.0, -3.0)), t(DVec3::new(0.0, 0.0, 3.0)));
+    add_segment(&mut m, o, a);
+    let poly = |m: &mut Model, pts: &[(f64, f64)]| {
+        for i in 0..pts.len() {
+            let (p, q) = (pts[i], pts[(i + 1) % pts.len()]);
+            add_segment(
+                m,
+                local(DVec3::new(p.0, 0.0, p.1)),
+                local(DVec3::new(q.0, 0.0, q.1)),
+            );
+        }
+    };
+    let mut middle = DVec3::new(3.0, 0.0, 0.0);
+    match profile {
+        "rectangle" => poly(&mut m, &[(2.0, -1.0), (4.0, -1.0), (4.0, 1.0), (2.0, 1.0)]),
+        "hexagon" => {
+            let hex: Vec<(f64, f64)> = (0..6)
+                .map(|i| {
+                    let a = i as f64 / 6.0 * std::f64::consts::TAU;
+                    (3.0 + a.cos(), a.sin())
+                })
+                .collect();
+            poly(&mut m, &hex);
+        }
+        "circle" => {
+            add_circle(
+                &mut m,
+                local(middle),
+                (t(tilt_q * DVec3::Y) - t(DVec3::ZERO)).normalize(),
+                1.0,
+            );
+        }
+        "arc box" => {
+            // Left, top and bottom straight; the right side is a half circle.
+            poly_open(
+                &mut m,
+                &local,
+                &[(4.0, -1.0), (2.0, -1.0), (2.0, 1.0), (4.0, 1.0)],
+            );
+            add_arc(
+                &mut m,
+                local(DVec3::new(4.0, 0.0, 0.0)),
+                (t(tilt_q * -DVec3::Y) - t(DVec3::ZERO)).normalize(),
+                1.0,
+                local(DVec3::new(4.0, 0.0, -1.0)),
+                std::f64::consts::PI,
+            );
+            middle = DVec3::new(3.2, 0.0, 0.0);
+        }
+        other => panic!("{other}"),
+    }
+    let flats: Vec<_> = m.faces().map(|(id, _)| id).collect();
+    for f in flats {
+        m.remove_face(f);
+    }
+    let all = all_edges(&m);
+    let faces = loft::revolve(&mut m, &all).unwrap_or_else(|e| panic!("{name}: {e}"));
+    assert!(!faces.is_empty());
+    // The profile's middle, as height and distance from the axis.
+    let dir = dir_of(DVec3::Z);
+    let origin = o;
+    let rz = |p: DVec3| {
+        let d = p - origin;
+        let h = d.dot(dir);
+        ((d - dir * h).length(), h)
+    };
+    let (rc, zc) = rz(local(middle));
+    for f in faces {
+        let p = m.face(f).unwrap().surface.patch().unwrap().clone();
+        for i in 1..8 {
+            for j in 1..8 {
+                let (u, v) = (
+                    p.u.0 + (p.u.1 - p.u.0) * i as f64 / 8.0,
+                    p.v.0 + (p.v.1 - p.v.0) * j as f64 / 8.0,
+                );
+                let q = p.surface.eval(u, v);
+                let n = p.normal(u, v);
+                let d = q - origin;
+                let h = d.dot(dir);
+                let radial = (d - dir * h).normalize();
+                let (rq, zq) = rz(q);
+                let out = n.dot(radial) * (rq - rc) + n.dot(dir) * (zq - zc);
+                assert!(
+                    out > 0.0,
+                    "{name}, {profile}: a face looks inward at {q:?}: n {n:?} r,z {rq:.3},{zq:.3} c {rc:.3},{zc:.3} (u {u:.3} v {v:.3})"
+                );
+            }
+        }
+    }
+}
+
+fn poly_open(m: &mut Model, local: &dyn Fn(DVec3) -> DVec3, pts: &[(f64, f64)]) {
+    for w in pts.windows(2) {
+        add_segment(
+            m,
+            local(DVec3::new(w[0].0, 0.0, w[0].1)),
+            local(DVec3::new(w[1].0, 0.0, w[1].1)),
+        );
+    }
+}
+
+#[test]
+fn every_face_of_a_turned_closed_profile_looks_outward() {
+    use prism_math::DQuat;
+    type Place = Box<dyn Fn(DVec3) -> DVec3>;
+    let places: [(&str, Place); 3] = [
+        ("upright", Box::new(|p| p)),
+        (
+            "on its side",
+            Box::new(|p| DQuat::from_axis_angle(DVec3::Y, 1.1) * p + DVec3::new(1.0, 2.0, 0.5)),
+        ),
+        (
+            "leaning",
+            Box::new(|p| {
+                DQuat::from_axis_angle(DVec3::new(1.0, 2.0, 3.0).normalize(), 2.3) * p
+                    - DVec3::new(0.0, 1.0, 4.0)
+            }),
+        ),
+    ];
+    for (name, t) in &places {
+        for profile in ["rectangle", "hexagon", "circle", "arc box"] {
+            for tilt in [0.0, 0.5] {
+                turned_faces_look_out(&format!("{name}, tilt {tilt}"), profile, t.as_ref(), tilt);
+            }
+        }
+    }
+}
+
+/// A profile with a hole (a square ring) turned about a line: the outer
+/// faces look away from the ring, the inner ones into the hole.
+#[test]
+fn a_turned_profile_with_a_hole_looks_out_of_the_solid() {
+    let mut m = Model::new();
+    add_segment(
+        &mut m,
+        DVec3::new(0.0, 0.0, -4.0),
+        DVec3::new(0.0, 0.0, 4.0),
+    );
+    for (x0, x1, z0, z1) in [(2.0, 8.0, -3.0, 3.0), (4.0, 6.0, -1.0, 1.0)] {
+        let c = [(x0, z0), (x1, z0), (x1, z1), (x0, z1)];
+        for i in 0..4 {
+            let (p, q) = (c[i], c[(i + 1) % 4]);
+            add_segment(&mut m, DVec3::new(p.0, 0.0, p.1), DVec3::new(q.0, 0.0, q.1));
+        }
+    }
+    let flats: Vec<_> = m.faces().map(|(id, _)| id).collect();
+    for f in flats {
+        m.remove_face(f);
+    }
+    let all = all_edges(&m);
+    let faces = loft::revolve(&mut m, &all).unwrap();
+    assert_eq!(faces.len(), 8 * 2, "eight sides, each two halves round");
+    for f in faces {
+        let p = m.face(f).unwrap().surface.patch().unwrap().clone();
+        let (u, v) = ((p.u.0 + p.u.1) / 2.0, (p.v.0 + p.v.1) / 2.0);
+        let q = p.surface.eval(u, v);
+        let n = p.normal(u, v);
+        let radial = DVec3::new(q.x, q.y, 0.0).normalize();
+        let (r, z) = (q.x.hypot(q.y), q.z);
+        // Inside the square ring's hole, or on its outside.
+        let hole = (r - 5.0).abs() <= 1.0 + 1e-6 && z.abs() <= 1.0 + 1e-6;
+        // Away from the middle of the hole, or the ring.
+        let away = n.dot(radial) * (r - 5.0) + n.z * z;
+        if hole {
+            assert!(away < 0.0, "a hole face looks into the wall at {q:?}");
+        } else {
+            assert!(away > 0.0, "an outer face looks into the wall at {q:?}");
+        }
+    }
+}
