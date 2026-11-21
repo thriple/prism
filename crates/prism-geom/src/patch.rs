@@ -178,7 +178,21 @@ impl NurbsSurface {
 
     /// The weighted value and its two derivatives.
     fn weighted(&self, u: f64, v: f64) -> (H, H, H) {
-        let (u, v) = (self.wrap(0, u), self.wrap(1, v));
+        self.weighted_at(u, v, false)
+    }
+
+    /// [`Self::weighted`]; with `past`, a parameter outside an open
+    /// surface's domain carries on the polynomial of the end span
+    /// (rather than being held at the edge).
+    fn weighted_at(&self, u: f64, v: f64, past: bool) -> (H, H, H) {
+        let keep = |d: usize, t: f64| {
+            if past && !self.periodic[d] {
+                t
+            } else {
+                self.wrap(d, t)
+            }
+        };
+        let (u, v) = (keep(0, u), keep(1, v));
         let [p, q] = self.degree;
         let ku = span(p, &self.knots[0], self.count[0], u);
         let kv = span(q, &self.knots[1], self.count[1], v);
@@ -237,6 +251,23 @@ impl NurbsSurface {
     pub fn eval(&self, u: f64, v: f64) -> DVec3 {
         let (s, _, _) = self.weighted(u, v);
         s.p / s.w
+    }
+
+    /// The point at (`u`, `v`), carrying on past the domain's edge: the
+    /// polynomial of the end span continued (an extension of the surface,
+    /// exact for the span it continues, as far as it is wanted).
+    pub fn eval_past(&self, u: f64, v: f64) -> DVec3 {
+        let (s, _, _) = self.weighted_at(u, v, true);
+        s.p / s.w
+    }
+
+    /// The unit normal at (`u`, `v`), carrying on past the domain's edge
+    /// as `eval_past` does.
+    pub fn normal_past(&self, u: f64, v: f64) -> DVec3 {
+        let (s, du, dv) = self.weighted_at(u, v, true);
+        let (_, a) = s.split(du);
+        let (_, b) = s.split(dv);
+        a.cross(b).normalize_or_zero()
     }
 
     /// The point and the derivatives along u and v.

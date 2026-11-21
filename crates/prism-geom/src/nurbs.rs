@@ -432,6 +432,19 @@ impl Nurbs {
         })
     }
 
+    /// The point at `t`, carrying on past the ends of an open curve: the
+    /// polynomial of the end span continued.
+    pub fn eval_past(&self, t: f64) -> DVec3 {
+        if self.is_closed() || (self.domain().0..=self.domain().1).contains(&t) {
+            return self.eval(t);
+        }
+        let k = span(self.degree, &self.knots, self.points.len(), t);
+        let (c, _) = de_boor(self.degree, &self.knots, k, t, |i| {
+            H::of(self.points[i], self.weights[i])
+        });
+        c.p / c.w
+    }
+
     /// The point at `t`.
     pub fn eval(&self, t: f64) -> DVec3 {
         let (c, _) = self.weighted(t);
@@ -1038,6 +1051,12 @@ impl Spline {
 
     pub fn point(&self, s: f64) -> DVec3 {
         self.curve.eval(self.at(s))
+    }
+
+    /// [`Self::point`] with `s` allowed outside 0 to 1 (the curve carried
+    /// on past its ends).
+    pub fn point_past(&self, s: f64) -> DVec3 {
+        self.curve.eval_past(self.at(s))
     }
 
     /// The unit direction of travel at fraction `s`.

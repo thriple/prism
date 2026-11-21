@@ -41,7 +41,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use prism_geom::{Cone, Curve, Nurbs, Surface};
 use prism_math::tol::ANGLE;
-use prism_math::{DVec3, Plane, Tol, newell};
+use prism_math::{DVec2, DVec3, Plane, Tol, newell};
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
 pub const NOTHING: &str = "Refused: click a face to shell or thicken.";
@@ -56,7 +56,7 @@ pub const TOO_THICK: &str = "Refused: that thickness turns a face inside out. Tr
 pub const RIM_STYLE: &str = "Refused: a rim style other than Square works on joined faces with a freeform one, not on this shape yet.";
 pub const FLUSH_OFF: &str = "Refused: a flush rim's plane must pass through the edge it ends.";
 pub const FLUSH_PARALLEL: &str = "Refused: that plane lies along the face at its rim, so a wall cannot end in it. Pick another plane or Square.";
-pub const FLUSH_REACH: &str = "Refused: to end flush in that plane the surface would have to reach past its own edge (the other thickness direction trims instead). Extending a surface is not built yet: use Square, or the other direction.";
+pub const FLUSH_REACH: &str = "Refused: to end flush in that plane the surface would have to be carried on a long way past its own edge. Use a plane closer to square, or Square.";
 pub const SHARP: &str = "Refused: these faces fold back too sharply here to cut a mitre. A rounded corner there is not done yet.";
 
 /// The faces joined to `seeds` by edges: their sheets or bodies.
@@ -412,6 +412,10 @@ pub fn default_rims_from(
     if slab_with(model, faces, open, d, &styles).is_err() {
         return styles;
     }
+    // A lone face has nothing it joins: its rims are left as chosen.
+    if body(model, faces).len() < 2 {
+        return styles;
+    }
     let tol = model.tol();
     let runs = boundaries(model, faces, open);
     // Candidates: each run alone, then each pair that meet end to end.
@@ -548,6 +552,8 @@ pub fn slab_with(
 ) -> Result<(Model, BTreeSet<FaceId>), &'static str> {
     let styled = styles.values().any(|s| *s != RimStyle::Square);
     if styled {
+        // A lone freeform face takes a chosen style too, by the same route
+        // (the program does not pick one for it: `default_rims_from`).
         return freeform_joined(model, faces, open, d, styles).unwrap_or(Err(RIM_STYLE));
     }
     if let Some(r) = freeform_alone(model, faces, open, d) {
@@ -839,7 +845,8 @@ fn freeform_joined(
     styles: &RimStyles,
 ) -> Option<Result<(Model, BTreeSet<FaceId>), &'static str>> {
     let body = body(model, faces);
-    if body.len() < 2 {
+    let styled = styles.values().any(|s| *s != RimStyle::Square);
+    if body.len() < 2 && !(styled && body.len() == 1) {
         return None;
     }
     if body.iter().any(|f| model.face(*f).is_none()) {
@@ -851,8 +858,30 @@ fn freeform_joined(
     {
         return None;
     }
-    Some(freeform_slab(model, &body, open, d, styles))
+    // A flush rim that leans away needs the offset surface carried on past
+    // its own edge: tried as it is first, then with it grown a little more
+    // each time (only when the one before said it was out of reach).
+    let mut result = Err(FLUSH_REACH);
+    let mut wanted = false;
+    for reach in REACHES {
+        result = freeform_slab(model, &body, open, d, styles, reach);
+        wanted |= matches!(result, Err(FLUSH_REACH));
+        if !styled || !matches!(result, Err(FLUSH_REACH)) {
+            break;
+        }
+    }
+    // A surface grown as far as it will go that then cannot be fitted is
+    // still a plane out of reach, not a thickness gone wrong.
+    if wanted && matches!(result, Err(TOO_THICK)) {
+        result = Err(FLUSH_REACH);
+    }
+    Some(result)
 }
+
+/// How far each face's offset surface is carried on past the box of its
+/// own outline, as a fraction of that box, in the tries a flush rim makes
+/// to reach its plane.
+const REACHES: [f64; 5] = [0.0, 0.02, 0.05, 0.1, 0.5];
 
 /// Whether the two faces at an interior edge meet smoothly: their normals
 /// agree along the edge, sampled at several points (not just the
@@ -878,6 +907,7 @@ fn freeform_slab(
     open: &BTreeSet<FaceId>,
     d: f64,
     styles: &RimStyles,
+    reach: f64,
 ) -> Result<(Model, BTreeSet<FaceId>), &'static str> {
     use prism_geom::{Patch, Spline};
     let tol = model.tol();
@@ -972,8 +1002,55 @@ fn freeform_slab(
         let f = model.face(*id).ok_or(NOTHING)?;
         let surface = if let Some(patch) = f.surface.patch() {
             let laid = crate::crossing::Laid::new(model, *id).ok_or(TOO_THICK)?;
-            let top =
-                crate::thicken::offset_surface(patch, &laid.polys[0], d, eps).ok_or(TOO_THICK)?;
+            let top = if reach > 0.0 {
+                // Grown only on the side of its own box a flush rim of it
+                // lies along (the offset is carried on past that edge to
+                // meet the plane), or all round where that is not clear.
+                let (mut lo, mut hi) = laid.polys[0]
+                    .iter()
+                    .fold((DVec2::INFINITY, DVec2::NEG_INFINITY), |(a, b), p| {
+                        (a.min(*p), b.max(*p))
+                    });
+                let size = hi - lo;
+                let (box_lo, box_hi) = (lo, hi);
+                let mut grown = false;
+                for e in flush.keys().filter(|e| driver.get(*e) == Some(id)) {
+                    let edge_data = model.edge(*e).ok_or(NOTHING)?;
+                    let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+                    let uv: Vec<DVec2> = (0..=8)
+                        .map(|i| {
+                            let (u, v) =
+                                patch.param(edge_data.curve.point(pa, pb, f64::from(i) / 8.0));
+                            DVec2::new(u, v)
+                        })
+                        .collect();
+                    let along =
+                        |k: usize, at: f64| uv.iter().all(|q| (q[k] - at).abs() <= size[k] * 1e-6);
+                    let mut side = false;
+                    for k in 0..2 {
+                        if along(k, box_lo[k]) {
+                            lo[k] = box_lo[k] - size[k] * reach;
+                            side = true;
+                        } else if along(k, box_hi[k]) {
+                            hi[k] = box_hi[k] + size[k] * reach;
+                            side = true;
+                        }
+                    }
+                    if !side {
+                        lo = box_lo - size * reach;
+                        hi = box_hi + size * reach;
+                    }
+                    grown = true;
+                }
+                if grown {
+                    crate::thicken::offset_surface(patch, &[lo, hi], d, eps)
+                } else {
+                    crate::thicken::offset_surface(patch, &laid.polys[0], d, eps)
+                }
+            } else {
+                crate::thicken::offset_surface(patch, &laid.polys[0], d, eps)
+            }
+            .ok_or(TOO_THICK)?;
             Surface::Nurbs(Patch {
                 flipped: patch.flipped,
                 ..Patch::whole(top)
@@ -2070,8 +2147,9 @@ fn move_point_flush(
 /// Where the offset of a square rim `e` of face `f` meets the flush plane
 /// at its end `v`: marched along the edge from `v` until the point of the
 /// face's own offset above it is in the plane. A meeting before the edge
-/// starts (past `v`) is the surface needing to be reached past its own
-/// edge, refused as such.
+/// starts (past `v`) needs the edge and the offset carried on past their
+/// ends (`reach`, in `freeform_joined`); where the offset was not grown
+/// that far it is refused as `FLUSH_REACH`.
 #[allow(clippy::too_many_arguments)]
 fn flush_end(
     model: &Model,
@@ -2089,22 +2167,22 @@ fn flush_end(
     // Distance from the plane of the offset edge's point at `t`, with the
     // point itself.
     let at = |t: f64| {
-        let p = edge_data.curve.point(pa, pb, t);
+        // Past the edge's own end the edge is carried on (a flush rim
+        // that leans away meets its plane there), and so is the offset.
+        let p = edge_data.curve.point_past(pa, pb, t);
         let x = offset.project(p + face.surface.normal_at(p) * d);
         (plane.distance(x), x)
     };
-    // Parameter increasing away from the end `v`.
-    let (t0, sign) = if edge_data.a == v {
-        (0.0, 1.0)
-    } else {
-        (1.0, -1.0)
-    };
+    // The end `v`, as a parameter along the edge.
+    let t0 = if edge_data.a == v { 0.0 } else { 1.0 };
     let mut t = t0;
     for _ in 0..60 {
         let (g, x) = at(t);
         if g.abs() < 1e-12 {
-            let (lo, hi) = (-1e-9, 1.0 + 1e-9);
-            return if (lo..=hi).contains(&t) && (t - t0) * sign >= -1e-9 {
+            // Along the edge, or carried on past `v` as far as the offset
+            // surface was grown (it is `truly_on` only where it was).
+            let (lo, hi) = (-1.0, 2.0);
+            return if (lo..=hi).contains(&t) && truly_on(offset, x, tol) {
                 Ok(x)
             } else {
                 Err(FLUSH_REACH)
@@ -2116,11 +2194,10 @@ fn flush_end(
             break;
         }
         t -= g / slope;
-        if !(-0.5..=1.5).contains(&t) {
+        if !(-1.0..=2.0).contains(&t) {
             break;
         }
     }
-    let _ = tol;
     Err(FLUSH_REACH)
 }
 

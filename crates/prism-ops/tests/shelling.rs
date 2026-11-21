@@ -979,19 +979,103 @@ fn a_flush_rim_that_leans_over_the_sheet_trims_the_offset_back() {
 }
 
 #[test]
-fn a_flush_rim_that_would_need_the_surface_extended_says_so() {
-    let (m, a, b, edges) = flat_pair();
+fn a_flush_rim_that_leans_away_reaches_past_the_sheets_edge() {
+    // The wall leans 0.5 along z for each unit of thickness, away from the
+    // sheet: the offset surface is carried on past the sheet's own edge to
+    // meet the plane. By hand, the cross-section gains a triangle of legs d
+    // and d/2, over a length of two; the sheet's ends stay cut square.
+    let d: f64 = 0.1;
+    let (mut m, a, b, edges) = flat_pair();
     let body: BTreeSet<FaceId> = [a, b].into();
     let styles = flush_both(edges, leaning_plane(-0.5));
+    assert_eq!(
+        shelling::refusal_with(&m, &body, &BTreeSet::new(), d, &styles),
+        None
+    );
+    shelling::shell_with(&mut m, &body, &BTreeSet::new(), d, &styles).unwrap();
+    sound(&m);
+    near_enough(volume(&m).abs(), 2.0 * (d + 0.5 * d * d * 0.5));
+    // The wall lies in the plane: one flush wall for each bottom edge.
+    let plane = leaning_plane(-0.5);
+    let on_plane = m
+        .faces()
+        .filter(|(_, f)| {
+            f.plane()
+                .is_some_and(|p| p.normal.dot(plane.normal).abs() > 0.999999)
+        })
+        .count();
+    assert_eq!(on_plane, 2, "one flush wall for each bottom edge");
+}
+
+#[test]
+fn a_flush_rim_reaching_a_long_way_past_the_edge_still_says_so() {
+    // A plane almost along the sheet needs the offset carried on past any
+    // reasonable distance: refused in the kernel's words.
+    let (m, a, b, edges) = flat_pair();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let styles = flush_both(edges, leaning_plane(-40.0));
     assert_eq!(
         shelling::refusal_with(&m, &body, &BTreeSet::new(), 0.1, &styles),
         Some(shelling::FLUSH_REACH)
     );
-    // The other thickness direction trims instead.
-    assert_eq!(
-        shelling::refusal_with(&m, &body, &BTreeSet::new(), -0.1, &styles),
-        None
-    );
+}
+
+/// One flat NURBS quad alone (x 0 to 1, z 0 to 1, in y = 0), and its
+/// bottom edge.
+fn lone_sheet() -> (Model, FaceId, prism_topo::EdgeId) {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_topo::Face;
+    let k = vec![0.0, 0.0, 1.0, 1.0];
+    let surface = NurbsSurface::new(
+        [1, 1],
+        [k.clone(), k],
+        [2, 2],
+        vec![
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, 1.0),
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(1.0, 0.0, 1.0),
+        ],
+        vec![1.0; 4],
+        [false, false],
+    )
+    .unwrap();
+    let mut m = Model::new();
+    let a0 = m.add_vertex(DVec3::new(0.0, 0.0, 0.0));
+    let a1 = m.add_vertex(DVec3::new(1.0, 0.0, 0.0));
+    let b1 = m.add_vertex(DVec3::new(1.0, 0.0, 1.0));
+    let b0 = m.add_vertex(DVec3::new(0.0, 0.0, 1.0));
+    let (bottom, right) = (m.add_edge(a0, a1).unwrap(), m.add_edge(a1, b1).unwrap());
+    let (top, left) = (m.add_edge(b1, b0).unwrap(), m.add_edge(b0, a0).unwrap());
+    let f = m.add_face(Face::with_edges(
+        vec![a0, a1, b1, b0],
+        vec![],
+        Surface::Nurbs(Patch::whole(surface)),
+        vec![vec![bottom, right, top, left]],
+    ));
+    (m, f, bottom)
+}
+
+#[test]
+fn a_lone_freeform_face_takes_a_chosen_flush_rim_both_ways() {
+    // Leaning over the sheet trims the wall back; leaning away carries the
+    // offset on past the sheet's edge: by hand, cross-sections of
+    // d - lean d^2/2 and d + lean d^2/2, over a length of one.
+    let d: f64 = 0.1;
+    for (lean, sign) in [(0.5, -1.0), (-0.5, 1.0)] {
+        let (mut m, f, bottom) = lone_sheet();
+        let body: BTreeSet<FaceId> = [f].into();
+        let styles: shelling::RimStyles =
+            [(bottom, shelling::RimStyle::Flush(leaning_plane(lean)))].into();
+        shelling::shell_with(&mut m, &body, &BTreeSet::new(), d, &styles).unwrap();
+        sound(&m);
+        near_enough(volume(&m).abs(), d + sign * 0.5 * d * d * 0.5);
+    }
+    // The program picks nothing for a lone face: the sheet's bottom edge
+    // lies in the ground plane and stays square.
+    let (m, f, _) = lone_sheet();
+    let body: BTreeSet<FaceId> = [f].into();
+    assert!(shelling::default_rims(&m, &body, &BTreeSet::new(), d).is_empty());
 }
 
 #[test]

@@ -119,6 +119,15 @@ impl Curve {
         }
     }
 
+    /// [`Self::point`] with `t` allowed outside 0 to 1: a line, an arc and
+    /// a spline are each carried on past their ends.
+    pub fn point_past(&self, a: DVec3, b: DVec3, t: f64) -> DVec3 {
+        match self {
+            Curve::Spline(s) => s.point_past(t),
+            _ => self.point(a, b, t),
+        }
+    }
+
     /// The unit direction of travel at `a`, walking towards `b`.
     pub fn start_tangent(&self, a: DVec3, b: DVec3) -> DVec3 {
         if let Curve::Spline(s) = self {

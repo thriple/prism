@@ -401,6 +401,14 @@ impl Stack {
         let on_base = index == 0;
         let found = resolve_faces(&m, &mut faces, on_base)?;
         let open = resolve_faces(&m, &mut open, on_base)?;
+        // Only a body with a freeform face can end a wall in a plane
+        // (flat and analytic walls end square, exactly).
+        if !prism_ops::shelling::body(&m, &found)
+            .iter()
+            .any(|f| m.face(*f).is_some_and(|x| x.surface.patch().is_some()))
+        {
+            return None;
+        }
         let mut picks = Vec::new();
         for c in rims.iter_mut() {
             if let Some(e) = resolve(&m, std::slice::from_mut(&mut c.edge), on_base)

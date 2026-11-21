@@ -144,7 +144,7 @@ impl Session {
 
     /// Planes through the straight boundary `a`..`b` that a tilt can snap
     /// to, in the shell's own coordinates.
-    fn rim_candidates(&self, report: &RimReport, a: DVec3, b: DVec3) -> Vec<Candidate> {
+    fn rim_candidates(&self, def: DefId, report: &RimReport, a: DVec3, b: DVec3) -> Vec<Candidate> {
         let tol = report.before.tol();
         let u = (b - a).normalize_or_zero();
         let holds = |p: &Plane| {
@@ -180,10 +180,45 @@ impl Session {
             }
         }
         for (_, g) in report.before.guides() {
-            if let prism_topo::Guide::Point { at } = g {
-                let n = u.cross(*at - a).normalize_or_zero();
-                if n != DVec3::ZERO {
-                    out.push((Plane::new(a, n), "a guide point"));
+            match g {
+                prism_topo::Guide::Point { at } => {
+                    let n = u.cross(*at - a).normalize_or_zero();
+                    if n != DVec3::ZERO {
+                        out.push((Plane::new(a, n), "a guide point"));
+                    }
+                }
+                // A guide line makes a plane with the boundary where the
+                // two lie in one plane (cross, or run side by side).
+                prism_topo::Guide::Line { origin, dir } => {
+                    let mut n = u.cross(*dir).normalize_or_zero();
+                    if n == DVec3::ZERO {
+                        n = u.cross(*origin - a).normalize_or_zero();
+                    }
+                    if n != DVec3::ZERO && tol.is_zero(Plane::new(a, n).distance(*origin)) {
+                        out.push((Plane::new(a, n), "a guide line"));
+                    }
+                }
+            }
+        }
+        // The flat faces of the other parts placed beside it in the same
+        // group: a part that meets the boundary there.
+        if let Some(d) = self.doc.assembly().def(def) {
+            for inst in d.instances.values() {
+                let Some(other) = self.doc.assembly().def(inst.def) else {
+                    continue;
+                };
+                let m = inst.transform;
+                for (_, f) in other.model.faces() {
+                    let Some(p) = f.plane() else {
+                        continue;
+                    };
+                    let q = Plane::new(
+                        m.transform_point3(p.origin),
+                        m.matrix3.inverse().transpose().mul_vec3(p.normal),
+                    );
+                    if holds(&q) {
+                        out.push((Plane::new(a, q.normal), "another part"));
+                    }
                 }
             }
         }
@@ -230,7 +265,7 @@ impl Session {
             drag.snapped = None;
             let cos = SNAP_DEGREES.to_radians().cos();
             if let Some((p, what)) = self
-                .rim_candidates(&report, a, b)
+                .rim_candidates(drag.def, &report, a, b)
                 .into_iter()
                 .filter(|(p, _)| p.normal.dot(tilt.normal).abs() > cos)
                 .max_by(|x, y| {
@@ -398,7 +433,11 @@ impl Session {
     ) -> Result<RimStyle, &'static str> {
         let mut planes: Vec<Plane> = plane.into_iter().collect();
         if let Some((a, b)) = line {
-            planes.extend(self.rim_candidates(report, a, b).into_iter().map(|c| c.0));
+            planes.extend(
+                self.rim_candidates(def, report, a, b)
+                    .into_iter()
+                    .map(|c| c.0),
+            );
         }
         let mut why = None;
         for p in planes {
@@ -435,6 +474,12 @@ impl Session {
                     }
                     Some("the working plane") => {
                         "Flush to the working plane · let go to set it · Esc cancels"
+                    }
+                    Some("another part") => {
+                        "Flush to the plane of another part · let go to set it · Esc cancels"
+                    }
+                    Some("a guide line") => {
+                        "Flush to a plane through a guide line · let go to set it · Esc cancels"
                     }
                     Some(_) => {
                         "Flush to a plane through a guide point · let go to set it · Esc cancels"

@@ -169,8 +169,19 @@ pub(crate) fn offset_surface(
             (a.min(*p), b.max(*p))
         });
     let s = &patch.surface;
+    let range = s.domain();
+    let outside = |q: DVec2| {
+        !s.periodic()[0] && (q.x < range[0].0 || q.x > range[0].1)
+            || !s.periodic()[1] && (q.y < range[1].0 || q.y > range[1].1)
+    };
     let f = |u: f64, v: f64| {
         let q = DVec2::new(lo.x + (hi.x - lo.x) * u, lo.y + (hi.y - lo.y) * v);
+        if outside(q) {
+            // Past the surface's own edge (a box grown to reach a plane,
+            // brief 49): the end span carried on.
+            let n = s.normal_past(q.x, q.y);
+            return s.eval_past(q.x, q.y) + if patch.flipped { -n } else { n } * d;
+        }
         s.eval(q.x, q.y) + patch.normal(q.x, q.y) * d
     };
     // The box's ends and the knot lines inside it, as fractions across it.

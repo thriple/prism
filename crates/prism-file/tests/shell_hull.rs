@@ -91,17 +91,31 @@ fn the_hulls_centre_plane_rims_end_flush() {
         .map(|(_, p)| p.y - 4.863037368822191)
         .fold(f64::MIN, f64::max);
     assert!(past < 1e-4, "{past}");
+    // Outward the offset surfaces are carried on past the hull's own
+    // edge to meet the plane: a valid solid again, with nothing past the
+    // plane either.
+    let d = 0.05;
     assert_eq!(
-        shelling::refusal_with(model, &all, &open, 0.05, &styles),
-        Some(shelling::FLUSH_REACH),
-        "outward needs the surface extended"
+        shelling::refusal_with(model, &all, &open, d, &styles),
+        None,
+        "outward"
     );
+    let mut m = model.clone();
+    shelling::shell_with(&mut m, &all, &open, d, &styles).unwrap();
+    assert!(is_solid(&m));
+    let problems = check::problems(&m);
+    assert!(problems.is_empty(), "{problems:?}");
+    let past = m
+        .vertices()
+        .map(|(_, p)| p.y - 4.863037368822191)
+        .fold(f64::MIN, f64::max);
+    assert!(past < 1e-4, "{past}");
 }
 
 /// What the program picks for the hull's rims by itself: every boundary
 /// that lies in a plane a part would meet there (here the centre plane and
-/// the gunwale's level) and can end flush in it, and no other. Outward it
-/// cannot be built anywhere, so every rim stays Square, as before.
+/// the gunwale's level) and can end flush in it, and no other, thickened
+/// either way.
 #[test]
 fn the_hulls_default_rims() {
     use prism_topo::EdgeId;
@@ -122,7 +136,15 @@ fn the_hulls_default_rims() {
     assert!(is_solid(&m));
     let problems = check::problems(&m);
     assert!(problems.is_empty(), "{problems:?}");
-    assert!(shelling::default_rims(model, &all, &open, 0.05).is_empty());
+    // Outward the surface is carried on to meet the plane, so the same
+    // boundaries end flush there too.
+    let out = shelling::default_rims(model, &all, &open, 0.05);
+    assert_eq!(out.keys().copied().collect::<Vec<_>>(), flush);
+    let mut m = model.clone();
+    shelling::shell_with(&mut m, &all, &open, 0.05, &out).unwrap();
+    assert!(is_solid(&m));
+    let problems = check::problems(&m);
+    assert!(problems.is_empty(), "{problems:?}");
 }
 
 /// The live shell keeps its rim styles (brief 49 part 3): the program picks

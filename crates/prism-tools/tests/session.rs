@@ -8881,7 +8881,10 @@ fn rim_sheet() -> prism_topo::Model {
 
 /// The sheet shelled 0.1 as a live shell, selected with the Shell tool.
 fn rim_driver() -> Driver {
-    let mut doc = Document::with_model(rim_sheet());
+    rim_driver_in(Document::with_model(rim_sheet()))
+}
+
+fn rim_driver_in(mut doc: Document) -> Driver {
     let all: std::collections::BTreeSet<prism_topo::FaceId> =
         doc.model().faces().map(|(id, _)| id).collect();
     assert!(doc.run(prism_doc::Command::Shell {
@@ -8979,6 +8982,91 @@ fn dragging_a_rim_handle_tilts_the_cut_and_one_step_sets_it() {
 }
 
 #[test]
+fn the_tilt_snaps_to_a_guide_line_and_to_a_part_beside_it() {
+    // Both give the plane that leans 0.6 up the sheet for each unit of
+    // thickness, through the bottom edge: by hand, the wall trims a
+    // triangle of legs d and 0.6 d from each of the two bottom edges.
+    let trimmed = 2.0 * (0.1 - 0.5 * 0.1 * 0.1 * 0.6);
+    let lean = DVec3::new(1.0, -1.0, 0.6);
+    // A guide line through the edge's end that lies in that plane.
+    let mut doc = Document::with_model(rim_sheet());
+    doc.run(prism_doc::Command::AddGuide {
+        guide: prism_topo::Guide::Line {
+            origin: DVec3::ZERO,
+            dir: DVec3::new(0.0, -1.0, 0.6).normalize(),
+        },
+    });
+    let mut d = rim_driver_in(doc);
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let to = d.screen(lean);
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert!(d.s.hint().contains("guide line"), "{}", d.s.hint());
+    let_go(&mut d);
+    assert!((model_volume(d.s.model()).abs() - trimmed).abs() < 1e-9);
+    // A box grouped and turned about the x axis, so one of its faces is
+    // that plane: another part meeting the edge.
+    let mut doc = Document::with_model(rim_sheet());
+    let had: std::collections::BTreeSet<_> = doc.model().vertices().map(|(i, _)| i).collect();
+    doc.run(prism_doc::Command::Rect {
+        x0: 0.0,
+        y0: 10.0,
+        x1: 2.0,
+        y1: 12.0,
+        z: 0.0,
+    });
+    let f = prism_ops::face_at(doc.model(), DVec3::new(1.0, 11.0, 0.0)).expect("base");
+    let up = doc.model().face(f).unwrap().plane().unwrap().normal.z > 0.0;
+    doc.run(prism_doc::Command::PushPull {
+        face: f,
+        distance: if up { 1.0 } else { -1.0 },
+        new_loop: false,
+    });
+    let m = doc.model();
+    let selection = prism_ops::Selection {
+        vertices: m
+            .vertices()
+            .map(|(i, _)| i)
+            .filter(|i| !had.contains(i))
+            .collect(),
+        edges: m
+            .edges()
+            .filter(|(_, e)| !had.contains(&e.a))
+            .map(|(i, _)| i)
+            .collect(),
+        faces: m
+            .faces()
+            .filter(|(_, f)| f.loops().flatten().all(|v| !had.contains(v)))
+            .map(|(i, _)| i)
+            .collect(),
+        guides: Default::default(),
+    };
+    let g = doc.assembly().next_instance();
+    assert!(doc.run(prism_doc::Command::MakeGroup {
+        selection,
+        instances: Default::default(),
+    }));
+    assert!(doc.run(prism_doc::Command::Place {
+        instances: [g].into(),
+        change: prism_doc::Change::Rotate {
+            centre: DVec3::ZERO,
+            axis: DVec3::X,
+            angle: -(0.6f64).atan(),
+        },
+    }));
+    let mut d = rim_driver_in(doc);
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let to = d.screen(lean);
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert!(d.s.hint().contains("another part"), "{}", d.s.hint());
+    let_go(&mut d);
+    assert!(
+        (model_volume(d.s.model()).abs() - trimmed).abs() < 1e-9,
+        "{} vs {trimmed}",
+        model_volume(d.s.model())
+    );
+}
+
+#[test]
 fn the_tilt_snaps_to_a_plane_through_the_boundary_when_close() {
     let mut d = rim_driver();
     // Nearly along the ground plane (z = 0), which holds the bottom edge.
@@ -8995,9 +9083,10 @@ fn the_tilt_snaps_to_a_plane_through_the_boundary_when_close() {
 fn a_tilt_the_kernel_cannot_build_says_why_and_makes_nothing() {
     let mut d = rim_driver();
     let log = d.s.document().log().count();
-    // Leaning the other way needs the surface extended past its edge.
+    // A cut that leans so far away that the surface cannot be carried on
+    // to meet it.
     rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
-    let to = d.screen(DVec3::new(1.0, -1.0, -0.5));
+    let to = d.screen(DVec3::new(1.0, -1.0, -8.0));
     d.send(Input::Move { x: to.x, y: to.y });
     assert_eq!(d.s.hint(), prism_ops::shelling::FLUSH_REACH);
     let_go(&mut d);
@@ -9095,28 +9184,31 @@ fn a_rims_tilt_is_typed_in_degrees_and_the_kernels_refusals_say_why() {
     d.s.inspector_set("feature.0.rim.0", "Flush")
         .expect("flush");
     let whole = model_volume(d.s.model()).abs();
-    // One way leans into the sheet and builds; the other would need the
-    // surface extended, and is refused in the kernel's words.
-    let mut built = Vec::new();
+    // One way leans into the sheet (the wall is trimmed back), the other
+    // away from it (the surface is carried on past its edge): both build.
+    let mut volumes = Vec::new();
     for t in ["30", "-30"] {
-        match d.s.inspector_set("feature.0.rim.0.tilt", t) {
-            Ok(()) => built.push(t),
-            Err(why) => assert!(!why.is_empty(), "{why}"),
-        }
+        d.s.inspector_set("feature.0.rim.0.tilt", t).expect(t);
+        let shown: f64 = inspector_text(&d, "feature.0.rim.0.tilt")
+            .0
+            .parse()
+            .unwrap();
+        assert!((shown - t.parse::<f64>().unwrap()).abs() < 0.06, "{shown}");
+        volumes.push(model_volume(d.s.model()).abs());
     }
-    assert_eq!(built.len(), 1, "exactly one way builds: {built:?}");
-    assert!(model_volume(d.s.model()).abs() < whole - 1e-6, "trimmed");
-    let shown: f64 = inspector_text(&d, "feature.0.rim.0.tilt")
-        .0
-        .parse()
-        .unwrap();
+    volumes.sort_by(f64::total_cmp);
     assert!(
-        (shown - built[0].parse::<f64>().unwrap()).abs() < 0.06,
-        "{shown}"
+        volumes[0] < whole - 1e-6 && volumes[1] > whole + 1e-6,
+        "{volumes:?}"
     );
+    // A plane lying along the sheet is refused in the kernel's words.
+    let before = model_volume(d.s.model()).abs();
+    let why = d.s.inspector_set("feature.0.rim.0.tilt", "0").unwrap_err();
+    assert!(why.contains("along"), "{why}");
+    assert!((model_volume(d.s.model()).abs() - before).abs() < 1e-12);
     // A degree sign is allowed; words are not.
-    d.s.inspector_set("feature.0.rim.0.tilt", &format!("{}°", built[0]))
-        .ok();
+    d.s.inspector_set("feature.0.rim.0.tilt", "20°")
+        .expect("a degree sign is allowed");
     assert!(d.s.inspector_set("feature.0.rim.0.tilt", "steep").is_err());
     assert!(d.s.inspector_set("feature.0.rim.0.tilt", "nan").is_err());
     // Typing shows the shell as it would be, and stops when the typing does.
