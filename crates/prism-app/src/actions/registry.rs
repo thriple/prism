@@ -667,7 +667,7 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 
 /// Behaviours from the prototype's list that the Rust app has now.
 const BUILT_BEHAVIOURS: [&str; 33] = [
-    "Tags typed in the Inspector and the Tags window, with Enter",
+    "Several tags per object, typed with Enter or clicked, and a Beverly list of suggested tags",
     "Name a new component as it is made (Inspector opens, Name field ready, Enter)",
     "Snap to grid (optional)",
     "Groups and components, open and exit",

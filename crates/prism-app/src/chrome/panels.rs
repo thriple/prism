@@ -364,7 +364,7 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                 id,
                 name,
                 kind,
-                tag,
+                tags: on,
                 hidden,
                 locked,
                 material,
@@ -391,11 +391,14 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     }
                 });
                 ui.horizontal_wrapped(|ui| {
-                    ui.label("Tag");
-                    // Typed: a name that is new makes the tag.
-                    let now = tag
-                        .and_then(|t| data.tags.iter().find(|r| r.0 == t))
-                        .map_or(String::new(), |r| r.1.clone());
+                    ui.label("Tags");
+                    // Typed, comma between: a name that is new makes the tag.
+                    let now = on
+                        .iter()
+                        .filter_map(|t| data.tags.iter().find(|r| r.0 == *t))
+                        .map(|r| r.1.clone())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     let text = match &mut p.info_tag {
                         Some((i, t)) if i == id => t,
                         _ => {
@@ -415,7 +418,7 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     if !w.has_focus() {
                         p.info_tag = None;
                     }
-                    let none = tag.is_none();
+                    let none = on.is_empty();
                     if ui
                         .add(SoftButton::new("None").small().selected(none))
                         .clicked()
@@ -424,10 +427,10 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     }
                     for (t, tname, _, _) in &data.tags {
                         if ui
-                            .add(SoftButton::new(tname).small().selected(*tag == Some(*t)))
+                            .add(SoftButton::new(tname).small().selected(on.contains(t)))
                             .clicked()
                         {
-                            ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(Some(*t))));
+                            ops.push(PanelOp::Tag(prism_tools::TagOp::Toggle(*t)));
                         }
                     }
                 });
@@ -533,8 +536,8 @@ fn tags(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                             if ui.add(SoftButton::new("Rename").small()).clicked() {
                                 p.tag_edit = Some((*t, name.clone()));
                             }
-                            if ui.add(SoftButton::new("Put selected").small()).clicked() {
-                                ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(Some(*t))));
+                            if ui.add(SoftButton::new("On selected").small()).clicked() {
+                                ops.push(PanelOp::Tag(prism_tools::TagOp::Toggle(*t)));
                             }
                         }
                     }
@@ -566,6 +569,25 @@ fn tags(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                 p.tag_new_focus = true;
                 p.tag_error = None;
             }
+            // Words Beverly acts on: click one to put it on the selection (it
+            // is made as a tag if it is not one yet); click again to take it off.
+            egui::CollapsingHeader::new(RichText::new("Beverly").color(color::INK))
+                .id_salt("beverly_tags")
+                .show(ui, |ui| {
+                    for (group, words) in prism_tools::BEVERLY_TAGS {
+                        ui.label(RichText::new(group).color(color::MUTED));
+                        ui.horizontal_wrapped(|ui| {
+                            for w in words {
+                                let on = data.tags.iter().any(|t| t.1.eq_ignore_ascii_case(w));
+                                if ui.add(SoftButton::new(*w).small().selected(on)).clicked() {
+                                    ops.push(PanelOp::Tag(prism_tools::TagOp::ToggleNamed(
+                                        (*w).to_owned(),
+                                    )));
+                                }
+                            }
+                        });
+                    }
+                });
             if let Some(why) = &p.tag_error {
                 ui.label(RichText::new(why).color(color::WARN));
             }

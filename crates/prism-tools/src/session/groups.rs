@@ -610,7 +610,7 @@ impl Session {
                 kind: def
                     .and_then(|d| d.name.clone())
                     .map_or("Group".to_owned(), |n| format!("Component \"{n}\"")),
-                tag: asm.tag_of(id),
+                tags: asm.tags_of(id),
                 hidden: asm.is_hidden(id),
                 locked: asm.is_locked(id),
                 material: self.material_name(asm.painted_with(id)),
@@ -667,12 +667,83 @@ impl Session {
                 Command::RenameTag { tag, name }
             }
             TagOp::Show(tag, visible) => Command::SetTagVisible { tag, visible },
+            TagOp::Toggle(tag) => {
+                let name = self
+                    .tag_rows()
+                    .into_iter()
+                    .find(|t| t.0 == tag)
+                    .map(|t| t.1);
+                return self.toggle_tag(self.groups.clone(), &name.unwrap_or_default());
+            }
+            TagOp::ToggleNamed(name) => return self.toggle_tag(self.groups.clone(), &name),
             TagOp::PutSelected(tag) => Command::SetTag {
                 instances: self.groups.clone(),
                 tag,
             },
         };
         self.run(cmd);
+        Ok(())
+    }
+
+    /// The commands that make the tags among `names` that do not exist
+    /// yet, and the ids of all of them (new tags take the next ids).
+    fn tags_for(&self, names: &[String]) -> (Vec<Command>, BTreeSet<prism_doc::TagId>) {
+        let mut next = self.doc.assembly().tags().1;
+        let rows = self.tag_rows();
+        let mut made: Vec<(String, prism_doc::TagId)> = Vec::new();
+        let (mut commands, mut ids) = (Vec::new(), BTreeSet::new());
+        for n in names {
+            let same = |x: &str| x.eq_ignore_ascii_case(n);
+            let found = rows
+                .iter()
+                .find(|r| same(&r.1))
+                .map(|r| r.0)
+                .or_else(|| made.iter().find(|m| same(&m.0)).map(|m| m.1));
+            let id = found.unwrap_or_else(|| {
+                let id = prism_doc::TagId(next);
+                next += 1;
+                commands.push(Command::AddTag { name: n.clone() });
+                made.push((n.clone(), id));
+                id
+            });
+            ids.insert(id);
+        }
+        (commands, ids)
+    }
+
+    /// Put `instances` on exactly the tags named (new names make tags), in
+    /// one undo step. No names: on no tag.
+    pub(super) fn set_tags_named(&mut self, instances: BTreeSet<InstanceId>, names: &[String]) {
+        let (mut commands, tags) = self.tags_for(names);
+        commands.push(Command::SetTags { instances, tags });
+        self.cancel();
+        self.run(Command::Batch { commands });
+    }
+
+    /// One tag on or off for `instances`: off if all are on it, else on.
+    pub(super) fn toggle_tag(
+        &mut self,
+        instances: BTreeSet<InstanceId>,
+        name: &str,
+    ) -> Result<(), String> {
+        let name = name.trim();
+        if instances.is_empty() {
+            return Err("Select a group or component first".into());
+        }
+        if name.is_empty() {
+            return Err("Give the tag a name".into());
+        }
+        let (mut commands, ids) = self.tags_for(&[name.to_owned()]);
+        let tag = *ids.iter().next().expect("one tag");
+        let asm = self.doc.assembly();
+        let all = instances.iter().all(|i| asm.tags_of(*i).contains(&tag));
+        commands.push(Command::TagOn {
+            instances,
+            tag,
+            on: !all,
+        });
+        self.cancel();
+        self.run(Command::Batch { commands });
         Ok(())
     }
 
@@ -1102,7 +1173,7 @@ pub enum EntityInfo {
         id: InstanceId,
         name: String,
         kind: String,
-        tag: Option<prism_doc::TagId>,
+        tags: Vec<prism_doc::TagId>,
         hidden: bool,
         locked: bool,
         /// Painted as a whole with it ("Default": not painted).
@@ -1120,6 +1191,45 @@ pub enum EntityInfo {
     },
 }
 
+/// The words Beverly (the game tool) acts on, offered in the Tags window
+/// to click: a tag with the word is put on the selection. Prism does not
+/// know what they mean; any other tag can be typed. Grouped for the list.
+pub const BEVERLY_TAGS: [(&str, &[&str]); 5] = [
+    (
+        "Collision",
+        &["collider", "walkthrough", "trigger", "nocollide"],
+    ),
+    ("Physics", &["loose", "breakable"]),
+    (
+        "Surface",
+        &[
+            "climbable",
+            "ladder",
+            "slippery",
+            "water",
+            "ground",
+            "diggable",
+            "grind rail",
+            "perch",
+            "paths ignore",
+        ],
+    ),
+    (
+        "Material",
+        &[
+            "stone", "wood", "metal", "grass", "dirt", "sand", "gravel", "snow", "carpet", "glass",
+            "ice", "rubber",
+        ],
+    ),
+    (
+        "Parts",
+        &[
+            "door", "button", "lift", "platform", "light", "socket", "seat", "lod1", "lod2",
+            "editor",
+        ],
+    ),
+];
+
 /// A change from the Tags window or Entity Info.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TagOp {
@@ -1129,6 +1239,12 @@ pub enum TagOp {
     Show(prism_doc::TagId, bool),
     /// Put the selected groups on a tag (None: on no tag).
     PutSelected(Option<prism_doc::TagId>),
+    /// Put the selected groups on this tag as well, or, when all of them
+    /// are on it, take them off it. Their other tags stay.
+    Toggle(prism_doc::TagId),
+    /// The same for a tag by name: a name that is new makes the tag (one
+    /// undo step with putting the selection on it).
+    ToggleNamed(String),
 }
 
 /// The box of a definition's geometry and everything nested in it.

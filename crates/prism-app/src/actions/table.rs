@@ -2482,7 +2482,7 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         false,
     ),
     (
-        "Tags typed in the Inspector and the Tags window, with Enter",
+        "Several tags per object, typed with Enter or clicked, and a Beverly list of suggested tags",
         false,
     ),
     (

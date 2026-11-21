@@ -92,17 +92,24 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                     }
                 }
                 if let FieldKind::Suggest(options) = &f.kind {
+                    // Tags: a click puts the tag on or takes it off, leaving
+                    // the others; None takes them all off.
+                    let tags = f.key == "tag";
                     for o in options {
-                        if ui
-                            .add(
-                                SoftButton::new(o)
-                                    .small()
-                                    .selected(!f.mixed && *o == f.text),
-                            )
-                            .clicked()
-                        {
+                        let on = !f.mixed
+                            && if tags {
+                                f.text.split(", ").any(|t| t == o)
+                            } else {
+                                *o == f.text
+                            };
+                        if ui.add(SoftButton::new(o).small().selected(on)).clicked() {
                             p.inspector_edit = None;
-                            ops.push(PanelOp::Inspect(f.key.clone(), o.clone()));
+                            let key = if tags && o != "None" {
+                                "tag.toggle"
+                            } else {
+                                &f.key
+                            };
+                            ops.push(PanelOp::Inspect(key.to_owned(), o.clone()));
                         }
                     }
                 }

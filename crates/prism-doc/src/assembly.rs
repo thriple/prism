@@ -205,7 +205,8 @@ pub struct Assembly {
     names: BTreeMap<InstanceId, String>,
     /// Which tag each instance is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    on_tag: BTreeMap<InstanceId, TagId>,
+    /// The tags an instance is on (any number; it is hidden if any is).
+    on_tag: BTreeMap<InstanceId, BTreeSet<TagId>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tags: BTreeMap<TagId, Tag>,
     #[serde(default)]
@@ -255,7 +256,7 @@ pub struct Attributes {
     pub hidden: bool,
     pub locked: bool,
     pub name: Option<String>,
-    pub tag: Option<TagId>,
+    pub tags: BTreeSet<TagId>,
 }
 
 impl Default for Assembly {
@@ -403,8 +404,13 @@ impl Assembly {
             if let Some(n) = a.name {
                 self.names.insert(i, n);
             }
-            if let Some(t) = a.tag.filter(|t| self.tags.contains_key(t)) {
-                self.on_tag.insert(i, t);
+            let on: BTreeSet<TagId> = a
+                .tags
+                .into_iter()
+                .filter(|t| self.tags.contains_key(t))
+                .collect();
+            if !on.is_empty() {
+                self.on_tag.insert(i, on);
             }
         }
         self.prune();
@@ -424,7 +430,7 @@ impl Assembly {
             out.entry(*i).or_default().name = Some(n.clone());
         }
         for (i, t) in &self.on_tag {
-            out.entry(*i).or_default().tag = Some(*t);
+            out.entry(*i).or_default().tags = t.clone();
         }
         out
     }
@@ -444,18 +450,26 @@ impl Assembly {
     /// Whether an instance is shown: not hidden, and not on a hidden tag.
     pub fn is_shown(&self, i: InstanceId) -> bool {
         !self.hidden.contains(&i)
-            && self
-                .on_tag
-                .get(&i)
-                .is_none_or(|t| self.tags.get(t).is_none_or(|t| t.visible))
+            && self.on_tag.get(&i).is_none_or(|on| {
+                on.iter()
+                    .all(|t| self.tags.get(t).is_none_or(|t| t.visible))
+            })
     }
 
     pub fn name_of(&self, i: InstanceId) -> Option<&str> {
         self.names.get(&i).map(String::as_str)
     }
 
+    /// The first tag an instance is on (by tag id).
     pub fn tag_of(&self, i: InstanceId) -> Option<TagId> {
-        self.on_tag.get(&i).copied()
+        self.on_tag.get(&i).and_then(|t| t.iter().next().copied())
+    }
+
+    /// Every tag an instance is on, by tag id.
+    pub fn tags_of(&self, i: InstanceId) -> Vec<TagId> {
+        self.on_tag
+            .get(&i)
+            .map_or(Vec::new(), |t| t.iter().copied().collect())
     }
 
     pub fn tag(&self, t: TagId) -> Option<&Tag> {
@@ -903,7 +917,7 @@ impl Assembly {
         for i in instances {
             match tag.filter(|t| self.tags.contains_key(t)) {
                 Some(t) => {
-                    self.on_tag.insert(*i, t);
+                    self.on_tag.insert(*i, [t].into());
                 }
                 None => {
                     self.on_tag.remove(i);
@@ -913,9 +927,45 @@ impl Assembly {
         self.prune();
     }
 
+    /// Put instances on a tag too (`on`), or take them off it, leaving
+    /// their other tags.
+    pub fn tag_on(&mut self, instances: &BTreeSet<InstanceId>, tag: TagId, on: bool) {
+        if !self.tags.contains_key(&tag) {
+            return;
+        }
+        for i in instances {
+            if on {
+                self.on_tag.entry(*i).or_default().insert(tag);
+            } else if let Some(t) = self.on_tag.get_mut(i) {
+                t.remove(&tag);
+                if t.is_empty() {
+                    self.on_tag.remove(i);
+                }
+            }
+        }
+        self.prune();
+    }
+
+    /// Give instances exactly these tags.
+    pub fn set_tags(&mut self, instances: &BTreeSet<InstanceId>, tags: &BTreeSet<TagId>) {
+        let on: BTreeSet<TagId> = tags
+            .iter()
+            .copied()
+            .filter(|t| self.tags.contains_key(t))
+            .collect();
+        for i in instances {
+            if on.is_empty() {
+                self.on_tag.remove(i);
+            } else {
+                self.on_tag.insert(*i, on.clone());
+            }
+        }
+        self.prune();
+    }
+
     /// How many instances are on a tag.
     pub fn on_tag_count(&self, t: TagId) -> usize {
-        self.on_tag.values().filter(|x| **x == t).count()
+        self.on_tag.values().filter(|x| x.contains(&t)).count()
     }
 
     pub fn root(&self) -> &Definition {
@@ -1691,7 +1741,7 @@ impl Assembly {
         );
         out.prune();
         out.purge_materials();
-        let used: BTreeSet<TagId> = out.on_tag.values().copied().collect();
+        let used: BTreeSet<TagId> = out.on_tag.values().flatten().copied().collect();
         out.tags.retain(|t, _| used.contains(t));
         out.locked.clear();
         out
@@ -1824,8 +1874,12 @@ impl Assembly {
         if let Some(n) = clip.names.get(&from) {
             self.names.insert(to, n.clone());
         }
-        if let Some(t) = clip.on_tag.get(&from).and_then(|t| map.tags.get(t)) {
-            self.on_tag.insert(to, *t);
+        if let Some(on) = clip.on_tag.get(&from) {
+            let mine: BTreeSet<TagId> =
+                on.iter().filter_map(|t| map.tags.get(t).copied()).collect();
+            if !mine.is_empty() {
+                self.on_tag.insert(to, mine);
+            }
         }
         if let Some(m) = clip.painted.get(&from).and_then(|m| map.materials.get(m)) {
             self.painted.insert(to, *m);
@@ -2020,7 +2074,7 @@ impl Assembly {
                 if let Some(n) = self.names.get(from).cloned() {
                     self.names.insert(id, n);
                 }
-                if let Some(t) = self.on_tag.get(from).copied() {
+                if let Some(t) = self.on_tag.get(from).cloned() {
                     self.on_tag.insert(id, t);
                 }
                 if let Some(mat) = self.painted.get(from).copied() {

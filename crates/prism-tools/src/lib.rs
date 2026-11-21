@@ -10,6 +10,6 @@ pub mod smart;
 pub mod units;
 
 pub use session::{
-    Button, EntityInfo, Event, HealthRow, Input, Key, OutlineRow, Recording, Response, Session,
-    TagOp,
+    BEVERLY_TAGS, Button, EntityInfo, Event, HealthRow, Input, Key, OutlineRow, Recording,
+    Response, Session, TagOp,
 };

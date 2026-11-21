@@ -1,3 +1,5 @@
+> **Superseded in part (owner, 2026-11-21):** Prism has no separate "roles". Everything is **tags**, several per object. The GLB node carries `extras.prism.tags` (a list of tag names) instead of `tag` and `roles`, and a material carries nothing extra (no `surface`). Beverly reads those words, plus the words in node and material names, and decides what they mean. See brief 50 part 3.
+
 # Prism to Beverly: what a GLB carries (addendum to Prism's brief 50, owner request, 2026-11-21)
 
 Both programs follow this file: Prism when it writes and reads a GLB with the "Game engine" preset, Beverly when it

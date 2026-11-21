@@ -4985,3 +4985,9 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** see the brief ("Part 2 ... built"). `FieldKind::Suggest` is new (text field with offered words; MCP kind "suggest" with `options`); `TagOp::Add(String)`; `tag_command` returns `Result<(), String>`; `Panels.tag_new`, `tag_new_focus`, `tag_error`, `info_tag`. Tests: `typing_a_new_tag_in_the_inspector_makes_it_and_applies_it_in_one_step`, `tags_added_in_the_window_take_a_name_and_a_taken_name_is_refused`.
 - **Left over:** not checked on screen (egui rows, focus on Add tag); a refused Add in the window closes the new-name row (the red message stays, press Add tag again); several tags on one object is not planned.
+
+## Brief 50 part 3, as tags (owner's decision, 2026-11-21)
+
+- **Decision:** no game "roles". Tags are the words; Beverly interprets them; several tags per object; a Beverly list of suggested words in the Tags window (owner's compromise).
+- **Built:** `Assembly.on_tag` is now a set per instance (`tags_of`, `tag_on`, `set_tags`; `is_shown` is false if any tag is hidden); commands `TagOn`, `SetTags`; the file keeps `tag` (first) and `more_tags`; Inspector Tags row typed with commas and `tag.toggle`; `TagOp::Toggle`, `ToggleNamed`, `prism_tools::BEVERLY_TAGS`; the GLB writes and reads `extras.prism.tags`. Details and the change from Beverly's addendum are in brief 50 part 3 and a note at the top of 50a.
+- **Left over:** tags on materials; the name suffix option; not checked on screen (Beverly header, Entity Info and Inspector rows); Beverly must be told it reads `tags`, not `tag` and `roles`.

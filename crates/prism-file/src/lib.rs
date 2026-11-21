@@ -259,8 +259,11 @@ struct InstanceV1 {
     transform: [f64; 12],
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    /// The first tag (as older files wrote their one), and any more.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tag: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    more_tags: Vec<u32>,
     #[serde(default, skip_serializing_if = "is_false")]
     hidden: bool,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -461,7 +464,8 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                                 def: inst.def.0,
                                 transform: inst.transform.to_cols_array(),
                                 name: a.name,
-                                tag: a.tag.map(|t| t.0),
+                                tag: a.tags.iter().next().map(|t| t.0),
+                                more_tags: a.tags.iter().skip(1).map(|t| t.0).collect(),
                                 hidden: a.hidden,
                                 locked: a.locked,
                             }
@@ -722,7 +726,12 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
                     hidden: i.hidden,
                     locked: i.locked,
                     name: i.name.clone(),
-                    tag: i.tag.map(prism_doc::TagId),
+                    tags: i
+                        .tag
+                        .into_iter()
+                        .chain(i.more_tags.iter().copied())
+                        .map(prism_doc::TagId)
+                        .collect(),
                 },
             );
         }

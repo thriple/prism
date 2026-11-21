@@ -244,16 +244,24 @@ impl Session {
         let tags = self.tag_rows();
         let mut choices = vec![NONE.to_owned()];
         choices.extend(tags.iter().map(|t| t.1.clone()));
-        let tag_name = |i: &InstanceId| {
-            asm.tag_of(*i)
-                .and_then(|t| tags.iter().find(|r| r.0 == t))
-                .map_or(NONE.to_owned(), |r| r.1.clone())
+        // An object can be on several tags: shown together, comma between.
+        let tag_names = |i: &InstanceId| {
+            let on: Vec<String> = asm
+                .tags_of(*i)
+                .into_iter()
+                .filter_map(|t| tags.iter().find(|r| r.0 == t).map(|r| r.1.clone()))
+                .collect();
+            if on.is_empty() {
+                NONE.to_owned()
+            } else {
+                on.join(", ")
+            }
         };
         general.push(self.mixed_field(
             "tag",
-            "Tag",
+            "Tags",
             FieldKind::Suggest(choices),
-            agree(ids.iter().map(tag_name)),
+            agree(ids.iter().map(tag_names)),
         ));
         general.push(self.mixed_field(
             "material",
@@ -578,37 +586,16 @@ impl Session {
                 }
             }
             "tag" => {
-                let want = text.trim();
-                self.cancel();
-                if want.is_empty() || want.eq_ignore_ascii_case(NONE) {
-                    self.run(Command::SetTag {
-                        instances: ids,
-                        tag: None,
-                    });
-                } else if let Some(found) = self
-                    .tag_rows()
-                    .into_iter()
-                    .find(|t| t.1.eq_ignore_ascii_case(want))
-                {
-                    self.run(Command::SetTag {
-                        instances: ids,
-                        tag: Some(found.0),
-                    });
-                } else {
-                    // A new name makes the tag and puts the selection on it,
-                    // in one undo step.
-                    let next = prism_doc::TagId(self.doc.assembly().tags().1);
-                    self.run(Command::Batch {
-                        commands: vec![
-                            Command::AddTag { name: want.into() },
-                            Command::SetTag {
-                                instances: ids,
-                                tag: Some(next),
-                            },
-                        ],
-                    });
-                }
+                // The tags typed, comma between; none (or None) takes them all off.
+                let names: Vec<String> = text
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|w| !w.is_empty() && !w.eq_ignore_ascii_case(NONE))
+                    .map(str::to_owned)
+                    .collect();
+                self.set_tags_named(ids, &names);
             }
+            "tag.toggle" => self.toggle_tag(ids, text)?,
             "hidden" | "locked" => {
                 let on = match text.trim() {
                     "true" => true,

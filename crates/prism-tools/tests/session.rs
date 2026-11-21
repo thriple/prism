@@ -8013,6 +8013,61 @@ fn typing_a_new_tag_in_the_inspector_makes_it_and_applies_it_in_one_step() {
 }
 
 #[test]
+fn an_object_can_be_on_several_tags_typed_or_clicked() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let steps = d.s.document().log().count();
+    d.s.inspector_set("tag", "Walls, breakable , Stone")
+        .expect("three tags");
+    assert_eq!(d.s.tag_rows().len(), 3);
+    assert_eq!(d.s.document().assembly().tags_of(g).len(), 3);
+    assert_eq!(inspector_text(&d, "tag").0, "Walls, breakable, Stone");
+    assert_eq!(d.s.document().log().count(), steps + 1, "one undo step");
+    // A click puts one on or takes it off, leaving the rest.
+    d.s.inspector_set("tag.toggle", "breakable").expect("off");
+    assert_eq!(inspector_text(&d, "tag").0, "Walls, Stone");
+    d.s.inspector_set("tag.toggle", "loose")
+        .expect("a new one, on");
+    assert_eq!(d.s.tag_rows().len(), 4);
+    assert_eq!(inspector_text(&d, "tag").0, "Walls, Stone, loose");
+    // Hidden if any of its tags is hidden.
+    let walls = d.s.tag_rows()[0].0;
+    assert!(d.s.document().assembly().is_shown(g));
+    d.s.tag_command(prism_tools::TagOp::Show(walls, false))
+        .expect("hides");
+    assert!(!d.s.document().assembly().is_shown(g));
+    d.s.tag_command(prism_tools::TagOp::Show(walls, true))
+        .expect("shows");
+    // None takes them all off.
+    d.s.inspector_set("tag", "None").expect("none");
+    assert!(d.s.document().assembly().tags_of(g).is_empty());
+}
+
+#[test]
+fn a_beverly_word_is_put_on_the_selection_and_taken_off_by_a_second_click() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let word = prism_tools::BEVERLY_TAGS[0].1[0];
+    assert_eq!(word, "collider");
+    d.s.tag_command(prism_tools::TagOp::ToggleNamed(word.into()))
+        .expect("on");
+    assert_eq!(d.s.tag_rows()[0].1, word);
+    assert_eq!(d.s.document().assembly().tags_of(g).len(), 1);
+    d.s.tag_command(prism_tools::TagOp::ToggleNamed("breakable".into()))
+        .expect("a second word");
+    assert_eq!(d.s.document().assembly().tags_of(g).len(), 2);
+    d.s.tag_command(prism_tools::TagOp::ToggleNamed(word.into()))
+        .expect("off");
+    assert_eq!(d.s.document().assembly().tags_of(g).len(), 1);
+    // Nothing selected: refused with words.
+    act(&mut d, "edit.desel");
+    assert!(
+        d.s.tag_command(prism_tools::TagOp::ToggleNamed("loose".into()))
+            .is_err()
+    );
+}
+
+#[test]
 fn tags_added_in_the_window_take_a_name_and_a_taken_name_is_refused() {
     let mut d = Driver::empty();
     grouped_box(&mut d);

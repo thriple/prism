@@ -435,3 +435,72 @@ fn nodes_sharing_a_mesh_from_another_program_become_one_component() {
     assert_eq!(comps.len(), 1, "{comps:?}");
     assert_eq!(back.uses(comps[0].0), 3);
 }
+
+#[test]
+fn tags_are_written_as_words_on_the_nodes_and_read_back() {
+    // Beverly reads the words and decides what they mean: Prism only
+    // lists the tags an object is on (none: nothing written).
+    let mut d = document();
+    let wall = *d.assembly().root().instances.keys().next().unwrap();
+    for name in ["Walls", "breakable", "stone"] {
+        d.run(Command::AddTag { name: name.into() });
+    }
+    let ids: Vec<prism_doc::TagId> = d.assembly().tags().0.keys().copied().collect();
+    d.run(Command::SetTags {
+        instances: [wall].into(),
+        tags: ids.iter().copied().collect(),
+    });
+    let s = structured(d.assembly(), &glb(), "Yard", true);
+    let n = by_name(&s, "Wall")[0];
+    assert_eq!(
+        s.nodes[n].extras,
+        Some(
+            serde_json::json!({"prism": {"kind": "group", "tags": ["Walls", "breakable", "stone"]}})
+        )
+    );
+    // Nothing else carries a tags entry.
+    assert_eq!(
+        s.nodes[by_name(&s, "Post")[0]].extras,
+        Some(serde_json::json!({"prism": {"kind": "component", "definition": "Post"}}))
+    );
+    // Back in: found by name or made, all three on the wall.
+    let bytes = prism_file::mesh::export_structured(d.assembly(), &glb(), "Yard", true);
+    let sc = prism_file::mesh::read_structured(&bytes).unwrap();
+    let back = prism_file::mesh::assembly_of(&sc, 1.0, true, true);
+    let wall_back = *back.root().instances.keys().next().unwrap();
+    let names: Vec<String> = back
+        .tags_of(wall_back)
+        .into_iter()
+        .map(|t| back.tag(t).unwrap().name.clone())
+        .collect();
+    assert_eq!(names, ["Walls", "breakable", "stone"]);
+}
+
+#[test]
+fn a_file_keeps_several_tags_and_old_files_with_one_still_open() {
+    let mut d = document();
+    let wall = *d.assembly().root().instances.keys().next().unwrap();
+    for name in ["A", "B", "C"] {
+        d.run(Command::AddTag { name: name.into() });
+    }
+    let all: std::collections::BTreeSet<prism_doc::TagId> =
+        d.assembly().tags().0.keys().copied().collect();
+    d.run(Command::SetTags {
+        instances: [wall].into(),
+        tags: all.clone(),
+    });
+    let c = prism_file::Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = prism_file::write(&c, "test");
+    let back = prism_file::read(&bytes).expect("opens");
+    let wall_back = *back.assembly.root().instances.keys().next().unwrap();
+    assert_eq!(
+        back.assembly
+            .tags_of(wall_back)
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        all
+    );
+}

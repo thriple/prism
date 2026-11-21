@@ -256,7 +256,7 @@ impl AppHost<'_> {
             EntityInfo::Instance {
                 name,
                 kind,
-                tag,
+                tags,
                 hidden,
                 locked,
                 material,
@@ -264,7 +264,7 @@ impl AppHost<'_> {
             } => json!({
                 "kind": kind,
                 "name": name,
-                "tag": tag.map(|t| t.0),
+                "tags": tags.iter().map(|t| t.0).collect::<Vec<_>>(),
                 "hidden": hidden,
                 "locked": locked,
                 "material": material,

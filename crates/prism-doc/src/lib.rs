@@ -275,6 +275,18 @@ pub enum Command {
         instances: BTreeSet<InstanceId>,
         tag: Option<TagId>,
     },
+    /// Put instances on a tag as well (`on`), or take them off it; their
+    /// other tags stay.
+    TagOn {
+        instances: BTreeSet<InstanceId>,
+        tag: TagId,
+        on: bool,
+    },
+    /// Give instances exactly these tags (none: no tag).
+    SetTags {
+        instances: BTreeSet<InstanceId>,
+        tags: BTreeSet<TagId>,
+    },
     /// Give a group or component new axes (brief 36): `axes` in its
     /// definition's own coordinates. Nothing moves in the world.
     ChangeAxes {
@@ -716,7 +728,7 @@ impl Command {
             Command::NameInstance { .. } => "Name",
             Command::AddTag { .. } => "Add Tag",
             Command::SetTagVisible { .. } => "Tag Visibility",
-            Command::SetTag { .. } => "Tag",
+            Command::SetTag { .. } | Command::TagOn { .. } | Command::SetTags { .. } => "Tag",
             Command::Place { change, .. } => match change {
                 Change::Translate { .. } => "Move",
                 Change::Rotate { .. } => "Rotate",
@@ -1179,6 +1191,8 @@ impl Command {
             }
             Command::SetTagVisible { tag, visible } => asm.set_tag_visible(*tag, *visible),
             Command::SetTag { instances, tag } => asm.set_tag(instances, *tag),
+            Command::TagOn { instances, tag, on } => asm.tag_on(instances, *tag, *on),
+            Command::SetTags { instances, tags } => asm.set_tags(instances, tags),
             Command::Place { instances, change } => {
                 asm.place(ctx, instances, &change.affine(1.0));
             }
@@ -1586,6 +1600,8 @@ impl Command {
             | Command::RenameTag { .. }
             | Command::SetTagVisible { .. }
             | Command::SetTag { .. }
+            | Command::TagOn { .. }
+            | Command::SetTags { .. }
             | Command::Place { .. }
             | Command::CopyInstances { .. }
             | Command::EraseInstances { .. }

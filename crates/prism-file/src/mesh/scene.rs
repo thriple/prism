@@ -125,10 +125,21 @@ impl Builder<'_> {
         // A group's material shows on Default faces inside it.
         let paint = self.asm.painted_with(id).or(paint);
         let mesh = self.mesh(inst.def, paint);
-        let extras = match &component {
+        let mut extras = match &component {
             Some(n) => json!({"prism": {"kind": "component", "definition": n}}),
             None => json!({"prism": {"kind": "group"}}),
         };
+        // The instance's tags, by name: Beverly reads the words and decides
+        // what each means. Left out when there are none.
+        let tags: Vec<String> = self
+            .asm
+            .tags_of(id)
+            .into_iter()
+            .filter_map(|t| self.asm.tag(t).map(|t| t.name.clone()))
+            .collect();
+        if !tags.is_empty() {
+            extras["prism"]["tags"] = json!(tags);
+        }
         let at = self.push(Node {
             name: names.unique(&base),
             matrix: Some(matrix(&inst.transform, self.o)),
@@ -285,6 +296,7 @@ pub fn assembly_of(sc: &Scene, metres_per_unit: f64, y_up: bool, merge: bool) ->
         y_up,
         defs: BTreeMap::from([(ROOT, Definition::default())]),
         names: BTreeMap::new(),
+        tags: BTreeMap::new(),
         keys: BTreeMap::new(),
         shared: BTreeMap::new(),
         next_instance: 0,
@@ -322,6 +334,19 @@ pub fn assembly_of(sc: &Scene, metres_per_unit: f64, y_up: bool, merge: bool) ->
     for (id, name) in b.names {
         asm.set_name(id, &name);
     }
+    // Tags are found by name, or made.
+    for (id, words) in b.tags {
+        for name in words {
+            let found = asm
+                .tags()
+                .0
+                .iter()
+                .find(|(_, t)| t.name == name)
+                .map(|(k, _)| *k);
+            let tag = found.unwrap_or_else(|| asm.add_tag(&name));
+            asm.tag_on(&[id].into(), tag, true);
+        }
+    }
     // Materials in the file's order, so face k's material is the k-th.
     let mut map = BTreeMap::new();
     for (k, m) in sc.materials.iter().enumerate() {
@@ -347,6 +372,8 @@ struct Reader<'a> {
     y_up: bool,
     defs: BTreeMap<DefId, Definition>,
     names: BTreeMap<InstanceId, String>,
+    /// Tag names read from the nodes.
+    tags: BTreeMap<InstanceId, Vec<String>>,
     keys: BTreeMap<usize, String>,
     /// A component's definition, by its nodes' likeness.
     shared: BTreeMap<String, DefId>,
@@ -423,6 +450,20 @@ impl Reader<'_> {
         // component instance is named by its definition.
         if !component && n.name != "Group" {
             self.names.insert(id, n.name.clone());
+        }
+        // `tags` (a list) and, from older files, `tag`.
+        let prism = n.extras.as_ref().and_then(|e| e.get("prism"));
+        let words: Vec<String> = prism
+            .and_then(|p| p.get("tags")?.as_array())
+            .into_iter()
+            .flatten()
+            .chain(prism.and_then(|p| p.get("tag")))
+            .filter_map(|t| t.as_str())
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .collect();
+        if !words.is_empty() {
+            self.tags.insert(id, words);
         }
         let transform = n.matrix.map_or(DAffine3::IDENTITY, |m| {
             placement(&m, self.metres_per_unit, self.y_up)

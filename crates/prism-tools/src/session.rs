@@ -71,7 +71,7 @@ pub use draw::{FREEHAND, RRECT, freehand_curve, rrect_corners, simplify};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
-pub use groups::{EntityInfo, FeatureItem, OutlineRow, Owner, TagOp};
+pub use groups::{BEVERLY_TAGS, EntityInfo, FeatureItem, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
 pub use inspector::{Field, FieldKind, Inspector, Section};
 pub use lofting::{LOFT, LoftOp, LoftPanel};
