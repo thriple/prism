@@ -2478,6 +2478,18 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     ("Scenes and named cameras (tentative)", false),
     (
+        "Name a new component as it is made (Inspector opens, Name field ready, Enter)",
+        false,
+    ),
+    (
+        "Tags typed in the Inspector and the Tags window, with Enter",
+        false,
+    ),
+    (
+        "Game roles for Beverly: Collider and Breakable on groups and components, in the GLB",
+        false,
+    ),
+    (
         "Smart Guides: align and equal spacing (Move, Paste), equal sizes (Scale), matching angles and edges parallel to a neighbour's at any angle (Rotate), time budget, Ctrl+U",
         true,
     ),
