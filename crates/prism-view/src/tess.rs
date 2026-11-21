@@ -637,19 +637,27 @@ pub fn trimmed(model: &prism_topo::Model, face: &prism_topo::Face) -> Option<Tur
         (l.min(at(*q)), h.max(at(*q)))
     });
     let sag = (hi - lo).length() * 1.2e-3;
+    // Each point's place on the surface, found once, and the sides already
+    // known to lie close enough to it (an evaluation is the expensive part).
+    let mut at3: Vec<prism_math::DVec3> = uv.iter().map(|q| at(*q)).collect();
+    let mut fine: std::collections::BTreeSet<(usize, usize)> = Default::default();
     for _ in 0..12 {
         let mut mids: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
         for t in &tris {
             for k in 0..3 {
                 let (a, b) = (t[k], t[(k + 1) % 3]);
                 let key = (a.min(b), a.max(b));
-                if mids.contains_key(&key) {
+                if mids.contains_key(&key) || fine.contains(&key) {
                     continue;
                 }
                 let m = (uv[a] + uv[b]) * 0.5;
-                if at(m).distance((at(uv[a]) + at(uv[b])) * 0.5) > sag {
+                let on = at(m);
+                if on.distance((at3[a] + at3[b]) * 0.5) > sag {
                     mids.insert(key, uv.len());
                     uv.push(m);
+                    at3.push(on);
+                } else {
+                    fine.insert(key);
                 }
             }
         }
@@ -699,7 +707,7 @@ pub fn trimmed(model: &prism_topo::Model, face: &prism_topo::Face) -> Option<Tur
         .iter()
         .fold((uv[0], uv[0]), |(l, h), q| (l.min(*q), h.max(*q)));
     let tiny = (uhi - ulo).length_squared() * 1e-14;
-    let points: Vec<prism_math::DVec3> = uv.iter().map(|q| at(*q)).collect();
+    let points = at3;
     let normals = uv.iter().map(|q| p.normal(q.x, q.y)).collect();
     // Counter-clockwise seen from the front: in (u, v) unless flipped.
     let tris = tris
