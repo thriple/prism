@@ -56,6 +56,24 @@ pub const TOO_THICK: &str = "Refused: that thickness turns a face inside out. Tr
 pub const RIM_STYLE: &str = "Refused: a rim style other than Square works on joined faces with a freeform one, not on this shape yet.";
 pub const FLUSH_OFF: &str = "Refused: a flush rim's plane must pass through the edge it ends.";
 pub const FLUSH_PARALLEL: &str = "Refused: that plane lies along the face at its rim, so a wall cannot end in it. Pick another plane or Square.";
+/// The thinnest wall the Shell / Thicken tool and the Inspector will make
+/// from what a person types or drags, in metres: 0.1 cm. The kernel itself
+/// builds much thinner walls (down to 0.01 cm on a 15 m hull, NOTES "thin
+/// walls"), and drawing and editing stay exact to 0.01 cm; this only keeps
+/// a stray tiny size from making a skin nobody asked for.
+pub const MIN_THICKNESS: f64 = 1e-3;
+
+pub const TOO_THIN: &str =
+    "Too thin: a wall must be at least 0.1 cm (1 mm). Type a larger thickness, or drag further.";
+
+/// `TOO_THIN` for a thickness (signed) that is not zero and under the
+/// least; zero is left to the kernel's own message (nothing sized yet).
+pub fn thin_refusal(thickness: f64) -> Option<&'static str> {
+    // A size under a nanometre is nothing sized yet (the pointer just
+    // pressed), not a thin wall.
+    (thickness.abs() > 1e-9 && thickness.abs() < MIN_THICKNESS * (1.0 - 1e-9)).then_some(TOO_THIN)
+}
+
 pub const FLUSH_REACH: &str = "Refused: to end flush in that plane the surface would have to be carried on a long way past its own edge. Use a plane closer to square, or Square.";
 pub const SHARP: &str = "Refused: these faces fold back too sharply here to cut a mitre. A rounded corner there is not done yet.";
 

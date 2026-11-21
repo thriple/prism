@@ -729,6 +729,9 @@ impl Session {
                     if size == 0.0 || (size < 0.0 && !signed) {
                         return Err("A size must be more than zero".into());
                     }
+                    if signed && let Some(why) = prism_ops::shelling::thin_refusal(size) {
+                        return Err(why.into());
+                    }
                     Command::SetFeatureSize { def, index, size }
                 }
                 Some("rim") => self.rim_command(def, index, parts.next(), parts.next(), text)?,

@@ -185,6 +185,12 @@ impl Session {
         } else if let Some(size) = self.number.length(t).map(f64::abs)
             && size > 0.0
         {
+            if let Some(why) = prism_ops::shelling::thin_refusal(size) {
+                self.notice = Some(why);
+                self.overlay_dirty = true;
+                self.dirty = true;
+                return;
+            }
             self.shell_input(ShellSet::Thickness(Some(size)));
         }
     }
@@ -192,6 +198,12 @@ impl Session {
     pub(super) fn shell_set(&mut self, op: ShellSet) {
         match op {
             ShellSet::Thickness(t) => {
+                if let Some(why) = t.and_then(prism_ops::shelling::thin_refusal) {
+                    self.notice = Some(why);
+                    self.overlay_dirty = true;
+                    self.dirty = true;
+                    return;
+                }
                 self.shell_size = t;
                 // Typed while sizing by the pointer: as if typed in the
                 // measurement box.
@@ -315,6 +327,23 @@ impl Session {
             return;
         }
         let (face, d) = (op.face, op.d);
+        // Under the least thickness: no ghost, and a red notice (cleared
+        // when the size is enough again).
+        if let Some(why) = prism_ops::shelling::thin_refusal(d) {
+            self.notice = Some(why);
+            if let Some(op) = &mut self.shell_op {
+                op.ghost = Vec::new();
+                op.flush = Vec::new();
+                op.refused = Some(why);
+                op.shown = Some((d, open));
+            }
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
+        if self.notice == Some(prism_ops::shelling::TOO_THIN) {
+            self.notice = None;
+        }
         let faces: BTreeSet<FaceId> = [face].into();
         // The program's pick of rim styles, kept while it still builds.
         let kept = op
@@ -362,6 +391,12 @@ impl Session {
         let Some(op) = &self.shell_op else {
             return;
         };
+        if let Some(why) = prism_ops::shelling::thin_refusal(op.d) {
+            self.notice = Some(why);
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
         let c = Command::Shell {
             faces: [op.face].into(),
             open: self.shell_open.clone(),
@@ -392,6 +427,12 @@ impl Session {
             let Some(t) = self.number.length(text) else {
                 return true;
             };
+            if let Some(why) = prism_ops::shelling::thin_refusal(t) {
+                self.notice = Some(why);
+                self.overlay_dirty = true;
+                self.dirty = true;
+                return true;
+            }
             if let Some(op) = &mut self.shell_op {
                 // A typed thickness goes the way the pointer is (inside
                 // until it has moved out); a minus sign turns it round.
@@ -489,8 +530,19 @@ impl Session {
         if let Some(t) = along_line(o, d, h.centre, h.normal)
             && t.abs() > self.scene.tol.dist
             && t != h.size
+            && prism_ops::shelling::thin_refusal(t).is_some()
+        {
+            // Too thin: the wall stays as it was last (big enough) and a
+            // red notice says why.
+            self.notice = prism_ops::shelling::thin_refusal(t);
+        } else if let Some(t) = along_line(o, d, h.centre, h.normal)
+            && t.abs() > self.scene.tol.dist
+            && t != h.size
             && let Some(m) = self.shell_at_thickness(h.def, h.index, t)
         {
+            if self.notice == Some(prism_ops::shelling::TOO_THIN) {
+                self.notice = None;
+            }
             if let Some(h) = &mut self.shell_handle {
                 h.size = t;
             }

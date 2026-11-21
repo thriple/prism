@@ -525,6 +525,57 @@ fn push_pull_a_rectangle_into_a_box_by_typing() {
 }
 
 #[test]
+fn push_pull_takes_a_hundredth_of_a_centimetre_typed_in_any_unit() {
+    // 3D printing: tiny adjustments, typed (owner, 2026-11-21).
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("50cm");
+    let (lo, hi) = d.s.model().bbox().expect("box");
+    assert!((hi.z - lo.z - 0.5).abs() < 1e-12);
+    for (text, step) in [
+        ("0.01cm", 1e-4),
+        ("0.1mm", 1e-4),
+        ("0.0001", 1e-4),
+        ("-0.01cm", -1e-4),
+    ] {
+        // Pull the top by it, a click at a time, as a person would.
+        d.tool(SELECT);
+        d.tool(PUSH);
+        let (_, hi) = d.s.model().bbox().expect("box");
+        d.click(DVec3::new(1.0, 1.0, hi.z));
+        d.hover(DVec3::new(1.0, 1.0, hi.z + 0.1));
+        d.typed(text);
+        let (_, hi2) = d.s.model().bbox().expect("box");
+        assert!(
+            (hi2.z - hi.z - step).abs() < 1e-12,
+            "{text}: {} moved",
+            hi2.z - hi.z
+        );
+        valid(&d);
+    }
+    assert_eq!(d.faces(), 6);
+}
+
+#[test]
+fn push_pull_of_a_freeform_face_moves_a_hundredth_of_a_centimetre() {
+    // The sheet of two patches (rim_sheet), one face pulled out by 0.0001:
+    // the slab's volume is its area times that.
+    let mut doc = Document::with_model(rim_sheet());
+    let face = doc.model().faces().map(|(id, _)| id).next().unwrap();
+    assert!(doc.run(prism_doc::Command::PushPull {
+        face,
+        distance: 1e-4,
+        new_loop: false,
+    }));
+    let v = model_volume(doc.model()).abs();
+    assert!((v - 1.0 * 1e-4).abs() < 1e-9, "{v}");
+    assert!(prism_ops::check::problems(doc.model()).is_empty());
+}
+
+#[test]
 fn double_click_repeats_the_last_pull() {
     let mut d = Driver::empty();
     rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
@@ -6365,6 +6416,61 @@ fn shell_takes_a_curved_face() {
     let want = std::f64::consts::PI * (1.21 * 1.2 - 1.0);
     assert!((v - want).abs() < 1e-6, "{v} is not {want}");
     valid(&d);
+}
+
+#[test]
+fn a_wall_thinner_than_a_tenth_of_a_centimetre_is_refused_in_red() {
+    // The limiter on Shell / Thicken (owner, 2026-11-21): 0.1 cm at least.
+    // Drawing and the rest stay exact to 0.01 cm (below).
+    let min = prism_ops::shelling::MIN_THICKNESS;
+    assert!((min - 0.001).abs() < 1e-15, "0.1 cm is a millimetre");
+    let mut d = Driver::empty();
+    box_2m(&mut d);
+    d.tool(SHELL);
+    // Sizing by the pointer: too thin shows no ghost and a red notice.
+    let top = DVec3::new(1.0, 1.0, 2.0);
+    d.click(top);
+    d.hover(DVec3::new(1.0, 1.0, 2.0 - 0.0005));
+    assert!(d.s.hint_is_notice(), "red");
+    assert!(d.s.hint().starts_with("Too thin"), "{}", d.s.hint());
+    assert!(d.s.overlay().lines.len() < 12, "no ghost");
+    // Typing a thin wall refuses it and makes nothing.
+    d.typed("0.0005");
+    assert!(d.s.hint_is_notice() && d.s.hint().starts_with("Too thin"));
+    assert_eq!(d.faces(), 6, "nothing made");
+    // Far enough, the notice goes and the ghost shows again.
+    d.hover(DVec3::new(1.0, 1.0, 2.0 - 0.05));
+    assert!(!d.s.hint_is_notice(), "{}", d.s.hint());
+    assert!(d.s.overlay().lines.len() >= 12);
+    // Exactly 0.1 cm is allowed.
+    d.typed("0.001");
+    assert_eq!(d.faces(), 12);
+    // The window's thickness refuses it too, and keeps what it had.
+    act(&mut d, "edit.undo");
+    d.s.shell_text("0.0004");
+    assert!(d.s.hint_is_notice() && d.s.hint().starts_with("Too thin"));
+    assert!(d.s.shell_panel().unwrap().size.is_empty(), "not taken");
+    d.s.shell_text("0.002");
+    assert!(!d.s.shell_panel().unwrap().size.is_empty());
+}
+
+#[test]
+fn the_inspector_refuses_a_shell_thinner_than_a_tenth_of_a_centimetre() {
+    let mut d = Driver::empty();
+    box_2m(&mut d);
+    d.tool(SHELL);
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    d.typed("0.1");
+    d.tool(SELECT);
+    d.s.select_feature(0);
+    let why = d.s.inspector_set("feature.0.size", "-0.0005").unwrap_err();
+    assert!(why.starts_with("Too thin"), "{why}");
+    let why = d.s.inspector_set("feature.0.size", "0.0009").unwrap_err();
+    assert!(why.starts_with("Too thin"), "{why}");
+    d.s.inspector_set("feature.0.size", "-0.001")
+        .expect("0.1 cm");
+    d.s.inspector_set("feature.0.size", "0.002")
+        .expect("outside");
 }
 
 #[test]
