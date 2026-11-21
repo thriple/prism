@@ -439,6 +439,15 @@ pub enum Command {
         index: usize,
         edges: Vec<EdgeRef>,
     },
+    /// How the wall at one open boundary of a live shell ends (brief 49
+    /// part 3): `edge` is any edge on that boundary, found by place; `None`
+    /// hands the boundary back to the program.
+    SetRimStyle {
+        def: DefId,
+        index: usize,
+        edge: EdgeRef,
+        style: Option<prism_ops::shelling::RimStyle>,
+    },
     /// Make a live boolean another kind (Inspector part 3b-2).
     SetBoolKind {
         def: DefId,
@@ -741,6 +750,7 @@ impl Command {
             Command::SetFeatureSize { .. }
             | Command::SetCutter { .. }
             | Command::SetBoolKind { .. }
+            | Command::SetRimStyle { .. }
             | Command::SetFeatureEdges { .. } => "Change Feature",
             Command::ExplodeFeature { .. } => "Explode Feature",
             Command::RemoveFeature { .. } => "Remove Feature",
@@ -1085,6 +1095,14 @@ impl Command {
             }
             Command::SetFeatureEdges { def, index, edges } => {
                 asm.set_feature_edges(*def, *index, edges);
+            }
+            Command::SetRimStyle {
+                def,
+                index,
+                edge,
+                style,
+            } => {
+                asm.set_rim_style(*def, *index, edge, *style);
             }
             Command::SetBoolKind { def, index, op } => {
                 asm.set_bool_kind(*def, *index, *op);
@@ -1565,6 +1583,7 @@ impl Command {
             | Command::SetCutter { .. }
             | Command::SetBoolKind { .. }
             | Command::SetFeatureEdges { .. }
+            | Command::SetRimStyle { .. }
             | Command::RemoveFeature { .. }
             | Command::ExplodeFeature { .. }
             | Command::BakeFeatures { .. }

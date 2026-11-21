@@ -1022,3 +1022,23 @@ fn a_rim_style_on_a_shape_that_does_not_support_it_is_refused() {
         Some(shelling::RIM_STYLE)
     );
 }
+
+#[test]
+fn boundaries_are_runs_between_corners_and_a_straight_one_has_no_plane() {
+    let (m, a, b, [bottom_a, bottom_b]) = flat_pair();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let runs = shelling::boundaries(&m, &body, &BTreeSet::new());
+    // The sheet's rim: the bottom (two edges in a line), the right side,
+    // the top (two edges) and the left side.
+    assert_eq!(runs.len(), 4, "{runs:?}");
+    let bottom = runs.iter().find(|r| r.contains(&bottom_a)).unwrap();
+    assert!(bottom.contains(&bottom_b), "{bottom:?}");
+    let tol = m.tol();
+    assert_eq!(shelling::boundary_plane(&m, bottom, &tol), None);
+    // Open one face: only the kept face's own edges are rims, the one it
+    // shares with the open face included.
+    let open: BTreeSet<FaceId> = [b].into();
+    let runs = shelling::boundaries(&m, &body, &open);
+    assert_eq!(runs.iter().flatten().count(), 4, "{runs:?}");
+    assert!(runs.iter().flatten().all(|e| *e != bottom_b));
+}

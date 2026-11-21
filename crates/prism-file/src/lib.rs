@@ -52,8 +52,9 @@ pub use migrate::{Raw, migrate};
 /// locked groups (`groups.json`). Schema 12: section planes (`sections.json`).
 /// Schema 13: dimensions (`dimensions.json`). Schema 14: construction
 /// planes (`planes.json`). Schema 16: a live boolean's tool is saved beside the base (`<id>.tool<k>.bin`). Schema 15: live features (`features` in
-/// `groups.json`, the base in `geometry/defs/<id>.base.bin`).
-pub const SCHEMA: u32 = 17;
+/// `groups.json`, the base in `geometry/defs/<id>.base.bin`). Schema 17: the
+/// live shell. Schema 18: a live shell's rim styles (`rims`).
+pub const SCHEMA: u32 = 18;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.

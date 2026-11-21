@@ -75,6 +75,15 @@ fn same_place(m: &Model, id: EdgeId, r: &EdgeRef) -> bool {
     })
 }
 
+/// The style a person chose for one open boundary of a live shell (brief
+/// 49 part 3): any edge on it, and how its wall ends. Boundaries with no
+/// choice are left to the program (`shelling::default_rims`).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RimChoice {
+    pub edge: EdgeRef,
+    pub style: prism_ops::shelling::RimStyle,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Feature {
     /// A fillet (a radius) or chamfer (how far into each face) on edges.
@@ -93,6 +102,9 @@ pub enum Feature {
         faces: Vec<FaceRef>,
         open: Vec<FaceRef>,
         thickness: f64,
+        /// How the walls at open boundaries end, where chosen.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        rims: Vec<RimChoice>,
         /// Set by the last run: the faces are gone, or the kernel refused.
         #[serde(default)]
         broken: bool,
@@ -188,6 +200,7 @@ impl Feature {
                 faces,
                 open,
                 thickness,
+                rims,
                 broken,
             } => {
                 let found = resolve_faces(m, faces, on_base).filter(|s| !s.is_empty());
@@ -196,8 +209,9 @@ impl Feature {
                     *broken = true;
                     return;
                 };
+                let styles = rim_styles(m, rims, &found, &open, *thickness, on_base);
                 let mut t = m.clone();
-                match prism_ops::shelling::shell(&mut t, &found, &open, *thickness) {
+                match prism_ops::shelling::shell_with(&mut t, &found, &open, *thickness, &styles) {
                     Ok(()) => {
                         *m = t;
                         *broken = false;
@@ -222,6 +236,28 @@ impl Feature {
             }
         }
     }
+}
+
+/// The styles of a live shell's rims: what was chosen, found again in `m`,
+/// and the program's own pick for every other boundary.
+fn rim_styles(
+    m: &Model,
+    rims: &mut [RimChoice],
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    thickness: f64,
+    on_base: bool,
+) -> prism_ops::shelling::RimStyles {
+    let mut picks = Vec::new();
+    for c in rims.iter_mut() {
+        if let Some(e) = resolve(m, std::slice::from_mut(&mut c.edge), on_base)
+            .and_then(|s| s.into_iter().next())
+        {
+            picks.push((e, c.style));
+        }
+    }
+    let chosen = prism_ops::shelling::styles_for_boundaries(m, faces, open, &picks);
+    prism_ops::shelling::default_rims_from(m, faces, open, thickness, chosen)
 }
 
 /// The edges a feature points at in `m`: by id, then by place. They are
@@ -296,6 +332,49 @@ impl Stack {
         };
         if let Some(Feature::Round { edges, .. }) = self.features.get_mut(index) {
             *edges = found;
+        }
+        true
+    }
+
+    /// Choose how the wall at the open boundary `edge` is on ends, for the
+    /// live shell at `index` (`None` hands it back to the program). `edge`
+    /// is looked up in the model as it is just before that feature. False
+    /// if it is not a shell, or the edge is not on one of its boundaries.
+    pub fn set_rim(
+        &mut self,
+        index: usize,
+        edge: &EdgeRef,
+        style: Option<prism_ops::shelling::RimStyle>,
+    ) -> bool {
+        let Some(Feature::Shell { faces, open, .. }) = self.features.get(index) else {
+            return false;
+        };
+        let (mut faces, mut open) = (faces.clone(), open.clone());
+        let mut before = Stack {
+            base: self.base.clone(),
+            features: self.features[..index].to_vec(),
+        };
+        let m = before.evaluate();
+        let (Some(found), Some(open)) = (
+            resolve_faces(&m, &mut faces, index == 0),
+            resolve_faces(&m, &mut open, index == 0),
+        ) else {
+            return false;
+        };
+        let Some(e) = edge_at(&m, edge) else {
+            return false;
+        };
+        let boundaries = prism_ops::shelling::boundaries(&m, &found, &open);
+        let Some(on) = boundaries.iter().find(|b| b.contains(&e)) else {
+            return false;
+        };
+        let Some(Feature::Shell { rims, .. }) = self.features.get_mut(index) else {
+            return false;
+        };
+        // One choice for a boundary: drop any earlier one on it.
+        rims.retain(|c| edge_at(&m, &c.edge).is_none_or(|x| !on.contains(&x)));
+        if let (Some(style), Some(now)) = (style, EdgeRef::of(&m, e)) {
+            rims.push(RimChoice { edge: now, style });
         }
         true
     }

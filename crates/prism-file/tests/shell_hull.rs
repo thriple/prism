@@ -97,3 +97,103 @@ fn the_hulls_centre_plane_rims_end_flush() {
         "outward needs the surface extended"
     );
 }
+
+/// What the program picks for the hull's rims by itself: every boundary
+/// that lies in a plane a part would meet there (here the centre plane and
+/// the gunwale's level) and can end flush in it, and no other. Outward it
+/// cannot be built anywhere, so every rim stays Square, as before.
+#[test]
+fn the_hulls_default_rims() {
+    use prism_topo::EdgeId;
+    let bytes = std::fs::read("../../docs/acceptance/models/boat-half-hull.prism").unwrap();
+    let contents = prism_file::read(&bytes).unwrap();
+    let model = &contents.assembly.def(DefId(6)).unwrap().model;
+    let all: BTreeSet<FaceId> = model.faces().map(|(id, _)| id).collect();
+    let open: BTreeSet<FaceId> = [FaceId(2)].into();
+    let styles = shelling::default_rims(model, &all, &open, -0.05);
+    let flush: Vec<EdgeId> = styles.keys().copied().collect();
+    assert_eq!(
+        flush,
+        [1, 4, 8, 13, 21].map(EdgeId),
+        "the gunwale and the centre line, not the edges of the open face"
+    );
+    let mut m = model.clone();
+    shelling::shell_with(&mut m, &all, &open, -0.05, &styles).unwrap();
+    assert!(is_solid(&m));
+    let problems = check::problems(&m);
+    assert!(problems.is_empty(), "{problems:?}");
+    assert!(shelling::default_rims(model, &all, &open, 0.05).is_empty());
+}
+
+/// The live shell keeps its rim styles (brief 49 part 3): the program picks
+/// them at first, a choice for one boundary holds while the thickness
+/// changes, and handing the boundary back returns it to the program.
+#[test]
+fn a_live_shell_keeps_a_chosen_rim_style() {
+    use prism_doc::{Command, Document, EdgeRef};
+    use prism_ops::shelling::RimStyle;
+    use prism_topo::EdgeId;
+    let bytes = std::fs::read("../../docs/acceptance/models/boat-half-hull.prism").unwrap();
+    let contents = prism_file::read(&bytes).unwrap();
+    let mut d = Document::with_assembly(contents.assembly);
+    let hull = DefId(6);
+    let placed = d.assembly().placed();
+    let path = placed
+        .iter()
+        .find(|p| p.def == hull)
+        .expect("a hull")
+        .path
+        .clone();
+    let model = d.assembly().def(hull).unwrap().model.clone();
+    let all: BTreeSet<FaceId> = model.faces().map(|(id, _)| id).collect();
+    assert!(d.run_in(
+        &path,
+        Command::Shell {
+            faces: all,
+            open: [FaceId(2)].into(),
+            thickness: -0.05,
+        }
+    ));
+    let past = |d: &Document| {
+        let m = &d.assembly().def(hull).unwrap().model;
+        m.vertices()
+            .map(|(_, p)| p.y - 4.863037368822191)
+            .fold(f64::MIN, f64::max)
+    };
+    assert!(past(&d) < 1e-4, "the centre line ends flush by itself");
+    let live = |d: &Document| {
+        let stack = d.assembly().def(hull).unwrap().stack.clone().expect("live");
+        stack.features
+    };
+    // Choose Square for the centre line: the wall leans past the plane.
+    let edge = EdgeRef::of(&model, EdgeId(8)).unwrap();
+    assert!(d.run(Command::SetRimStyle {
+        def: hull,
+        index: 0,
+        edge,
+        style: Some(RimStyle::Square),
+    }));
+    assert!(past(&d) > 1e-3, "Square leans past the plane: {}", past(&d));
+    let prism_doc::Feature::Shell { rims, .. } = &live(&d)[0] else {
+        panic!("a shell");
+    };
+    assert_eq!(rims.len(), 1);
+    // The thickness changes, the choice stays.
+    assert!(d.run(Command::SetFeatureSize {
+        def: hull,
+        index: 0,
+        size: -0.04,
+    }));
+    assert!(past(&d) > 1e-4);
+    // Hand it back to the program: flush again.
+    assert!(d.run(Command::SetRimStyle {
+        def: hull,
+        index: 0,
+        edge,
+        style: None,
+    }));
+    assert!(past(&d) < 1e-4);
+    // One undo step each.
+    assert!(d.undo());
+    assert!(past(&d) > 1e-4);
+}

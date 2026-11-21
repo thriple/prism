@@ -90,7 +90,7 @@ pub fn body(model: &Model, seeds: &BTreeSet<FaceId>) -> BTreeSet<FaceId> {
 /// How the wall at a rim ends (brief 49 part 3). A rim is an edge with a
 /// kept face on one side only; the same style is given to every edge of an
 /// open boundary.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum RimStyle {
     /// Cut straight across the surface (the default).
     Square,
@@ -102,6 +102,313 @@ pub enum RimStyle {
 
 /// The style of each rim edge; an edge not listed is `Square`.
 pub type RimStyles = BTreeMap<EdgeId, RimStyle>;
+
+/// The open boundaries of the shell of `faces` leaving `open` open: the
+/// rim edges (an edge with a kept face on one side only) joined end to end
+/// through points where exactly two of them meet. Each boundary is the
+/// edges in order along it; one style is chosen for the whole of it.
+pub fn boundaries(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+) -> Vec<Vec<EdgeId>> {
+    let body = body(model, faces);
+    let mut kept_uses: BTreeMap<EdgeId, usize> = BTreeMap::new();
+    let mut all_uses: BTreeMap<EdgeId, usize> = BTreeMap::new();
+    for id in &body {
+        let Some(f) = model.face(*id) else {
+            continue;
+        };
+        for side in f.sides() {
+            *all_uses.entry(side.edge).or_default() += 1;
+            if !open.contains(id) {
+                *kept_uses.entry(side.edge).or_default() += 1;
+            }
+        }
+    }
+    let rims: Vec<EdgeId> = kept_uses
+        .iter()
+        .filter(|(e, k)| **k == 1 && all_uses[e] <= 2)
+        .map(|(e, _)| *e)
+        .collect();
+    let mut at: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+    for e in &rims {
+        if let Some(edge_data) = model.edge(*e) {
+            at.entry(edge_data.a).or_default().push(*e);
+            at.entry(edge_data.b).or_default().push(*e);
+        }
+    }
+    let mut seen: BTreeSet<EdgeId> = BTreeSet::new();
+    let mut out: Vec<Vec<EdgeId>> = Vec::new();
+    for start in &rims {
+        if seen.contains(start) {
+            continue;
+        }
+        // Grow both ways from the start through points with two rims.
+        let mut chain: std::collections::VecDeque<EdgeId> = [*start].into();
+        seen.insert(*start);
+        for front in [true, false] {
+            loop {
+                let end = *(if front { chain.back() } else { chain.front() }).unwrap_or(start);
+                let Some(edge_data) = model.edge(end) else {
+                    break;
+                };
+                // The point this end of the chain leaves by.
+                let shared = if chain.len() == 1 {
+                    if front { edge_data.b } else { edge_data.a }
+                } else {
+                    let other = if front {
+                        chain.get(chain.len() - 2)
+                    } else {
+                        chain.get(1)
+                    }
+                    .and_then(|o| model.edge(*o));
+                    let Some(other) = other else { break };
+                    if edge_data.a == other.a || edge_data.a == other.b {
+                        edge_data.b
+                    } else {
+                        edge_data.a
+                    }
+                };
+                let next = at
+                    .get(&shared)
+                    .filter(|v| v.len() == 2)
+                    .and_then(|v| v.iter().copied().find(|x| *x != end && !seen.contains(x)));
+                let Some(next) = next else { break };
+                seen.insert(next);
+                if front {
+                    chain.push_back(next);
+                } else {
+                    chain.push_front(next);
+                }
+            }
+        }
+        out.push(chain.into_iter().collect());
+    }
+    // A loop of rims turns corners: split it at each sharp one.
+    let mut runs: Vec<Vec<EdgeId>> = Vec::new();
+    for chain in out {
+        runs.extend(split_at_corners(model, &chain, &at));
+    }
+    runs
+}
+
+/// The vertex two edges share, if any.
+fn shared_vertex(model: &Model, a: EdgeId, b: EdgeId) -> Option<VertexId> {
+    let (ea, eb) = (model.edge(a)?, model.edge(b)?);
+    [ea.a, ea.b].into_iter().find(|v| *v == eb.a || *v == eb.b)
+}
+
+/// Whether the end of one run meets the end of another at a point where
+/// only those two rims meet.
+fn touch(model: &Model, a: &[EdgeId], b: &[EdgeId], at: &BTreeMap<VertexId, Vec<EdgeId>>) -> bool {
+    let ends = |r: &[EdgeId]| [r.first().copied(), r.last().copied()];
+    ends(a).into_iter().flatten().any(|x| {
+        ends(b).into_iter().flatten().any(|y| {
+            shared_vertex(model, x, y).is_some_and(|v| at.get(&v).is_some_and(|l| l.len() == 2))
+        })
+    })
+}
+
+/// A chain of rim edges, cut where it turns more than 30 degrees (and
+/// at its far end if it closes on itself).
+fn split_at_corners(
+    model: &Model,
+    chain: &[EdgeId],
+    at: &BTreeMap<VertexId, Vec<EdgeId>>,
+) -> Vec<Vec<EdgeId>> {
+    let n = chain.len();
+    if n < 2 {
+        return vec![chain.to_vec()];
+    }
+    // The direction an edge leaves a point by.
+    let leaving = |e: EdgeId, v: VertexId| -> DVec3 {
+        let Some(edge_data) = model.edge(e) else {
+            return DVec3::ZERO;
+        };
+        let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+        let t = if edge_data.a == v { 1e-3 } else { 1.0 - 1e-3 };
+        (edge_data.curve.point(pa, pb, t) - model.vertex(v)).normalize_or_zero()
+    };
+    let closed = shared_vertex(model, chain[n - 1], chain[0])
+        .is_some_and(|v| at.get(&v).is_some_and(|l| l.len() == 2) && n > 2);
+    let joints = if closed { n } else { n - 1 };
+    // Whether the chain turns sharply after edge `i`.
+    let sharp: Vec<bool> = (0..joints)
+        .map(|i| {
+            let (a, b) = (chain[i], chain[(i + 1) % n]);
+            let Some(v) = shared_vertex(model, a, b) else {
+                return true;
+            };
+            // Straight on means the second edge leaves opposite to how
+            // the first does.
+            -leaving(a, v).dot(leaving(b, v)) < 0.866
+        })
+        .collect();
+    let Some(first) = sharp.iter().position(|s| *s) else {
+        return vec![chain.to_vec()];
+    };
+    // Start just after a sharp turn (for a loop), or at the start.
+    let from = if closed { (first + 1) % n } else { 0 };
+    let mut runs: Vec<Vec<EdgeId>> = vec![Vec::new()];
+    for k in 0..n {
+        let i = (from + k) % n;
+        if let Some(r) = runs.last_mut() {
+            r.push(chain[i]);
+        }
+        if i < joints && sharp[i] && k + 1 < n {
+            runs.push(Vec::new());
+        }
+    }
+    runs.retain(|r| !r.is_empty());
+    runs
+}
+
+/// The plane a boundary lies in, if it lies in one and is not a straight
+/// line (a line lies in many planes: no way to choose), sampled along its
+/// edges.
+pub fn boundary_plane(model: &Model, edges: &[EdgeId], tol: &Tol) -> Option<Plane> {
+    let mut pts: Vec<DVec3> = Vec::new();
+    for e in edges {
+        let edge_data = model.edge(*e)?;
+        let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+        for i in 0..=8 {
+            pts.push(edge_data.curve.point(pa, pb, f64::from(i) / 8.0));
+        }
+    }
+    let p0 = *pts.first()?;
+    let p1 = pts
+        .iter()
+        .copied()
+        .max_by(|a, b| a.distance(p0).total_cmp(&b.distance(p0)))?;
+    if tol.is_zero(p1.distance(p0)) {
+        return None;
+    }
+    let p2 = pts
+        .iter()
+        .copied()
+        .max_by(|a, b| distance_to_line(*a, p0, p1).total_cmp(&distance_to_line(*b, p0, p1)))?;
+    if tol.is_zero(distance_to_line(p2, p0, p1)) {
+        return None;
+    }
+    let plane = Plane::new(p0, (p1 - p0).cross(p2 - p0));
+    pts.iter()
+        .all(|p| tol.is_zero(plane.distance(*p)))
+        .then_some(plane)
+}
+
+/// Whether a plane is one a part would plausibly meet there: a plane of
+/// the world's axes, or the plane of a flat face of the model.
+fn meaningful_plane(model: &Model, plane: &Plane, tol: &Tol) -> bool {
+    let axis = [DVec3::X, DVec3::Y, DVec3::Z]
+        .iter()
+        .any(|a| tol.parallel(*a, plane.normal));
+    axis || model.faces().any(|(_, f)| {
+        f.plane().is_some_and(|q| {
+            tol.parallel(q.normal, plane.normal) && tol.is_zero(q.distance(plane.origin))
+        })
+    })
+}
+
+/// The styles the program picks when nobody has: a boundary that lies in
+/// a plane a part would meet there (an axis plane, or the plane of a flat
+/// face) ends flush in it, wherever that can be built; every other
+/// boundary, and the edge of an open face, is Square (brief 49 part 3). A
+/// straight boundary lies in many planes, so it takes the plane it shares
+/// with a neighbour (the hull's centre line turns a right angle in its
+/// plane). Empty if the shell cannot be built at all.
+pub fn default_rims(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    d: f64,
+) -> RimStyles {
+    default_rims_from(model, faces, open, d, RimStyles::new())
+}
+
+/// The style of every edge of the boundary each of `picks` is on (a style
+/// chosen for a boundary is the style of its whole length).
+pub fn styles_for_boundaries(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    picks: &[(EdgeId, RimStyle)],
+) -> RimStyles {
+    let boundaries = boundaries(model, faces, open);
+    let mut styles = RimStyles::new();
+    for (edge, style) in picks {
+        if let Some(b) = boundaries.iter().find(|b| b.contains(edge)) {
+            for e in b {
+                styles.insert(*e, *style);
+            }
+        }
+    }
+    styles
+}
+
+/// [`default_rims`] leaving the styles in `start` (chosen by the user) as
+/// they are, and choosing only for the boundaries not in them.
+pub fn default_rims_from(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    d: f64,
+    start: RimStyles,
+) -> RimStyles {
+    let mut styles = start;
+    if slab_with(model, faces, open, d, &styles).is_err() {
+        return styles;
+    }
+    let tol = model.tol();
+    let runs = boundaries(model, faces, open);
+    // Candidates: each run alone, then each pair that meet end to end.
+    let mut groups: Vec<Vec<EdgeId>> = runs.clone();
+    let mut at: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+    for e in runs.iter().flatten() {
+        if let Some(edge_data) = model.edge(*e) {
+            at.entry(edge_data.a).or_default().push(*e);
+            at.entry(edge_data.b).or_default().push(*e);
+        }
+    }
+    for i in 0..runs.len() {
+        for j in i + 1..runs.len() {
+            if touch(model, &runs[i], &runs[j], &at) {
+                let mut both = runs[i].clone();
+                both.extend(runs[j].iter().copied());
+                groups.push(both);
+            }
+        }
+    }
+    // The wall at the edge of an open face stays square: that is a hole
+    // in the shell, not a rim to fit to anything.
+    let at_open: BTreeSet<EdgeId> = open
+        .iter()
+        .filter_map(|f| model.face(*f))
+        .flat_map(|f| f.sides().map(|s| s.edge).collect::<Vec<_>>())
+        .collect();
+    for group in groups {
+        if group
+            .iter()
+            .any(|e| styles.contains_key(e) || at_open.contains(e))
+        {
+            continue;
+        }
+        let Some(plane) = boundary_plane(model, &group, &tol) else {
+            continue;
+        };
+        if !meaningful_plane(model, &plane, &tol) {
+            continue;
+        }
+        let mut trial = styles.clone();
+        for e in &group {
+            trial.insert(*e, RimStyle::Flush(plane));
+        }
+        if slab_with(model, faces, open, d, &trial).is_ok() {
+            styles = trial;
+        }
+    }
+    styles
+}
 
 /// What the shell is made of.
 struct Plan {

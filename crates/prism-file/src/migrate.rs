@@ -83,6 +83,8 @@ pub fn migrate(mut raw: Raw) -> Result<Raw, FileError> {
             15 => raw,
             // Schema 17 adds the live shell (a new kind of feature).
             16 => raw,
+            // Schema 18 adds a live shell's rim styles (an optional field).
+            17 => raw,
             s => return Err(FileError::Damaged(format!("no migration from schema {s}"))),
         };
         schema += 1;

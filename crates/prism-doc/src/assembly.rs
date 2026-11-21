@@ -1015,6 +1015,7 @@ impl Assembly {
             faces,
             open,
             thickness,
+            rims: Vec::new(),
             broken: false,
         });
         let model = stack.evaluate();
@@ -1087,6 +1088,35 @@ impl Assembly {
         };
         let mut next = stack.clone();
         if !next.set_edges(index, edges) {
+            return false;
+        }
+        let model = next.evaluate();
+        if next.features[index].is_broken() {
+            return false;
+        }
+        d.model = model;
+        d.stack = Some(next);
+        true
+    }
+
+    /// Choose how the wall at one open boundary of a live shell ends (brief
+    /// 49 part 3), and run the features again. A style the kernel refuses is
+    /// not taken. `None` hands the boundary back to the program.
+    pub fn set_rim_style(
+        &mut self,
+        def: DefId,
+        index: usize,
+        edge: &EdgeRef,
+        style: Option<prism_ops::shelling::RimStyle>,
+    ) -> bool {
+        let Some(d) = self.def_mut_live(def) else {
+            return false;
+        };
+        let Some(stack) = &mut d.stack else {
+            return false;
+        };
+        let mut next = stack.clone();
+        if !next.set_rim(index, edge, style) {
             return false;
         }
         let model = next.evaluate();
