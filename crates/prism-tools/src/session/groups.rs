@@ -103,6 +103,16 @@ fn dress(asm: &prism_doc::Assembly, ctx: &[InstanceId], scene: &mut Scene) {
         .collect();
 }
 
+/// A component just made, waiting for its name (brief 50 part 1): what it
+/// was made from, to make it again with the name, and the log's length
+/// right after it.
+pub(super) struct Naming {
+    id: InstanceId,
+    selection: Selection,
+    instances: BTreeSet<InstanceId>,
+    log: usize,
+}
+
 impl Session {
     /// The open group, as a path of instances from the root (empty at the root).
     pub fn open_path(&self) -> &[InstanceId] {
@@ -337,6 +347,65 @@ impl Session {
         }
     }
 
+    /// The window opens the Inspector at the name field when this is true
+    /// (once).
+    pub fn take_name_request(&mut self) -> bool {
+        std::mem::take(&mut self.name_request)
+    }
+
+    /// The name field was left with Esc: the default name stays, and the
+    /// making is no longer waiting for a name.
+    pub fn name_cancelled(&mut self) {
+        self.naming = None;
+    }
+
+    /// Another component already has `name` (case aside): `of` is the
+    /// instance being named, whose own component does not count.
+    pub(super) fn component_name_taken(&self, of: InstanceId, name: &str) -> bool {
+        let asm = self.doc.assembly();
+        let own = asm.find_instance(of).map(|(_, i)| i.def);
+        asm.components()
+            .into_iter()
+            .any(|(d, n)| Some(d) != own && n.eq_ignore_ascii_case(name))
+    }
+
+    /// A name for the component just made, replacing "Component" in the
+    /// same undo step: the making is undone and done again with the name
+    /// (when nothing else has happened since). False if it was no longer
+    /// possible, and the name goes the ordinary way.
+    pub(super) fn name_new_component(&mut self, id: InstanceId, name: &str) -> bool {
+        let Some(n) = self.naming.take() else {
+            return false;
+        };
+        let still = n.id == id
+            && self.doc.log().count() == n.log
+            && matches!(self.doc.undo_command(), Some(Command::MakeComponent { .. }));
+        if !still {
+            return false;
+        }
+        let ctx = self.doc.undo_context();
+        if !self.doc.undo() {
+            return false;
+        }
+        self.ctx = ctx;
+        self.last_op = None;
+        self.effects_clear();
+        self.model_changed();
+        let new = self.doc.assembly().next_instance();
+        let c = Command::MakeComponent {
+            selection: n.selection,
+            instances: n.instances,
+            name: name.to_owned(),
+        };
+        if self.run(c) {
+            self.selection = Selection::default();
+            self.set_groups([new].into());
+            true
+        } else {
+            false
+        }
+    }
+
     /// Edit > Make Component: as Make Group, as a named component.
     pub(super) fn make_component(&mut self) {
         if self.selection.is_empty() && self.groups.is_empty() {
@@ -349,9 +418,21 @@ impl Session {
             instances: self.groups.clone(),
             name: "Component".into(),
         };
+        let (selection, instances) = (self.selection.clone(), self.groups.clone());
+        let log = self.doc.log().count() + 1;
         if self.run(c) {
             self.selection = Selection::default();
             self.set_groups([id].into());
+            // It asks for its name: the Inspector opens with the field
+            // ready, and the name given replaces the default in the same
+            // undo step (`name_new_component`).
+            self.naming = Some(Naming {
+                id,
+                selection,
+                instances,
+                log,
+            });
+            self.name_request = true;
         }
     }
 

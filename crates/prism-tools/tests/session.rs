@@ -1492,6 +1492,95 @@ fn grouped_box(d: &mut Driver) -> prism_doc::InstanceId {
         .expect("the new group is selected")
 }
 
+/// A box, selected, made into a component (the Make Component action).
+fn component_box(d: &mut Driver) {
+    rect_on_ground(d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    d.tool(SELECT);
+    act(d, "edit.selall");
+    act(d, "edit.comp");
+}
+
+#[test]
+fn a_new_component_asks_for_its_name_and_the_name_is_part_of_making_it() {
+    // Brief 50 part 1: the window opens the Inspector at the name field;
+    // the name given is in the same undo step as the making.
+    let mut d = Driver::empty();
+    let log = d.s.document().log().count();
+    component_box(&mut d);
+    assert!(d.s.take_name_request(), "the window is asked once");
+    assert!(!d.s.take_name_request());
+    assert_eq!(d.s.document().assembly().components()[0].1, "Component");
+    d.s.inspector_set("name", "Wall").expect("names it");
+    let comps = d.s.document().assembly().components();
+    assert_eq!(comps.len(), 1);
+    assert_eq!(comps[0].1, "Wall");
+    assert_eq!(d.s.selected_groups().len(), 1, "still selected");
+    assert!(
+        d.s.inspector().summary.contains("Wall"),
+        "{}",
+        d.s.inspector().summary
+    );
+    // One undo step took away both the making and the name.
+    let steps = d.s.document().log().count();
+    act(&mut d, "edit.undo");
+    assert!(d.s.document().assembly().components().is_empty());
+    assert_eq!(d.s.document().log().count(), steps - 1);
+    let _ = log;
+    // Redo brings back the named component.
+    act(&mut d, "edit.redo");
+    assert_eq!(d.s.document().assembly().components()[0].1, "Wall");
+}
+
+#[test]
+fn esc_keeps_the_default_name_and_a_later_rename_is_its_own_step() {
+    let mut d = Driver::empty();
+    component_box(&mut d);
+    d.s.take_name_request();
+    d.s.name_cancelled();
+    let id = *d.s.selected_groups().iter().next().expect("one selected");
+    d.s.inspector_set("name", "Wall").expect("renames");
+    // After Esc the name is the instance's own: the component keeps its.
+    assert_eq!(d.s.document().assembly().name_of(id), Some("Wall"));
+    assert_eq!(d.s.document().assembly().components()[0].1, "Component");
+    // The making is still there under the rename: two steps.
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.document().assembly().components().len(), 1);
+    act(&mut d, "edit.undo");
+    assert!(d.s.document().assembly().components().is_empty());
+}
+
+#[test]
+fn a_component_name_another_component_has_is_refused() {
+    let mut d = Driver::empty();
+    component_box(&mut d);
+    d.s.inspector_set("name", "Wall").expect("names it");
+    // A second box, made into a component: "Wall" is taken (case aside).
+    d.tool(SELECT);
+    rect_on_ground(&mut d, 5.0, 5.0, 7.0, 7.0);
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    // Select only the loose rectangle's face by clicking it.
+    d.click(DVec3::new(6.0, 6.0, 0.0));
+    act(&mut d, "edit.comp");
+    assert!(d.s.take_name_request());
+    let why = d.s.inspector_set("name", "wall").unwrap_err();
+    assert!(why.contains("already called"), "{why}");
+    let names: Vec<_> =
+        d.s.document()
+            .assembly()
+            .components()
+            .into_iter()
+            .map(|c| c.1.to_owned())
+            .collect();
+    assert!(names.contains(&"Component".to_owned()), "{names:?}");
+    d.s.inspector_set("name", "Plinth").expect("a new name");
+    // A group's name is not held to it.
+    assert_eq!(d.s.document().assembly().components().len(), 2);
+}
+
 #[test]
 fn tools_that_cannot_change_a_closed_group_say_to_open_it() {
     // Tool pass part 2 (from the Fillet window's leftovers).

@@ -428,6 +428,12 @@ impl App {
             let parallel = viewport.session.lens().parallel;
             chrome.set_on("cam.persp", !parallel);
             chrome.set_on("cam.parallel", parallel);
+            // A component just made asks for its name: the Inspector opens
+            // with the field ready.
+            if viewport.session.take_name_request() {
+                chrome.panels.inspector = true;
+                chrome.panels.inspector_focus = Some("name".into());
+            }
             if chrome.panels_open() {
                 let s = &viewport.session;
                 // The checks take a while on big models: rerun them only
@@ -477,6 +483,7 @@ impl App {
             for op in std::mem::take(&mut chrome.panel_ops) {
                 let s = &mut viewport.session;
                 match op {
+                    crate::chrome::PanelOp::NameCancelled => s.name_cancelled(),
                     crate::chrome::PanelOp::Select(path) => s.select_path(&path),
                     crate::chrome::PanelOp::SelectFeature(path, i) => s.select_feature_at(&path, i),
                     crate::chrome::PanelOp::Open(path) => s.open_path_to(&path),

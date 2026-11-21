@@ -4946,3 +4946,12 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Owner's answers:** exact words not settled (both ways work); several words at once (Prism only saves them); the tag can sit anywhere because the whole exported model (a window, a door, a wall segment) is what breaks, and Beverly can override. **No Collider button**: the owner types the words.
 - **Default until answered:** a node with the role `collider` is exported even when hidden. Open question to the owner in the brief.
 
+## Brief 50 part 1: a new component asks for its name (built 2026-11-21)
+
+- **What happens:** Edit > Make Component makes it as before, then the window opens the Inspector (if it was closed), puts the keys in the Name field with "Component" selected; typing replaces it and **Enter** finishes; **Esc** keeps the default (and, in every Inspector text field, drops what was typed).
+- **One undo step:** `Session::name_new_component` (called by `inspector_set("name")` when nothing has happened since the making and the instance is the new component) undoes the making and runs `MakeComponent` again with the name, from the selection it was made from, then selects the new instance. After any other step, or after Esc (`name_cancelled`), a name is an ordinary rename (its own step).
+- **A name another component has** (case aside) is refused for any component rename in the Inspector: "A component is already called X". Groups are not asked and not held to it. The Components window and other rename paths are not checked yet.
+- **Where:** `session/groups.rs` (`Naming`, `take_name_request`, `name_cancelled`, `component_name_taken`, `name_new_component`), `session/inspector.rs` (the name row), `prism-app` `app.rs` (takes the request each frame, even with no panel open) and `chrome/inspector.rs` (focus once and select all; Esc), `chrome/panels.rs` (`inspector_focus`, `PanelOp::NameCancelled`).
+- **Tests:** `prism-tools/tests/session.rs` (named in one undo step and redo; Esc keeps the default and a later rename is its own step; a taken name refused, a new one accepted), `prism-app` `chrome/inspector.rs` (real egui frames: the field takes the keys with the default selected, typing "Wall" then Enter sends the name; Esc sends the cancel and no name).
+- **Not checked on screen** beyond the egui frame tests.
+

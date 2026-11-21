@@ -48,6 +48,21 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                 };
                 let hint = if f.mixed { "—" } else { "" };
                 let w = field(ui, &mut text, hint, 140.0);
+                // Asked for the keys (a new component's name): in the
+                // field with its text selected, once.
+                if p.inspector_focus.as_deref() == Some(f.key.as_str()) {
+                    p.inspector_focus = None;
+                    w.request_focus();
+                    if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), w.id) {
+                        state
+                            .cursor
+                            .set_char_range(Some(egui::text::CCursorRange::two(
+                                egui::text::CCursor::new(0),
+                                egui::text::CCursor::new(text.chars().count()),
+                            )));
+                        state.store(ui.ctx(), w.id);
+                    }
+                }
                 if w.has_focus() {
                     let changed = w.changed() && text.trim() != f.text;
                     p.inspector_edit = Some((f.key.clone(), text.clone()));
@@ -56,7 +71,17 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                         ops.push(PanelOp::InspectPreview(f.key.clone(), text.clone()));
                     }
                 }
-                if w.lost_focus() {
+                // Esc leaves the field and drops what was typed (a new
+                // component keeps its default name).
+                if w.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    p.inspector_edit = None;
+                    if f.key == "name" {
+                        ops.push(PanelOp::NameCancelled);
+                    }
+                    if f.key.starts_with("feature.") {
+                        ops.push(PanelOp::InspectPreviewEnd);
+                    }
+                } else if w.lost_focus() {
                     p.inspector_edit = None;
                     if f.key.starts_with("feature.") {
                         ops.push(PanelOp::InspectPreviewEnd);
@@ -107,4 +132,103 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name_field() -> Field {
+        Field {
+            key: "name".into(),
+            label: "Name".into(),
+            kind: FieldKind::Text,
+            text: "Component".into(),
+            mixed: false,
+        }
+    }
+
+    fn frame(
+        ctx: &egui::Context,
+        p: &mut Panels,
+        ops: &mut Vec<PanelOp>,
+        events: Vec<egui::Event>,
+    ) {
+        let input = egui::RawInput {
+            events,
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(600.0, 400.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| row(ui, p, &name_field(), ops));
+        out.textures_delta.clear();
+    }
+
+    fn key(key: egui::Key) -> Vec<egui::Event> {
+        [true, false]
+            .map(|pressed| egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            })
+            .to_vec()
+    }
+
+    #[test]
+    fn a_new_components_name_field_takes_the_keys_with_its_text_selected() {
+        let ctx = egui::Context::default();
+        let mut p = Panels {
+            inspector_focus: Some("name".into()),
+            ..Default::default()
+        };
+        let mut ops = Vec::new();
+        frame(&ctx, &mut p, &mut ops, vec![]);
+        frame(&ctx, &mut p, &mut ops, vec![]);
+        assert!(p.inspector_focus.is_none(), "asked once");
+        assert!(
+            ctx.memory(|m| m.focused()).is_some(),
+            "the field has the keys"
+        );
+        // Typing replaces the selected default, and Enter finishes.
+        frame(
+            &ctx,
+            &mut p,
+            &mut ops,
+            vec![egui::Event::Text("Wall".into())],
+        );
+        frame(&ctx, &mut p, &mut ops, key(egui::Key::Enter));
+        frame(&ctx, &mut p, &mut ops, vec![]);
+        assert!(
+            ops.iter()
+                .any(|o| matches!(o, PanelOp::Inspect(k, t) if k == "name" && t == "Wall")),
+            "{}",
+            ops.len()
+        );
+    }
+
+    #[test]
+    fn esc_in_the_name_field_keeps_the_default_name() {
+        let ctx = egui::Context::default();
+        let mut p = Panels {
+            inspector_focus: Some("name".into()),
+            ..Default::default()
+        };
+        let mut ops = Vec::new();
+        frame(&ctx, &mut p, &mut ops, vec![]);
+        frame(&ctx, &mut p, &mut ops, vec![]);
+        frame(
+            &ctx,
+            &mut p,
+            &mut ops,
+            vec![egui::Event::Text("Wall".into())],
+        );
+        frame(&ctx, &mut p, &mut ops, key(egui::Key::Escape));
+        frame(&ctx, &mut p, &mut ops, vec![]);
+        assert!(ops.iter().any(|o| matches!(o, PanelOp::NameCancelled)));
+        assert!(!ops.iter().any(|o| matches!(o, PanelOp::Inspect(..))));
+    }
 }

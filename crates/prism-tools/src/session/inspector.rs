@@ -559,7 +559,20 @@ impl Session {
                 if ids.len() != 1 {
                     return Err("Name one group at a time".into());
                 }
-                self.name_instance(*ids.iter().next().expect("one"), text.trim());
+                let id = *ids.iter().next().expect("one");
+                let name = text.trim();
+                let is_component = self
+                    .doc
+                    .assembly()
+                    .find_instance(id)
+                    .and_then(|(_, i)| self.doc.assembly().def(i.def))
+                    .is_some_and(|d| d.name.is_some());
+                if is_component && !name.is_empty() && self.component_name_taken(id, name) {
+                    return Err(format!("A component is already called {name}"));
+                }
+                if !(is_component && self.name_new_component(id, name)) {
+                    self.name_instance(id, name);
+                }
             }
             "tag" => {
                 let want = text.trim();

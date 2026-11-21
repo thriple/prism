@@ -15,6 +15,9 @@ use super::Chrome;
 /// What the panels ask the session to do.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PanelOp {
+    /// The Inspector's name field was left with Esc: a component just
+    /// made keeps its default name (brief 50 part 1).
+    NameCancelled,
     Select(Vec<InstanceId>),
     /// A live feature in the Outliner: the group's path (empty for the top
     /// level) and its index.
@@ -100,6 +103,9 @@ pub struct Panels {
     pub inspector: bool,
     pub inspector_edit: Option<(String, String)>,
     pub inspector_error: Option<String>,
+    /// The Inspector field to put the keys in next frame, with its text
+    /// selected (a component just made asks for its name).
+    pub inspector_focus: Option<String>,
     pub tags: bool,
     pub health: bool,
     /// The Solids window (Solid > Validate and Heal), and what the last

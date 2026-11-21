@@ -54,7 +54,6 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | `render.blender` | Render in Blender | Rendering |
 | — | Mode switcher (Model, Materials, Render, Animate, Simulate, Project) | Modes & Scenes |
 | — | Scenes and named cameras (tentative) | Modes & Scenes |
-| — | Name a new component as it is made (Inspector opens, Name field ready, Enter) | Names, Tags & Game Roles |
 | — | Tags typed in the Inspector and the Tags window, with Enter | Names, Tags & Game Roles |
 | — | Game words for Beverly: typed roles on groups and components, a Surface word on materials, in the GLB | Names, Tags & Game Roles |
 | `script.console` | Script Console | Scripting |

@@ -506,6 +506,11 @@ pub struct Session {
     shell_handle: Option<shelling::ShellHandle>,
     rim_cache: rims::RimCell,
     rim_drag: Option<rims::RimDrag>,
+    /// A component just made, waiting for its name (brief 50 part 1).
+    naming: Option<groups::Naming>,
+    /// The Inspector is to open with the name field ready (taken by the
+    /// window once).
+    name_request: bool,
     guide_cache: features::GuideCache,
     /// The Loft tool: the sides being picked, the threshold (degrees), the
     /// presets, the sides of the last loft (presets change it), and why it
@@ -764,6 +769,8 @@ impl Session {
             shell_handle: None,
             rim_cache: std::cell::RefCell::new(None),
             rim_drag: None,
+            naming: None,
+            name_request: false,
             guide_cache: Default::default(),
             lofting: lofting::Lofting::default(),
             loft_turn: prism_ops::sides::TURN_DEG,
