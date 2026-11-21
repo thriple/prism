@@ -853,3 +853,172 @@ fn an_outside_corner_past_a_freeform_edge_is_bridged() {
     sound(&m);
     near_enough(volume(&m).abs(), area);
 }
+
+// ---------- rim styles (brief 49 part 3) ----------
+
+/// Two flat quads, each a NURBS patch (not simplified to a plane), side by
+/// side in the plane y = 0 (x from 0 to 1 and 1 to 2, z from 0 to 1),
+/// joined smoothly along x = 1; both face -y. Returns the two bottom rim
+/// edges (z = 0) too.
+fn flat_pair() -> (Model, FaceId, FaceId, [prism_topo::EdgeId; 2]) {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_topo::Face;
+
+    let square = |x0: f64| {
+        let k = vec![0.0, 0.0, 1.0, 1.0];
+        NurbsSurface::new(
+            [1, 1],
+            [k.clone(), k],
+            [2, 2],
+            vec![
+                DVec3::new(x0, 0.0, 0.0),
+                DVec3::new(x0, 0.0, 1.0),
+                DVec3::new(x0 + 1.0, 0.0, 0.0),
+                DVec3::new(x0 + 1.0, 0.0, 1.0),
+            ],
+            vec![1.0; 4],
+            [false, false],
+        )
+        .unwrap()
+    };
+    let mut m = Model::new();
+    let v = |m: &mut Model, x: f64, z: f64| m.add_vertex(DVec3::new(x, 0.0, z));
+    let (a0, a1, a2) = (
+        v(&mut m, 0.0, 0.0),
+        v(&mut m, 1.0, 0.0),
+        v(&mut m, 2.0, 0.0),
+    );
+    let (b0, b1, b2) = (
+        v(&mut m, 0.0, 1.0),
+        v(&mut m, 1.0, 1.0),
+        v(&mut m, 2.0, 1.0),
+    );
+    let (bottom_a, bottom_b) = (m.add_edge(a0, a1).unwrap(), m.add_edge(a1, a2).unwrap());
+    let (right_b, top_b) = (m.add_edge(a2, b2).unwrap(), m.add_edge(b2, b1).unwrap());
+    let (top_a, left_a) = (m.add_edge(b1, b0).unwrap(), m.add_edge(b0, a0).unwrap());
+    let shared = m.add_edge(a1, b1).unwrap();
+    let fa = m.add_face(Face::with_edges(
+        vec![a0, a1, b1, b0],
+        vec![],
+        Surface::Nurbs(Patch::whole(square(0.0))),
+        vec![vec![bottom_a, shared, top_a, left_a]],
+    ));
+    let fb = m.add_face(Face::with_edges(
+        vec![a1, a2, b2, b1],
+        vec![],
+        Surface::Nurbs(Patch::whole(square(1.0))),
+        vec![vec![bottom_b, right_b, top_b, shared]],
+    ));
+    (m, fa, fb, [bottom_a, bottom_b])
+}
+
+/// The plane through the x axis whose wall leaves the sheet's -y side
+/// leaning `lean` (along z) for each unit of thickness: 0 is square.
+fn leaning_plane(lean: f64) -> prism_math::Plane {
+    // The wall's direction in (y, z) is (-1, lean); the plane's normal is
+    // square to it and to x.
+    prism_math::Plane::new(DVec3::ZERO, DVec3::new(0.0, lean, 1.0))
+}
+
+fn flush_both(edges: [prism_topo::EdgeId; 2], plane: prism_math::Plane) -> shelling::RimStyles {
+    edges
+        .into_iter()
+        .map(|e| (e, shelling::RimStyle::Flush(plane)))
+        .collect()
+}
+
+#[test]
+fn a_flush_rim_square_to_the_sheet_is_the_square_rim() {
+    let d = 0.1;
+    let (m0, a, b, edges) = flat_pair();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let mut square = m0.clone();
+    shelling::shell(&mut square, &body, &BTreeSet::new(), d).unwrap();
+    sound(&square);
+    let mut flush = m0.clone();
+    shelling::shell_with(
+        &mut flush,
+        &body,
+        &BTreeSet::new(),
+        d,
+        &flush_both(edges, leaning_plane(0.0)),
+    )
+    .unwrap();
+    sound(&flush);
+    near_enough(volume(&flush).abs(), volume(&square).abs());
+    near_enough(volume(&flush).abs(), 2.0 * d);
+}
+
+#[test]
+fn a_flush_rim_that_leans_over_the_sheet_trims_the_offset_back() {
+    // The wall leans 0.5 along z for each unit of thickness, up the sheet:
+    // by hand, the cross-section loses a triangle of legs d and d/2, over
+    // a length of two.
+    let d: f64 = 0.1;
+    let (mut m, a, b, edges) = flat_pair();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let styles = flush_both(edges, leaning_plane(0.5));
+    assert_eq!(
+        shelling::refusal_with(&m, &body, &BTreeSet::new(), d, &styles),
+        None
+    );
+    shelling::shell_with(&mut m, &body, &BTreeSet::new(), d, &styles).unwrap();
+    sound(&m);
+    near_enough(volume(&m).abs(), 2.0 * (d - 0.5 * d * d * 0.5));
+    // The wall lies in the plane: every vertex of it on the bottom edge
+    // line or on the plane.
+    let plane = leaning_plane(0.5);
+    let on_plane = m
+        .faces()
+        .filter(|(_, f)| {
+            f.plane()
+                .is_some_and(|p| p.normal.dot(plane.normal).abs() > 0.999999)
+        })
+        .count();
+    assert_eq!(on_plane, 2, "one flush wall for each bottom edge");
+}
+
+#[test]
+fn a_flush_rim_that_would_need_the_surface_extended_says_so() {
+    let (m, a, b, edges) = flat_pair();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let styles = flush_both(edges, leaning_plane(-0.5));
+    assert_eq!(
+        shelling::refusal_with(&m, &body, &BTreeSet::new(), 0.1, &styles),
+        Some(shelling::FLUSH_REACH)
+    );
+    // The other thickness direction trims instead.
+    assert_eq!(
+        shelling::refusal_with(&m, &body, &BTreeSet::new(), -0.1, &styles),
+        None
+    );
+}
+
+#[test]
+fn a_flush_plane_must_hold_the_edge_and_not_lie_along_the_face() {
+    let (m, a, b, edges) = flat_pair();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let off = prism_math::Plane::new(DVec3::new(0.0, 0.0, 0.2), DVec3::new(0.0, 0.5, 1.0));
+    assert_eq!(
+        shelling::refusal_with(&m, &body, &BTreeSet::new(), 0.1, &flush_both(edges, off)),
+        Some(shelling::FLUSH_OFF)
+    );
+    let along = prism_math::Plane::new(DVec3::ZERO, DVec3::Y);
+    assert_eq!(
+        shelling::refusal_with(&m, &body, &BTreeSet::new(), 0.1, &flush_both(edges, along)),
+        Some(shelling::FLUSH_PARALLEL)
+    );
+}
+
+#[test]
+fn a_rim_style_on_a_shape_that_does_not_support_it_is_refused() {
+    let (m, f) = square();
+    let styles: shelling::RimStyles = m
+        .edges()
+        .map(|(e, _)| (e, shelling::RimStyle::Flush(leaning_plane(0.0))))
+        .collect();
+    assert_eq!(
+        shelling::refusal_with(&m, &[f].into(), &BTreeSet::new(), 0.1, &styles),
+        Some(shelling::RIM_STYLE)
+    );
+}

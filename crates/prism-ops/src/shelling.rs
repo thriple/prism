@@ -53,6 +53,10 @@ pub const MIXED: &str =
 pub const BRANCHES: &str = "Refused: more than two faces meet at an edge here.";
 pub const CORNER: &str = "Refused: more than three faces meet at a corner on the rim here, or round a curved face, and their moved copies do not meet at one point. Not yet.";
 pub const TOO_THICK: &str = "Refused: that thickness turns a face inside out. Try a smaller one.";
+pub const RIM_STYLE: &str = "Refused: a rim style other than Square works on joined faces with a freeform one, not on this shape yet.";
+pub const FLUSH_OFF: &str = "Refused: a flush rim's plane must pass through the edge it ends.";
+pub const FLUSH_PARALLEL: &str = "Refused: that plane lies along the face at its rim, so a wall cannot end in it. Pick another plane or Square.";
+pub const FLUSH_REACH: &str = "Refused: to end flush in that plane the surface would have to reach past its own edge (the other thickness direction trims instead). Extending a surface is not built yet: use Square, or the other direction.";
 pub const SHARP: &str = "Refused: these faces fold back too sharply here to cut a mitre. A rounded corner there is not done yet.";
 
 /// The faces joined to `seeds` by edges: their sheets or bodies.
@@ -83,6 +87,22 @@ pub fn body(model: &Model, seeds: &BTreeSet<FaceId>) -> BTreeSet<FaceId> {
     out
 }
 
+/// How the wall at a rim ends (brief 49 part 3). A rim is an edge with a
+/// kept face on one side only; the same style is given to every edge of an
+/// open boundary.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RimStyle {
+    /// Cut straight across the surface (the default).
+    Square,
+    /// The wall ends in a plane through the edge, so a part that meets
+    /// there fits exactly: the offset surface is trimmed where it meets
+    /// the plane, and the wall lies in the plane.
+    Flush(Plane),
+}
+
+/// The style of each rim edge; an edge not listed is `Square`.
+pub type RimStyles = BTreeMap<EdgeId, RimStyle>;
+
 /// What the shell is made of.
 struct Plan {
     body: BTreeSet<FaceId>,
@@ -110,6 +130,17 @@ pub fn refusal(
     slab(model, faces, open, thickness).err()
 }
 
+/// [`refusal`] with rim styles.
+pub fn refusal_with(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    thickness: f64,
+    styles: &RimStyles,
+) -> Option<&'static str> {
+    slab_with(model, faces, open, thickness, styles).err()
+}
+
 /// Shell or thicken the bodies of `faces` by `thickness`, leaving `open`
 /// open, in one step.
 pub fn shell(
@@ -118,7 +149,18 @@ pub fn shell(
     open: &BTreeSet<FaceId>,
     thickness: f64,
 ) -> Result<(), &'static str> {
-    let (s, body) = slab(model, faces, open, thickness)?;
+    shell_with(model, faces, open, thickness, &RimStyles::new())
+}
+
+/// [`shell`] with rim styles.
+pub fn shell_with(
+    model: &mut Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    thickness: f64,
+    styles: &RimStyles,
+) -> Result<(), &'static str> {
+    let (s, body) = slab_with(model, faces, open, thickness, styles)?;
     let tol = model.tol();
     crate::thicken::remove_faces(model, &body);
     crate::boolean::join(model, &s, &tol);
@@ -132,10 +174,26 @@ pub fn slab(
     open: &BTreeSet<FaceId>,
     d: f64,
 ) -> Result<(Model, BTreeSet<FaceId>), &'static str> {
+    slab_with(model, faces, open, d, &RimStyles::new())
+}
+
+/// [`slab`] with rim styles (brief 49 part 3). A style other than
+/// `Square` needs a joined body with a freeform face.
+pub fn slab_with(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    d: f64,
+    styles: &RimStyles,
+) -> Result<(Model, BTreeSet<FaceId>), &'static str> {
+    let styled = styles.values().any(|s| *s != RimStyle::Square);
+    if styled {
+        return freeform_joined(model, faces, open, d, styles).unwrap_or(Err(RIM_STYLE));
+    }
     if let Some(r) = freeform_alone(model, faces, open, d) {
         return r;
     }
-    if let Some(r) = freeform_joined(model, faces, open, d) {
+    if let Some(r) = freeform_joined(model, faces, open, d, styles) {
         return r;
     }
     let plan = plan(model, faces, open, d)?;
@@ -418,6 +476,7 @@ fn freeform_joined(
     faces: &BTreeSet<FaceId>,
     open: &BTreeSet<FaceId>,
     d: f64,
+    styles: &RimStyles,
 ) -> Option<Result<(Model, BTreeSet<FaceId>), &'static str>> {
     let body = body(model, faces);
     if body.len() < 2 {
@@ -432,7 +491,7 @@ fn freeform_joined(
     {
         return None;
     }
-    Some(freeform_slab(model, &body, open, d))
+    Some(freeform_slab(model, &body, open, d, styles))
 }
 
 /// Whether the two faces at an interior edge meet smoothly: their normals
@@ -458,6 +517,7 @@ fn freeform_slab(
     body: &BTreeSet<FaceId>,
     open: &BTreeSet<FaceId>,
     d: f64,
+    styles: &RimStyles,
 ) -> Result<(Model, BTreeSet<FaceId>), &'static str> {
     use prism_geom::{Patch, Spline};
     let tol = model.tol();
@@ -513,6 +573,35 @@ fn freeform_slab(
             _ => {}
         }
     }
+    // Rims that end flush in a plane (part 3): the plane must contain the
+    // edge, and the face must not lie along it.
+    let mut flush: BTreeMap<EdgeId, Plane> = BTreeMap::new();
+    let mut flush_at: BTreeMap<VertexId, Vec<Plane>> = BTreeMap::new();
+    for (e, from, to, face) in &rims {
+        let Some(RimStyle::Flush(plane)) = styles.get(e).copied() else {
+            continue;
+        };
+        let edge_data = model.edge(*e).ok_or(NOTHING)?;
+        let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+        let _ = (from, to);
+        let f = model.face(*face).ok_or(NOTHING)?;
+        for i in 0..=8 {
+            let p = edge_data.curve.point(pa, pb, f64::from(i) / 8.0);
+            if !tol.is_zero(plane.distance(p)) {
+                return Err(FLUSH_OFF);
+            }
+            if tol.parallel(f.surface.normal_at(p), plane.normal) {
+                return Err(FLUSH_PARALLEL);
+            }
+        }
+        flush.insert(*e, plane);
+        for v in [edge_data.a, edge_data.b] {
+            let planes = flush_at.entry(v).or_default();
+            if !planes.contains(&plane) {
+                planes.push(plane);
+            }
+        }
+    }
     let mut s = Model::new();
     let eps = tol.dist * 0.1;
     // Each kept face's own offset surface: a freeform one fitted (its
@@ -553,7 +642,47 @@ fn freeform_slab(
     for (v, fs) in &at_vertex {
         let p = model.vertex(*v);
         base.insert(*v, s.add_vertex(p));
-        let q = move_point(model, fs, p, d, &tol)?;
+        let q = match flush_at.get(v) {
+            Some(planes) => {
+                // A square rim of the same face meeting here keeps its
+                // wall square: the corner stays in the plane through
+                // the edge and the face's normal.
+                let mut walls: Vec<DVec3> = Vec::new();
+                let mut square_rims: Vec<(EdgeId, FaceId)> = Vec::new();
+                for (e, _, _, face) in &rims {
+                    let Some(edge_data) = model.edge(*e) else {
+                        continue;
+                    };
+                    if flush.contains_key(e) || (edge_data.a != *v && edge_data.b != *v) {
+                        continue;
+                    }
+                    let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+                    let near = edge_data.curve.point(
+                        pa,
+                        pb,
+                        if edge_data.a == *v { 1e-3 } else { 1.0 - 1e-3 },
+                    );
+                    let n = model.face(*face).ok_or(NOTHING)?.surface.normal_at(p);
+                    let m = (near - p).cross(n).normalize_or_zero();
+                    if m != DVec3::ZERO {
+                        walls.push(m);
+                        square_rims.push((*e, *face));
+                    }
+                }
+                // One face, one flush plane and one square rim of that
+                // face end here (a chain's end): the corner is where the
+                // square rim's offset edge meets the plane, exactly.
+                if let ([f], [plane], [(e, _)]) =
+                    (fs.as_slice(), planes.as_slice(), square_rims.as_slice())
+                {
+                    flush_end(model, *f, *e, *v, &offsets[f], plane, d, &tol)?
+                } else {
+                    let x0 = move_point_flush(model, fs, p, d, planes, &walls, &tol)?;
+                    refine_flush_corner(&offsets, fs, planes, x0, &tol)
+                }
+            }
+            None => move_point(model, fs, p, d, &tol)?,
+        };
         moved.insert(*v, q);
         up.insert(*v, s.add_vertex(q));
     }
@@ -683,9 +812,21 @@ fn freeform_slab(
                 point_for(e.b, *id) - naive(pb),
             );
             let span = (pb - pa).length_squared().max(1e-300);
+            // A flush rim (part 3): where the face's own offset meets the
+            // plane (it must meet it within its own edge: a surface
+            // cannot be extended to reach it).
+            let plane = flush.get(&side.edge).map(|p| Surface::Plane(*p));
+            let missed = std::cell::Cell::new(false);
             let off = |p: DVec3| {
                 let t = ((p - pa).dot(pb - pa) / span).clamp(0.0, 1.0);
                 let blended = naive(p) + corr_a * (1.0 - t) + corr_b * t;
+                if let Some(plane) = &plane {
+                    let x = meet_to(&offsets[id], plane, blended, &tol, eps * 1e-3);
+                    if !truly_on(&offsets[id], x, &tol) || !truly_on(plane, x, &tol) {
+                        missed.set(true);
+                    }
+                    return x;
+                }
                 // The straight-line blend of a correction can stray off
                 // a curved face's own offset even where each of its own
                 // ends is truly on it; snapped back onto it (never past
@@ -696,8 +837,11 @@ fn freeform_slab(
                 Some(patch) => crate::thicken::kinks(&e.curve, &along, patch),
                 None => vec![0.0, 1.0],
             };
-            let (low, high) =
-                crate::thicken::edge_pair(&along, &off, &breaks, eps).ok_or(TOO_THICK)?;
+            let fit = crate::thicken::edge_pair(&along, &off, &breaks, eps);
+            if missed.get() {
+                return Err(FLUSH_REACH);
+            }
+            let (low, high) = fit.ok_or(TOO_THICK)?;
             let b = edge(&mut s, base[&e.a], base[&e.b], e.curve.clone(), None)?;
             let t = edge(
                 &mut s,
@@ -1127,12 +1271,18 @@ fn offset_distance(s: &Surface, x: DVec3) -> f64 {
 /// Falls back to the last point tried if it does not converge; the
 /// caller checks the result against the true surfaces itself.
 fn meet(a: &Surface, b: &Surface, guess: DVec3, tol: &Tol) -> DVec3 {
+    meet_to(a, b, guess, tol, tol.dist)
+}
+
+/// [`meet`], iterated until both distances are under `stop` (a fit that
+/// is checked finer than the tolerance wants a point found that closely).
+fn meet_to(a: &Surface, b: &Surface, guess: DVec3, tol: &Tol, stop: f64) -> DVec3 {
     let mut x = guess;
-    for _ in 0..20 {
+    for _ in 0..40 {
         let (qa, na) = probe(a, x);
         let (qb, nb) = probe(b, x);
         let (fa, fb) = ((x - qa).dot(na), (x - qb).dot(nb));
-        if tol.is_zero(fa) && tol.is_zero(fb) {
+        if fa.abs() < stop && fb.abs() < stop {
             return x;
         }
         let Some(step) = solve2(na, nb, fa, fb, tol) else {
@@ -1524,6 +1674,167 @@ fn move_point(
     }
     let ns = unique_normals(&ns, tol);
     corner(&ns, d, tol).map(|x| p + x).ok_or(CORNER)
+}
+
+/// [`move_point`] where the point is also on rims that end flush in
+/// `planes` (each passes through the point and holds it): the point moves
+/// `d` along every face's normal and not at all off each plane, nor off
+/// the wall planes `walls` (a square rim's wall, through its edge).
+fn move_point_flush(
+    model: &Model,
+    fs: &[FaceId],
+    p: DVec3,
+    d: f64,
+    planes: &[Plane],
+    walls: &[DVec3],
+    tol: &Tol,
+) -> Result<DVec3, &'static str> {
+    let mut want: Vec<(DVec3, f64)> = Vec::new();
+    for f in fs {
+        want.push((model.face(*f).ok_or(NOTHING)?.surface.normal_at(p), d));
+    }
+    for plane in planes {
+        want.push((plane.normal, 0.0));
+    }
+    // The walls only place the corner while the faces and planes leave it
+    // free (fewer than three independent directions).
+    let solid = corner_mixed(&want, tol);
+    let with_walls = {
+        let mut w = want.clone();
+        w.extend(walls.iter().map(|m| (*m, 0.0)));
+        corner_mixed(&w, tol)
+    };
+    with_walls.or(solid).map(|x| p + x).ok_or(CORNER)
+}
+
+/// Where the offset of a square rim `e` of face `f` meets the flush plane
+/// at its end `v`: marched along the edge from `v` until the point of the
+/// face's own offset above it is in the plane. A meeting before the edge
+/// starts (past `v`) is the surface needing to be reached past its own
+/// edge, refused as such.
+#[allow(clippy::too_many_arguments)]
+fn flush_end(
+    model: &Model,
+    f: FaceId,
+    e: EdgeId,
+    v: VertexId,
+    offset: &Surface,
+    plane: &Plane,
+    d: f64,
+    tol: &Tol,
+) -> Result<DVec3, &'static str> {
+    let edge_data = model.edge(e).ok_or(NOTHING)?;
+    let face = model.face(f).ok_or(NOTHING)?;
+    let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+    // Distance from the plane of the offset edge's point at `t`, with the
+    // point itself.
+    let at = |t: f64| {
+        let p = edge_data.curve.point(pa, pb, t);
+        let x = offset.project(p + face.surface.normal_at(p) * d);
+        (plane.distance(x), x)
+    };
+    // Parameter increasing away from the end `v`.
+    let (t0, sign) = if edge_data.a == v {
+        (0.0, 1.0)
+    } else {
+        (1.0, -1.0)
+    };
+    let mut t = t0;
+    for _ in 0..60 {
+        let (g, x) = at(t);
+        if g.abs() < 1e-12 {
+            let (lo, hi) = (-1e-9, 1.0 + 1e-9);
+            return if (lo..=hi).contains(&t) && (t - t0) * sign >= -1e-9 {
+                Ok(x)
+            } else {
+                Err(FLUSH_REACH)
+            };
+        }
+        let h = 1e-6;
+        let slope = (at(t + h).0 - at(t - h).0) / (2.0 * h);
+        if slope.abs() < 1e-12 {
+            break;
+        }
+        t -= g / slope;
+        if !(-0.5..=1.5).contains(&t) {
+            break;
+        }
+    }
+    let _ = tol;
+    Err(FLUSH_REACH)
+}
+
+/// A corner found from flat approximations, moved onto the true offset
+/// surfaces of the faces `fs` and the `planes` (Newton, as `meet` does for
+/// two surfaces), so the edges that end there end exactly on it.
+fn refine_flush_corner(
+    offsets: &BTreeMap<FaceId, Surface>,
+    fs: &[FaceId],
+    planes: &[Plane],
+    start: DVec3,
+    tol: &Tol,
+) -> DVec3 {
+    let mut x = start;
+    for _ in 0..20 {
+        let mut want: Vec<(DVec3, f64)> = Vec::new();
+        for f in fs {
+            let (q, n) = probe(&offsets[f], x);
+            want.push((n, (x - q).dot(n)));
+        }
+        for plane in planes {
+            want.push((plane.normal, plane.distance(x)));
+        }
+        if want.iter().all(|(_, c)| tol.is_zero(*c)) {
+            break;
+        }
+        let Some(step) = corner_mixed(&want, tol) else {
+            break;
+        };
+        x -= step;
+    }
+    x
+}
+
+/// The shortest move `x` with `n·x = c` for every `(n, c)`: exact where up
+/// to three independent directions meet; None where they cannot all hold
+/// (two that oppose or repeat with different distances, or more than
+/// three independent ones).
+fn corner_mixed(want: &[(DVec3, f64)], tol: &Tol) -> Option<DVec3> {
+    // A direction given twice (or opposite) is one constraint if it agrees.
+    let mut each: Vec<(DVec3, f64)> = Vec::new();
+    for (n, c) in want {
+        match each.iter().find(|(m, _)| tol.parallel(*m, *n)) {
+            Some((m, k)) => {
+                let agree = if m.dot(*n) > 0.0 { *c } else { -*c };
+                if !tol.is_zero(agree - *k) {
+                    return None;
+                }
+            }
+            None => each.push((*n, *c)),
+        }
+    }
+    let basis: Vec<(DVec3, f64)> = {
+        let mut out: Vec<(DVec3, f64)> = Vec::new();
+        for (n, c) in &each {
+            let mut r = *n;
+            for b in &orthonormal(&out.iter().map(|x| x.0).collect::<Vec<_>>()) {
+                r -= *b * r.dot(*b);
+            }
+            if r.length_squared() > 2.0 * ANGLE && out.len() < 3 {
+                out.push((*n, *c));
+            }
+        }
+        out
+    };
+    let x = match basis.as_slice() {
+        [(a, p)] => *a * *p,
+        [(a, p), (b, q)] => solve2(*a, *b, *p, *q, tol)?,
+        [(a, p), (b, q), (c, r)] => solve3([*a, *b, *c], [*p, *q, *r])?,
+        _ => return None,
+    };
+    each.iter()
+        .all(|(n, c)| tol.is_zero(n.dot(x) - c))
+        .then_some(x)
 }
 
 fn distance_to_line(p: DVec3, a: DVec3, b: DVec3) -> f64 {

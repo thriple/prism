@@ -51,3 +51,49 @@ fn the_hull_thickens_both_ways() {
         );
     }
 }
+
+/// The hull's centre-plane boundary (its three rims in the plane y = 4.863:
+/// the keel, the gunwale end and the transom's edge) ends flush in that
+/// plane, so a mirrored second half meets it exactly (brief 49 part 3).
+/// Thickened inward the offset surface is trimmed back to the plane; the
+/// other way it would have to be extended, which says so.
+#[test]
+fn the_hulls_centre_plane_rims_end_flush() {
+    use prism_math::Plane;
+    use prism_topo::EdgeId;
+    let bytes = std::fs::read("../../docs/acceptance/models/boat-half-hull.prism").unwrap();
+    let contents = prism_file::read(&bytes).unwrap();
+    let model = &contents.assembly.def(DefId(6)).unwrap().model;
+    let all: BTreeSet<FaceId> = model.faces().map(|(id, _)| id).collect();
+    let open: BTreeSet<FaceId> = [FaceId(2)].into();
+    let plane = Plane::new(
+        prism_math::DVec3::new(0.0, 4.863037368822191, 0.0),
+        prism_math::DVec3::Y,
+    );
+    let styles: shelling::RimStyles = [EdgeId(4), EdgeId(8), EdgeId(21)]
+        .into_iter()
+        .map(|e| (e, shelling::RimStyle::Flush(plane)))
+        .collect();
+    let d = -0.05;
+    assert_eq!(
+        shelling::refusal_with(model, &all, &open, d, &styles),
+        None,
+        "inward"
+    );
+    let mut m = model.clone();
+    shelling::shell_with(&mut m, &all, &open, d, &styles).unwrap();
+    assert!(is_solid(&m));
+    let problems = check::problems(&m);
+    assert!(problems.is_empty(), "{problems:?}");
+    // Nothing of the new solid lies past the plane.
+    let past = m
+        .vertices()
+        .map(|(_, p)| p.y - 4.863037368822191)
+        .fold(f64::MIN, f64::max);
+    assert!(past < 1e-4, "{past}");
+    assert_eq!(
+        shelling::refusal_with(model, &all, &open, 0.05, &styles),
+        Some(shelling::FLUSH_REACH),
+        "outward needs the surface extended"
+    );
+}
