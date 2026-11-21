@@ -153,8 +153,13 @@ fn face_pieces(model: &Model, face: FaceId) -> Option<Vec<Vec<Piece>>> {
 /// its ends go if nothing trims them.
 fn moved(p: &Piece, n: DVec3, d: f64) -> Option<Piece> {
     match p.curve {
-        // A spline's offset is not a spline: not built.
-        Curve::Spline(_) => None,
+        // A spline keeps its own curve here: its offset is worked out where
+        // the pieces join (`spline_side`), and fitted once the joints are known.
+        Curve::Spline(ref sp) => Some(Piece {
+            a: spline_side(sp, n, d, 0.0),
+            b: spline_side(sp, n, d, 1.0),
+            curve: p.curve.clone(),
+        }),
         Curve::Line => {
             let left = n.cross(p.b - p.a).normalize_or_zero();
             Some(Piece {
@@ -186,6 +191,165 @@ fn moved(p: &Piece, n: DVec3, d: f64) -> Option<Piece> {
             })
         }
     }
+}
+
+/// The point at fraction `s` of a spline's offset, `d` to the left of its
+/// walk (the face is on the left), carried on straight past either end.
+fn spline_side(sp: &prism_geom::Spline, n: DVec3, d: f64, s: f64) -> DVec3 {
+    sp.point_past(s) + n.cross(sp.tangent(s.clamp(0.0, 1.0))) * d
+}
+
+/// The fraction near `s0` (within half a length either way) where `f`
+/// crosses zero, the nearest crossing to `s0`.
+fn root_near(f: impl Fn(f64) -> f64, s0: f64) -> Option<f64> {
+    const STEPS: usize = 100;
+    let at = |i: usize| s0 - 0.5 + i as f64 / STEPS as f64;
+    let mut best: Option<f64> = None;
+    let mut prev = f(at(0));
+    for i in 1..=STEPS {
+        let (a, b) = (at(i - 1), at(i));
+        let cur = f(b);
+        if prev == 0.0 || (prev < 0.0) != (cur < 0.0) {
+            let (mut lo, mut hi, mut flo) = (a, b, prev);
+            for _ in 0..60 {
+                let mid = 0.5 * (lo + hi);
+                let fm = f(mid);
+                if (fm < 0.0) == (flo < 0.0) {
+                    lo = mid;
+                    flo = fm;
+                } else {
+                    hi = mid;
+                }
+            }
+            let r = 0.5 * (lo + hi);
+            if best.is_none_or(|x| (r - s0).abs() < (x - s0).abs()) {
+                best = Some(r);
+            }
+        }
+        prev = cur;
+    }
+    best
+}
+
+/// Where the offsets of two spline pieces meet: the fractions along each
+/// and the point, found by Newton's method from where their ends went.
+fn spline_spline(
+    p: &prism_geom::Spline,
+    q: &prism_geom::Spline,
+    n: DVec3,
+    d: f64,
+    eps: f64,
+) -> Option<(DVec3, f64, f64)> {
+    let helper = if n.x.abs() < 0.9 { DVec3::X } else { DVec3::Y };
+    let e1 = n.cross(helper).normalize();
+    let e2 = n.cross(e1);
+    let (mut s, mut u) = (1.0, 0.0);
+    let flat = |s: f64, u: f64| {
+        let r = spline_side(p, n, d, s) - spline_side(q, n, d, u);
+        (r.dot(e1), r.dot(e2))
+    };
+    for _ in 0..60 {
+        let (f1, f2) = flat(s, u);
+        if f1.hypot(f2) <= eps * 1e-3 {
+            return Some((spline_side(p, n, d, s), s, u));
+        }
+        let h = 1e-6;
+        let (a1, a2) = flat(s + h, u);
+        let (b1, b2) = flat(s, u + h);
+        let (j11, j21) = ((a1 - f1) / h, (a2 - f2) / h);
+        let (j12, j22) = ((b1 - f1) / h, (b2 - f2) / h);
+        let det = j11 * j22 - j12 * j21;
+        if det.abs() < 1e-18 {
+            return None;
+        }
+        let ds = (f1 * j22 - f2 * j12) / det;
+        let du = (j11 * f2 - j21 * f1) / det;
+        // Stay near the ends: a joint far along either curve is no joint.
+        let (ns, nu) = (s - ds, u - du);
+        if !(-0.5..=1.5).contains(&ns) || !(-0.5..=1.5).contains(&nu) {
+            return None;
+        }
+        s = ns;
+        u = nu;
+    }
+    None
+}
+
+/// [`join`] when either piece is a spline (a piece that is one still holds
+/// the original curve, offset `d`): the joint, and the fraction along each
+/// spline where the offset begins or ends there.
+fn join_spline(
+    p: &Piece,
+    q: &Piece,
+    n: DVec3,
+    d: f64,
+    eps: f64,
+) -> Option<(DVec3, Option<f64>, Option<f64>)> {
+    if p.b.distance(q.a) <= eps {
+        let sp = matches!(p.curve, Curve::Spline(_)).then_some(1.0);
+        let sq = matches!(q.curve, Curve::Spline(_)).then_some(0.0);
+        return Some((p.b.lerp(q.a, 0.5), sp, sq));
+    }
+    let side = |c: &Curve, s: f64| match c {
+        Curve::Spline(sp) => spline_side(sp, n, d, s),
+        _ => DVec3::ZERO,
+    };
+    match (&p.curve, &q.curve) {
+        (Curve::Spline(a), Curve::Spline(b)) => {
+            let (x, s, u) = spline_spline(a, b, n, d, eps)?;
+            Some((x, Some(s), Some(u)))
+        }
+        (Curve::Spline(_), other) | (other, Curve::Spline(_)) => {
+            // The spline is the first piece (joint near its end) or the second
+            // (near its start).
+            let first = matches!(p.curve, Curve::Spline(_));
+            let sp = if first { &p.curve } else { &q.curve };
+            let s0 = if first { 1.0 } else { 0.0 };
+            let other_piece = if first { q } else { p };
+            let dist = |x: DVec3| match other {
+                Curve::Line => {
+                    let dir = (other_piece.b - other_piece.a).normalize_or_zero();
+                    (x - other_piece.a).dot(n.cross(dir))
+                }
+                Curve::Arc {
+                    centre,
+                    axis,
+                    radius,
+                } => {
+                    let w = x - *centre;
+                    (w - *axis * w.dot(*axis)).length() - radius
+                }
+                Curve::Spline(_) => 0.0,
+            };
+            let s = root_near(|s| dist(side(sp, s)), s0)?;
+            let x = side(sp, s);
+            Some(if first {
+                (x, Some(s), None)
+            } else {
+                (x, None, Some(s))
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The spline through the offset of `sp` from fraction `s0` to `s1`, from
+/// the joint `a` to the joint `b`.
+fn fitted_side(
+    sp: &prism_geom::Spline,
+    n: DVec3,
+    d: f64,
+    (s0, s1): (f64, f64),
+    (a, b): (DVec3, DVec3),
+) -> Option<Curve> {
+    const SAMPLES: usize = 48;
+    let mut pts: Vec<DVec3> = (0..SAMPLES)
+        .map(|i| spline_side(sp, n, d, s0 + (s1 - s0) * i as f64 / (SAMPLES - 1) as f64))
+        .collect();
+    pts[0] = a;
+    pts[SAMPLES - 1] = b;
+    let fit = prism_geom::Nurbs::through(&pts, false)?;
+    Some(Curve::Spline(prism_geom::Spline::whole(fit)))
 }
 
 /// Where two moved pieces join: the point their lines or circles share
@@ -258,19 +422,38 @@ fn offset_pieces(l: &[Piece], n: DVec3, d: f64, gap: f64) -> Option<Vec<Piece>> 
     if k < 2 {
         return None;
     }
-    let joints: Vec<DVec3> = (0..k)
-        .map(|i| join(&kept[i].1, &kept[(i + 1) % k].1, n, gap * 0.1))
+    type Joint = (DVec3, Option<f64>, Option<f64>);
+    let joints: Vec<Joint> = (0..k)
+        .map(|i| {
+            let (p, q) = (&kept[i].1, &kept[(i + 1) % k].1);
+            if matches!(p.curve, Curve::Spline(_)) || matches!(q.curve, Curve::Spline(_)) {
+                join_spline(p, q, n, d, gap * 0.1)
+            } else {
+                join(p, q, n, gap * 0.1).map(|x| (x, None, None))
+            }
+        })
         .collect::<Option<_>>()?;
     let out: Vec<Piece> = (0..k)
-        .map(|i| Piece {
-            a: joints[(i + k - 1) % k],
-            b: joints[i],
-            curve: kept[i].1.curve.clone(),
+        .map(|i| {
+            let (before, after) = (&joints[(i + k - 1) % k], &joints[i]);
+            let curve = match &kept[i].1.curve {
+                // Fitted through the offset between its two joints.
+                Curve::Spline(sp) => {
+                    let (s0, s1) = (before.2?, after.1?);
+                    fitted_side(sp, n, d, (s0, s1), (before.0, after.0))
+                }
+                c => Some(c.clone()),
+            }?;
+            Some(Piece {
+                a: before.0,
+                b: after.0,
+                curve,
+            })
         })
-        .collect();
+        .collect::<Option<_>>()?;
     for ((p, _), q) in kept.iter().zip(&out) {
         let ok = match q.curve {
-            Curve::Spline(_) => false,
+            Curve::Spline(_) => q.a.distance(q.b) >= gap,
             Curve::Line => q.a.distance(q.b) >= gap,
             Curve::Arc { radius, .. } => {
                 let (s0, s1) = (p.curve.sweep(p.a, p.b), q.curve.sweep(q.a, q.b));
@@ -465,10 +648,6 @@ fn arc_distance_through(model: &Model, face: FaceId, p: DVec3) -> Option<f64> {
 /// Said when Offset is asked to offset a curved face.
 pub const CURVED_OFFSET: &str = "Curved faces cannot be offset yet.";
 
-/// Said when a face has a spline edge: its curve cannot be moved sideways yet.
-pub const SPLINE_OFFSET: &str =
-    "Offset cannot move a spline edge yet: draw that outline with lines and arcs.";
-
 /// Said when no distance gives a valid outline.
 pub const NO_OFFSET: &str = "That face cannot be offset: an edge would vanish or cross.";
 
@@ -476,14 +655,6 @@ pub const NO_OFFSET: &str = "That face cannot be offset: an edge would vanish or
 pub fn refusal(model: &Model, face: FaceId, distance: f64) -> Option<&'static str> {
     if model.face(face)?.is_curved() {
         return Some(CURVED_OFFSET);
-    }
-    if face_pieces(model, face).is_some_and(|loops| {
-        loops
-            .iter()
-            .flatten()
-            .any(|p| matches!(p.curve, Curve::Spline(_)))
-    }) {
-        return Some(SPLINE_OFFSET);
     }
     if model.tol().is_zero(distance) {
         return None;
@@ -504,7 +675,9 @@ pub fn offset(model: &mut Model, face: FaceId, distance: f64) -> Option<f64> {
         let (loops, used) = offset_arc_loops(model, face, distance)?;
         for p in loops.iter().flatten() {
             match p.curve {
-                Curve::Spline(_) => {}
+                Curve::Spline(ref sp) => {
+                    crate::add_spline(model, &sp.curve);
+                }
                 Curve::Line => {
                     add_segment(model, p.a, p.b);
                 }
