@@ -26,7 +26,7 @@ use super::features::GRAB;
 pub const SHELL: &str = "tool.shell";
 
 const HOW: &str = "Click a face to shell its body or thicken its sheet · Shift+click faces of a closed body to leave them open";
-const HANDLE: &str = "Drag the handle to change the shell's thickness (through the face makes it go the other way) · or click a face to shell another";
+const HANDLE: &str = "Drag the handle to change the shell's thickness (through the face makes it go the other way) · click a rim's diamond to end it flush or square, drag it to tilt the cut · or click a face to shell another";
 const FIXED: &str = "Click a face to shell or thicken it by the window's thickness · Shift+click faces of a closed body to leave them open · clear the thickness to size by the pointer";
 const SIZING: &str = "Move to set the thickness (out of the face grows outside, into it inside) · click or type a thickness + Enter · Shift+click leaves a face open · Esc steps back";
 
@@ -79,6 +79,13 @@ pub(super) struct ShellOp {
     /// The thickness and open faces the ghost was made for.
     shown: Option<(f64, BTreeSet<FaceId>)>,
     ghost: Vec<[DVec3; 2]>,
+    /// The rims of the ghost that end flush in a plane (brief 49 part 3):
+    /// drawn in their own colour, so a rim the program placed is seen.
+    flush: Vec<[DVec3; 2]>,
+    /// The program's rim styles for the thickness' direction and open
+    /// faces they were made for (picking them builds the shell many times,
+    /// so they are kept while the thickness only grows or shrinks).
+    rims: Option<(bool, BTreeSet<FaceId>, prism_ops::shelling::RimStyles)>,
     refused: Option<&'static str>,
 }
 
@@ -92,7 +99,7 @@ impl Session {
     }
 
     pub(super) fn shell_hover(&mut self, s: DVec2, view: &View) {
-        if self.shell_handle_drag(s, view) {
+        if self.shell_handle_drag(s, view) || self.rim_hover(s, view) {
             return;
         }
         let (o, dir) = view.ray(s);
@@ -145,6 +152,8 @@ impl Session {
                     d,
                     shown: None,
                     ghost: Vec::new(),
+                    flush: Vec::new(),
+                    rims: None,
                     refused: None,
                 });
                 self.shell_update();
@@ -237,7 +246,7 @@ impl Session {
     }
 
     pub(super) fn shell_press(&mut self, s: DVec2, shift: bool) {
-        if !shift && self.shell_handle_press(s) {
+        if !shift && (self.shell_handle_press(s) || self.rim_press(s)) {
             return;
         }
         let face = self.shell_face();
@@ -284,6 +293,8 @@ impl Session {
             d: 0.0,
             shown: None,
             ghost: Vec::new(),
+            flush: Vec::new(),
+            rims: None,
             refused: None,
         });
         self.overlay_dirty = true;
@@ -304,18 +315,41 @@ impl Session {
             return;
         }
         let (face, d) = (op.face, op.d);
-        let (ghost, refused) =
-            match prism_ops::shelling::slab(self.work_model(), &[face].into(), &open, d) {
-                Ok((s, _)) => (
-                    s.edges()
-                        .map(|(_, e)| [s.vertex(e.a), s.vertex(e.b)])
-                        .collect(),
-                    None,
-                ),
-                Err(why) => (Vec::new(), Some(why)),
-            };
+        let faces: BTreeSet<FaceId> = [face].into();
+        // The program's pick of rim styles, kept while it still builds.
+        let kept = op
+            .rims
+            .clone()
+            .filter(|(out, o, _)| *out == (d > 0.0) && *o == open)
+            .map(|r| r.2);
+        let m = self.work_model();
+        let mut styles = kept
+            .clone()
+            .unwrap_or_else(|| prism_ops::shelling::default_rims(m, &faces, &open, d));
+        let mut built = prism_ops::shelling::slab_with(m, &faces, &open, d, &styles);
+        if built.is_err() && kept.is_some() {
+            styles = prism_ops::shelling::default_rims(m, &faces, &open, d);
+            built = prism_ops::shelling::slab_with(m, &faces, &open, d, &styles);
+        }
+        let (ghost, refused) = match &built {
+            Ok((s, _)) => (
+                s.edges()
+                    .map(|(_, e)| [s.vertex(e.a), s.vertex(e.b)])
+                    .collect(),
+                None,
+            ),
+            Err(why) => (Vec::new(), Some(*why)),
+        };
+        let flush: Vec<[DVec3; 2]> = styles
+            .iter()
+            .filter(|(_, st)| matches!(st, prism_ops::shelling::RimStyle::Flush(_)))
+            .filter_map(|(e, _)| m.edge(*e).map(|x| (m.edge_points(*e), x)))
+            .flat_map(|(pts, _)| pts.windows(2).map(|w| [w[0], w[1]]).collect::<Vec<_>>())
+            .collect();
         if let Some(op) = &mut self.shell_op {
             op.ghost = ghost;
+            op.flush = if refused.is_none() { flush } else { Vec::new() };
+            op.rims = Some((d > 0.0, open.clone(), styles));
             op.refused = refused;
             op.shown = Some((d, open));
         }
@@ -376,6 +410,13 @@ impl Session {
         }
         if self.shell_handle.take().is_some() {
             self.set_preview(None);
+            self.overlay_dirty = true;
+            self.refresh();
+            return true;
+        }
+        if self.rim_drag_held() {
+            self.rim_clear();
+            self.notice = None;
             self.overlay_dirty = true;
             self.refresh();
             return true;
@@ -496,10 +537,14 @@ impl Session {
     pub(super) fn shell_clear(&mut self) {
         self.shell_op = None;
         self.shell_handle = None;
+        self.rim_clear();
         self.shell_open.clear();
     }
 
     pub(super) fn shell_hint(&self) -> &'static str {
+        if let Some(h) = self.rim_hint() {
+            return h;
+        }
         match &self.shell_op {
             // No thickness yet is the start of sizing, not a mistake.
             Some(op) => op
@@ -531,6 +576,7 @@ impl Session {
         if self.tool != SHELL {
             return;
         }
+        self.rim_overlay(o);
         let fb = &self.style.feedback;
         let m = self.work_model();
         for f in &self.shell_open {
@@ -572,6 +618,15 @@ impl Session {
             });
         }
         if let Some(op) = &self.shell_op {
+            for [a, b] in &op.flush {
+                o.lines.push(Line {
+                    a: *a,
+                    b: *b,
+                    color: fb.rim_flush,
+                    width: fb.target_width * 1.5,
+                    dash: [6.0, 4.0],
+                });
+            }
             for [a, b] in &op.ghost {
                 o.lines.push(Line {
                     a: *a,

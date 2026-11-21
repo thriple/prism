@@ -246,6 +246,7 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Move out of the face to grow the wall outside, into it to make it inside, or type a thickness + Enter.",
                 "Shift+click faces of a closed body to leave them open (a box becomes a tray).",
                 "Click or Enter makes it. Esc steps back.",
+                "Select the shell afterwards: a diamond on each open edge shows how its wall ends. Click it to switch Square and Flush; drag it on a straight edge to tilt the cut, snapping to nearby planes.",
             ],
         ),
         s::LOFT => g(

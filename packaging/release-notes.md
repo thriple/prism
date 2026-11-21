@@ -1,11 +1,7 @@
-**New in this build: see and change a live cut.**
-- **Live Union, Subtract and Intersect:** when you open the body and select the cut, a dashed outline shows the cutter. In Inspector > Features you can change it between Union, Subtract and Intersect, and type its position and size. Undo puts each change back.
-- **Offset** goes as far as you ask, even past where its sides meet (the new lines cross and split the old ones), and no longer refuses to start again after a maximum offset.
-- **Shell / Thicken stays live:** with the Shell tool, select the shell and drag the square handle on its wall to change the thickness (through the face goes the other way). The Inspector's Features list has the number too, and Remove or Bake work as for fillets. Files made with this build need this build or later.
-- **Fillet and chamfer edges:** select edges in the viewport, then in Inspector > Features press "Round the N selected edges" under a fillet or chamfer to point it at them (this also repairs one whose edges were lost).
-- **Previews:** in Inspector > Features, type a new size or cutter value and the open body shows the result before you press Enter.
-- **Fix:** a union of boxes that overlap on shared planes is valid whichever you pick first.
-- **Recordings** (`Prism_session_*.json`) start with a short note saying what the file is.
+**New in this build: where a shell's walls end.**
+- **Shell / Thicken of joined freeform faces (the boat hull) can end its walls flush.** An open edge that lies in a flat plane, such as the hull's centre line, ends in that plane by itself, so two mirrored halves meet exactly. Select the shell with the Shell tool: a diamond sits on each open edge. Click it to switch between a square cut and a flush one; drag it along a straight edge to tilt the cut, and it snaps to nearby planes. One undo step each.
+- It works where the wall can be trimmed back inside the surface (thickening inward on the hull). The other direction would need the surface extended, which is not built yet: it says so and keeps the square cut.
+- Also recent: live Union, Subtract and Intersect with a visible cutter, a live Shell with a thickness handle, Fillet and chamfer on selected edges, construction planes and the model's own axes.
 
 These builds are not signed with a paid Apple or Microsoft certificate yet, so both systems warn the first time.
 

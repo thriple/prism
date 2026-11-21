@@ -8822,3 +8822,240 @@ fn a_live_shell_has_a_handle_that_drags_its_thickness() {
     });
     assert!((model_volume(d.s.model()) - tray).abs() < 1e-6);
 }
+
+// ---------- rim styles of a live shell (brief 49 part 3) ----------
+
+/// Two flat quads, each a NURBS patch, side by side in the plane y = 0 (x 0
+/// to 1 and 1 to 2, z 0 to 1), joined smoothly; both face -y. A sheet whose
+/// rim is four straight boundaries.
+fn rim_sheet() -> prism_topo::Model {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_topo::{Face, Model};
+    let square = |x0: f64| {
+        let k = vec![0.0, 0.0, 1.0, 1.0];
+        NurbsSurface::new(
+            [1, 1],
+            [k.clone(), k],
+            [2, 2],
+            vec![
+                DVec3::new(x0, 0.0, 0.0),
+                DVec3::new(x0, 0.0, 1.0),
+                DVec3::new(x0 + 1.0, 0.0, 0.0),
+                DVec3::new(x0 + 1.0, 0.0, 1.0),
+            ],
+            vec![1.0; 4],
+            [false, false],
+        )
+        .unwrap()
+    };
+    let mut m = Model::new();
+    let v = |m: &mut Model, x: f64, z: f64| m.add_vertex(DVec3::new(x, 0.0, z));
+    let (a0, a1, a2) = (
+        v(&mut m, 0.0, 0.0),
+        v(&mut m, 1.0, 0.0),
+        v(&mut m, 2.0, 0.0),
+    );
+    let (b0, b1, b2) = (
+        v(&mut m, 0.0, 1.0),
+        v(&mut m, 1.0, 1.0),
+        v(&mut m, 2.0, 1.0),
+    );
+    let (bottom_a, bottom_b) = (m.add_edge(a0, a1).unwrap(), m.add_edge(a1, a2).unwrap());
+    let (right_b, top_b) = (m.add_edge(a2, b2).unwrap(), m.add_edge(b2, b1).unwrap());
+    let (top_a, left_a) = (m.add_edge(b1, b0).unwrap(), m.add_edge(b0, a0).unwrap());
+    let shared = m.add_edge(a1, b1).unwrap();
+    m.add_face(Face::with_edges(
+        vec![a0, a1, b1, b0],
+        vec![],
+        Surface::Nurbs(Patch::whole(square(0.0))),
+        vec![vec![bottom_a, shared, top_a, left_a]],
+    ));
+    m.add_face(Face::with_edges(
+        vec![a1, a2, b2, b1],
+        vec![],
+        Surface::Nurbs(Patch::whole(square(1.0))),
+        vec![vec![bottom_b, right_b, top_b, shared]],
+    ));
+    m
+}
+
+/// The sheet shelled 0.1 as a live shell, selected with the Shell tool.
+fn rim_driver() -> Driver {
+    let mut doc = Document::with_model(rim_sheet());
+    let all: std::collections::BTreeSet<prism_topo::FaceId> =
+        doc.model().faces().map(|(id, _)| id).collect();
+    assert!(doc.run(prism_doc::Command::Shell {
+        faces: all,
+        open: std::collections::BTreeSet::new(),
+        thickness: 0.1,
+    }));
+    let mut d = Driver::new(doc);
+    d.tool(SHELL);
+    d.s.select_feature(0);
+    d
+}
+
+fn diamonds(d: &Driver) -> Vec<(DVec3, bool)> {
+    d.s.overlay()
+        .marks
+        .iter()
+        .filter_map(|m| match m.shape {
+            prism_view::overlay::Shape::Diamond => Some((m.at, true)),
+            prism_view::overlay::Shape::DiamondOutline => Some((m.at, false)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn rim_press(d: &mut Driver, p: DVec3) {
+    let s = d.screen(p);
+    d.send(Input::Move { x: s.x, y: s.y });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: s.x,
+        y: s.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+}
+
+fn let_go(d: &mut Driver) {
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+}
+
+#[test]
+fn a_live_shell_has_a_handle_on_each_open_boundary() {
+    let d = rim_driver();
+    let marks = diamonds(&d);
+    assert_eq!(marks.len(), 4, "{marks:?}");
+    for want in [
+        DVec3::new(1.0, 0.0, 0.0),
+        DVec3::new(2.0, 0.0, 0.5),
+        DVec3::new(1.0, 0.0, 1.0),
+        DVec3::new(0.0, 0.0, 0.5),
+    ] {
+        assert!(
+            marks
+                .iter()
+                .any(|(p, flush)| !flush && p.distance(want) < 1e-9),
+            "a square handle at {want}: {marks:?}"
+        );
+    }
+}
+
+#[test]
+fn dragging_a_rim_handle_tilts_the_cut_and_one_step_sets_it() {
+    let mut d = rim_driver();
+    let whole = model_volume(d.s.model()).abs();
+    assert!((whole - 0.2).abs() < 1e-9, "{whole}");
+    let log = d.s.document().log().count();
+    // Lean the wall 0.5 up the sheet for each unit of thickness.
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let to = d.screen(DVec3::new(1.0, -1.0, 0.5));
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert_eq!(d.s.document().log().count(), log, "nothing until let go");
+    assert!(d.s.hint().contains("Tilting"), "{}", d.s.hint());
+    let_go(&mut d);
+    assert_eq!(d.s.document().log().count(), log + 1, "one step");
+    let trimmed = 2.0 * (0.1 - 0.5 * 0.1 * 0.1 * 0.5);
+    assert!(
+        (model_volume(d.s.model()).abs() - trimmed).abs() < 1e-9,
+        "{}",
+        model_volume(d.s.model())
+    );
+    assert_eq!(d.s.selected_feature(), Some(0), "still selected");
+    // The boundary is drawn flush now, with a filled handle.
+    assert!(
+        diamonds(&d)
+            .iter()
+            .any(|(p, flush)| *flush && p.distance(DVec3::new(1.0, 0.0, 0.0)) < 1e-9)
+    );
+    // One undo step puts the whole wall back.
+    act(&mut d, "edit.undo");
+    assert!((model_volume(d.s.model()).abs() - whole).abs() < 1e-9);
+}
+
+#[test]
+fn the_tilt_snaps_to_a_plane_through_the_boundary_when_close() {
+    let mut d = rim_driver();
+    // Nearly along the ground plane (z = 0), which holds the bottom edge.
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let to = d.screen(DVec3::new(1.0, -1.0, 0.03));
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert!(d.s.hint().contains("axis plane"), "{}", d.s.hint());
+    let_go(&mut d);
+    // Snapped square to the sheet: the wall is the whole thickness.
+    assert!((model_volume(d.s.model()).abs() - 0.2).abs() < 1e-9);
+}
+
+#[test]
+fn a_tilt_the_kernel_cannot_build_says_why_and_makes_nothing() {
+    let mut d = rim_driver();
+    let log = d.s.document().log().count();
+    // Leaning the other way needs the surface extended past its edge.
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let to = d.screen(DVec3::new(1.0, -1.0, -0.5));
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert_eq!(d.s.hint(), prism_ops::shelling::FLUSH_REACH);
+    let_go(&mut d);
+    assert_eq!(d.s.document().log().count(), log, "nothing was made");
+    // Esc in the middle of a drag leaves it as it was, too.
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let to = d.screen(DVec3::new(1.0, -1.0, 0.5));
+    d.send(Input::Move { x: to.x, y: to.y });
+    key(&mut d, Key::Escape);
+    let_go(&mut d);
+    assert_eq!(d.s.document().log().count(), log);
+    assert!((model_volume(d.s.model()).abs() - 0.2).abs() < 1e-9);
+}
+
+#[test]
+fn clicking_a_rim_handle_switches_it_between_flush_and_square() {
+    let mut d = rim_driver();
+    let log = d.s.document().log().count();
+    // Square to Flush: a plane through the bottom edge that builds (the
+    // ground plane; the sheet's own plane would lie along the face).
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let_go(&mut d);
+    assert_eq!(d.s.document().log().count(), log + 1);
+    let stack = d.s.document().assembly().root().stack.clone().unwrap();
+    let prism_doc::Feature::Shell { rims, .. } = &stack.features[0] else {
+        panic!("a shell");
+    };
+    assert_eq!(rims.len(), 1);
+    assert!(matches!(
+        rims[0].style,
+        prism_ops::shelling::RimStyle::Flush(_)
+    ));
+    // Flush to Square.
+    rim_press(&mut d, DVec3::new(1.0, 0.0, 0.0));
+    let_go(&mut d);
+    let stack = d.s.document().assembly().root().stack.clone().unwrap();
+    let prism_doc::Feature::Shell { rims, .. } = &stack.features[0] else {
+        panic!("a shell");
+    };
+    assert_eq!(rims[0].style, prism_ops::shelling::RimStyle::Square);
+}
+
+#[test]
+fn sizing_a_shell_of_joined_freeform_faces_shows_its_ghost() {
+    let mut d = Driver::new(Document::with_model(rim_sheet()));
+    d.tool(SHELL);
+    d.click(DVec3::new(0.5, 0.0, 0.5));
+    d.hover(DVec3::new(0.5, -0.1, 0.5));
+    let drawn = d.s.overlay().lines.len();
+    assert!(drawn > 8, "the ghost's edges ({drawn})");
+    d.typed("0.1");
+    assert_eq!(
+        d.s.document()
+            .assembly()
+            .root()
+            .stack
+            .as_ref()
+            .map(|s| s.features.len()),
+        Some(1)
+    );
+}

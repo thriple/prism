@@ -45,6 +45,7 @@ mod inspector;
 mod lofting;
 mod materials;
 mod paint;
+mod rims;
 mod round;
 mod scalebox;
 mod sections;
@@ -503,6 +504,8 @@ pub struct Session {
     round_handle: Option<features::Handle>,
     /// A drag of a live shell's thickness handle.
     shell_handle: Option<shelling::ShellHandle>,
+    rim_cache: rims::RimCell,
+    rim_drag: Option<rims::RimDrag>,
     guide_cache: features::GuideCache,
     /// The Loft tool: the sides being picked, the threshold (degrees), the
     /// presets, the sides of the last loft (presets change it), and why it
@@ -759,6 +762,8 @@ impl Session {
             round_down: None,
             round_handle: None,
             shell_handle: None,
+            rim_cache: std::cell::RefCell::new(None),
+            rim_drag: None,
             guide_cache: Default::default(),
             lofting: lofting::Lofting::default(),
             loft_turn: prism_ops::sides::TURN_DEG,

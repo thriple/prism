@@ -864,7 +864,7 @@ impl Session {
     }
 
     pub(super) fn edit_release(&mut self, s: DVec2) {
-        if self.tool == SHELL && self.shell_handle_release() {
+        if self.tool == SHELL && (self.shell_handle_release() || self.rim_release()) {
             return;
         }
         if self.tool == FILLET {

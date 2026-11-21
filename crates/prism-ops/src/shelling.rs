@@ -297,6 +297,59 @@ pub fn boundary_plane(model: &Model, edges: &[EdgeId], tol: &Tol) -> Option<Plan
         .then_some(plane)
 }
 
+/// The two ends of a boundary that is one straight line (its edges all
+/// along it), if it is.
+pub fn boundary_line(model: &Model, edges: &[EdgeId], tol: &Tol) -> Option<(DVec3, DVec3)> {
+    let mut pts: Vec<DVec3> = Vec::new();
+    for e in edges {
+        let edge_data = model.edge(*e)?;
+        let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+        for i in 0..=8 {
+            pts.push(edge_data.curve.point(pa, pb, f64::from(i) / 8.0));
+        }
+    }
+    let p0 = *pts.first()?;
+    let p1 = pts
+        .iter()
+        .copied()
+        .max_by(|a, b| a.distance(p0).total_cmp(&b.distance(p0)))?;
+    if tol.is_zero(p1.distance(p0)) {
+        return None;
+    }
+    pts.iter()
+        .all(|p| tol.is_zero(distance_to_line(*p, p0, p1)))
+        .then_some((p0, p1))
+}
+
+/// Points along a boundary, in order, for drawing it.
+pub fn boundary_points(model: &Model, edges: &[EdgeId]) -> Vec<DVec3> {
+    let mut out: Vec<DVec3> = Vec::new();
+    let mut at: Option<VertexId> = None;
+    for e in edges {
+        let Some(edge_data) = model.edge(*e) else {
+            continue;
+        };
+        let (pa, pb) = (model.vertex(edge_data.a), model.vertex(edge_data.b));
+        // Walk each edge away from the vertex the chain arrived by (the
+        // first, away from the end it does not share with the next).
+        let start = at.unwrap_or_else(|| match edges.get(1).and_then(|n| model.edge(*n)) {
+            Some(n) if edge_data.a == n.a || edge_data.a == n.b => edge_data.b,
+            _ => edge_data.a,
+        });
+        let forward = start == edge_data.a;
+        for i in 0..=8 {
+            let t = f64::from(i) / 8.0;
+            out.push(
+                edge_data
+                    .curve
+                    .point(pa, pb, if forward { t } else { 1.0 - t }),
+            );
+        }
+        at = Some(if forward { edge_data.b } else { edge_data.a });
+    }
+    out
+}
+
 /// Whether a plane is one a part would plausibly meet there: a plane of
 /// the world's axes, or the plane of a flat face of the model.
 fn meaningful_plane(model: &Model, plane: &Plane, tol: &Tol) -> bool {

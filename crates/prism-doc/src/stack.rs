@@ -280,7 +280,7 @@ fn resolve(m: &Model, refs: &mut [EdgeRef], on_base: bool) -> Option<BTreeSet<Ed
 
 /// The faces a feature points at in `m`: by id, then by place. They are
 /// brought up to date, so a moved face is followed. None if one is gone.
-fn resolve_faces(m: &Model, refs: &mut [FaceRef], on_base: bool) -> Option<BTreeSet<FaceId>> {
+pub fn resolve_faces(m: &Model, refs: &mut [FaceRef], on_base: bool) -> Option<BTreeSet<FaceId>> {
     let mut out = BTreeSet::new();
     for r in refs.iter_mut() {
         let id = if m.face(r.id).is_some() && (on_base || same_face(m, r.id, r)) {
@@ -379,6 +379,63 @@ impl Stack {
         true
     }
 
+    /// The rims of the live shell at `index`: where they are and how they
+    /// end now. None if it is not a shell, or it is broken.
+    pub fn rim_report(&self, index: usize) -> Option<RimReport> {
+        let Some(Feature::Shell {
+            faces,
+            open,
+            thickness,
+            rims,
+            broken: false,
+        }) = self.features.get(index)
+        else {
+            return None;
+        };
+        let (mut faces, mut open, mut rims) = (faces.clone(), open.clone(), rims.clone());
+        let mut before = Stack {
+            base: self.base.clone(),
+            features: self.features[..index].to_vec(),
+        };
+        let m = before.evaluate();
+        let on_base = index == 0;
+        let found = resolve_faces(&m, &mut faces, on_base)?;
+        let open = resolve_faces(&m, &mut open, on_base)?;
+        let mut picks = Vec::new();
+        for c in rims.iter_mut() {
+            if let Some(e) = resolve(&m, std::slice::from_mut(&mut c.edge), on_base)
+                .and_then(|s| s.into_iter().next())
+            {
+                picks.push((e, c.style));
+            }
+        }
+        let chosen = prism_ops::shelling::styles_for_boundaries(&m, &found, &open, &picks);
+        let now =
+            prism_ops::shelling::default_rims_from(&m, &found, &open, *thickness, chosen.clone());
+        let tol = m.tol();
+        let boundaries = prism_ops::shelling::boundaries(&m, &found, &open)
+            .into_iter()
+            .filter_map(|b| {
+                let first = *b.first()?;
+                Some(RimBoundary {
+                    edge: EdgeRef::of(&m, first)?,
+                    points: prism_ops::shelling::boundary_points(&m, &b),
+                    line: prism_ops::shelling::boundary_line(&m, &b, &tol),
+                    plane: prism_ops::shelling::boundary_plane(&m, &b, &tol),
+                    style: now
+                        .get(&first)
+                        .copied()
+                        .unwrap_or(prism_ops::shelling::RimStyle::Square),
+                    chosen: chosen.contains_key(&first),
+                })
+            })
+            .collect();
+        Some(RimReport {
+            before: m,
+            boundaries,
+        })
+    }
+
     /// The base with every feature applied in order.
     pub fn evaluate(&mut self) -> Model {
         let mut m = self.base.clone();
@@ -387,6 +444,34 @@ impl Stack {
         }
         m
     }
+}
+
+/// One open boundary of a live shell, for showing and editing its rim
+/// style (brief 49 part 3), in the coordinates of the model before the
+/// shell.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RimBoundary {
+    /// An edge on it, to name it in `Stack::set_rim`.
+    pub edge: EdgeRef,
+    /// Points along it, in order.
+    pub points: Vec<DVec3>,
+    /// The ends of it, if it is one straight line (so a plane through it
+    /// can tilt).
+    pub line: Option<(DVec3, DVec3)>,
+    /// The plane it lies in, if it lies in one and is not a line.
+    pub plane: Option<prism_math::Plane>,
+    /// How its wall ends now.
+    pub style: prism_ops::shelling::RimStyle,
+    /// Whether a person chose that (false: the program did).
+    pub chosen: bool,
+}
+
+/// The open boundaries of the live shell at `index`, and the model they are
+/// in (the body just before that feature).
+#[derive(Clone, Debug)]
+pub struct RimReport {
+    pub before: Model,
+    pub boundaries: Vec<RimBoundary>,
 }
 
 /// A flat face beside the edge a feature works on.
@@ -611,7 +696,7 @@ fn shells(m: &Model) -> Vec<BTreeSet<FaceId>> {
 }
 
 /// The edge of `m` whose ends are where `r`'s were.
-fn edge_at(m: &Model, r: &EdgeRef) -> Option<EdgeId> {
+pub fn edge_at(m: &Model, r: &EdgeRef) -> Option<EdgeId> {
     m.edges().map(|(e, _)| e).find(|e| same_place(m, *e, r))
 }
 

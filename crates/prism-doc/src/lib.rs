@@ -25,7 +25,10 @@ use prism_ops::select::Selection;
 use prism_ops::{pushpull, transform};
 use prism_topo::{FaceId, Guide, Model, VertexId};
 use serde::{Deserialize, Serialize};
-pub use stack::{BoolKind, EdgeRef, FaceRef, Feature, GuideSide, SizeGuide, Stack};
+pub use stack::{
+    BoolKind, EdgeRef, FaceRef, Feature, GuideSide, RimBoundary, RimChoice, RimReport, SizeGuide,
+    Stack, edge_at, resolve_faces,
+};
 
 /// One edit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
