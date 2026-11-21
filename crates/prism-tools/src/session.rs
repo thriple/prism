@@ -270,6 +270,12 @@ pub enum Input {
     },
     /// Only time passes (easing, waking points).
     Time,
+    /// Edits made outside the viewport's inputs (a window's field, the
+    /// Inspector, the Materials window): added to a recording so a replay
+    /// makes them too.
+    Commands {
+        commands: Vec<prism_doc::Command>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -332,6 +338,29 @@ pub struct Recording {
     /// only the top level that `result` holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_assembly: Option<String>,
+    /// The rest of the state a replay needs to read the same clicks and
+    /// typed numbers the same way (units, lens, view settings...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<StartState>,
+}
+
+/// What a session holds besides the model that changes how inputs are
+/// read: typed numbers follow the units, picks follow the lens, and so on.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StartState {
+    pub units: prism_math::DisplayUnits,
+    pub decimal: char,
+    pub lens: prism_view::Lens,
+    pub view: prism_view::ViewStyle,
+    pub smart_on: bool,
+    pub selection: Selection,
+    pub sides: u32,
+    pub last_push: Option<(f64, bool)>,
+    pub last_offset: Option<f64>,
+    pub last_tape: Option<f64>,
+    /// What Copy had put on the clipboard, for a Paste in the recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clipboard: Option<prism_doc::Assembly>,
 }
 
 impl Recording {
@@ -568,6 +597,9 @@ pub struct Session {
     highlight_dirty: bool,
     overlay_dirty: bool,
     recording: Option<Recording>,
+    /// The document's revision and log length after the last recorded
+    /// input, to see edits no input made.
+    rec_seen: (u64, usize),
     timings: Timings,
     /// Time measurements are taken by the app; the session never reads a clock.
     pub measure: Option<fn() -> f64>,
@@ -812,6 +844,7 @@ impl Session {
             highlight_dirty: true,
             overlay_dirty: true,
             recording: None,
+            rec_seen: (0, 0),
             timings: Timings {
                 pick_ms: 0.0,
                 infer_ms: 0.0,
@@ -1165,11 +1198,26 @@ impl Session {
             open: self.ctx.clone(),
             selected: self.groups.iter().copied().collect(),
             result_assembly: None,
+            start: Some(StartState {
+                units: self.number.units,
+                decimal: self.number.decimal,
+                lens: self.lens,
+                view: self.view.clone(),
+                smart_on: self.smart_on,
+                selection: self.selection.clone(),
+                sides: self.sides,
+                last_push: self.last_push,
+                last_offset: self.last_offset,
+                last_tape: self.last_tape,
+                clipboard: self.clipboard.as_deref().cloned(),
+            }),
         });
+        self.rec_seen = (self.doc.revision(), self.doc.log().count());
     }
 
     /// Stop recording and return it, as JSON.
     pub fn stop_recording(&mut self) -> Option<String> {
+        self.record_outside();
         let mut r = self.recording.take()?;
         r.result = self.doc.model().geometry_json();
         r.result_assembly = serde_json::to_string(self.doc.assembly()).ok();
@@ -1206,6 +1254,22 @@ impl Session {
         s.round_chamfer = r.round_chamfer;
         s.shell_size = r.shell_size;
         s.shell_outside = r.shell_outside;
+        if let Some(st) = &r.start {
+            s.number = NumberFormat {
+                decimal: st.decimal,
+                units: st.units,
+            };
+            s.set_lens(st.lens);
+            s.set_view_style(st.view.clone());
+            s.smart_on = st.smart_on;
+            s.selection = st.selection.clone();
+            s.sides = st.sides;
+            s.last_push = st.last_push;
+            s.last_offset = st.last_offset;
+            s.last_tape = st.last_tape;
+            s.clipboard = st.clipboard.clone().map(std::sync::Arc::new);
+            s.highlight_dirty = true;
+        }
         for e in &r.events {
             s.handle(e);
         }
@@ -1214,10 +1278,47 @@ impl Session {
 
     // ---------- handling ----------
 
+    /// Edits made since the last input that no input made (a window's
+    /// field, the Inspector): put in the recording as commands, so the
+    /// replay makes them. Undo made the same way becomes Undo actions.
+    fn record_outside(&mut self) {
+        if self.recording.is_none() || self.doc.revision() == self.rec_seen.0 {
+            return;
+        }
+        let (_, len) = self.rec_seen;
+        let now = self.doc.log().count();
+        let t = self.time;
+        let mut inputs = Vec::new();
+        if now > len {
+            let commands: Vec<_> = self.doc.log().skip(len).cloned().collect();
+            inputs.push(Input::Commands { commands });
+        } else {
+            for _ in now..len {
+                inputs.push(Input::Action {
+                    id: "edit.undo".into(),
+                });
+            }
+        }
+        self.rec_seen = (self.doc.revision(), now);
+        if let Some(r) = &mut self.recording {
+            r.events
+                .extend(inputs.into_iter().map(|input| Event { t, input }));
+        }
+    }
+
     pub fn handle(&mut self, e: &Event) -> Response {
+        self.record_outside();
         if let Some(r) = &mut self.recording {
             r.events.push(e.clone());
         }
+        let resp = self.handle_input(e);
+        if self.recording.is_some() {
+            self.rec_seen = (self.doc.revision(), self.doc.log().count());
+        }
+        resp
+    }
+
+    fn handle_input(&mut self, e: &Event) -> Response {
         let dt = (e.t - self.time).max(0.0);
         self.time = e.t;
         if let Some(m) = &mut self.motion {
@@ -1349,6 +1450,12 @@ impl Session {
             }
             Input::Tool { id } => self.set_tool(id),
             Input::Action { id } => self.action(id),
+            Input::Commands { commands } => {
+                for c in commands {
+                    self.doc.run(c.clone());
+                }
+                self.model_changed();
+            }
             Input::Time => {
                 if self.mem.tick(self.time, &self.settings) {
                     self.refresh();

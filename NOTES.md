@@ -4955,3 +4955,9 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Tests:** `prism-tools/tests/session.rs` (named in one undo step and redo; Esc keeps the default and a later rename is its own step; a taken name refused, a new one accepted), `prism-app` `chrome/inspector.rs` (real egui frames: the field takes the keys with the default selected, typing "Wall" then Enter sends the name; Esc sends the cancel and no name).
 - **Not checked on screen** beyond the egui frame tests.
 
+
+## Recordings replay what happened (bug pass, 2026-11-21)
+
+- **Cause found (two parts):** a recording kept the clicks, but not (a) the state that changes how clicks are read (lens: parallel or perspective, View Settings such as hidden geometry and X-ray, Smart Guides, the face/edge selection, polygon sides, the last Push/Pull, Offset and Tape distances, the clipboard), and (b) edits that no input made: a field in the Inspector or another window changes the model by a method call, so those edits were missing from `events`. Either one makes a replay end somewhere else. (Units do not matter: a bare typed number is always metres.) For the owner's `Prism_session_15.json` the Offset fix of that session (offsets no longer clamp) also changed what the same clicks do, so that one old file may not match whatever else is done.
+- **Fix (`prism-tools/src/session.rs`):** `Recording.start: Option<StartState>` holds the state above; replay sets it first. `Input::Commands` holds edits made between inputs: `record_outside` compares the document's revision and log length before each input and when recording stops, and adds the new commands (or Undo actions if the log got shorter). Older recordings load unchanged. Tests: `a_recording_keeps_the_lens_...`, `a_recording_keeps_edits_made_outside_the_viewport`.
+- **Left over:** panel changes that are not model edits (a selection made from a window, the Materials window's brush) are still not recorded.

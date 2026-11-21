@@ -61,6 +61,7 @@ impl Driver {
             open: Vec::new(),
             selected: Vec::new(),
             result_assembly: None,
+            start: None,
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -8097,6 +8098,56 @@ fn a_recording_keeps_the_groups_the_open_group_and_the_selection() {
     bare.assembly = None;
     bare.open.clear();
     assert!(!bare.ends_with_document(Session::replay(&bare).document()));
+}
+
+#[test]
+fn a_recording_keeps_the_lens_so_the_same_clicks_land_in_the_same_place() {
+    // Clicks are screen points: a parallel view reads them differently
+    // from a perspective one.
+    let mut d = Driver::empty();
+    d.s.set_lens(prism_view::Lens {
+        parallel: true,
+        ..d.s.lens()
+    });
+    d.s.start_recording();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("1");
+    let json = d.s.stop_recording().expect("recorded");
+    let r: Recording = serde_json::from_str(&json).expect("reads back");
+    assert!(
+        r.ends_with_document(Session::replay(&r).document()),
+        "the replay is in the same lens"
+    );
+    let mut bare = r.clone();
+    bare.start = None;
+    assert!(
+        !bare.ends_with_document(Session::replay(&bare).document()),
+        "in the other lens the same points land elsewhere"
+    );
+}
+
+#[test]
+fn a_recording_keeps_edits_made_outside_the_viewport() {
+    // The Inspector, windows and the like change the model without an
+    // input; the recording holds them as commands so the replay matches.
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    d.tool(SELECT);
+    d.s.start_recording();
+    d.s.inspector_set("name", "Crate").expect("renames");
+    d.tool(LINE);
+    let json = d.s.stop_recording().expect("recorded");
+    let r: Recording = serde_json::from_str(&json).expect("reads back");
+    assert!(
+        r.events
+            .iter()
+            .any(|e| matches!(e.input, Input::Commands { .. }))
+    );
+    let s = Session::replay(&r);
+    assert!(r.ends_with_document(s.document()));
+    assert_eq!(s.document().assembly().name_of(g), Some("Crate"));
 }
 
 #[test]
