@@ -1204,11 +1204,14 @@ impl Command {
                 if material.is_none_or(|m| asm.material(m).is_some())
                     && let Some(d) = asm.def_mut_live(ctx)
                 {
-                    material::paint(&mut d.model, sides, *material);
-                    // The live features' base too, or the next run loses it.
-                    if let Some(s) = &mut d.stack {
-                        material::paint(&mut s.base, sides, *material);
-                    }
+                    // Paint on a face a live feature made would be lost the
+                    // next time it runs, so that feature is baked first
+                    // (the same rule as any other edit of what it made).
+                    let t = stack::Targets {
+                        faces: sides.iter().map(|(f, _)| *f).collect(),
+                        ..stack::Targets::default()
+                    };
+                    d.edit_direct(Some(t), |m| material::paint(m, sides, *material));
                 }
             }
             Command::PaintInstances {
@@ -1266,9 +1269,13 @@ impl Command {
             Command::RoundEdge { edge, .. } => {
                 t.edges.insert(*edge);
             }
-            Command::ConvertFaces { faces } | Command::ReverseFaces { faces } => {
+            Command::ConvertFaces { faces }
+            | Command::ReverseFaces { faces }
+            | Command::PlaceTexture { faces, .. } => {
                 t.faces.extend(faces);
             }
+            Command::CleanEnvelope { faces: Some(faces) }
+            | Command::Heal { faces: Some(faces) } => t.faces.extend(faces),
             Command::Shell { faces, open, .. } => {
                 t.faces.extend(faces);
                 t.faces.extend(open);

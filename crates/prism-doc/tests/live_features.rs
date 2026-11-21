@@ -633,3 +633,79 @@ fn a_shell_in_a_group_stays_live_when_the_group_is_moved_and_exploded() {
     assert!(!top_stack.features[0].is_broken());
     assert!((volume(d.model()) - tray).abs() < 1e-6);
 }
+
+fn add_red(d: &mut Document) -> prism_topo::MaterialId {
+    assert!(d.run(Command::AddMaterial {
+        material: prism_doc::Material::colour("Red", [200, 30, 30]),
+    }));
+    *d.assembly().materials().0.keys().next().expect("added")
+}
+
+#[test]
+fn paint_on_a_face_the_round_made_bakes_it_so_the_paint_is_kept() {
+    // Paint on a face a live round made used to be lost the next time the
+    // round ran.
+    let (mut d, inst, def) = grouped_cube();
+    let red = add_red(&mut d);
+    round(&mut d, inst, def, 0.25);
+    let made = made_faces(&d, def);
+    assert_eq!(made.len(), 1);
+    let sides = [(made[0], prism_doc::FaceSide::Front)].into();
+    assert!(d.run_in(
+        &[inst],
+        Command::Paint {
+            sides,
+            material: Some(red),
+        }
+    ));
+    assert!(
+        d.assembly().def(def).unwrap().stack.is_none(),
+        "baked to keep the paint"
+    );
+    let painted = model(&d, def)
+        .faces()
+        .filter(|(_, f)| f.paint.front == Some(red))
+        .count();
+    assert_eq!(painted, 1);
+    d.undo();
+    assert!(d.assembly().def(def).unwrap().stack.is_some());
+}
+
+#[test]
+fn paint_on_a_face_of_the_original_shape_keeps_the_round_live_and_stays() {
+    let (mut d, inst, def) = grouped_cube();
+    let red = add_red(&mut d);
+    round(&mut d, inst, def, 0.25);
+    let top = face_facing(model(&d, def), DVec3::Z);
+    assert!(d.run_in(
+        &[inst],
+        Command::Paint {
+            sides: [(top, prism_doc::FaceSide::Front)].into(),
+            material: Some(red),
+        }
+    ));
+    assert!(d.assembly().def(def).unwrap().stack.is_some(), "still live");
+    assert!(d.run(Command::SetFeatureSize {
+        def,
+        index: 0,
+        size: 0.5,
+    }));
+    let top = face_facing(model(&d, def), DVec3::Z);
+    assert_eq!(model(&d, def).face(top).unwrap().paint.front, Some(red));
+}
+
+#[test]
+fn a_texture_placed_on_a_round_face_bakes_it_instead_of_being_lost() {
+    let (mut d, inst, def) = grouped_cube();
+    round(&mut d, inst, def, 0.25);
+    let made = made_faces(&d, def);
+    assert!(d.run_in(
+        &[inst],
+        Command::PlaceTexture {
+            faces: made.into_iter().collect(),
+            map: None,
+        }
+    ));
+    // Naming a face the round made takes the round off, as any edit does.
+    assert!(d.assembly().def(def).unwrap().stack.is_none());
+}
