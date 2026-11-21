@@ -40,7 +40,7 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
     ui.horizontal_wrapped(|ui| {
         ui.label(&f.label);
         match &f.kind {
-            FieldKind::Text | FieldKind::Length => {
+            FieldKind::Text | FieldKind::Length | FieldKind::Suggest(_) => {
                 // What is being typed is kept while the field has the keys.
                 let mut text = match &p.inspector_edit {
                     Some((k, t)) if *k == f.key => t.clone(),
@@ -86,8 +86,24 @@ fn row(ui: &mut Ui, p: &mut Panels, f: &Field, ops: &mut Vec<PanelOp>) {
                     if f.key.starts_with("feature.") {
                         ops.push(PanelOp::InspectPreviewEnd);
                     }
-                    if text.trim() != f.text && !text.trim().is_empty() {
+                    // Empty takes a tag off; for any other field it is no change.
+                    if text.trim() != f.text && (!text.trim().is_empty() || f.key == "tag") {
                         ops.push(PanelOp::Inspect(f.key.clone(), text));
+                    }
+                }
+                if let FieldKind::Suggest(options) = &f.kind {
+                    for o in options {
+                        if ui
+                            .add(
+                                SoftButton::new(o)
+                                    .small()
+                                    .selected(!f.mixed && *o == f.text),
+                            )
+                            .clicked()
+                        {
+                            p.inspector_edit = None;
+                            ops.push(PanelOp::Inspect(f.key.clone(), o.clone()));
+                        }
                     }
                 }
             }

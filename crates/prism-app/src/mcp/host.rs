@@ -303,6 +303,7 @@ impl AppHost<'_> {
                             FieldKind::Length => "length",
                             FieldKind::Toggle => "toggle",
                             FieldKind::Choice(_) => "choice",
+                            FieldKind::Suggest(_) => "suggest",
                             FieldKind::Fixed => "fixed",
                             FieldKind::Action => "action",
                         };
@@ -310,7 +311,7 @@ impl AppHost<'_> {
                             "key": f.key, "label": f.label, "kind": kind,
                             "value": f.text, "mixed": f.mixed,
                         });
-                        if let FieldKind::Choice(o) = &f.kind {
+                        if let FieldKind::Choice(o) | FieldKind::Suggest(o) = &f.kind {
                             v["options"] = json!(o);
                         }
                         v

@@ -4980,3 +4980,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Cause:** the refinement loop evaluated the surface three times per side per round (the middle and both ends), again for every side every round, though the ends do not change.
 - **Fix (`prism-view/src/tess.rs`):** every point's place on the surface is found once and kept next to its (u, v); a side already close enough is not looked at again. The drawing is identical. Replay: 12.0 s to 7.3 s; a drag move is about 0.05 s.
 - **Left over:** a drag on a lofted face is still about 20 fps (0.05 s a move). What remains is the surface evaluation itself (`NurbsSurface::weighted` allocates per call) and the normals at every point. Next steps if it matters: evaluate in place without allocating, coarser drawing while dragging, or draw only the changed face. Session 9's recording no longer matches its recorded end state (an older build made it; the file predates the later fixes), so it is a timing check only.
+
+## Brief 50 part 2: tags you can type (2026-11-21)
+
+- **Built:** see the brief ("Part 2 ... built"). `FieldKind::Suggest` is new (text field with offered words; MCP kind "suggest" with `options`); `TagOp::Add(String)`; `tag_command` returns `Result<(), String>`; `Panels.tag_new`, `tag_new_focus`, `tag_error`, `info_tag`. Tests: `typing_a_new_tag_in_the_inspector_makes_it_and_applies_it_in_one_step`, `tags_added_in_the_window_take_a_name_and_a_taken_name_is_refused`.
+- **Left over:** not checked on screen (egui rows, focus on Add tag); a refused Add in the window closes the new-name row (the red message stays, press Add tag again); several tags on one object is not planned.

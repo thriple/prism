@@ -7976,18 +7976,85 @@ fn the_inspector_shows_a_group_and_edits_it_in_one_undo_step_each() {
 }
 
 #[test]
+fn typing_a_new_tag_in_the_inspector_makes_it_and_applies_it_in_one_step() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let steps = d.s.document().log().count();
+    d.s.inspector_set("tag", "Walls").expect("a new tag");
+    assert_eq!(d.s.tag_rows().len(), 1);
+    assert_eq!(d.s.tag_rows()[0].1, "Walls");
+    assert_eq!(inspector_text(&d, "tag").0, "Walls");
+    assert!(d.s.document().assembly().tag_of(g).is_some());
+    assert_eq!(d.s.document().log().count(), steps + 1, "one step");
+    // The same name again (any case) uses the tag that is there.
+    act(&mut d, "edit.undo");
+    assert!(d.s.tag_rows().is_empty(), "one undo takes both away");
+    act(&mut d, "edit.redo");
+    d.s.inspector_set("tag", "None").expect("off");
+    d.s.inspector_set("tag", "walls").expect("on again");
+    assert_eq!(d.s.tag_rows().len(), 1, "no second tag");
+    assert!(d.s.document().assembly().tag_of(g).is_some());
+    // Empty takes it off.
+    d.s.inspector_set("tag", "").expect("off");
+    assert!(d.s.document().assembly().tag_of(g).is_none());
+    // The field offers the tags that exist.
+    let f =
+        d.s.inspector()
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.clone())
+            .find(|f| f.key == "tag")
+            .expect("tag row");
+    assert!(
+        matches!(f.kind, prism_tools::session::FieldKind::Suggest(ref o) if o == &["None", "Walls"]),
+        "{:?}",
+        f.kind
+    );
+}
+
+#[test]
+fn tags_added_in_the_window_take_a_name_and_a_taken_name_is_refused() {
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    d.s.tag_command(prism_tools::TagOp::Add("Roof".into()))
+        .expect("adds");
+    assert_eq!(d.s.tag_rows()[0].1, "Roof");
+    assert!(
+        d.s.tag_command(prism_tools::TagOp::Add("  ".into()))
+            .is_err(),
+        "a name is needed"
+    );
+    let err =
+        d.s.tag_command(prism_tools::TagOp::Add("roof".into()))
+            .expect_err("taken, case aside");
+    assert!(err.contains("already called"), "{err}");
+    d.s.tag_command(prism_tools::TagOp::Add("Floor".into()))
+        .expect("adds");
+    let floor = d.s.tag_rows()[1].0;
+    assert!(
+        d.s.tag_command(prism_tools::TagOp::Rename(floor, "Roof".into()))
+            .is_err()
+    );
+    // Renaming a tag to its own name is no clash.
+    d.s.tag_command(prism_tools::TagOp::Rename(floor, "Floor".into()))
+        .expect("own name");
+    assert_eq!(d.s.tag_rows().len(), 2);
+}
+
+#[test]
 fn the_inspector_names_tags_hides_and_locks() {
     let mut d = Driver::empty();
     let g = grouped_box(&mut d);
     d.s.inspector_set("name", "Shed").expect("names");
     assert_eq!(d.s.document().assembly().name_of(g), Some("Shed"));
-    d.s.tag_command(prism_tools::TagOp::Add);
+    d.s.tag_command(prism_tools::TagOp::Add("Parts".into()))
+        .expect("adds");
     let tag = d.s.tag_rows()[0].1.clone();
     d.s.inspector_set("tag", &tag).expect("tags");
     assert_eq!(inspector_text(&d, "tag").0, tag);
     d.s.inspector_set("tag", "None").expect("untags");
     assert_eq!(inspector_text(&d, "tag").0, "None");
-    assert!(d.s.inspector_set("tag", "Nope").is_err());
+    // A name that is new makes the tag (see the typed-tag tests).
     d.s.inspector_set("locked", "true").expect("locks");
     assert!(d.s.document().assembly().is_locked(g));
     // Locked: edits are refused, unlocking is not.
@@ -8041,10 +8108,12 @@ fn with_several_groups_the_inspector_shows_mixed_values_and_edits_all() {
         "a name is for one group"
     );
     // Tag one only: the tag shows as mixed.
-    d.s.tag_command(prism_tools::TagOp::Add);
+    d.s.tag_command(prism_tools::TagOp::Add("Parts".into()))
+        .expect("adds");
     let tag = d.s.tag_rows()[0].0;
     d.s.select_path(&[a]);
-    d.s.tag_command(prism_tools::TagOp::PutSelected(Some(tag)));
+    d.s.tag_command(prism_tools::TagOp::PutSelected(Some(tag)))
+        .expect("puts");
     act(&mut d, "edit.selall");
     assert!(inspector_text(&d, "tag").1, "the tags differ");
     // One edit moves both.

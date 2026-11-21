@@ -145,8 +145,16 @@ pub struct Panels {
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
     pub name_edit: Option<(InstanceId, String)>,
+    /// The tag field in Entity Info, and which instance it is for.
+    pub info_tag: Option<(InstanceId, String)>,
     /// A tag being renamed.
     pub tag_edit: Option<(TagId, String)>,
+    /// A new tag's name being typed (Add tag), and whether it still has to
+    /// take the keys.
+    pub tag_new: Option<String>,
+    pub tag_new_focus: bool,
+    /// Why the last tag change was refused.
+    pub tag_error: Option<String>,
     /// The side windows folded to their titles.
     pub folded: BTreeSet<&'static str>,
 }
@@ -350,109 +358,130 @@ fn info(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
     if !p.info {
         return;
     }
-    let r =
-        SideCard::new("Entity Info").show(ui, p.folded.contains("Entity Info"), |ui| {
-            match &data.info {
-                Some(EntityInfo::Instance {
-                    id,
-                    name,
-                    kind,
-                    tag,
-                    hidden,
-                    locked,
-                    material,
-                }) => {
-                    let kind = if *locked {
-                        format!("{kind} (locked)")
-                    } else {
-                        kind.clone()
+    let r = SideCard::new("Entity Info").show(ui, p.folded.contains("Entity Info"), |ui| {
+        match &data.info {
+            Some(EntityInfo::Instance {
+                id,
+                name,
+                kind,
+                tag,
+                hidden,
+                locked,
+                material,
+            }) => {
+                let kind = if *locked {
+                    format!("{kind} (locked)")
+                } else {
+                    kind.clone()
+                };
+                ui.label(RichText::new(kind).color(color::MUTED));
+                ui.add_space(size::MENU_PAD);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Name");
+                    let text = match &mut p.name_edit {
+                        Some((i, t)) if i == id => t,
+                        _ => {
+                            p.name_edit = Some((*id, name.clone()));
+                            &mut p.name_edit.as_mut().expect("set").1
+                        }
                     };
-                    ui.label(RichText::new(kind).color(color::MUTED));
-                    ui.add_space(size::MENU_PAD);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Name");
-                        let text = match &mut p.name_edit {
-                            Some((i, t)) if i == id => t,
-                            _ => {
-                                p.name_edit = Some((*id, name.clone()));
-                                &mut p.name_edit.as_mut().expect("set").1
-                            }
-                        };
-                        let resp = field(ui, text, "No name", 180.0);
-                        if resp.lost_focus() && *text != *name {
-                            ops.push(PanelOp::Name(*id, text.clone()));
+                    let resp = field(ui, text, "No name", 180.0);
+                    if resp.lost_focus() && *text != *name {
+                        ops.push(PanelOp::Name(*id, text.clone()));
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Tag");
+                    // Typed: a name that is new makes the tag.
+                    let now = tag
+                        .and_then(|t| data.tags.iter().find(|r| r.0 == t))
+                        .map_or(String::new(), |r| r.1.clone());
+                    let text = match &mut p.info_tag {
+                        Some((i, t)) if i == id => t,
+                        _ => {
+                            p.info_tag = Some((*id, now.clone()));
+                            &mut p.info_tag.as_mut().expect("set").1
                         }
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Tag");
-                        let none = tag.is_none();
-                        if ui
-                            .add(SoftButton::new("None").small().selected(none))
-                            .clicked()
-                        {
-                            ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(None)));
+                    };
+                    let w = field(ui, text, "None", 120.0);
+                    if w.lost_focus() {
+                        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            p.info_tag = None;
+                        } else if *text != now {
+                            ops.push(PanelOp::Inspect("tag".into(), text.clone()));
+                            p.info_tag = None;
                         }
-                        for (t, tname, _, _) in &data.tags {
-                            if ui
-                                .add(SoftButton::new(tname).small().selected(*tag == Some(*t)))
-                                .clicked()
-                            {
-                                ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(Some(*t))));
-                            }
-                        }
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Material");
-                        ui.label(RichText::new(material).color(color::MUTED));
-                    });
+                    }
+                    if !w.has_focus() {
+                        p.info_tag = None;
+                    }
+                    let none = tag.is_none();
                     if ui
-                        .add(SoftButton::new(if *hidden { "Show" } else { "Hide" }).small())
+                        .add(SoftButton::new("None").small().selected(none))
                         .clicked()
                     {
-                        ops.push(PanelOp::Hide(*id, !hidden));
+                        ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(None)));
                     }
-                }
-                Some(EntityInfo::Geometry {
-                    groups,
-                    faces,
-                    edges,
-                    points,
-                    area,
-                    materials,
-                }) => {
-                    p.name_edit = None;
-                    let line =
-                        |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
-                    ui.label(
-                        [
-                            line(*groups, "group"),
-                            line(*faces, "face"),
-                            line(*edges, "edge"),
-                            line(*points, "point"),
-                        ]
-                        .join(", "),
-                    );
-                    if *faces > 0 {
-                        ui.label(
-                            RichText::new(format!("Area {area:.4}"))
-                                .font(theme::mono())
-                                .color(color::MUTED),
-                        );
+                    for (t, tname, _, _) in &data.tags {
+                        if ui
+                            .add(SoftButton::new(tname).small().selected(*tag == Some(*t)))
+                            .clicked()
+                        {
+                            ops.push(PanelOp::Tag(prism_tools::TagOp::PutSelected(Some(*t))));
+                        }
                     }
-                    if let Some((front, back)) = materials {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label("Front");
-                            ui.label(RichText::new(front).color(color::MUTED));
-                            ui.label("Back");
-                            ui.label(RichText::new(back).color(color::MUTED));
-                        });
-                    }
-                }
-                None => {
-                    ui.label(RichText::new("Nothing selected").color(color::MUTED));
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Material");
+                    ui.label(RichText::new(material).color(color::MUTED));
+                });
+                if ui
+                    .add(SoftButton::new(if *hidden { "Show" } else { "Hide" }).small())
+                    .clicked()
+                {
+                    ops.push(PanelOp::Hide(*id, !hidden));
                 }
             }
-        });
+            Some(EntityInfo::Geometry {
+                groups,
+                faces,
+                edges,
+                points,
+                area,
+                materials,
+            }) => {
+                p.name_edit = None;
+                let line = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+                ui.label(
+                    [
+                        line(*groups, "group"),
+                        line(*faces, "face"),
+                        line(*edges, "edge"),
+                        line(*points, "point"),
+                    ]
+                    .join(", "),
+                );
+                if *faces > 0 {
+                    ui.label(
+                        RichText::new(format!("Area {area:.4}"))
+                            .font(theme::mono())
+                            .color(color::MUTED),
+                    );
+                }
+                if let Some((front, back)) = materials {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Front");
+                        ui.label(RichText::new(front).color(color::MUTED));
+                        ui.label("Back");
+                        ui.label(RichText::new(back).color(color::MUTED));
+                    });
+                }
+            }
+            None => {
+                ui.label(RichText::new("Nothing selected").color(color::MUTED));
+            }
+        }
+    });
     if after_card(ui, &mut p.folded, "Entity Info", r) {
         p.info = false;
     }
@@ -475,8 +504,14 @@ fn tags(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                     }
                     match &mut p.tag_edit {
                         Some((id, text)) if id == t => {
-                            field(ui, text, "Name", 140.0);
-                            if ui.add(SoftButton::new("Save").small()).clicked() {
+                            let w = field(ui, text, "Name", 140.0);
+                            let enter =
+                                w.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            let esc =
+                                w.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+                            if esc {
+                                p.tag_edit = None;
+                            } else if enter || ui.add(SoftButton::new("Save").small()).clicked() {
                                 ops.push(PanelOp::Tag(prism_tools::TagOp::Rename(
                                     *t,
                                     text.clone(),
@@ -506,8 +541,33 @@ fn tags(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
                 });
             }
             ui.add_space(size::MENU_PAD);
-            if ui.add(SoftButton::new("Add tag").small()).clicked() {
-                ops.push(PanelOp::Tag(prism_tools::TagOp::Add));
+            if let Some(text) = &mut p.tag_new {
+                // A new tag: its name field has the keys; Enter makes it,
+                // Esc drops it.
+                let mut done = false;
+                ui.horizontal_wrapped(|ui| {
+                    let w = field(ui, text, "New tag name", 160.0);
+                    if p.tag_new_focus {
+                        p.tag_new_focus = false;
+                        w.request_focus();
+                    }
+                    if w.lost_focus() {
+                        if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            ops.push(PanelOp::Tag(prism_tools::TagOp::Add(text.clone())));
+                        }
+                        done = true;
+                    }
+                });
+                if done {
+                    p.tag_new = None;
+                }
+            } else if ui.add(SoftButton::new("Add tag").small()).clicked() {
+                p.tag_new = Some(String::new());
+                p.tag_new_focus = true;
+                p.tag_error = None;
+            }
+            if let Some(why) = &p.tag_error {
+                ui.label(RichText::new(why).color(color::WARN));
             }
         });
     if after_card(ui, &mut p.folded, "Tags", r) {

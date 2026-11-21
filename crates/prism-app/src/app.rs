@@ -489,7 +489,9 @@ impl App {
                     crate::chrome::PanelOp::Open(path) => s.open_path_to(&path),
                     crate::chrome::PanelOp::Hide(id, hidden) => s.set_hidden(id, hidden),
                     crate::chrome::PanelOp::Name(id, name) => s.name_instance(id, &name),
-                    crate::chrome::PanelOp::Tag(t) => s.tag_command(t),
+                    crate::chrome::PanelOp::Tag(t) => {
+                        chrome.panels.tag_error = s.tag_command(t).err();
+                    }
                     crate::chrome::PanelOp::Inspect(key, text) => {
                         chrome.panels.inspector_error = s.inspector_set(&key, &text).err();
                     }

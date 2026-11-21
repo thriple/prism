@@ -645,11 +645,27 @@ impl Session {
             .collect()
     }
 
-    /// Run a tag command from the Tags window or Entity Info.
-    pub fn tag_command(&mut self, c: TagOp) {
+    /// Whether a tag other than `except` already has this name (case aside).
+    fn tag_name_taken(&self, name: &str, except: Option<prism_doc::TagId>) -> bool {
+        self.tag_rows()
+            .iter()
+            .any(|t| Some(t.0) != except && t.1.eq_ignore_ascii_case(name))
+    }
+
+    /// Run a tag command from the Tags window or Entity Info. A name that
+    /// is empty or already a tag's is refused, with the words to show.
+    pub fn tag_command(&mut self, c: TagOp) -> Result<(), String> {
         let cmd = match c {
-            TagOp::Add => Command::AddTag { name: "Tag".into() },
-            TagOp::Rename(tag, name) => Command::RenameTag { tag, name },
+            TagOp::Add(name) => {
+                let name = name.trim().to_owned();
+                self.check_tag_name(&name, None)?;
+                Command::AddTag { name }
+            }
+            TagOp::Rename(tag, name) => {
+                let name = name.trim().to_owned();
+                self.check_tag_name(&name, Some(tag))?;
+                Command::RenameTag { tag, name }
+            }
             TagOp::Show(tag, visible) => Command::SetTagVisible { tag, visible },
             TagOp::PutSelected(tag) => Command::SetTag {
                 instances: self.groups.clone(),
@@ -657,6 +673,17 @@ impl Session {
             },
         };
         self.run(cmd);
+        Ok(())
+    }
+
+    fn check_tag_name(&self, name: &str, except: Option<prism_doc::TagId>) -> Result<(), String> {
+        if name.is_empty() {
+            Err("Give the tag a name".into())
+        } else if self.tag_name_taken(name, except) {
+            Err(format!("A tag is already called {name}"))
+        } else {
+            Ok(())
+        }
     }
 
     /// Edit > Make Unique: the selected instances get their own copies.
@@ -1096,7 +1123,8 @@ pub enum EntityInfo {
 /// A change from the Tags window or Entity Info.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TagOp {
-    Add,
+    /// A new tag with this name.
+    Add(String),
     Rename(prism_doc::TagId, String),
     Show(prism_doc::TagId, bool),
     /// Put the selected groups on a tag (None: on no tag).

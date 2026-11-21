@@ -29,6 +29,9 @@ pub enum FieldKind {
     Toggle,
     /// One of these words.
     Choice(Vec<String>),
+    /// Words typed, with these offered under the field (a tag: a name that
+    /// is new makes the tag).
+    Suggest(Vec<String>),
     /// Shown, not edited.
     Fixed,
     /// A button: the field's text is its label, and setting it (with any
@@ -249,7 +252,7 @@ impl Session {
         general.push(self.mixed_field(
             "tag",
             "Tag",
-            FieldKind::Choice(choices),
+            FieldKind::Suggest(choices),
             agree(ids.iter().map(tag_name)),
         ));
         general.push(self.mixed_field(
@@ -576,17 +579,35 @@ impl Session {
             }
             "tag" => {
                 let want = text.trim();
-                let tag = if want.is_empty() || want == NONE {
-                    None
-                } else {
-                    let found = self.tag_rows().into_iter().find(|t| t.1 == want);
-                    Some(found.ok_or(format!("No tag named {want:?}"))?.0)
-                };
                 self.cancel();
-                self.run(Command::SetTag {
-                    instances: ids,
-                    tag,
-                });
+                if want.is_empty() || want.eq_ignore_ascii_case(NONE) {
+                    self.run(Command::SetTag {
+                        instances: ids,
+                        tag: None,
+                    });
+                } else if let Some(found) = self
+                    .tag_rows()
+                    .into_iter()
+                    .find(|t| t.1.eq_ignore_ascii_case(want))
+                {
+                    self.run(Command::SetTag {
+                        instances: ids,
+                        tag: Some(found.0),
+                    });
+                } else {
+                    // A new name makes the tag and puts the selection on it,
+                    // in one undo step.
+                    let next = prism_doc::TagId(self.doc.assembly().tags().1);
+                    self.run(Command::Batch {
+                        commands: vec![
+                            Command::AddTag { name: want.into() },
+                            Command::SetTag {
+                                instances: ids,
+                                tag: Some(next),
+                            },
+                        ],
+                    });
+                }
             }
             "hidden" | "locked" => {
                 let on = match text.trim() {
