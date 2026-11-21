@@ -219,3 +219,46 @@ fn a_live_shell_keeps_a_chosen_rim_style() {
     assert!(d.undo());
     assert!(past(&d) > 1e-4);
 }
+
+/// Thin walls (the owner, 2026-11-21: a wall of a millimetre must work and
+/// Prism should hold a hundredth of a centimetre, which a 3D print needs):
+/// the hull, in metres and 15 m long, thickened from 0.1 mm to 5 cm, both
+/// ways, is a valid solid with nothing wrong, and its volume is the same
+/// surface area times the thickness (about 119 square metres, a little
+/// more outward and a little less inward). Two bugs showed only at thin
+/// walls: a mitre at an inside crease was fitted to points slid off the
+/// offsets, and a corner was left a hair off the surfaces the edges
+/// that end there were fitted to.
+#[test]
+fn the_hull_thickens_down_to_a_hundredth_of_a_centimetre() {
+    let bytes = std::fs::read("../../docs/acceptance/models/boat-half-hull.prism").unwrap();
+    let contents = prism_file::read(&bytes).unwrap();
+    let model = &contents.assembly.def(DefId(6)).unwrap().model;
+    let all: BTreeSet<FaceId> = model.faces().map(|(id, _)| id).collect();
+    let open: BTreeSet<FaceId> = [FaceId(2)].into();
+    for d in [1e-4, 3e-2, 3.5e-2] {
+        for d in [d, -d] {
+            let mut m = model.clone();
+            shelling::shell_with(&mut m, &all, &open, d, &shelling::RimStyles::new())
+                .unwrap_or_else(|why| panic!("{d}: {why}"));
+            assert!(is_solid(&m), "{d}");
+            let problems = check::problems(&m);
+            assert!(problems.is_empty(), "{d}: {problems:?}");
+            let volume: f64 = prism_ops::validate::validate(&m)
+                .iter()
+                .filter_map(|c| c.volume)
+                .sum();
+            let area = (volume / d).abs();
+            assert!((118.0..121.0).contains(&area), "{d}: area {area}");
+        }
+    }
+    // The program's own pick (flush along the centre line) holds there too.
+    let d = -1e-3;
+    let styles = shelling::default_rims(model, &all, &open, d);
+    assert!(!styles.is_empty(), "{d}");
+    let mut m = model.clone();
+    shelling::shell_with(&mut m, &all, &open, d, &styles).unwrap();
+    assert!(is_solid(&m), "{d}");
+    let problems = check::problems(&m);
+    assert!(problems.is_empty(), "{d}: {problems:?}");
+}

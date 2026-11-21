@@ -1118,7 +1118,20 @@ fn freeform_slab(
                     refine_flush_corner(&offsets, fs, planes, x0, &tol)
                 }
             }
-            None => move_point(model, fs, p, d, &tol)?,
+            None => {
+                let q = move_point(model, fs, p, d, &tol)?;
+                // Polished onto the faces' true offsets where it is already
+                // close (the flat corner is off a curved offset by a hair):
+                // the edges that end here are fitted to a hundredth of the
+                // tolerance and must meet it. A corner a face's offset does
+                // not reach is left as it is (it splits, below).
+                let polished = refine_flush_corner(&offsets, fs, &[], q, &tol);
+                if polished.distance(q) < tol.dist * 10.0 {
+                    polished
+                } else {
+                    q
+                }
+            }
         };
         moved.insert(*v, q);
         up.insert(*v, s.add_vertex(q));
@@ -1380,7 +1393,7 @@ fn freeform_slab(
                 &tol,
             );
             let guess = corner(&ns, d, &tol).map_or(p, |x| p + x);
-            meet(off_a, off_b, guess, &tol)
+            meet_to(off_a, off_b, guess, &tol, eps * 1e-3)
         };
         let (corr_a, corr_b) = (
             moved[&edge_data.a] - raw_meet(pa),
@@ -1389,7 +1402,17 @@ fn freeform_slab(
         let meet_at = |t: f64| -> DVec3 {
             let p = along(t);
             let bt = ((p - pa).dot(pb - pa) / span).clamp(0.0, 1.0);
-            raw_meet(p) + corr_a * (1.0 - bt) + corr_b * bt
+            let r = raw_meet(p);
+            // The correction slides the point along the mitre; it is put
+            // back on both offsets (a straight-line blend of it strays off
+            // a curved mitre between its ends).
+            meet_to(
+                off_a,
+                off_b,
+                r + corr_a * (1.0 - bt) + corr_b * bt,
+                &tol,
+                eps * 1e-3,
+            )
         };
         let curve = crease_curve(&meet_at, off_a, off_b, &breaks, eps).ok_or(TOO_THICK)?;
         let b = edge(
@@ -2183,7 +2206,15 @@ fn flush_end(
             // surface was grown (it is `truly_on` only where it was).
             let (lo, hi) = (-1.0, 2.0);
             return if (lo..=hi).contains(&t) && truly_on(offset, x, tol) {
-                Ok(x)
+                // Polished to much finer than the tolerance, as the edges
+                // that end here are fitted.
+                Ok(meet_to(
+                    offset,
+                    &Surface::Plane(*plane),
+                    x,
+                    tol,
+                    tol.dist * 1e-4,
+                ))
             } else {
                 Err(FLUSH_REACH)
             };
@@ -2221,7 +2252,9 @@ fn refine_flush_corner(
         for plane in planes {
             want.push((plane.normal, plane.distance(x)));
         }
-        if want.iter().all(|(_, c)| tol.is_zero(*c)) {
+        // To much finer than the tolerance: the edges that end here are
+        // fitted to a hundredth of it and must meet this point.
+        if want.iter().all(|(_, c)| c.abs() < tol.dist * 1e-4) {
             break;
         }
         let Some(step) = corner_mixed(&want, tol) else {
