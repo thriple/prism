@@ -133,6 +133,13 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "edit.duplicate",
+        name: "Duplicate Again",
+        key: "Ctrl+D",
+        proto_run: "",
+        when: "sel",
+    },
+    RawAction {
         id: "edit.delete",
         name: "Delete",
         key: "Del",
@@ -1734,6 +1741,7 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
             Item::Action("edit.copy"),
             Item::Action("edit.paste"),
             Item::Action("edit.pasteip"),
+            Item::Action("edit.duplicate"),
             Item::Action("edit.delete"),
             Item::Separator,
             Item::Action("edit.selall"),
@@ -2512,6 +2520,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
     ),
     (
         "Several tags per object, typed with Enter or clicked, and a Beverly list of suggested tags",
+        false,
+    ),
+    (
+        "Duplicate Again (Ctrl+D) repeats the last copy; Ctrl before the first click copies",
         false,
     ),
     (

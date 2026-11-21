@@ -210,7 +210,8 @@ pub fn guide(tool: &str) -> Option<Guide> {
             "Move the selection, or copy it.",
             &[
                 "Click a point to move from, then where it goes.",
-                "Ctrl copies; type 3x or /3 after a copy for an array.",
+                "Tap Ctrl, before you click or while moving, to copy; type x3 or /3 after a copy for an array.",
+                "Ctrl+D makes the next copy the same distance on, again and again.",
                 "Arrows lock an axis; type a distance.",
                 "A group or whole body lines up with its neighbours and snaps to equal gaps; Ctrl+U turns that off.",
             ],
@@ -220,7 +221,8 @@ pub fn guide(tool: &str) -> Option<Guide> {
             &[
                 "Click the centre, then the start of the angle.",
                 "Click the end, or type degrees; it snaps every 15 degrees.",
-                "Ctrl copies.",
+                "Tap Ctrl, before you click or while turning, to copy.",
+                "Ctrl+D makes the next copy turned the same angle about the same centre.",
             ],
         ),
         s::SCALE => g(

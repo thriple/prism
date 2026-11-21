@@ -50,6 +50,7 @@ impl Driver {
             events: vec![],
             result: String::new(),
             alt_loop: false,
+            ctrl_copy: false,
             brush: Brush::default(),
             brush_copy: None,
             materials: Vec::new(),
@@ -9746,4 +9747,161 @@ fn sizing_a_shell_of_joined_freeform_faces_shows_its_ghost() {
             .map(|s| s.features.len()),
         Some(1)
     );
+}
+
+#[test]
+fn ctrl_before_the_first_click_makes_the_next_move_a_copy() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.tool(MOVE);
+    d.send(Input::CtrlTap);
+    assert!(d.s.hint().contains("COPY on"), "{}", d.s.hint());
+    d.click(DVec3::ZERO);
+    d.hover(DVec3::new(1.0, 0.1, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("3");
+    assert_eq!(d.faces(), 2, "a copy, the original stays");
+    assert!(has_point(&d, 0.0, 0.0) && has_point(&d, 3.0, 0.0));
+    // A copy is for one move: the next move carries the original.
+    assert!(!d.s.hint().contains("COPY on"));
+    d.click(DVec3::ZERO);
+    d.hover(DVec3::new(1.0, 0.1, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("1");
+    assert_eq!(d.faces(), 2, "moved, not copied");
+    // Tapping twice turns it off again.
+    d.send(Input::CtrlTap);
+    d.send(Input::CtrlTap);
+    assert!(!d.s.hint().contains("COPY on"));
+    valid(&d);
+}
+
+#[test]
+fn ctrl_d_repeats_a_move_copy_in_a_chain() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.tool(MOVE);
+    d.click(DVec3::ZERO);
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(1.0, 0.1, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("3");
+    assert_eq!(d.faces(), 2);
+    act(&mut d, "edit.duplicate");
+    assert_eq!(d.faces(), 3);
+    assert!(has_point(&d, 6.0, 0.0), "the same step again");
+    act(&mut d, "edit.duplicate");
+    act(&mut d, "edit.duplicate");
+    assert_eq!(d.faces(), 5);
+    assert!(has_point(&d, 9.0, 0.0) && has_point(&d, 12.0, 0.0));
+    // Each press is one undo step.
+    act(&mut d, "edit.undo");
+    assert_eq!(d.faces(), 4);
+    valid(&d);
+}
+
+#[test]
+fn ctrl_d_continues_after_a_typed_array() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.tool(MOVE);
+    d.click(DVec3::ZERO);
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(1.0, 0.1, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("3");
+    d.typed("x3");
+    assert_eq!(d.faces(), 4);
+    act(&mut d, "edit.duplicate");
+    assert_eq!(d.faces(), 5);
+    assert!(has_point(&d, 12.0, 0.0), "the fifth step on");
+}
+
+#[test]
+fn ctrl_d_repeats_a_rotate_copy_about_the_same_centre() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 1.0, 0.0, 2.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(1.5, 0.5, 0.0));
+    d.tool(ROTATE);
+    d.send(Input::CtrlTap);
+    d.click(DVec3::ZERO);
+    d.click(DVec3::new(2.0, 0.0, 0.0));
+    d.hover(DVec3::new(0.0, 2.0, 0.0));
+    d.typed("90");
+    assert_eq!(d.faces(), 2);
+    assert!(has_point(&d, -1.0, 2.0), "a quarter turn");
+    act(&mut d, "edit.duplicate");
+    assert_eq!(d.faces(), 3);
+    assert!(has_point(&d, -2.0, -1.0), "a half turn");
+    act(&mut d, "edit.duplicate");
+    assert!(has_point(&d, 1.0, -2.0), "three quarters");
+    assert_eq!(d.faces(), 4);
+    valid(&d);
+}
+
+#[test]
+fn ctrl_d_makes_copies_of_groups_too() {
+    let mut d = Driver::empty();
+    let a = grouped_box(&mut d);
+    d.tool(MOVE);
+    d.click(DVec3::ZERO);
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(1.0, 0.0, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("4");
+    assert_eq!(d.s.document().assembly().root().instances.len(), 2);
+    act(&mut d, "edit.duplicate");
+    act(&mut d, "edit.duplicate");
+    let asm = d.s.document().assembly();
+    assert_eq!(asm.root().instances.len(), 4, "three copies in a row");
+    let xs: Vec<f64> = asm
+        .root()
+        .instances
+        .values()
+        .map(|i| i.transform.translation.x)
+        .collect();
+    for want in [0.0, 4.0, 8.0, 12.0] {
+        assert!(xs.iter().any(|x| (x - want).abs() < 1e-9), "{xs:?}");
+    }
+    let _ = a;
+}
+
+#[test]
+fn ctrl_d_with_nothing_to_repeat_says_so() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    let n = d.s.document().log().count();
+    act(&mut d, "edit.duplicate");
+    assert_eq!(d.s.document().log().count(), n);
+    assert!(d.s.hint().contains("Ctrl+D"), "{}", d.s.hint());
+}
+
+#[test]
+fn ctrl_d_after_selecting_something_else_starts_a_new_chain() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 1.0, 1.0);
+    rect_on_ground(&mut d, 0.0, 5.0, 1.0, 6.0);
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    d.tool(MOVE);
+    d.click(DVec3::ZERO);
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(1.0, 0.1, 0.0));
+    key(&mut d, Key::Right);
+    d.typed("3");
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(0.5, 5.5, 0.0));
+    act(&mut d, "edit.duplicate");
+    assert!(has_point(&d, 3.0, 5.0), "one step from the other square");
+    assert!(!has_point(&d, 6.0, 5.0));
 }

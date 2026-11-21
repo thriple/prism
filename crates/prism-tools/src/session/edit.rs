@@ -739,7 +739,7 @@ impl Session {
     }
 
     /// The command a move, rotation or scale in progress would commit.
-    fn transform_command(&self, e: &EditOp) -> Option<Command> {
+    pub(super) fn transform_command(&self, e: &EditOp) -> Option<Command> {
         match e {
             EditOp::Move {
                 selection,
@@ -1026,7 +1026,7 @@ impl Session {
             selection,
             verts,
             delta: DVec3::ZERO,
-            copy: false,
+            copy: self.ctrl_copy,
         });
         self.after_start();
     }
@@ -1059,7 +1059,7 @@ impl Session {
                     angle: 0.0,
                     selection,
                     verts,
-                    copy: false,
+                    copy: self.ctrl_copy,
                     pressed: Some(s),
                 });
                 self.after_start();
@@ -1140,9 +1140,12 @@ impl Session {
                     && self.run(c)
                 {
                     self.last_op = Some(LastOp::Edit(t.clone()));
+                    self.note_dup(t, 1);
                 }
             }
         }
+        // A copy is for one move or turn at a time (Ctrl+D repeats it).
+        self.ctrl_copy = false;
         self.mem.clear();
         self.overlay_dirty = true;
         self.dirty = true;
@@ -1156,12 +1159,20 @@ impl Session {
         }
     }
 
-    /// Ctrl tapped: toggle copy (Move, Rotate).
+    /// Ctrl tapped: toggle copy (Move, Rotate), before the first click (for
+    /// the next one) or while it is in progress.
     pub(super) fn toggle_copy(&mut self) {
         // Only while moving or rotating, so Ctrl+Z and other shortcuts do
         // not flip it (as in the feel test).
         if self.tool == TAPE {
             self.measure_only = !self.measure_only;
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
+        // Before the first click: copy is on for the next move or turn.
+        if self.edit.is_none() && matches!(self.tool.as_str(), MOVE | ROTATE) {
+            self.ctrl_copy = !self.ctrl_copy;
             self.overlay_dirty = true;
             self.dirty = true;
             return;
@@ -1310,11 +1321,18 @@ impl Session {
                         if self.doc.undo() {
                             self.model_changed();
                         }
-                        self.run(Command::Copy {
-                            selection: selection.clone(),
+                        let selection = selection.clone();
+                        let mut op = e.clone();
+                        if let EditOp::Move { delta: d, .. } = &mut op {
+                            *d = step;
+                        }
+                        if self.run(Command::Copy {
+                            selection,
                             step: Motion::Translate { by: step },
                             count,
-                        });
+                        }) {
+                            self.note_dup(&op, count);
+                        }
                         return true;
                     }
                 }
@@ -1345,7 +1363,8 @@ impl Session {
                 }
                 if let Some(c) = self.transform_command(&e) {
                     self.run(c);
-                    self.last_op = Some(LastOp::Edit(e));
+                    self.last_op = Some(LastOp::Edit(e.clone()));
+                    self.note_dup(&e, 1);
                 }
             }
             _ => return false,
@@ -1409,6 +1428,9 @@ impl Session {
             (MOVE, Some(_)) => {
                 "Move to place · click to finish · Ctrl copies · arrows lock an axis · type a distance + Enter · Esc cancels"
             }
+            (MOVE, None) if self.ctrl_copy => {
+                "COPY on for the next move: click a point on the selection · Ctrl turns it off · then Ctrl+D repeats it"
+            }
             (MOVE, None) => {
                 "Click a point on the selection (or on what you point at) to move it · Ctrl copies, then type x5 or /5 for an array"
             }
@@ -1417,6 +1439,9 @@ impl Session {
             }
             (ROTATE, Some(_)) => {
                 "Move to rotate (15° snaps, Shift for 45°) · click to finish · Ctrl copies · type degrees + Enter"
+            }
+            (ROTATE, None) if self.ctrl_copy => {
+                "COPY on for the next turn: click the rotation centre · Ctrl turns it off · then Ctrl+D repeats it"
             }
             (ROTATE, None) => {
                 "Click the rotation centre · Up locks the protractor to the face under it, then move it anywhere · Right and Left lock red and green"
@@ -1463,6 +1488,21 @@ impl Session {
                 at: eye + dir * c.eye.distance(c.target),
                 offset: [14.0, -16.0],
                 text: "New loop".into(),
+                color: fb.pill,
+            });
+        }
+        // Copy on before the move starts: say so at the cursor too.
+        if matches!(self.tool.as_str(), MOVE | ROTATE)
+            && self.ctrl_copy
+            && self.edit.is_none()
+            && let Some(s) = self.cursor
+        {
+            let (eye, dir) = view.ray(s);
+            let c = self.camera();
+            o.labels.push(Label {
+                at: eye + dir * c.eye.distance(c.target),
+                offset: [14.0, -16.0],
+                text: "Copy".into(),
                 color: fb.pill,
             });
         }

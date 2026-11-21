@@ -222,7 +222,13 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id == "isect.ctx"
         || matches!(
             id,
-            "edit.copy" | "edit.cut" | "edit.paste" | "edit.pasteip" | "edit.lock" | "edit.unlock"
+            "edit.copy"
+                | "edit.cut"
+                | "edit.paste"
+                | "edit.pasteip"
+                | "edit.duplicate"
+                | "edit.lock"
+                | "edit.unlock"
         )
         // Groups & Components part 1: handled by the session.
         || id == "edit.group"
@@ -345,6 +351,7 @@ impl Registry {
                             "isect.sel"
                                 | "edit.copy"
                                 | "edit.cut"
+                                | "edit.duplicate"
                                 | "edit.group"
                                 | "edit.comp"
                                 | "edit.revface"
@@ -672,7 +679,8 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 33] = [
+const BUILT_BEHAVIOURS: [&str; 34] = [
+    "Duplicate Again (Ctrl+D) repeats the last copy; Ctrl before the first click copies",
     "Several tags per object, typed with Enter or clicked, and a Beverly list of suggested tags",
     "Name a new component as it is made (Inspector opens, Name field ready, Enter)",
     "Snap to grid (optional)",

@@ -36,6 +36,7 @@ mod construct;
 mod curve;
 mod dimensions;
 mod draw;
+mod duplicate;
 mod edit;
 mod effects;
 mod features;
@@ -313,6 +314,9 @@ pub struct Recording {
     /// Whether Push/Pull's new loop was on when recording started.
     #[serde(default)]
     pub alt_loop: bool,
+    /// Whether Move or Rotate's copy was tapped on before the first click.
+    #[serde(default)]
+    pub ctrl_copy: bool,
     /// The Paint Bucket's brush when recording started, and a copy of its
     /// material (the recording's model does not hold the material table).
     #[serde(default)]
@@ -585,6 +589,8 @@ pub struct Session {
     last_shape: Option<(shapes::ShapeOp, f64, u64)>,
     sides: u32,
     last_op: Option<LastOp>,
+    /// What Ctrl+D (Duplicate Again) repeats.
+    dup: Option<duplicate::DupMemo>,
     pub settings: Settings,
     mem: Memory,
     lock: Lock,
@@ -840,6 +846,7 @@ impl Session {
             last_shape: None,
             sides: shapes::DEFAULT_SIDES,
             last_op: None,
+            dup: None,
             settings: Settings::default(),
             mem: Memory::default(),
             lock: Lock::None,
@@ -1189,6 +1196,7 @@ impl Session {
             events: Vec::new(),
             result: String::new(),
             alt_loop: self.alt_loop,
+            ctrl_copy: self.ctrl_copy,
             brush: self.brush,
             brush_copy: match self.brush {
                 Brush::Material(id) => self
@@ -1265,6 +1273,7 @@ impl Session {
         s.settings = r.settings;
         s.ease = false;
         s.alt_loop = r.alt_loop;
+        s.ctrl_copy = r.ctrl_copy;
         s.brush = r.brush;
         s.brush_copy = r.brush_copy.clone();
         s.round_size = r.round_size;
@@ -2010,6 +2019,7 @@ impl Session {
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
+            "edit.duplicate" => self.duplicate_again(),
             "mirror.x" => self.mirror_axis(0),
             "mirror.y" => self.mirror_axis(1),
             "mirror.z" => self.mirror_axis(2),
@@ -2285,7 +2295,9 @@ impl Session {
     fn moved(&mut self, s: DVec2) {
         let last = self.cursor.replace(s);
         // The New Loop label follows the cursor.
-        if self.tool == PUSH && self.alt_loop && self.edit.is_none() {
+        let armed = (self.tool == PUSH && self.alt_loop)
+            || (matches!(self.tool.as_str(), MOVE | ROTATE) && self.ctrl_copy);
+        if armed && self.edit.is_none() {
             self.overlay_dirty = true;
             self.dirty = true;
         }

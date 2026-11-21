@@ -5002,3 +5002,9 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** the Array tool and window (`prism-tools/src/session/arraying.rs`, `prism-app/src/chrome/arraying.rs`): linear and polar, groups and loose geometry, a ghost, one undo step. No new document command (`CopyInstances` and `Copy` with a counted step). Tests: row, polar, loose, nothing selected.
 - **Left over:** along a path; a live Array feature in the Inspector; spacing as a gap or total length; not checked on screen (the card, the ghost).
+
+## Duplicate Again and Ctrl before the click (2026-11-21)
+
+- **Built:** `Edit > Duplicate Again` (Ctrl+D, `edit.duplicate`), in `session/duplicate.rs`. A Move or Rotate that copied (or a typed `x5`/`/5` array) leaves a memo: the one-step move or turn and how many copies are in the chain. Ctrl+D makes copy number k+1 from what was copied (`Copy` with the step times k, one undo step), so a chain never drifts. If the selection, open group or document changed since, it makes one step from the current selection as the first of a new chain. Nothing selected, or nothing copied yet: a hint, no change.
+- **Ctrl tap before the first click** now arms copy for the next Move or Rotate (`ctrl_copy`, like Alt's new loop for Push/Pull): hint line, a "Copy" label at the cursor, cleared after one move and on tool change. Tapping during the move still toggles it. The armed state is in the recording's start state.
+- **Left over:** a recording that starts in the middle of a chain does not carry the memo; undoing part of a chain, then Ctrl+D, restarts the chain from one step (not from where it was). Mirror and Array do not feed Ctrl+D. Scale has no copy. Not checked on screen (the hint, the cursor label).
