@@ -121,7 +121,7 @@ pub fn tools() -> Value {
         {
             "name": "set_inspector",
             "title": "Change an Inspector field",
-            "description": "Set field `key` (from get_inspector: name, tag, hidden, locked, x, y, z for the position of the selection's low corner, w, d, h for its size) to `value`. Lengths take units and simple expressions (`2*25.4mm`). Applies to every selected group; one undo step.",
+            "description": "Set field `key` (from get_inspector: name, tag, hidden, locked, x, y, z for the position of the selection's low corner, w, d, h for its size) to `value`. Lengths take units and simple expressions (`2*25.4mm`). Applies to every selected group; one undo step. A live feature's rows (select it, or the body that has it): `feature.N.size`, and for a live Shell of freeform faces `feature.N.rim.B` (`Square` or `Flush`: how the wall ends at its B-th open boundary) and `feature.N.rim.B.tilt` (degrees, on a straight flush boundary). A refusal says why and changes nothing.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

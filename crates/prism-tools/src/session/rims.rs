@@ -28,6 +28,7 @@ use prism_view::overlay::{Line, Mark, Overlay, Shape};
 
 use super::Session;
 use super::features::GRAB;
+use super::inspector::{Field, FieldKind, field};
 
 /// How far the pointer must move before a press on a handle is a drag, in
 /// pixels.
@@ -74,13 +75,19 @@ impl Session {
         }
         let index = self.selected_feature()?;
         let def = self.doc.assembly().context_def(&self.ctx)?;
+        Some((def, index, self.rim_report_of(def, index)?))
+    }
+
+    /// The rims of the live shell at `index` of `def` (the Inspector's too,
+    /// which needs no tool).
+    pub(super) fn rim_report_of(&self, def: DefId, index: usize) -> Option<Rc<RimReport>> {
         let revision = self.doc.revision();
         if let Some(c) = self.rim_cache.borrow().as_ref()
             && c.revision == revision
             && c.def == def
             && c.index == index
         {
-            return Some((def, index, c.report.clone()));
+            return Some(c.report.clone());
         }
         let stack = self.doc.assembly().def(def)?.stack.as_ref()?;
         let report = Rc::new(stack.rim_report(index)?);
@@ -90,7 +97,7 @@ impl Session {
             index,
             report: report.clone(),
         });
-        Some((def, index, report))
+        Some(report)
     }
 
     /// Where a boundary's handle is, in the world.
@@ -260,45 +267,63 @@ impl Session {
     /// The body with the shell's rim `drag.edge` ending as `style`, or why
     /// the kernel would not.
     fn rim_at(&self, drag: &RimDrag, style: RimStyle) -> Result<prism_topo::Model, &'static str> {
+        self.rim_with(drag.def, drag.index, &drag.edge, style)
+    }
+
+    /// The body with the shell `index` of `def` ending its rim `edge` as
+    /// `style`, or why the kernel would not.
+    pub(super) fn rim_with(
+        &self,
+        def: DefId,
+        index: usize,
+        edge: &EdgeRef,
+        style: RimStyle,
+    ) -> Result<prism_topo::Model, &'static str> {
         let stack = self
             .doc
             .assembly()
-            .def(drag.def)
+            .def(def)
             .and_then(|d| d.stack.clone())
             .ok_or("Refused: this is no live shell.")?;
         let mut next = stack;
-        if !next.set_rim(drag.index, &drag.edge, Some(style)) {
+        if !next.set_rim(index, edge, Some(style)) {
             return Err("Refused: that is not a rim of this shell.");
         }
         let m = next.evaluate();
-        match next.features.get(drag.index) {
+        match next.features.get(index) {
             Some(f) if !f.is_broken() => Ok(m),
             _ => Err(self
-                .rim_refusal(drag, style)
+                .rim_refusal(def, index, edge, style)
                 .unwrap_or("Refused: the shell cannot end that way.")),
         }
     }
 
     /// Why the kernel refuses a rim style, in its own words.
-    fn rim_refusal(&self, drag: &RimDrag, style: RimStyle) -> Option<&'static str> {
-        let (_, _, report) = self.rim_report()?;
-        let stack = self.doc.assembly().def(drag.def)?.stack.as_ref()?;
+    fn rim_refusal(
+        &self,
+        def: DefId,
+        index: usize,
+        edge: &EdgeRef,
+        style: RimStyle,
+    ) -> Option<&'static str> {
+        let report = self.rim_report_of(def, index)?;
+        let stack = self.doc.assembly().def(def)?.stack.as_ref()?;
         let Feature::Shell {
             faces,
             open,
             thickness,
             ..
-        } = stack.features.get(drag.index)?
+        } = stack.features.get(index)?
         else {
             return None;
         };
         let (mut faces, mut open) = (faces.clone(), open.clone());
-        let on_base = drag.index == 0;
+        let on_base = index == 0;
         let (found, open) = (
             prism_doc::resolve_faces(&report.before, &mut faces, on_base)?,
             prism_doc::resolve_faces(&report.before, &mut open, on_base)?,
         );
-        let edge = prism_doc::edge_at(&report.before, &drag.edge)?;
+        let edge = prism_doc::edge_at(&report.before, edge)?;
         let styles = prism_ops::shelling::styles_for_boundaries(
             &report.before,
             &found,
@@ -348,21 +373,42 @@ impl Session {
             return Some(RimStyle::Square);
         }
         let (_, _, report) = self.rim_report()?;
-        let mut planes: Vec<Plane> = drag.plane.into_iter().collect();
-        if let Some((a, b)) = drag.line {
-            planes.extend(self.rim_candidates(&report, a, b).into_iter().map(|c| c.0));
+        match self.rim_flush(
+            drag.def, drag.index, &report, drag.plane, drag.line, &drag.edge,
+        ) {
+            Ok(style) => Some(style),
+            Err(why) => {
+                self.notice = Some(why);
+                None
+            }
+        }
+    }
+
+    /// The first plane a boundary can end flush in: the one it lies in, or
+    /// one through a straight one that a face, an axis, the working plane
+    /// or a guide point gives, that the shell can be built with.
+    pub(super) fn rim_flush(
+        &self,
+        def: DefId,
+        index: usize,
+        report: &RimReport,
+        plane: Option<Plane>,
+        line: Option<(DVec3, DVec3)>,
+        edge: &EdgeRef,
+    ) -> Result<RimStyle, &'static str> {
+        let mut planes: Vec<Plane> = plane.into_iter().collect();
+        if let Some((a, b)) = line {
+            planes.extend(self.rim_candidates(report, a, b).into_iter().map(|c| c.0));
         }
         let mut why = None;
         for p in planes {
             let style = RimStyle::Flush(p);
-            match self.rim_at(drag, style) {
-                Ok(_) => return Some(style),
+            match self.rim_with(def, index, edge, style) {
+                Ok(_) => return Ok(style),
                 Err(r) => why = Some(r),
             }
         }
-        self.notice =
-            Some(why.unwrap_or("Refused: no plane to end flush in: tilt the handle to pick one."));
-        None
+        Err(why.unwrap_or("Refused: no plane to end flush in: tilt the handle to pick one."))
     }
 
     /// Whether a rim handle is held (so Esc lets it go first).
@@ -464,5 +510,146 @@ impl Session {
                 });
             }
         }
+    }
+}
+
+/// A direction square to the line `u` to measure a tilt from: the part of
+/// world Z square to it, or X where the line runs along Z.
+fn tilt_reference(u: DVec3) -> DVec3 {
+    let z = DVec3::Z - u * u.dot(DVec3::Z);
+    if z.length() > 1e-6 {
+        z.normalize()
+    } else {
+        (DVec3::X - u * u.dot(DVec3::X)).normalize()
+    }
+}
+
+/// How far, in degrees (-90 to 90), the plane `p` through the line
+/// `a`..`b` is turned about it from the vertical plane through it (the
+/// one that holds world Z); a line along Z is measured from the one that
+/// holds X.
+pub(super) fn tilt_degrees(a: DVec3, b: DVec3, p: &Plane) -> f64 {
+    let u = (b - a).normalize_or_zero();
+    let r = tilt_reference(u);
+    let w = p.normal.cross(u).normalize_or_zero();
+    let mut deg = u.dot(r.cross(w)).atan2(r.dot(w)).to_degrees();
+    if deg > 90.0 {
+        deg -= 180.0;
+    } else if deg <= -90.0 {
+        deg += 180.0;
+    }
+    deg
+}
+
+/// The plane through the line `a`..`b` turned `degrees` about it from the
+/// vertical plane (the inverse of `tilt_degrees`).
+pub(super) fn plane_at_tilt(a: DVec3, b: DVec3, degrees: f64) -> Plane {
+    let u = (b - a).normalize_or_zero();
+    let r = tilt_reference(u);
+    let t = degrees.to_radians();
+    let w = r * t.cos() + u.cross(r) * t.sin();
+    Plane::new(a, u.cross(w))
+}
+
+const SQUARE: &str = "Square";
+const FLUSH: &str = "Flush";
+
+impl Session {
+    /// The Inspector rows for the rims of the live shell at `index` of the
+    /// body being edited: for each open boundary how its wall ends
+    /// (`feature.N.rim.B`), and, where it is flush and straight, the tilt
+    /// of its plane in degrees (`feature.N.rim.B.tilt`).
+    pub(super) fn rim_fields(&self, index: usize) -> Vec<Field> {
+        let Some(def) = self.features_target() else {
+            return Vec::new();
+        };
+        let Some(report) = self.rim_report_of(def, index) else {
+            return Vec::new();
+        };
+        let mut fields = Vec::new();
+        for (n, b) in report.boundaries.iter().enumerate() {
+            let flush = matches!(b.style, RimStyle::Flush(_));
+            let note = if flush && !b.chosen {
+                " (the program's pick)"
+            } else {
+                ""
+            };
+            fields.push(field(
+                &format!("feature.{index}.rim.{n}"),
+                &format!("Rim {} ends{note}", n + 1),
+                FieldKind::Choice(vec![SQUARE.into(), FLUSH.into()]),
+                if flush { FLUSH } else { SQUARE }.into(),
+            ));
+            if let (RimStyle::Flush(p), Some((a, c))) = (b.style, b.line) {
+                fields.push(field(
+                    &format!("feature.{index}.rim.{n}.tilt"),
+                    &format!("Rim {} tilt (degrees)", n + 1),
+                    FieldKind::Text,
+                    format!("{:.1}", tilt_degrees(a, c, &p)),
+                ));
+            }
+        }
+        fields
+    }
+
+    /// The command a rim row's text asks for: `boundary` is the boundary's
+    /// number and `what` is None (Square or Flush) or "tilt".
+    pub(super) fn rim_command(
+        &self,
+        def: DefId,
+        index: usize,
+        boundary: Option<&str>,
+        what: Option<&str>,
+        text: &str,
+    ) -> Result<Command, String> {
+        let report = self
+            .rim_report_of(def, index)
+            .ok_or("This feature has no rims")?;
+        let n: usize = boundary
+            .and_then(|n| n.parse().ok())
+            .ok_or("Name a rim: feature.N.rim.B")?;
+        let b = report
+            .boundaries
+            .get(n)
+            .ok_or(format!("The shell has no rim {n}"))?;
+        let style = match what {
+            None => match text.trim().to_ascii_lowercase().as_str() {
+                "square" => RimStyle::Square,
+                "flush" => {
+                    if matches!(b.style, RimStyle::Flush(_)) {
+                        b.style
+                    } else {
+                        self.rim_flush(def, index, &report, b.plane, b.line, &b.edge)
+                            .map_err(str::to_owned)?
+                    }
+                }
+                _ => return Err(format!("{text:?} is not Square or Flush")),
+            },
+            Some("tilt") => {
+                let (a, c) = b.line.ok_or("Only a straight rim can be tilted")?;
+                let degrees: f64 = text
+                    .trim()
+                    .trim_end_matches(['°'])
+                    .trim()
+                    .trim_end_matches("deg")
+                    .trim()
+                    .parse()
+                    .map_err(|_| format!("{text:?} is not a number of degrees"))?;
+                if !degrees.is_finite() {
+                    return Err(format!("{text:?} is not a number of degrees"));
+                }
+                RimStyle::Flush(plane_at_tilt(a, c, degrees))
+            }
+            Some(other) => return Err(format!("{other:?} is not a rim field")),
+        };
+        // Say why in the kernel's words when it will not build.
+        self.rim_with(def, index, &b.edge, style)
+            .map_err(str::to_owned)?;
+        Ok(Command::SetRimStyle {
+            def,
+            index,
+            edge: b.edge,
+            style: Some(style),
+        })
     }
 }

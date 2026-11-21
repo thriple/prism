@@ -89,7 +89,7 @@ pub(super) fn takes_features_off(c: &Command) -> bool {
 /// The least size a group can have on an axis and still be scaled.
 const FLAT: f64 = 1e-9;
 
-fn field(key: &str, label: &str, kind: FieldKind, text: String) -> Field {
+pub(super) fn field(key: &str, label: &str, kind: FieldKind, text: String) -> Field {
     Field {
         key: key.to_owned(),
         label: label.to_owned(),
@@ -394,6 +394,7 @@ impl Session {
                         FieldKind::Length,
                         self.number.show(*thickness),
                     ));
+                    fields.extend(self.rim_fields(i));
                 }
             }
             prism_doc::Feature::Boolean { .. } => {
@@ -657,12 +658,19 @@ impl Session {
     /// is another kind or the features would break.
     fn feature_preview_of(&self, c: &Command) -> Option<prism_topo::Model> {
         let (def, index) = match c {
-            Command::SetFeatureSize { def, index, .. } | Command::SetCutter { def, index, .. } => {
-                (*def, *index)
-            }
+            Command::SetFeatureSize { def, index, .. }
+            | Command::SetCutter { def, index, .. }
+            | Command::SetRimStyle { def, index, .. } => (*def, *index),
             _ => return None,
         };
         let mut stack = self.doc.assembly().def(def)?.stack.clone()?;
+        if let Command::SetRimStyle { edge, style, .. } = c {
+            if !stack.set_rim(index, edge, *style) {
+                return None;
+            }
+            let m = stack.evaluate();
+            return (!stack.features.get(index)?.is_broken()).then_some(m);
+        }
         let f = stack.features.get_mut(index)?;
         match c {
             Command::SetFeatureSize { size, .. } => match f {
@@ -723,6 +731,7 @@ impl Session {
                     }
                     Command::SetFeatureSize { def, index, size }
                 }
+                Some("rim") => self.rim_command(def, index, parts.next(), parts.next(), text)?,
                 Some("edges") => {
                     let m = self.work_model();
                     let edges: Vec<prism_doc::EdgeRef> = self

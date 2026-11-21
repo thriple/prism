@@ -9040,6 +9040,91 @@ fn clicking_a_rim_handle_switches_it_between_flush_and_square() {
     assert_eq!(rims[0].style, prism_ops::shelling::RimStyle::Square);
 }
 
+fn inspector_has(d: &Driver, key: &str) -> bool {
+    d.s.inspector()
+        .sections
+        .iter()
+        .flat_map(|s| &s.fields)
+        .any(|f| f.key == key)
+}
+
+#[test]
+fn the_inspector_lists_each_rim_and_sets_how_it_ends() {
+    let mut d = rim_driver();
+    for n in 0..4 {
+        let key = format!("feature.0.rim.{n}");
+        assert_eq!(inspector_text(&d, &key).0, "Square", "{key}");
+        assert!(!inspector_has(&d, &format!("{key}.tilt")), "no tilt yet");
+    }
+    assert!(!inspector_has(&d, "feature.0.rim.4"), "four rims only");
+    let log = d.s.document().log().count();
+    d.s.inspector_set("feature.0.rim.0", "Flush")
+        .expect("flush");
+    assert_eq!(d.s.document().log().count(), log + 1, "one undo step");
+    assert_eq!(inspector_text(&d, "feature.0.rim.0").0, "Flush");
+    assert!(
+        inspector_has(&d, "feature.0.rim.0.tilt"),
+        "a straight flush rim has a tilt"
+    );
+    let label =
+        d.s.inspector()
+            .sections
+            .iter()
+            .flat_map(|s| &s.fields)
+            .find(|f| f.key == "feature.0.rim.0")
+            .map(|f| f.label.clone())
+            .unwrap();
+    assert!(label.contains("Rim 1"), "{label}");
+    // Back to square, and undo and redo move between them.
+    d.s.inspector_set("feature.0.rim.0", "square")
+        .expect("square");
+    assert_eq!(inspector_text(&d, "feature.0.rim.0").0, "Square");
+    assert!((model_volume(d.s.model()).abs() - 0.2).abs() < 1e-9);
+    act(&mut d, "edit.undo");
+    assert_eq!(inspector_text(&d, "feature.0.rim.0").0, "Flush");
+    // Words that are not a style, and rims that are not there, are refused.
+    assert!(d.s.inspector_set("feature.0.rim.0", "Round").is_err());
+    assert!(d.s.inspector_set("feature.0.rim.9", "Flush").is_err());
+    assert!(d.s.inspector_set("feature.0.rim.x", "Flush").is_err());
+    assert!(d.s.inspector_set("feature.0.rim.0.slide", "1").is_err());
+}
+
+#[test]
+fn a_rims_tilt_is_typed_in_degrees_and_the_kernels_refusals_say_why() {
+    let mut d = rim_driver();
+    d.s.inspector_set("feature.0.rim.0", "Flush")
+        .expect("flush");
+    let whole = model_volume(d.s.model()).abs();
+    // One way leans into the sheet and builds; the other would need the
+    // surface extended, and is refused in the kernel's words.
+    let mut built = Vec::new();
+    for t in ["30", "-30"] {
+        match d.s.inspector_set("feature.0.rim.0.tilt", t) {
+            Ok(()) => built.push(t),
+            Err(why) => assert!(!why.is_empty(), "{why}"),
+        }
+    }
+    assert_eq!(built.len(), 1, "exactly one way builds: {built:?}");
+    assert!(model_volume(d.s.model()).abs() < whole - 1e-6, "trimmed");
+    let shown: f64 = inspector_text(&d, "feature.0.rim.0.tilt")
+        .0
+        .parse()
+        .unwrap();
+    assert!(
+        (shown - built[0].parse::<f64>().unwrap()).abs() < 0.06,
+        "{shown}"
+    );
+    // A degree sign is allowed; words are not.
+    d.s.inspector_set("feature.0.rim.0.tilt", &format!("{}°", built[0]))
+        .ok();
+    assert!(d.s.inspector_set("feature.0.rim.0.tilt", "steep").is_err());
+    assert!(d.s.inspector_set("feature.0.rim.0.tilt", "nan").is_err());
+    // Typing shows the shell as it would be, and stops when the typing does.
+    d.s.inspector_preview("feature.0.rim.0.tilt", "89");
+    d.s.inspector_preview_end();
+    assert!(model_volume(d.s.model()).abs() < whole - 1e-6);
+}
+
 #[test]
 fn sizing_a_shell_of_joined_freeform_faces_shows_its_ghost() {
     let mut d = Driver::new(Document::with_model(rim_sheet()));
