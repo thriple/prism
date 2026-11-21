@@ -263,6 +263,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
             "edit.hide" | "edit.unhide" | "edit.unhideall" | "edit.unhidelast" | "edit.isolate"
         )
         || id.starts_with("flip.")
+        || id.starts_with("mirror.")
         // Annotation & Sections part 1.
         || id.starts_with("section.")
         || id.starts_with("dim.")
@@ -368,6 +369,7 @@ impl Registry {
                             || r.id == "edit.unlock"
                             || r.id == "edit.isolate"
                             || r.id.starts_with("flip.")
+                            || r.id.starts_with("mirror.")
                             || r.id.starts_with("axes.") =>
                         {
                             When::HasGroups
@@ -600,6 +602,10 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         ),
         S,
         Sub("Flip Along", vec![A("flip.x"), A("flip.y"), A("flip.z")]),
+        Sub(
+            "Mirror Copy",
+            vec![A("mirror.x"), A("mirror.y"), A("mirror.z")],
+        ),
         Sub(
             "Intersect Faces",
             vec![A("isect.model"), A("isect.sel"), A("isect.ctx")],

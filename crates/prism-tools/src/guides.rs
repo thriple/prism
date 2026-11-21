@@ -110,6 +110,16 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Click a dimension's line to move it; Esc leaves it. Edit > Dimension > Delete Dimension removes one; View > Dimensions hides them all.",
             ],
         ),
+        s::MIRROR_TOOL => g(
+            "Put a mirrored copy of a group or component across a plane.",
+            &[
+                "Select the groups or components first.",
+                "Click a flat face anywhere in the model: the dashed square shows the plane, and the copy appears the other side of it.",
+                "Hold Alt while you click to turn the groups themselves over instead of copying.",
+                "An arrow key locks the plane's direction: it then goes through the point you click, square to that axis.",
+                "Edit > Mirror Copy mirrors across the red, green or blue plane through the middle of the selection.",
+            ],
+        ),
         s::SECTION_TOOL => g(
             "Cut the model open with a plane, to look inside it.",
             &[

@@ -576,3 +576,27 @@ fn names_and_tags_stay_with_copies_and_go_with_erased_instances() {
         "nothing left for the erased one"
     );
 }
+
+#[test]
+fn a_mirror_change_reflects_across_its_plane_and_twice_is_no_change() {
+    use prism_doc::Change;
+    use prism_math::DVec3;
+    let c = Change::Mirror {
+        origin: DVec3::new(2.0, 0.0, 0.0),
+        normal: DVec3::new(2.0, 0.0, 0.0),
+    };
+    let p = c.affine(1.0).transform_point3(DVec3::new(3.0, 1.0, 1.0));
+    assert!(p.distance(DVec3::new(1.0, 1.0, 1.0)) < 1e-12, "{p:?}");
+    let q = c.affine(2.0).transform_point3(DVec3::new(3.0, 1.0, 1.0));
+    assert!(q.distance(DVec3::new(3.0, 1.0, 1.0)) < 1e-12);
+    // A slanted plane too: points on it stay, others swap sides.
+    let n = DVec3::new(1.0, 1.0, 0.0);
+    let c = Change::Mirror {
+        origin: DVec3::ZERO,
+        normal: n,
+    };
+    let on = DVec3::new(1.0, -1.0, 5.0);
+    assert!(c.affine(1.0).transform_point3(on).distance(on) < 1e-12);
+    let r = c.affine(1.0).transform_point3(DVec3::new(1.0, 0.0, 0.0));
+    assert!(r.distance(DVec3::new(0.0, -1.0, 0.0)) < 1e-12, "{r:?}");
+}

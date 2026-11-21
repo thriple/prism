@@ -172,7 +172,7 @@ impl Session {
     /// Where a new plane goes: with an axis locked, through the snapped
     /// point, square to that axis; otherwise on the flat face under the
     /// cursor. Its normal is turned to face the viewer.
-    fn section_place(&self, s: DVec2, view: &View) -> Option<(DVec3, DVec3)> {
+    pub(super) fn section_place(&self, s: DVec2, view: &View) -> Option<(DVec3, DVec3)> {
         if let prism_infer::Lock::Axis(a) = self.lock
             && let Some(i) = &self.inference
         {

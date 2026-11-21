@@ -44,6 +44,7 @@ mod health;
 mod inspector;
 mod lofting;
 mod materials;
+mod mirror;
 mod paint;
 mod rims;
 mod round;
@@ -76,6 +77,7 @@ pub use health::HealthRow;
 pub use inspector::{Field, FieldKind, Inspector, Section};
 pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
+pub use mirror::{MIRROR_NOTHING, MIRROR_TOOL};
 pub use paint::{Brush, PAINT};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use sections::{SECTION_TOOL, line_param};
@@ -102,7 +104,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 43] = [
+pub const TOOLS: [&str; 44] = [
     SELECT,
     LINE,
     RECT,
@@ -146,6 +148,8 @@ pub const TOOLS: [&str; 43] = [
     draw::FREEHAND,
     // Group Axes (brief 36).
     axes::AXES_TOOL,
+    // Shapes & Placement part 1.
+    mirror::MIRROR_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
     workplanes::CPLANE_TOOL,
@@ -682,6 +686,8 @@ pub struct Session {
     section_op: Option<sections::SectionOp>,
     section_sel: Option<prism_doc::SectionId>,
     section_ghost: Option<(DVec3, DVec3)>,
+    /// Where the Mirror tool's click would put its plane.
+    mirror_ghost: Option<(DVec3, DVec3)>,
     /// Where the Construction Plane tool would put a plane: origin, normal.
     cplane_ghost: Option<(DVec3, DVec3)>,
     /// The Dimensions tool (part 2): the one being made or moved, and the
@@ -715,6 +721,7 @@ impl Session {
             section_op: None,
             section_sel: None,
             section_ghost: None,
+            mirror_ghost: None,
             cplane_ghost: None,
             dim_op: None,
             text_set: texting::TextSettings::default(),
@@ -1120,6 +1127,7 @@ impl Session {
             .rrect_hint()
             .or_else(|| self.freehand_hint())
             .or_else(|| self.axes_hint())
+            .or_else(|| self.mirror_hint())
             .or_else(|| self.section_hint())
             .or_else(|| self.work_plane_hint())
             .or_else(|| self.dim_hint())
@@ -1986,6 +1994,9 @@ impl Session {
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
+            "mirror.x" => self.mirror_axis(0),
+            "mirror.y" => self.mirror_axis(1),
+            "mirror.z" => self.mirror_axis(2),
             "edit.explode" => self.explode(),
             "edit.bake" => self.bake_features(),
             "edit.explode_feature" => self.explode_selected_feature(),
@@ -2055,6 +2066,7 @@ impl Session {
             || self.tool == FREEHAND
             || self.tool == AXES_TOOL
             || self.tool == SECTION_TOOL
+            || self.tool == MIRROR_TOOL
             || self.tool == CPLANE_TOOL
             || self.tool == DIM_TOOL
             || self.tool == TEXT_TOOL
@@ -2225,6 +2237,7 @@ impl Session {
             self.rrect_hover(s, &view);
             self.axes_hover();
             self.section_hover(s, &view);
+            self.mirror_hover(s, &view);
             self.dim_hover();
             self.work_plane_hover();
             self.text_hover(s, &view);
@@ -2350,6 +2363,7 @@ impl Session {
                 RRECT => self.rrect_press(s),
                 AXES_TOOL => self.axes_press(s),
                 SECTION_TOOL => self.section_press(s),
+                MIRROR_TOOL => self.mirror_press(s),
                 CPLANE_TOOL => self.work_plane_press(s, shift),
                 DIM_TOOL => self.dim_press(s),
                 TEXT_TOOL => self.text_press(s),
@@ -2893,6 +2907,7 @@ impl Session {
         self.window_overlay(&mut o);
         // Section planes and dimensions stay drawn whatever the tool.
         self.section_overlay(&mut o);
+        self.mirror_overlay(&mut o);
         self.work_plane_overlay(&mut o);
         self.dim_overlay(&mut o);
         self.text_overlay(&mut o);

@@ -58,6 +58,11 @@ fn turn_of(c: &Change) -> Turn {
             angle,
         },
         Change::Scale { centre, factor } => Turn::Scale { centre, factor },
+        // No turn to show: the copy appears across the plane.
+        Change::Mirror { origin, .. } => Turn::Scale {
+            centre: origin,
+            factor: DVec3::ONE,
+        },
     }
 }
 

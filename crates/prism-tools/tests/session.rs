@@ -8097,6 +8097,47 @@ fn tags_added_in_the_window_take_a_name_and_a_taken_name_is_refused() {
 }
 
 #[test]
+fn the_mirror_tool_puts_a_copy_across_the_face_clicked() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    assert_eq!(d.s.document().assembly().root().instances.len(), 1);
+    d.tool(prism_tools::session::MIRROR_TOOL);
+    // The top face of the 2 m cube is at z = 2: the copy goes above it.
+    let steps = d.s.document().log().count();
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.document().assembly().root().instances.len(), 2);
+    assert_eq!(d.s.document().log().count(), steps + 1, "one undo step");
+    let (lo, hi) = d.s.document().assembly().flattened().bbox().expect("box");
+    assert!(
+        lo.z.abs() < 1e-9 && (hi.z - 4.0).abs() < 1e-9,
+        "{lo:?} {hi:?}"
+    );
+    // The copy is turned over: its placement reverses handedness.
+    let placed = d.s.document().assembly().placed();
+    assert!(
+        placed.iter().any(|p| p.world.matrix3.determinant() < 0.0),
+        "one is a mirror image"
+    );
+    assert!(d.s.document().assembly().find_instance(g).is_some());
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.document().assembly().root().instances.len(), 1);
+}
+
+#[test]
+fn mirror_copy_in_the_menu_uses_the_plane_through_the_selection() {
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    // The cube is 0 to 2 in every direction: across the x plane through
+    // its middle (x = 1) the copy lands on top of it.
+    act(&mut d, "mirror.x");
+    assert_eq!(d.s.document().assembly().root().instances.len(), 2);
+    // With nothing selected it says what to do.
+    let mut e = Driver::empty();
+    act(&mut e, "mirror.x");
+    assert_eq!(e.s.document().assembly().root().instances.len(), 0);
+}
+
+#[test]
 fn the_inspector_names_tags_hides_and_locks() {
     let mut d = Driver::empty();
     let g = grouped_box(&mut d);

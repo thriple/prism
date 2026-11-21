@@ -569,6 +569,12 @@ pub enum Change {
         centre: DVec3,
         factor: DVec3,
     },
+    /// A reflection in the plane through `origin` with this `normal`.
+    /// Applied an even number of times it is no change.
+    Mirror {
+        origin: DVec3,
+        normal: DVec3,
+    },
 }
 
 impl Change {
@@ -589,6 +595,21 @@ impl Change {
                 DAffine3::from_translation(centre)
                     * DAffine3::from_scale(factor.powf(k))
                     * DAffine3::from_translation(-centre)
+            }
+            Change::Mirror { origin, normal } => {
+                if (k.round() as i64) % 2 == 0 {
+                    return DAffine3::IDENTITY;
+                }
+                let n = normal.normalize_or_zero();
+                // I - 2 n nT about the origin point.
+                let m = prism_math::DMat3::from_cols(
+                    DVec3::X - n * (2.0 * n.x),
+                    DVec3::Y - n * (2.0 * n.y),
+                    DVec3::Z - n * (2.0 * n.z),
+                );
+                DAffine3::from_translation(origin)
+                    * DAffine3::from_mat3(m)
+                    * DAffine3::from_translation(-origin)
             }
         }
     }
@@ -612,6 +633,11 @@ fn change_to_local(c: &Change, to_local: &DAffine3) -> Change {
         Change::Scale { centre, factor } => Change::Scale {
             centre: to_local.transform_point3(centre),
             factor,
+        },
+        Change::Mirror { origin, normal } => Change::Mirror {
+            origin: to_local.transform_point3(origin),
+            // A normal moves by the inverse transpose.
+            normal: (to_local.matrix3.inverse().transpose() * normal).normalize_or_zero(),
         },
     }
 }
@@ -733,7 +759,12 @@ impl Command {
                 Change::Translate { .. } => "Move",
                 Change::Rotate { .. } => "Rotate",
                 Change::Scale { .. } => "Scale",
+                Change::Mirror { .. } => "Mirror",
             },
+            Command::CopyInstances {
+                step: Change::Mirror { .. },
+                ..
+            } => "Mirror Copy",
             Command::CopyInstances { count, .. } if *count > 1 => "Array",
             Command::CopyInstances { .. } => "Copy",
             Command::EraseInstances { .. } => "Erase",

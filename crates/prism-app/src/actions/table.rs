@@ -345,6 +345,27 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "mirror.x",
+        name: "Across X plane (red)",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "mirror.y",
+        name: "Across Y plane (green)",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "mirror.z",
+        name: "Across Z plane (blue)",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "isect.model",
         name: "With Model",
         key: "",
@@ -1777,6 +1798,14 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                     Item::Action("flip.x"),
                     Item::Action("flip.y"),
                     Item::Action("flip.z"),
+                ],
+            ),
+            Item::Sub(
+                "Mirror Copy",
+                &[
+                    Item::Action("mirror.x"),
+                    Item::Action("mirror.y"),
+                    Item::Action("mirror.z"),
                 ],
             ),
             Item::Sub(

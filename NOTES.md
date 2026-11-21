@@ -4991,3 +4991,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Decision:** no game "roles". Tags are the words; Beverly interprets them; several tags per object; a Beverly list of suggested words in the Tags window (owner's compromise).
 - **Built:** `Assembly.on_tag` is now a set per instance (`tags_of`, `tag_on`, `set_tags`; `is_shown` is false if any tag is hidden); commands `TagOn`, `SetTags`; the file keeps `tag` (first) and `more_tags`; Inspector Tags row typed with commas and `tag.toggle`; `TagOp::Toggle`, `ToggleNamed`, `prism_tools::BEVERLY_TAGS`; the GLB writes and reads `extras.prism.tags`. Details and the change from Beverly's addendum are in brief 50 part 3 and a note at the top of 50a.
 - **Left over:** tags on materials; the name suffix option; not checked on screen (Beverly header, Entity Info and Inspector rows); Beverly must be told it reads `tags`, not `tag` and `roles`.
+
+## Shapes & Placement part 1: Mirror (2026-11-21, brief 51)
+
+- **Built:** `Change::Mirror` (prism-doc), `session/mirror.rs` (tool, ghost plane, `mirror_across`, `mirror_axis`), `tool.mirror` in `TOOLS`, Edit > Mirror Copy (`mirror.x/y/z`), the tool's guide text. Brief 51 lists all eight parts.
+- **Left over:** loose faces and edges are not mirrored (groups and components only); no live symmetry; not checked on screen (the ghost square and Alt).
