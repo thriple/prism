@@ -8124,6 +8124,36 @@ fn the_mirror_tool_puts_a_copy_across_the_face_clicked() {
 }
 
 #[test]
+fn the_mirror_tool_copies_loose_faces_across_a_face_and_the_copy_faces_out() {
+    // A 2 m cube drawn loose, all selected. Mirror across its own x = 2
+    // wall: a second cube beside it, sharing that wall, all valid and
+    // every face still facing out.
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.typed("2");
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    let faces = d.faces();
+    d.tool(prism_tools::session::MIRROR_TOOL);
+    // The x = 2 wall, seen from +x (the camera is at x = 3).
+    d.click(DVec3::new(2.0, 1.0, 1.0));
+    let (lo, hi) = d.s.model().bbox().expect("box");
+    assert!(
+        lo.x.abs() < 1e-9 && (hi.x - 4.0).abs() < 1e-9,
+        "{lo:?} {hi:?}"
+    );
+    // The two walls at x = 2 face each other and cancel (as touching solids
+    // do), leaving one solid whose long sides are in two pieces: 10 faces.
+    assert_eq!(d.faces(), faces * 2 - 2, "{} faces", d.faces());
+    let problems = prism_ops::check::problems(d.s.model());
+    assert!(problems.is_empty(), "{problems:?}");
+    act(&mut d, "edit.undo");
+    assert_eq!(d.faces(), faces);
+}
+
+#[test]
 fn mirror_copy_in_the_menu_uses_the_plane_through_the_selection() {
     let mut d = Driver::empty();
     grouped_box(&mut d);

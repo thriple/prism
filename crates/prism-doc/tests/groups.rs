@@ -600,3 +600,48 @@ fn a_mirror_change_reflects_across_its_plane_and_twice_is_no_change() {
     let r = c.affine(1.0).transform_point3(DVec3::new(1.0, 0.0, 0.0));
     assert!(r.distance(DVec3::new(0.0, -1.0, 0.0)) < 1e-12, "{r:?}");
 }
+
+#[test]
+fn a_mirrored_copy_of_loose_geometry_is_a_valid_solid_facing_out() {
+    use prism_doc::{Command, Document};
+    use prism_math::DVec3;
+    let mut d = Document::new();
+    d.run(Command::Rect {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 2.0,
+        y1: 2.0,
+        z: 0.0,
+    });
+    let f = d.model().faces().next().unwrap().0;
+    let up = d.model().face(f).unwrap().plane().unwrap().normal.z;
+    d.run(Command::PushPull {
+        face: f,
+        distance: 2.0 * up,
+        new_loop: false,
+    });
+    let m = d.model();
+    let sel = prism_ops::Selection {
+        vertices: m.vertices().map(|(i, _)| i).collect(),
+        edges: m.edges().map(|(i, _)| i).collect(),
+        faces: m.faces().map(|(i, _)| i).collect(),
+        guides: Default::default(),
+    };
+    // A plane at x = 5, away from the cube: a second cube at x 8 to 10.
+    assert!(d.run(Command::MirrorCopy {
+        selection: sel,
+        origin: DVec3::new(5.0, 0.0, 0.0),
+        normal: DVec3::X,
+    }));
+    let m = d.model();
+    assert_eq!(m.face_count(), 12);
+    let problems = prism_ops::check::problems(m);
+    assert!(problems.is_empty(), "{problems:?}");
+    let (lo, hi) = m.bbox().unwrap();
+    assert!(lo.x.abs() < 1e-9 && (hi.x - 10.0).abs() < 1e-9);
+    // Each cube is a solid with faces out: the whole model passes the
+    // solid test only if every loop faces out.
+    assert!(prism_ops::boolean::is_solid(m));
+    d.undo();
+    assert_eq!(d.model().face_count(), 6);
+}

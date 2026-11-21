@@ -4995,4 +4995,5 @@ The owner found that rounding edges one click at a time blocks rounds that share
 ## Shapes & Placement part 1: Mirror (2026-11-21, brief 51)
 
 - **Built:** `Change::Mirror` (prism-doc), `session/mirror.rs` (tool, ghost plane, `mirror_across`, `mirror_axis`), `tool.mirror` in `TOOLS`, Edit > Mirror Copy (`mirror.x/y/z`), the tool's guide text. Brief 51 lists all eight parts.
-- **Left over:** loose faces and edges are not mirrored (groups and components only); no live symmetry; not checked on screen (the ghost square and Alt).
+- **Loose geometry (1b):** `Command::MirrorCopy` and `transform::mirror_only` copy selected faces and edges across the plane; two walls that meet face to face cancel as touching solids do (tested: two cubes make one solid of 10 faces).
+- **Left over:** no live symmetry; a mirrored copy of a face-and-edge selection that is part of a live feature bakes it as any edit does; not checked on screen (the ghost square and Alt).

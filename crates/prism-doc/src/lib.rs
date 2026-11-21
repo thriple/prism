@@ -155,6 +155,13 @@ pub enum Command {
         step: Motion,
         count: u32,
     },
+    /// A mirrored copy of a selection across the plane through `origin`
+    /// with this `normal` (Shapes & Placement part 1).
+    MirrorCopy {
+        selection: Selection,
+        origin: DVec3,
+        normal: DVec3,
+    },
     /// Offset a face's loops (positive into the face).
     Offset {
         face: FaceId,
@@ -701,6 +708,7 @@ impl Command {
             Command::Scale { .. } => "Scale",
             Command::Copy { count, .. } if *count > 1 => "Array",
             Command::Copy { .. } => "Copy",
+            Command::MirrorCopy { .. } => "Mirror Copy",
             Command::Offset { .. } => "Offset",
             Command::AddGuide { .. } => "Guide",
             Command::Import { .. } => "Import",
@@ -944,6 +952,16 @@ impl Command {
                 vertices: vertices.clone(),
                 centre: p(*centre),
                 factor: *factor,
+            },
+            Command::MirrorCopy {
+                selection,
+                origin,
+                normal,
+            } => Command::MirrorCopy {
+                selection: selection.clone(),
+                origin: p(*origin),
+                // A normal moves by the inverse transpose.
+                normal: (to_local.matrix3.inverse().transpose() * *normal).normalize_or_zero(),
             },
             Command::Copy {
                 selection,
@@ -1292,7 +1310,9 @@ impl Command {
     pub fn targets(&self) -> Option<stack::Targets> {
         let mut t = stack::Targets::default();
         match self {
-            Command::Erase { selection } | Command::Copy { selection, .. } => {
+            Command::Erase { selection }
+            | Command::Copy { selection, .. }
+            | Command::MirrorCopy { selection, .. } => {
                 t.vertices.extend(&selection.vertices);
                 t.edges.extend(&selection.edges);
                 t.faces.extend(&selection.faces);
@@ -1567,6 +1587,23 @@ impl Command {
                     g.retain(|v| m.has_vertex(*v));
                 }
                 prism_ops::settle::settle_rigid(m, &placed);
+            }
+            Command::MirrorCopy {
+                selection,
+                origin,
+                normal,
+            } => {
+                let copy = prism_ops::duplicate(m, selection);
+                let mut vs = copy.all_vertices(m);
+                let across = Change::Mirror {
+                    origin: *origin,
+                    normal: *normal,
+                }
+                .affine(1.0);
+                transform::mirror_only(m, &vs, &across);
+                // Points that landed on the original's were welded.
+                vs.retain(|v| m.has_vertex(*v));
+                prism_ops::settle::settle_rigid(m, &[vs]);
             }
             Command::Offset { face, distance } => {
                 prism_ops::offset::offset(m, *face, *distance);

@@ -563,6 +563,40 @@ fn same_direction(a: &[VertexId], b: &[VertexId]) -> bool {
     (0..n).all(|i| a[i] == b[(start + i) % n])
 }
 
+/// Send a whole copy (every face and edge of it has all its points in
+/// `vs`) through a reflection `m`: points, arcs and curved surfaces move,
+/// every loop is turned round so faces still face out, and flat faces are
+/// refitted. No coplanar rule afterwards (see [`crate::settle::settle_rigid`]).
+pub fn mirror_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
+    let maps = moved_maps(model, vs);
+    for v in vs {
+        let p = model.vertex(*v);
+        model.set_vertex(*v, m.transform_point3(p));
+    }
+    move_arcs(model, vs, m);
+    let tol = model.tol();
+    let ids: Vec<FaceId> = model
+        .faces()
+        .filter(|(_, f)| f.loops().flatten().all(|v| vs.contains(v)))
+        .map(|(id, _)| id)
+        .collect();
+    for id in ids {
+        model.edit_face(id, |f| f.reverse());
+        if move_curved(model, id, m) {
+            continue;
+        }
+        let Some(face) = model.face(id) else {
+            continue;
+        };
+        if let Some(plane) = Plane::fit(&model.loop_points(face, 0), &tol) {
+            model.edit_face(id, |f| f.surface = Surface::Plane(plane));
+        }
+    }
+    // Points that landed on others are one point now (the lower id stays).
+    weld(model, &tol);
+    follow_maps(model, &maps, m);
+}
+
 /// Map a whole model by an affine transform (placing a group's geometry in
 /// its parent, Explode). Faces get their planes refitted; a mirroring
 /// transform turns every loop round, so faces still face out.

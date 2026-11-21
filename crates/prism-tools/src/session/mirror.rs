@@ -1,12 +1,13 @@
-//! The Mirror tool (Shapes & Placement part 1): select groups or
-//! components, pick the Mirror tool, and click a flat face: a mirrored copy
-//! of each selected group appears on the other side of that face's plane.
-//! Alt in place of a copy turns the groups themselves over. With an arrow
+//! The Mirror tool (Shapes & Placement part 1): select groups, components
+//! or loose faces and edges, pick the Mirror tool, and click a flat face: a
+//! mirrored copy of the selection appears on the other side of that face's
+//! plane. Alt turns selected groups over instead of copying them (loose
+//! geometry is always copied). With an arrow
 //! key (an axis lock) the plane goes through the snapped point, square to
 //! that axis. Edit > Mirror Copy has the three planes through the
 //! selection's centre.
 
-use prism_doc::Change;
+use prism_doc::{Change, Command};
 use prism_math::{DVec2, DVec3};
 use prism_view::View;
 use prism_view::overlay::{Line, Overlay};
@@ -16,7 +17,7 @@ use super::Session;
 pub const MIRROR_TOOL: &str = "tool.mirror";
 
 /// Said when the tool is clicked with nothing selected to mirror.
-pub const MIRROR_NOTHING: &str = "Select a group or component to mirror first";
+pub const MIRROR_NOTHING: &str = "Select something to mirror first";
 
 impl Session {
     /// Where the plane would go for a click here.
@@ -36,10 +37,10 @@ impl Session {
         }
     }
 
-    /// Mirror the selected groups across a plane: a copy, or (`in_place`)
-    /// the groups themselves. One undo step.
+    /// Mirror the selection across a plane: a copy, or (`in_place`) the
+    /// selected groups themselves. One undo step.
     pub(super) fn mirror_across(&mut self, origin: DVec3, normal: DVec3, in_place: bool) {
-        if self.groups.is_empty() {
+        if self.groups.is_empty() && self.selection.is_empty() {
             self.notice = Some(MIRROR_NOTHING);
             self.overlay_dirty = true;
             self.dirty = true;
@@ -47,7 +48,19 @@ impl Session {
         }
         self.cancel();
         let change = Change::Mirror { origin, normal };
-        if let Some(c) = self.with_groups(None, change, !in_place) {
+        // Loose faces and edges are copied across; groups too, or turned over.
+        let loose = (!self.selection.is_empty()).then(|| Command::MirrorCopy {
+            selection: self.selection.clone(),
+            origin,
+            normal,
+        });
+        let groups = !self.groups.is_empty();
+        let command = if groups {
+            self.with_groups(loose, change, !in_place)
+        } else {
+            loose
+        };
+        if let Some(c) = command {
             self.run(c);
         }
     }
@@ -66,7 +79,14 @@ impl Session {
     /// Edit > Mirror Copy > Red, Green or Blue plane: through the centre
     /// of the selected groups together, square to that axis.
     pub(super) fn mirror_axis(&mut self, axis: usize) {
-        let corners = self.groups_corners();
+        let mut corners = self.groups_corners();
+        let work = self.work_model();
+        corners.extend(
+            self.selection
+                .all_vertices(work)
+                .into_iter()
+                .map(|v| work.vertex(v)),
+        );
         if corners.is_empty() {
             self.notice = Some(MIRROR_NOTHING);
             self.overlay_dirty = true;
@@ -85,8 +105,8 @@ impl Session {
         if self.tool != MIRROR_TOOL {
             return None;
         }
-        Some(if self.groups.is_empty() {
-            "Select the groups or components to mirror, then click a face to mirror across"
+        Some(if self.groups.is_empty() && self.selection.is_empty() {
+            "Select what to mirror (groups, components, faces or edges), then click a face to mirror across"
         } else {
             "Click a face to put a mirrored copy across it (Alt turns the groups over instead; an arrow key locks the plane's direction)"
         })

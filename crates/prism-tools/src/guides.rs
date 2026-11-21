@@ -111,11 +111,11 @@ pub fn guide(tool: &str) -> Option<Guide> {
             ],
         ),
         s::MIRROR_TOOL => g(
-            "Put a mirrored copy of a group or component across a plane.",
+            "Put a mirrored copy of a group, a component or loose faces across a plane.",
             &[
-                "Select the groups or components first.",
+                "Select what to mirror first: groups, components, or faces and edges.",
                 "Click a flat face anywhere in the model: the dashed square shows the plane, and the copy appears the other side of it.",
-                "Hold Alt while you click to turn the groups themselves over instead of copying.",
+                "Hold Alt while you click to turn selected groups themselves over instead of copying them (loose faces are always copied).",
                 "An arrow key locks the plane's direction: it then goes through the point you click, square to that axis.",
                 "Edit > Mirror Copy mirrors across the red, green or blue plane through the middle of the selection.",
             ],

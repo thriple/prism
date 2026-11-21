@@ -359,6 +359,7 @@ impl Registry {
                         None if r.id.starts_with("section.") => When::HasSections,
                         None if r.id.starts_with("dim.") => When::HasDimensions,
                         None if r.id.starts_with("cplane.") => When::HasWorkPlanes,
+                        None if r.id.starts_with("mirror.") => When::HasSelection,
                         None if r.id == "edit.explode_feature" || r.id == "edit.remove_feature" => {
                             When::HasFeature
                         }
@@ -369,7 +370,6 @@ impl Registry {
                             || r.id == "edit.unlock"
                             || r.id == "edit.isolate"
                             || r.id.starts_with("flip.")
-                            || r.id.starts_with("mirror.")
                             || r.id.starts_with("axes.") =>
                         {
                             When::HasGroups
