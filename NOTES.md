@@ -4997,3 +4997,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Built:** `Change::Mirror` (prism-doc), `session/mirror.rs` (tool, ghost plane, `mirror_across`, `mirror_axis`), `tool.mirror` in `TOOLS`, Edit > Mirror Copy (`mirror.x/y/z`), the tool's guide text. Brief 51 lists all eight parts.
 - **Loose geometry (1b):** `Command::MirrorCopy` and `transform::mirror_only` copy selected faces and edges across the plane; two walls that meet face to face cancel as touching solids do (tested: two cubes make one solid of 10 faces).
 - **Left over:** no live symmetry; a mirrored copy of a face-and-edge selection that is part of a live feature bakes it as any edit does; not checked on screen (the ghost square and Alt).
+
+## Shapes & Placement part 2: Array (2026-11-21, brief 51)
+
+- **Built:** the Array tool and window (`prism-tools/src/session/arraying.rs`, `prism-app/src/chrome/arraying.rs`): linear and polar, groups and loose geometry, a ghost, one undo step. No new document command (`CopyInstances` and `Copy` with a counted step). Tests: row, polar, loose, nothing selected.
+- **Left over:** along a path; a live Array feature in the Inspector; spacing as a gap or total length; not checked on screen (the card, the ghost).

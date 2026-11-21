@@ -478,6 +478,7 @@ impl App {
                     shell: s.shell_panel(),
                     loft: s.loft_panel(),
                     text: s.text_panel(),
+                    array: s.array_panel(),
                 };
             }
             for op in std::mem::take(&mut chrome.panel_ops) {
@@ -510,6 +511,7 @@ impl App {
                     crate::chrome::PanelOp::ShellSize(text) => s.shell_text(&text),
                     crate::chrome::PanelOp::Loft(op) => s.loft_input(op),
                     crate::chrome::PanelOp::Text(op) => s.text_input(op),
+                    crate::chrome::PanelOp::Array(op) => s.array_input(op),
                     crate::chrome::PanelOp::Material(op) => {
                         // A swatch picks the Paint Bucket with it.
                         if let Some(tool) = s.material_op(op) {

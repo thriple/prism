@@ -27,6 +27,7 @@ use crate::select::box_select;
 
 mod annotations;
 mod arcs;
+mod arraying;
 mod axes;
 mod booleans;
 mod cage;
@@ -61,6 +62,9 @@ mod views;
 mod workplanes;
 use crate::units::NumberFormat;
 pub use arcs::{ARC, ARC_CENTRE, ARC2, ARC3, PIE};
+pub use arraying::{
+    ARRAY_NOTHING, ARRAY_TOOL, ArrayKind, ArrayPanel, ArraySet, ArraySettings, MAX_COPIES,
+};
 pub use axes::{AXES_TOOL, axes_from};
 pub use booleans::SOLID_TOOLS;
 pub use cage::PICK_FIRST;
@@ -104,7 +108,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 44] = [
+pub const TOOLS: [&str; 45] = [
     SELECT,
     LINE,
     RECT,
@@ -150,6 +154,7 @@ pub const TOOLS: [&str; 44] = [
     axes::AXES_TOOL,
     // Shapes & Placement part 1.
     mirror::MIRROR_TOOL,
+    arraying::ARRAY_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
     workplanes::CPLANE_TOOL,
@@ -688,6 +693,8 @@ pub struct Session {
     section_ghost: Option<(DVec3, DVec3)>,
     /// Where the Mirror tool's click would put its plane.
     mirror_ghost: Option<(DVec3, DVec3)>,
+    /// The Array window's settings.
+    array_set: arraying::ArraySettings,
     /// Where the Construction Plane tool would put a plane: origin, normal.
     cplane_ghost: Option<(DVec3, DVec3)>,
     /// The Dimensions tool (part 2): the one being made or moved, and the
@@ -722,6 +729,7 @@ impl Session {
             section_sel: None,
             section_ghost: None,
             mirror_ghost: None,
+            array_set: arraying::ArraySettings::default(),
             cplane_ghost: None,
             dim_op: None,
             text_set: texting::TextSettings::default(),
@@ -1128,6 +1136,7 @@ impl Session {
             .or_else(|| self.freehand_hint())
             .or_else(|| self.axes_hint())
             .or_else(|| self.mirror_hint())
+            .or_else(|| self.array_hint())
             .or_else(|| self.section_hint())
             .or_else(|| self.work_plane_hint())
             .or_else(|| self.dim_hint())
@@ -1485,9 +1494,16 @@ impl Session {
         if is_nav(id) && !is_nav(&self.tool) {
             self.before_nav = self.tool.clone();
         }
+        let was_array = self.tool == ARRAY_TOOL;
         self.cancel();
         self.over_closed_group = false;
         self.tool = id.to_owned();
+        if was_array {
+            self.set_preview_scene(None);
+        }
+        if id == ARRAY_TOOL {
+            self.array_preview();
+        }
         // A new loop is for one pull at a time, never left on unseen.
         self.alt_loop = false;
         self.sampling = false;

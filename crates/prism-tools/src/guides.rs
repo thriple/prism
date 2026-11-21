@@ -120,6 +120,15 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Edit > Mirror Copy mirrors across the red, green or blue plane through the middle of the selection.",
             ],
         ),
+        s::ARRAY_TOOL => g(
+            "Make copies of what is selected in a row or round an axis.",
+            &[
+                "Select groups, components, faces or edges first.",
+                "In the Array window pick Linear or Polar, type the count (the original counts) and the spacing or angle, and pick the axis.",
+                "A ghost shows the result; Make Array does it in one undo step.",
+                "Polar with 360 degrees spreads the copies round a full circle, about the middle of the selection.",
+            ],
+        ),
         s::SECTION_TOOL => g(
             "Cut the model open with a plane, to look inside it.",
             &[

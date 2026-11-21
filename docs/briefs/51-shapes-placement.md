@@ -5,7 +5,7 @@ The chunk is large, so it goes in parts, each one tool or small group of tools t
 | Part | What | Size |
 |---|---|---|
 | **1** | **Mirror**: the Mirror tool (click a face: a mirrored copy of the selected groups across its plane; Alt turns them over instead) and Edit > Mirror Copy across the red, green or blue plane through the selection. *Built 2026-11-21.* | S |
-| 2 | **Array**: linear (count, spacing, direction), polar (count, angle, axis) and along a path, as copies of the selected groups; first as an Edit command with a small window, then live in the Inspector (one live Array feature per group, count and spacing editable after the fact) | M |
+| 2 | **Array**: the Array tool with its window: linear (count, spacing, red/green/blue direction) and polar (count, angle, axis), for groups, components and loose faces and edges, with a ghost. *Built 2026-11-21.* Along a path, and live in the Inspector (one live Array feature per group, count and spacing editable after the fact), come later | M |
 | 3 | **Align and Distribute**, **Center / Align**, **Drop to Face** (rest on whatever is below) for selected groups, working on their boxes and on picked faces | M |
 | 4 | **Primitives**: Box, Cylinder, Cone, Sphere, Torus, Capsule from a drag with typed values, each in a group that remembers its parameters (Inspector fields) until edited in a way that breaks them | M |
 | 5 | **Trim / Extend** curves and edges to where they meet; **Project Curves** onto a face | M |
@@ -22,3 +22,9 @@ The chunk is large, so it goes in parts, each one tool or small group of tools t
 - **Loose geometry too (1b, 2026-11-21):** selected faces and edges are copied across the plane (`Command::MirrorCopy`, `transform::mirror_only`: points and arcs move, every loop is turned round so faces still face out, points that land on others weld, then the coplanar rule). Groups and loose geometry can be selected together. Alt turns only groups over; loose geometry is always copied. The Edit > Mirror Copy items are enabled for any selection.
 - **Not in part 1:** live symmetry, a typed offset for the plane, and mirror of a group made unique (a copy shares its component, as any copy does).
 - Tests: the tool, the menu action, the reflection maths including a slanted plane and local coordinates.
+
+## Part 2: Array (built)
+
+- **Tool** `tool.array` (`session/arraying.rs`, window `chrome/arraying.rs`): the window docks in the side column while the tool is active (like Text and Shell). Kind **Linear** (count, spacing in the document's unit, direction red, green or blue) or **Polar** (count, angle in degrees, axis through the middle of the selection; 360 spreads the copies round a full circle, less spreads them over that angle). Count is the number in all, the original included (2 to 501). A **ghost** shows the result while the window has it; **Make Array** makes it in one undo step (nothing selected says so).
+- It reuses `CopyInstances` (groups and components) and `Copy` (loose faces and edges), whose step is a move or a turn: no new document command. Move and Rotate with Ctrl and `x5` already made arrays by hand; this adds exact numbers and the preview.
+- **Left for later:** along a path; the Array as a live feature in the Inspector's stack (count and spacing editable afterwards); a spacing given as the gap between copies or the total length; the ghost does not follow a selection changed while the tool waits (press a window field to refresh).

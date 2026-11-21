@@ -54,6 +54,7 @@ pub enum PanelOp {
     Loft(prism_tools::session::LoftOp),
     /// The Text window: a change to its settings.
     Text(prism_tools::session::TextSet),
+    Array(prism_tools::session::ArraySet),
 }
 
 /// The panels' data, set by the app each frame.
@@ -86,6 +87,8 @@ pub struct PanelData {
     pub loft: Option<prism_tools::session::LoftPanel>,
     /// The Text window (while its tool is active).
     pub text: Option<prism_tools::session::TextPanel>,
+    /// The Array window (while its tool is active).
+    pub array: Option<prism_tools::session::ArrayPanel>,
 }
 
 /// Which panels are open, and text being edited.
@@ -141,6 +144,12 @@ pub struct Panels {
     pub text_words: Option<String>,
     pub text_height: Option<String>,
     pub text_depth: Option<String>,
+    /// The Array window (shown only with its tool), and its fields while
+    /// they are being typed in.
+    pub array: bool,
+    pub array_count: Option<String>,
+    pub array_spacing: Option<String>,
+    pub array_angle: Option<String>,
     /// Model Health's problems not drawn in the model (its switch off).
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
@@ -201,6 +210,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     }
                     if chrome.active_tool == prism_tools::session::LOFT {
                         super::loft::card(ui, &mut p, &data, &mut ops);
+                    }
+                    if chrome.active_tool == prism_tools::session::ARRAY_TOOL {
+                        super::arraying::card(ui, &mut p, &data, &mut ops);
                     }
                     if chrome.active_tool == prism_tools::session::TEXT_TOOL {
                         super::texting::card(ui, &mut p, &data, &mut ops);

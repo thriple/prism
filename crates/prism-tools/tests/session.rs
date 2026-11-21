@@ -8154,6 +8154,76 @@ fn the_mirror_tool_copies_loose_faces_across_a_face_and_the_copy_faces_out() {
 }
 
 #[test]
+fn the_array_tool_makes_a_row_of_copies_with_a_ghost_and_one_undo_step() {
+    use prism_tools::session::{ARRAY_TOOL, ArraySet};
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    d.tool(ARRAY_TOOL);
+    d.s.array_input(ArraySet::Count("4".into()));
+    d.s.array_input(ArraySet::Spacing("3".into()));
+    let panel = d.s.array_panel().expect("the window shows with its tool");
+    assert_eq!(panel.settings.count, 4);
+    // The ghost is drawn but nothing is made yet.
+    assert_eq!(d.s.document().assembly().root().instances.len(), 1);
+    let steps = d.s.document().log().count();
+    d.s.array_input(ArraySet::Make);
+    assert_eq!(d.s.document().assembly().root().instances.len(), 4);
+    assert_eq!(d.s.document().log().count(), steps + 1, "one undo step");
+    // The cube is 2 m wide: four of them, 3 m apart, reach 11 m.
+    let (lo, hi) = d.s.document().assembly().flattened().bbox().expect("box");
+    assert!(
+        lo.x.abs() < 1e-9 && (hi.x - 11.0).abs() < 1e-9,
+        "{lo:?} {hi:?}"
+    );
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.document().assembly().root().instances.len(), 1);
+}
+
+#[test]
+fn a_polar_array_turns_copies_round_the_middle_and_loose_faces_work_too() {
+    use prism_tools::session::{ARRAY_TOOL, ArrayKind, ArraySet};
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    d.tool(ARRAY_TOOL);
+    d.s.array_input(ArraySet::Kind(ArrayKind::Polar));
+    d.s.array_input(ArraySet::Count("4".into()));
+    d.s.array_input(ArraySet::Axis(2));
+    d.s.array_input(ArraySet::Make);
+    assert_eq!(d.s.document().assembly().root().instances.len(), 4);
+    // Four quarter turns of a cube about its own middle: the same box.
+    let (lo, hi) = d.s.document().assembly().flattened().bbox().expect("box");
+    assert!(
+        lo.x.abs() < 1e-9 && (hi.x - 2.0).abs() < 1e-9,
+        "{lo:?} {hi:?}"
+    );
+    // Loose geometry: a rectangle in a row of three.
+    let mut e = Driver::empty();
+    rect_on_ground(&mut e, 0.0, 0.0, 1.0, 1.0);
+    e.tool(SELECT);
+    act(&mut e, "edit.selall");
+    e.tool(ARRAY_TOOL);
+    e.s.array_input(ArraySet::Count("3".into()));
+    e.s.array_input(ArraySet::Spacing("2".into()));
+    e.s.array_input(ArraySet::Make);
+    assert_eq!(e.faces(), 3);
+    let (lo, hi) = e.s.model().bbox().expect("box");
+    assert!(
+        lo.x.abs() < 1e-9 && (hi.x - 5.0).abs() < 1e-9,
+        "{lo:?} {hi:?}"
+    );
+    valid(&e);
+}
+
+#[test]
+fn make_array_with_nothing_selected_says_so() {
+    use prism_tools::session::{ARRAY_NOTHING, ARRAY_TOOL, ArraySet};
+    let mut d = Driver::empty();
+    d.tool(ARRAY_TOOL);
+    d.s.array_input(ArraySet::Make);
+    assert_eq!(d.s.hint(), ARRAY_NOTHING);
+}
+
+#[test]
 fn mirror_copy_in_the_menu_uses_the_plane_through_the_selection() {
     let mut d = Driver::empty();
     grouped_box(&mut d);

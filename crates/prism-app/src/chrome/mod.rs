@@ -2,6 +2,7 @@
 //! registry: top bar with menus, tool dock, right-click menu, status bar,
 //! command search, the hotkeys window and the Planned Features window.
 
+mod arraying;
 mod components;
 mod fillet;
 mod hints;
@@ -299,6 +300,7 @@ impl Chrome {
             || self.loft_shown()
             || self.shell_shown()
             || self.text_shown()
+            || self.array_shown()
     }
 
     /// Whether the Shell / Thicken window shows: open, and only with its
@@ -310,6 +312,11 @@ impl Chrome {
     /// Whether the Text window shows: open, and only with its tool.
     pub(crate) fn text_shown(&self) -> bool {
         self.panels.text && self.active_tool == prism_tools::session::TEXT_TOOL
+    }
+
+    /// Whether the Array window shows: open, and only with its tool.
+    pub(crate) fn array_shown(&self) -> bool {
+        self.panels.array && self.active_tool == prism_tools::session::ARRAY_TOOL
     }
 
     /// Whether the Loft window shows: open, and only with its tool.
@@ -443,6 +450,11 @@ impl Chrome {
                     self.panels.text = true;
                     self.panels.folded.remove("Text");
                 }
+                // So does the Array tool (Shapes & Placement part 2).
+                if id == prism_tools::session::ARRAY_TOOL {
+                    self.panels.array = true;
+                    self.panels.folded.remove("Array");
+                }
                 // So does the Loft tool (brief 34).
                 if id == prism_tools::session::LOFT {
                     self.panels.loft = true;
@@ -538,6 +550,7 @@ impl Chrome {
             || self.loft_shown()
             || self.shell_shown()
             || self.text_shown()
+            || self.array_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).
