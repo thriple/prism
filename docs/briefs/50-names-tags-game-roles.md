@@ -3,7 +3,7 @@
 **Goal.** Three things the owner asked for while connecting Prism to Beverly (their Bevy game editor):
 1. **A new component asks for its name** straight away: the Inspector opens with the Name field ready for typing, and Enter finishes.
 2. **Tags can be typed in.** The owner asked what the method for entering tags is; today it is clumsy (below), so this plans a better one.
-3. **Game roles for Beverly:** mark a group or component as a **collider** or **breakable**, so Beverly gets the information in the file instead of setting it all again by hand.
+3. **Game words for Beverly:** words typed on a group or component (and a Surface word on a material) such as `collider`, `breakable`, `stone`, written into the GLB so Beverly can set the piece up instead of the owner doing it again by hand. Beverly's own brief for what the file carries is `50a-prism-to-beverly-glb.md`.
 
 **Read first:** brief 35 (the GLB export for Beverly; "Beverly-specific settings in the file (collision, health, breakable)" was left out of it on purpose, and this brief takes that part up), brief 48 (the Inspector), NOTES "Export for Beverly", "Groups & Components part 3" (tags).
 
@@ -24,24 +24,30 @@
 - **Default kept:** one tag per group or component (SketchUp's behaviour); several tags on one thing is not planned. Tags stay a showing and hiding tool: Beverly's roles are separate (part 3), so a tag never changes what a file says to a game.
 - Tests: typing a new tag in the Inspector makes and applies it in one step, Enter in the window, the clash refused, undo, MCP `set_inspector tag`.
 
-## Part 3: game roles for Beverly (M)
-- **A Role on a group or component:** *None*, *Collider* (the physics shape: it need not be drawn) or *Breakable* (it breaks apart: a wall in chunks has each chunk, or the whole wall, marked). Set in the Inspector (a choice row **Game role**), in Entity Info, and from **Edit > Game Role** (also the right-click menu), so it works on several selected groups at once. One undo step.
-- **Where it is kept:** on the **component** (every copy shares it: the definition) and on a **group** (its own). A copy of a component can be given its own role later if Beverly needs it (not now).
-- **Faces and shapes:** a role belongs to a group or component, not to a loose face. **Edit > Game Role** on loose faces first **makes a group of them** (named after the role, "Collider" or "Breakable", for the owner to rename) and sets the role in the same undo step, so "this shape is a collider" is two clicks.
-- **In the GLB** (File > Export > Game engine): the node's `extras` gets `"role": "collider"` or `"breakable"` next to `kind` and `definition`; a node with no role has none (so files without roles are byte for byte as now). An export option **Put the role in the name** adds a suffix for engines that read names (`Wall_collider`, `Chunk_breakable`; the one place the owner's "with a group or component name" lands), off by default. The GLB import reads either back (the `extras`, or the suffix, which it takes off the name) and sets the role.
-- **In Prism:** a small badge in the Outliner and Entity Info; **View > Game Roles** (off by default) draws a collider's outline in green and a breakable's in orange so the roles can be checked at a glance. A collider is **not hidden** in Prism (Beverly decides what to draw).
-- **File:** the role is stored with the group or component in `groups.json` (a new optional field, a schema bump with a no-op migration).
-- **MCP:** `get_inspector` and `set_inspector` rows `role`; `list_groups` shows each role.
-- Tests: set on a group, a component (all copies), several at once, loose faces grouped, undo; the GLB `extras` and the suffix option, a round trip through export and import; the file round trip; the old files unchanged.
+## Part 3: game words for Beverly (M)
 
-## Questions for the owner (defaults are used until answered)
-1. **Names:** are `collider` and `breakable` the exact words Beverly reads, and does it read `extras` or the node name? (Default: both, the name part off.)
-2. **Both at once?** Can one thing be a collider and breakable? (Default: no, one role each.)
-3. **Breakable on the wall or on each chunk?** Does Beverly want the role on every chunk, or on a parent group whose children are the chunks? (Default: on whichever group carries it; the export writes it on that node only, children inherit nothing, so mark each chunk, or the parent, as Beverly needs.)
-4. **Other settings** (health, collision layers, mass) stay Beverly's own, as in brief 35, unless asked.
+**Widened by Beverly's addendum, `docs/briefs/50a-prism-to-beverly-glb.md` (read it: both programs follow it), and the owner's answers (2026-11-21).** Prism only **stores and exports words**; Beverly decides what each one means (collision, physics, footstep sounds, doors, lights...), and the owner's changes in Beverly win. There is **no Collider button** and no fixed list of roles: the owner types the words (`collider`, `breakable`, `loose`, `stone`, anything), with suggestions offered.
+
+- **A list of roles on a group or component.** The Inspector's **Game role** row is a row of chips with an add field: type a word and press Enter, or pick a suggestion (`collider`, `breakable`, `loose`, `trigger`, `door`, `stone`, `wood`, `metal`... the list in 50a). Click a chip's × to take it off. Any word is allowed and passes through unchanged. One undo step per change. Also in Entity Info and over MCP; **Edit > Game Role** adds or takes off a role on everything selected, and on loose faces it groups them first (named after the word) in the same undo step.
+- **Kept on the component** (every copy shares it) and **on a group** (its own), in `groups.json` as a new optional field `roles: ["collider"]`, left out when empty (so files without roles are byte for byte the same; schema bump, no-op migration).
+- **A material can say what it is made of:** an optional **Surface** word on a material (suggestions: stone, wood, metal, grass, dirt, sand, gravel, water, snow, carpet, glass, ice, rubber; any word allowed), in the Materials window and the Inspector, stored with the material, left out when empty.
+- **Beverly also reads Prism's tag and the words in names** (50a): a tag called `Collider`, or a group called `Floor collider`, works with no role set. Nothing to build for that on Prism's side beyond exporting the tag's name.
+- **In the GLB** (File > Export > Game engine), on each node next to `kind` and `definition`: `"extras": {"prism": {"kind": "group", "tag": "Walls", "roles": ["breakable", "stone"]}}`; `roles` in the order given, `tag` the instance's tag name, each left out when there is none, and a node carries only its own (children inherit nothing in the file). On each material, next to `prism_texture_size_m`: `"prism": {"surface": "stone"}`. Material names stay verbatim. **Hidden colliders:** a node with the role `collider` is exported even if it is hidden or on a hidden tag (default until the owner answers; everything else follows the export scope as now).
+- **Import** (Prism reading a GLB back) reads `roles`, `tag` (found by name, or made) and `surface`, so a round trip keeps them.
+- **"Put the role in the name"** (an export option, off by default) adds the roles to the name as a suffix, for engines that read only names; the import reads it back as roles. Beverly reads `extras` and also ignores role words when matching pieces on a re-import, so turning it on breaks nothing.
+- **In Prism:** a small badge for the roles in the Outliner and Entity Info; **View > Game Roles** (off by default) outlines by the first role it knows, `collider` green and `breakable` orange; other words show as the badge only. A collider is not hidden in Prism.
+- **MCP:** `get_inspector` and `set_inspector` rows `roles` (a list of words) and, for a material, `surface`; `list_groups` shows the roles.
+- **Tests:** several roles on a group, on a component (all copies share them), on several things at once, on loose faces (grouped first), undo; the GLB (`roles` and `tag` on the right nodes only, `surface` on the material, nothing written when there are none: old output byte for byte; a hidden collider is still exported; a round trip through export and import keeps all three); `groups.json` and the material file (new fields round trip, old files unchanged); the name-suffix option and its read back; MCP rows.
+
+## Answers so far (owner, 2026-11-21) and what is still open
+1. **Exact words, `extras` or names?** Not settled on the owner's side. Beverly's addendum says it reads `extras` first and also the words in names, so both ways work; the default (write both, the name suffix off) stands.
+2. **Both at once?** Yes: a list of words; Prism just saves them.
+3. **Where does breakable go?** Anywhere: the whole exported model (a window, a door, a wall segment) is what breaks, so it does not matter which node carries the word, and Beverly can override it. Complex models (mechs) will more likely use groups and components as the segments than per-piece words. (Beverly's addendum: on the parent group; a breakable group with no groups inside breaks as one piece.)
+4. **Other settings** (health, mass, collision layers) stay Beverly's own.
+5. **Open:** should the export include `collider` nodes that are hidden? (Default: yes.) Beverly already makes meshes collidable by default, so the `collider` word is mostly for the cases where only some of a model should collide.
 
 ## Not in this brief
-Several tags on one object; a role on a single copy of a component; physics settings; Beverly reading `.prism` files directly (brief 35's non-goal still stands).
+Several tags on one object (roles are the several words); a role on a single copy of a component; physics settings; Beverly reading `.prism` files directly (brief 35's non-goal still stands).
 
 ## Order
 Parts 1 and 2 are small and independent; part 3 is the one Beverly needs. The owner chooses the order.

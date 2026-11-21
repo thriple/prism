@@ -2486,7 +2486,7 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         false,
     ),
     (
-        "Game roles for Beverly: Collider and Breakable on groups and components, in the GLB",
+        "Game words for Beverly: typed roles on groups and components, a Surface word on materials, in the GLB",
         false,
     ),
     (

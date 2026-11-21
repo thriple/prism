@@ -4940,3 +4940,9 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Found: how tags work now.** One tag (or none) per group or component, only for showing and hiding. Window > Tags: "Add tag" makes a tag called "Tag" with no prompt, "Rename" then type then "Save" (Enter does not save), "Put selected" applies it; the Inspector's and Entity Info's Tag row only chooses among existing tags. Make Component always names it "Component". Brief 35 left game settings out on purpose; the role is now planned.
 - **Plan:** `docs/briefs/50-names-tags-game-roles.md`, three parts (name on creation; typed tags; Game Role with `extras.role` in the GLB, an optional name suffix, import reading both), a PLAN 6.0 row, three Planned Features rows. Four questions for the owner are in the brief; defaults are used until they are answered. The owner chooses where it goes in the order.
 
+## Brief 50 updated with Beverly's addendum and the owner's answers (2026-11-21; still not started)
+
+- **Beverly's addendum** is kept as `docs/briefs/50a-prism-to-beverly-glb.md` (both programs follow it). It widens part 3 from one role to **a list of typed words** on groups and components (`roles` in `groups.json`, `extras.prism.roles` and `tag` on each GLB node), adds an optional **Surface word on a material** (`extras.prism.surface`), keeps the name-suffix option, and says Beverly reads `extras` first and also the words in names and tags.
+- **Owner's answers:** exact words not settled (both ways work); several words at once (Prism only saves them); the tag can sit anywhere because the whole exported model (a window, a door, a wall segment) is what breaks, and Beverly can override. **No Collider button**: the owner types the words.
+- **Default until answered:** a node with the role `collider` is exported even when hidden. Open question to the owner in the brief.
+

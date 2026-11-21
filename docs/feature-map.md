@@ -56,7 +56,7 @@ Written 2026-11-16 (owner: "make sure every planned feature is assigned to the p
 | — | Scenes and named cameras (tentative) | Modes & Scenes |
 | — | Name a new component as it is made (Inspector opens, Name field ready, Enter) | Names, Tags & Game Roles |
 | — | Tags typed in the Inspector and the Tags window, with Enter | Names, Tags & Game Roles |
-| — | Game roles for Beverly: Collider and Breakable on groups and components, in the GLB | Names, Tags & Game Roles |
+| — | Game words for Beverly: typed roles on groups and components, a Surface word on materials, in the GLB | Names, Tags & Game Roles |
 | `script.console` | Script Console | Scripting |
 | `script.run` | Run Script… | Scripting |
 | `script.docs` | Scripting Reference | Scripting |
