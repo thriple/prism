@@ -270,6 +270,10 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         )
         || id.starts_with("flip.")
         || id.starts_with("mirror.")
+        // Shapes & Placement part 3: line up, space out, drop, centre.
+        || id.starts_with("align.")
+        || id.starts_with("dist.")
+        || matches!(id, "edit.drop" | "edit.center")
         // Annotation & Sections part 1.
         || id.starts_with("section.")
         || id.starts_with("dim.")
@@ -613,6 +617,7 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
             "Mirror Copy",
             vec![A("mirror.x"), A("mirror.y"), A("mirror.z")],
         ),
+        A("edit.drop"),
         Sub(
             "Intersect Faces",
             vec![A("isect.model"), A("isect.sel"), A("isect.ctx")],
@@ -679,7 +684,8 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 34] = [
+const BUILT_BEHAVIOURS: [&str; 35] = [
+    "Align, Distribute, Drop to Face and Center on Origin for groups and components",
     "Duplicate Again (Ctrl+D) repeats the last copy; Ctrl before the first click copies",
     "Several tags per object, typed with Enter or clicked, and a Beverly list of suggested tags",
     "Name a new component as it is made (Inspector opens, Name field ready, Enter)",

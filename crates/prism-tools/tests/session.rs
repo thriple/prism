@@ -9905,3 +9905,160 @@ fn ctrl_d_after_selecting_something_else_starts_a_new_chain() {
     assert!(has_point(&d, 3.0, 5.0), "one step from the other square");
     assert!(!has_point(&d, 6.0, 5.0));
 }
+
+/// 2 m boxes as groups, the first at the origin and the others copied to
+/// each x given (not 0). Returns the instances in x order.
+fn groups_at(d: &mut Driver, xs: &[f64]) -> Vec<prism_doc::InstanceId> {
+    grouped_box(d);
+    for x in xs {
+        d.tool(MOVE);
+        d.click(DVec3::ZERO);
+        d.send(Input::CtrlTap);
+        d.hover(DVec3::new(1.0, 0.0, 0.0));
+        key(d, Key::Right);
+        d.typed(&format!("{x}"));
+    }
+    act(d, "edit.selall");
+    group_places(d).into_iter().map(|(i, _)| i).collect()
+}
+
+/// Each group of the root and where it sits, by x.
+fn group_places(d: &Driver) -> Vec<(prism_doc::InstanceId, DVec3)> {
+    let mut v: Vec<_> =
+        d.s.document()
+            .assembly()
+            .root()
+            .instances
+            .iter()
+            .map(|(i, x)| (*i, x.transform.translation))
+            .collect();
+    v.sort_by(|a, b| a.1.x.total_cmp(&b.1.x));
+    v
+}
+
+#[test]
+fn align_lines_groups_up_by_their_boxes() {
+    let mut d = Driver::empty();
+    groups_at(&mut d, &[4.0, 9.0]);
+    // Lift the middle one, then line all three up at the bottom.
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(5.0, 0.0, 1.0));
+    d.tool(MOVE);
+    d.click(DVec3::new(4.0, 0.0, 0.0));
+    d.hover(DVec3::new(4.0, 0.0, 1.0));
+    key(&mut d, Key::Up);
+    d.typed("3");
+    assert!(
+        (group_places(&d)[1].1.z - 3.0).abs() < 1e-9,
+        "{:?}",
+        group_places(&d)
+    );
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "align.z.low");
+    for (_, p) in group_places(&d) {
+        assert!(p.z.abs() < 1e-9, "all on the ground: {p:?}");
+    }
+    // One undo step puts it back.
+    act(&mut d, "edit.undo");
+    assert!((group_places(&d)[1].1.z - 3.0).abs() < 1e-9);
+    // Along the top: the tallest is the others' top.
+    act(&mut d, "align.z.high");
+    for (_, p) in group_places(&d) {
+        assert!((p.z - 3.0).abs() < 1e-9, "{p:?}");
+    }
+    // Centres across red meet in the middle of the three.
+    act(&mut d, "align.x.middle");
+    let xs: Vec<f64> = group_places(&d).iter().map(|(_, p)| p.x).collect();
+    assert!(xs.windows(2).all(|w| (w[0] - w[1]).abs() < 1e-9), "{xs:?}");
+    assert!((xs[0] - 4.5).abs() < 1e-9, "{xs:?}");
+}
+
+#[test]
+fn align_with_one_group_says_so() {
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    let n = d.s.document().log().count();
+    act(&mut d, "align.x.low");
+    assert_eq!(d.s.document().log().count(), n);
+    assert!(d.s.hint().contains("two or more"), "{}", d.s.hint());
+    // Already in line: nothing moves, and it says so.
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "dist.x");
+    assert!(d.s.hint().contains("three or more"), "{}", d.s.hint());
+}
+
+#[test]
+fn distribute_makes_the_gaps_equal() {
+    let mut d = Driver::empty();
+    groups_at(&mut d, &[3.0, 20.0]);
+    act(&mut d, "dist.x");
+    let xs: Vec<f64> = group_places(&d).iter().map(|(_, p)| p.x).collect();
+    // Boxes 2 wide at 0..2 and 20..22: three of them leave gaps of 8.
+    assert!(
+        (xs[0] - 0.0).abs() < 1e-9 && (xs[2] - 20.0).abs() < 1e-9,
+        "{xs:?}"
+    );
+    assert!((xs[1] - 10.0).abs() < 1e-9, "{xs:?}");
+    act(&mut d, "edit.undo");
+    assert!((group_places(&d)[1].1.x - 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn drop_to_face_lands_on_the_ground_and_on_what_is_below() {
+    let mut d = Driver::empty();
+    groups_at(&mut d, &[]);
+    // Lift the box 5 m, then drop it: back on the ground.
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    d.tool(MOVE);
+    d.click(DVec3::ZERO);
+    d.hover(DVec3::new(0.0, 0.0, 1.0));
+    key(&mut d, Key::Up);
+    d.typed("5");
+    assert!((group_places(&d)[0].1.z - 5.0).abs() < 1e-9);
+    act(&mut d, "edit.drop");
+    assert!(
+        group_places(&d)[0].1.z.abs() < 1e-9,
+        "{:?}",
+        group_places(&d)
+    );
+    // A second box 6 m up over the first rests on its top, 2 m up.
+    d.tool(MOVE);
+    d.click(DVec3::ZERO);
+    d.send(Input::CtrlTap);
+    d.hover(DVec3::new(0.0, 0.0, 1.0));
+    key(&mut d, Key::Up);
+    d.typed("6");
+    assert_eq!(d.s.document().assembly().root().instances.len(), 2);
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(1.0, 0.0, 7.0));
+    assert_eq!(d.s.selected_groups().len(), 1, "the high one is picked");
+    act(&mut d, "edit.drop");
+    let zs: Vec<f64> = {
+        let mut z: Vec<f64> = group_places(&d).iter().map(|(_, p)| p.z).collect();
+        z.sort_by(f64::total_cmp);
+        z
+    };
+    assert!(zs[0].abs() < 1e-9 && (zs[1] - 2.0).abs() < 1e-9, "{zs:?}");
+    // Again: it is already resting, so nothing moves.
+    let n = d.s.document().log().count();
+    act(&mut d, "edit.drop");
+    assert_eq!(d.s.document().log().count(), n);
+}
+
+#[test]
+fn centre_on_origin_puts_the_selection_round_the_zero_lines() {
+    let mut d = Driver::empty();
+    groups_at(&mut d, &[6.0]);
+    act(&mut d, "edit.center");
+    let p = group_places(&d);
+    // Two boxes 0..2 and 6..8 centre on 4 and move by -4.
+    assert!(
+        (p[0].1.x + 4.0).abs() < 1e-9 && (p[1].1.x - 2.0).abs() < 1e-9,
+        "{p:?}"
+    );
+}

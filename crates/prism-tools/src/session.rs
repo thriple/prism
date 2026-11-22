@@ -48,6 +48,7 @@ mod lofting;
 mod materials;
 mod mirror;
 mod paint;
+mod placement;
 mod rims;
 mod round;
 mod scalebox;
@@ -2020,6 +2021,12 @@ impl Session {
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
             "edit.duplicate" => self.duplicate_again(),
+            a if a.starts_with("align.") => self.align_action(a),
+            "dist.x" => self.distribute(0),
+            "dist.y" => self.distribute(1),
+            "dist.z" => self.distribute(2),
+            "edit.drop" => self.drop_to_face(),
+            "edit.center" => self.centre_on_origin(),
             "mirror.x" => self.mirror_axis(0),
             "mirror.y" => self.mirror_axis(1),
             "mirror.z" => self.mirror_axis(2),

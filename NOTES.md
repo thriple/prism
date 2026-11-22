@@ -5021,3 +5021,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 - **Tests (`prism-ops/tests/loft.rs`):** rectangle, hexagon, circle and arc box, each upright, on its side and leaning, with the profile's plane tilted off the axis or not; a square ring (a hole). They failed before (the rectangle's inner wall) and pass now.
 - **Text:** the Revolve hint and the refusal say any outline or curve works, open or closed.
 - **Left over:** a profile that touches the axis is still refused (a cone, a bowl: the pole needs three-sided faces); two closed profiles that cross each other are not looked at; a Model Health "reversed faces" check is not run on freeform faces.
+
+## Shapes & Placement part 3: Align, Distribute, Drop, Center (2026-11-22, brief 51)
+
+- **Built:** `prism-tools/src/session/placement.rs`; actions `align.{x,y,z}.{low,middle,high}`, `dist.{x,y,z}`, `edit.drop`, `edit.center` (renamed "Center on Origin") in Edit; Drop is in the context menu too. No new document command (a batch of `Place`). Tests: align (low, high, centre; undo), distribute, the one-group message, drop to ground and onto another group, centre on origin.
+- **Left over:** align to a picked face; loose geometry (groups only); Drop to Face ignores loose faces inside an open group and sloped faces; not checked on screen.

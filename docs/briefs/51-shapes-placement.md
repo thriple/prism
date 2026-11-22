@@ -6,7 +6,7 @@ The chunk is large, so it goes in parts, each one tool or small group of tools t
 |---|---|---|
 | **1** | **Mirror**: the Mirror tool (click a face: a mirrored copy of the selected groups across its plane; Alt turns them over instead) and Edit > Mirror Copy across the red, green or blue plane through the selection. *Built 2026-11-21.* | S |
 | 2 | **Array**: the Array tool with its window: linear (count, spacing, red/green/blue direction) and polar (count, angle, axis), for groups, components and loose faces and edges, with a ghost. *Built 2026-11-21.* Along a path, and live in the Inspector (one live Array feature per group, count and spacing editable after the fact), come later | M |
-| 3 | **Align and Distribute**, **Center / Align**, **Drop to Face** (rest on whatever is below) for selected groups, working on their boxes and on picked faces | M |
+| 3 | **Align and Distribute**, **Center / Align**, **Drop to Face** (rest on whatever is below) for selected groups, working on their boxes. *Built 2026-11-22.* | M |
 | 4 | **Primitives**: Box, Cylinder, Cone, Sphere, Torus, Capsule from a drag with typed values, each in a group that remembers its parameters (Inspector fields) until edited in a way that breaks them | M |
 | 5 | **Trim / Extend** curves and edges to where they meet; **Project Curves** onto a face | M |
 | 6 | **Hole** (a counterbore or countersink at a picked point, live) and **Draft Angle** on faces | M |
@@ -28,3 +28,12 @@ The chunk is large, so it goes in parts, each one tool or small group of tools t
 - **Tool** `tool.array` (`session/arraying.rs`, window `chrome/arraying.rs`): the window docks in the side column while the tool is active (like Text and Shell). Kind **Linear** (count, spacing in the document's unit, direction red, green or blue) or **Polar** (count, angle in degrees, axis through the middle of the selection; 360 spreads the copies round a full circle, less spreads them over that angle). Count is the number in all, the original included (2 to 501). A **ghost** shows the result while the window has it; **Make Array** makes it in one undo step (nothing selected says so).
 - It reuses `CopyInstances` (groups and components) and `Copy` (loose faces and edges), whose step is a move or a turn: no new document command. Move and Rotate with Ctrl and `x5` already made arrays by hand; this adds exact numbers and the preview.
 - **Left for later:** along a path; the Array as a live feature in the Inspector's stack (count and spacing editable afterwards); a spacing given as the gap between copies or the total length; the ghost does not follow a selection changed while the tool waits (press a window field to refresh).
+
+## Part 3: Align, Distribute, Drop to Face, Center (built)
+
+- **Where:** the Edit menu (and, for Drop to Face, the context menu). All work on the selected groups and components, by the smallest red/green/blue box that holds each one's blue box (so a turned group is lined up by its real extent). Each is one undo step (one `Place` per group that has to move, in one batch); nothing to do says so ("Already there").
+- **Align** (`align.x|y|z.low|middle|high`): two or more groups. Low or high sides, or centres, are lined up to the whole selection's extent: Left/Right (red), Front/Back (green), Bottom/Top (blue), and Centre across each.
+- **Distribute** (`dist.x|y|z`): three or more groups, equal gaps between the boxes along red, green or blue; the two outermost stay put.
+- **Drop to Face** (`edit.drop`): each group falls straight down until it rests on the highest thing under it: another group's top (boxes that overlap it in plan), a flat face looking up, or the ground (a group already below the ground is left on its side of it). The lowest falls first, so a selected stack stays a stack.
+- **Center / Align** (`edit.center`, now named **Center on Origin**): the selected groups together, their box middle on the red and green zero lines; the height stays.
+- **Left out:** working on picked faces (align to a face you click), loose faces and edges (these work on groups only), and Drop to Face using loose faces inside an open group or sloped faces; hidden groups never count as a support.
