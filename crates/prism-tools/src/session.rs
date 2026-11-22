@@ -35,6 +35,7 @@ mod clip;
 mod construct;
 mod curve;
 mod dimensions;
+mod drafting;
 mod draw;
 mod duplicate;
 mod edit;
@@ -76,6 +77,7 @@ pub use clip::LOCKED;
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use curve::{CURVE, curve_for};
 pub use dimensions::{DIM_TOOL, offset_towards};
+pub use drafting::{DRAFT_FIRST, DRAFT_TOOL, DraftPanel, DraftSet};
 pub use draw::{FREEHAND, RRECT, freehand_curve, rrect_corners, simplify};
 pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
@@ -114,7 +116,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 48] = [
+pub const TOOLS: [&str; 49] = [
     SELECT,
     LINE,
     RECT,
@@ -165,6 +167,7 @@ pub const TOOLS: [&str; 48] = [
     primitives::PRIM_TOOL,
     trimming::TRIM_TOOL,
     trimming::PROJECT_TOOL,
+    drafting::DRAFT_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
     workplanes::CPLANE_TOOL,
@@ -714,6 +717,8 @@ pub struct Session {
     /// ghost shown.
     prim: prism_ops::primitives::Primitive,
     prim_down: Option<(DVec3, DVec2)>,
+    /// The Draft Angle tool: the angle (radians).
+    draft_angle: f64,
     prim_shown: Option<(prism_ops::primitives::Primitive, DVec3)>,
     /// Where the Construction Plane tool would put a plane: origin, normal.
     cplane_ghost: Option<(DVec3, DVec3)>,
@@ -752,6 +757,7 @@ impl Session {
             array_set: arraying::ArraySettings::default(),
             prim: prism_ops::primitives::Primitive::kinds()[0],
             prim_down: None,
+            draft_angle: 3.0_f64.to_radians(),
             prim_shown: None,
             cplane_ghost: None,
             dim_op: None,

@@ -4,6 +4,7 @@
 
 mod arraying;
 mod components;
+mod drafting;
 mod fillet;
 mod hints;
 mod inspector;
@@ -304,6 +305,12 @@ impl Chrome {
             || self.text_shown()
             || self.array_shown()
             || self.prim_shown()
+            || self.draft_shown()
+    }
+
+    /// Whether the Draft Angle window shows: open, and only with its tool.
+    pub(crate) fn draft_shown(&self) -> bool {
+        self.panels.draft && self.active_tool == prism_tools::session::DRAFT_TOOL
     }
 
     /// Whether the Primitives window shows: open, and only with its tool.
@@ -463,6 +470,11 @@ impl Chrome {
                     self.panels.array = true;
                     self.panels.folded.remove("Array");
                 }
+                // So does Draft Angle (Shapes & Placement part 6).
+                if id == prism_tools::session::DRAFT_TOOL {
+                    self.panels.draft = true;
+                    self.panels.folded.remove("Draft Angle");
+                }
                 // So does the Primitives tool (Shapes & Placement part 4).
                 if id == prism_tools::session::PRIM_TOOL {
                     self.panels.prim = true;
@@ -580,6 +592,7 @@ impl Chrome {
             || self.text_shown()
             || self.array_shown()
             || self.prim_shown()
+            || self.draft_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).

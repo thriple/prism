@@ -10354,3 +10354,50 @@ fn project_curves_drops_the_selected_lines_onto_a_face() {
     act(&mut d, "edit.undo");
     assert_eq!(d.s.model().face_count(), 1);
 }
+
+#[test]
+fn draft_angle_leans_the_selected_wall_about_the_neutral_face() {
+    use prism_ops::primitives::Primitive;
+    use prism_tools::session::{DRAFT_FIRST, DRAFT_TOOL, DraftSet};
+    let m = Primitive::Box {
+        w: 2.0,
+        d: 2.0,
+        h: 2.0,
+    }
+    .build();
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(0.0, -8.0, 9.0),
+        target: DVec3::new(0.0, 0.0, 1.0),
+    });
+    d.tool(DRAFT_TOOL);
+    // Nothing selected: it says so.
+    d.click(DVec3::new(0.0, 0.0, 2.0));
+    assert_eq!(d.s.hint(), DRAFT_FIRST);
+    // The front wall selected, a 10 degree lean, the top as the neutral face:
+    // the part comes out downward, so the wall's bottom goes in.
+    d.tool(SELECT);
+    d.click(DVec3::new(0.0, -1.0, 1.0));
+    assert_eq!(d.s.selection().faces.len(), 1);
+    d.tool(DRAFT_TOOL);
+    d.s.draft_input(DraftSet::Angle("10".into()));
+    assert!((d.s.draft_angle() - 10.0_f64.to_radians()).abs() < 1e-12);
+    d.click(DVec3::new(0.0, 0.0, 2.0));
+    let model = d.s.model();
+    assert!(
+        prism_ops::vertex_at(model, DVec3::new(1.0, -1.0, 0.0)).is_none(),
+        "the bottom corners of the front wall moved"
+    );
+    let moved = 2.0 * 10.0_f64.to_radians().tan();
+    assert!(
+        prism_ops::vertex_at(model, DVec3::new(1.0, -1.0 + moved, 0.0)).is_some(),
+        "in by tan(10 degrees) a metre per metre"
+    );
+    assert!(prism_ops::validate::validate(model)[0].valid);
+    act(&mut d, "edit.undo");
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(1.0, -1.0, 0.0)).is_some());
+    // A bad angle is refused and keeps the old one.
+    d.s.draft_input(DraftSet::Angle("90".into()));
+    assert_eq!(d.s.hint(), prism_ops::draft::ANGLE_RANGE);
+    assert!((d.s.draft_angle() - 10.0_f64.to_radians()).abs() < 1e-12);
+}

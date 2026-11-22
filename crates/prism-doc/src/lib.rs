@@ -410,6 +410,14 @@ pub enum Command {
         edges: BTreeSet<prism_topo::EdgeId>,
         face: prism_topo::FaceId,
     },
+    /// Flat faces leaned by `angle` (radians) about the neutral plane
+    /// through `origin` whose normal `pull` is the way the part comes out.
+    Draft {
+        faces: BTreeSet<prism_topo::FaceId>,
+        origin: DVec3,
+        pull: DVec3,
+        angle: f64,
+    },
     /// A primitive made again at other sizes, in place.
     SetPrimitive {
         instance: InstanceId,
@@ -716,6 +724,7 @@ impl Command {
             Command::Shell { .. } => "Shell / Thicken",
             Command::Revolve { .. } => "Revolve",
             Command::Extend { .. } => "Extend",
+            Command::Draft { .. } => "Draft Angle",
             Command::Project { .. } => "Project Curves",
             Command::Sweep { .. } => "Sweep",
             Command::Patch { .. } => "Patch",
@@ -1056,6 +1065,17 @@ impl Command {
                 primitive: *primitive,
                 at: p(*at),
             },
+            Command::Draft {
+                faces,
+                origin,
+                pull,
+                angle,
+            } => Command::Draft {
+                faces: faces.clone(),
+                origin: p(*origin),
+                pull: dir(*pull).normalize_or_zero(),
+                angle: *angle,
+            },
             Command::AddGuide { guide } => Command::AddGuide {
                 guide: match *guide {
                     Guide::Line { origin, dir: d } => Guide::Line {
@@ -1377,6 +1397,7 @@ impl Command {
                 t.edges.insert(*edge);
                 t.vertices.insert(*vertex);
             }
+            Command::Draft { faces, .. } => t.faces.extend(faces),
             Command::Project { edges, face } => {
                 t.edges.extend(edges);
                 t.faces.insert(*face);
@@ -1442,6 +1463,12 @@ impl Command {
             Command::Loft { edges } => prism_ops::loft::lofted(m, edges).err(),
             Command::Revolve { edges } => prism_ops::loft::revolved(m, edges).err(),
             Command::Extend { edge, vertex } => prism_ops::trim::extension(m, *edge, *vertex).err(),
+            Command::Draft {
+                faces,
+                origin,
+                pull,
+                angle,
+            } => prism_ops::draft::refusal(m, faces, *origin, *pull, *angle),
             Command::Project { edges, face } => {
                 prism_ops::trim::project(&mut m.clone(), edges, *face).err()
             }
@@ -1548,6 +1575,14 @@ impl Command {
             }
             Command::Extend { edge, vertex } => {
                 let _ = prism_ops::trim::extend(m, *edge, *vertex);
+            }
+            Command::Draft {
+                faces,
+                origin,
+                pull,
+                angle,
+            } => {
+                let _ = prism_ops::draft::draft(m, faces, *origin, *pull, *angle);
             }
             Command::Project { edges, face } => {
                 let _ = prism_ops::trim::project(m, edges, *face);

@@ -55,6 +55,8 @@ pub enum PanelOp {
     /// The Text window: a change to its settings.
     Text(prism_tools::session::TextSet),
     Array(prism_tools::session::ArraySet),
+    /// The Draft Angle window: the angle as typed.
+    Draft(prism_tools::session::DraftSet),
     /// The Primitives window: a kind, or a size as typed.
     Prim(prism_tools::session::PrimSet),
     /// The Align window: a cell of its grid in a plane.
@@ -99,6 +101,8 @@ pub struct PanelData {
     pub text: Option<prism_tools::session::TextPanel>,
     /// The Array window (while its tool is active).
     pub array: Option<prism_tools::session::ArrayPanel>,
+    /// The Draft Angle window (while its tool is active).
+    pub draft: Option<prism_tools::session::DraftPanel>,
     /// The Primitives window (while its tool is active).
     pub prim: Option<prism_tools::session::PrimPanel>,
     /// How many groups are selected (the Align and Distribute windows).
@@ -166,6 +170,8 @@ pub struct Panels {
     pub array_angle: Option<String>,
     /// The Primitives window (shown only with its tool), and the size
     /// being typed (its key and text).
+    pub draft: bool,
+    pub draft_typing: Option<String>,
     pub prim: bool,
     pub prim_typing: Option<(&'static str, String)>,
     /// The Align and Distribute windows, and the plane the Align grid is
@@ -238,6 +244,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     }
                     if chrome.active_tool == prism_tools::session::ARRAY_TOOL {
                         super::arraying::card(ui, &mut p, &data, &mut ops);
+                    }
+                    if chrome.active_tool == prism_tools::session::DRAFT_TOOL {
+                        super::drafting::card(ui, &mut p, &data, &mut ops);
                     }
                     if chrome.active_tool == prism_tools::session::PRIM_TOOL {
                         super::primitives::card(ui, &mut p, &data, &mut ops);

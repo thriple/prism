@@ -18,6 +18,7 @@ pub mod convert;
 pub mod crossing;
 pub mod curves;
 pub mod cut;
+pub mod draft;
 pub mod fillet;
 pub mod follow;
 pub mod health;

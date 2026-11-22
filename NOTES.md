@@ -5042,3 +5042,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** `prism_ops::trim` (`trim_refusal`, `extension`, `extend`, `project`), `Command::Extend` and `Command::Project` (Trim is an `Erase` of one loose edge), the two tools in `session/trimming.rs`, guides, tests (`prism-ops/tests/trim.rs`: extend to an edge, a face, refusals, project a line and a circle; `prism-tools` tests: trim, Alt-extend, project).
 - **Left over:** see brief 51 part 5 ("Not in part 5"); not looked at on screen (the hover highlight while Alt is held changes only on the next pointer move); Trim is only worth much on loose geometry because drawn lines already split where they cross.
+
+## Shapes & Placement part 6a: Draft Angle (2026-11-22, brief 51)
+
+- **Built:** `prism_ops::draft`, `Command::Draft`, the Draft Angle tool and window. Tests: a box's walls leaned make an exact frustum (volume checked), a negative angle, one wall alone, the refusals, the tool with the angle field and undo.
+- **Left over:** see brief 51 part 6a; not looked at on screen. Hole (6b) is next.

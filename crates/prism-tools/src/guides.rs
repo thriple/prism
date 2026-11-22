@@ -145,6 +145,14 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "The new edges cut the face like drawn edges; lines square to the face have nothing to drop.",
             ],
         ),
+        s::DRAFT_TOOL => g(
+            "Lean flat faces by an angle, as a mould or casting needs.",
+            &[
+                "Select the flat faces to lean (the walls).",
+                "Set the angle in degrees in the window: positive makes the part narrower away from the neutral face, negative wider.",
+                "Click the neutral face, the base the part comes out from: each selected face leans about where it meets it, and the corners follow.",
+            ],
+        ),
         s::PRIM_TOOL => g(
             "Set down a box, cylinder, cone, sphere, torus or capsule as a group that remembers its sizes.",
             &[

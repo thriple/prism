@@ -2668,6 +2668,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         false,
     ),
     (
+        "Draft Angle: lean selected flat faces about a neutral face",
+        false,
+    ),
+    (
         "Game words for Beverly: typed roles on groups and components, a Surface word on materials, in the GLB",
         false,
     ),
