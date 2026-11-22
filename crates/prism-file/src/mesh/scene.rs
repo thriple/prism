@@ -436,6 +436,7 @@ impl Reader<'_> {
                         instances,
                         name,
                         stack: None,
+                        primitive: None,
                     },
                 );
                 if component {

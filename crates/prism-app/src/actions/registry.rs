@@ -272,6 +272,8 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         )
         || id.starts_with("flip.")
         || id.starts_with("mirror.")
+        // Shapes & Placement part 4: the kinds in the Primitives menu.
+        || id.starts_with("prim.")
         // Shapes & Placement part 3: line up, space out, drop, centre.
         || id.starts_with("align.")
         || id.starts_with("dist.")
@@ -704,7 +706,8 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 35] = [
+const BUILT_BEHAVIOURS: [&str; 36] = [
+    "Primitives: box, cylinder, cone, sphere, torus and capsule that remember their sizes",
     "Align, Distribute, Drop to Face and Center on Origin for groups and components",
     "Duplicate Again (Ctrl+D) repeats the last copy; Ctrl before the first click copies",
     "Several tags per object, typed with Enter or clicked, and a Beverly list of suggested tags",

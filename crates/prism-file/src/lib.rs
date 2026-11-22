@@ -247,6 +247,9 @@ struct DefV1 {
     /// A component's name; groups have none (part 1 files never do).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    /// The primitive the group was made as and still is (part 4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    primitive: Option<prism_ops::primitives::Primitive>,
     #[serde(default)]
     instances: Vec<InstanceV1>,
 }
@@ -454,6 +457,7 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
                     id: id.0,
                     features: d.stack.as_ref().map_or(Vec::new(), |s| s.features.clone()),
                     name: d.name.clone(),
+                    primitive: d.primitive,
                     instances: d
                         .instances
                         .iter()
@@ -756,6 +760,7 @@ fn read_groups(raw: &Raw, json: &[u8], root: Model) -> Result<Assembly, FileErro
                     instances,
                     name: d.name,
                     stack,
+                    primitive: d.primitive,
                 },
             )
             .is_some()

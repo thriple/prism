@@ -479,6 +479,7 @@ impl App {
                     loft: s.loft_panel(),
                     text: s.text_panel(),
                     array: s.array_panel(),
+                    prim: s.prim_panel(),
                     groups: s.selected_groups().len(),
                 };
             }
@@ -513,6 +514,7 @@ impl App {
                     crate::chrome::PanelOp::Loft(op) => s.loft_input(op),
                     crate::chrome::PanelOp::Text(op) => s.text_input(op),
                     crate::chrome::PanelOp::Array(op) => s.array_input(op),
+                    crate::chrome::PanelOp::Prim(op) => s.prim_input(op),
                     crate::chrome::PanelOp::Align { plane, col, row } => {
                         s.align_cell(plane, col, row)
                     }

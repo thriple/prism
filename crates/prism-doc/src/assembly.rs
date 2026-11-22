@@ -148,6 +148,10 @@ pub struct Definition {
     /// (Inspector part 2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stack: Option<Stack>,
+    /// The primitive this group was made as, while its geometry is still
+    /// exactly what that makes (Shapes & Placement part 4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primitive: Option<prism_ops::primitives::Primitive>,
 }
 
 impl Definition {
@@ -276,6 +280,7 @@ impl Assembly {
                     instances: BTreeMap::new(),
                     name: None,
                     stack: None,
+                    primitive: None,
                 }),
             )]
             .into(),
@@ -1425,6 +1430,7 @@ impl Assembly {
             instances,
             name: d.name,
             stack: d.stack,
+            primitive: None,
         }))
     }
 
@@ -1615,6 +1621,7 @@ impl Assembly {
             instances: inner,
             name: None,
             stack: carried,
+            primitive: None,
         });
         let id = self.new_instance();
         self.def_mut_live(ctx)?.instances.insert(
@@ -1646,6 +1653,7 @@ impl Assembly {
             instances: BTreeMap::new(),
             name: None,
             stack: None,
+            primitive: None,
         });
         let id = self.new_instance();
         self.def_mut_live(ctx)?
@@ -1653,6 +1661,68 @@ impl Assembly {
             .insert(id, Instance { def, transform: at });
         self.set_name(id, name);
         Some(id)
+    }
+
+    /// A new group made as a primitive, placed by `at` (Shapes &
+    /// Placement part 4). It remembers the primitive until its geometry is
+    /// edited.
+    pub fn add_primitive(
+        &mut self,
+        ctx: DefId,
+        p: prism_ops::primitives::Primitive,
+        at: DAffine3,
+    ) -> Option<InstanceId> {
+        let id = self.add_group_model(ctx, p.build(), p.name(), at)?;
+        let def = self.def(ctx)?.instances.get(&id)?.def;
+        self.def_mut_live(def)?.primitive = Some(p);
+        Some(id)
+    }
+
+    /// The primitive an instance still is: remembered, and its geometry
+    /// exactly what that makes, and not scaled since (so its sizes are
+    /// what they say).
+    pub fn live_primitive(
+        &self,
+        ctx: DefId,
+        id: InstanceId,
+    ) -> Option<prism_ops::primitives::Primitive> {
+        let inst = self.def(ctx)?.instances.get(&id)?;
+        let d = self.def(inst.def)?;
+        let p = d.primitive?;
+        let m = inst.transform.matrix3;
+        let unit = |v: DVec3| (v.length() - 1.0).abs() < 1e-9;
+        (unit(m.x_axis)
+            && unit(m.y_axis)
+            && unit(m.z_axis)
+            && d.stack.is_none()
+            && d.model == p.build())
+        .then_some(p)
+    }
+
+    /// Make a primitive again at other sizes, in place. False if the
+    /// instance is no longer that primitive.
+    pub fn set_primitive(
+        &mut self,
+        ctx: DefId,
+        id: InstanceId,
+        p: prism_ops::primitives::Primitive,
+    ) -> bool {
+        if self.live_primitive(ctx, id).is_none() {
+            return false;
+        }
+        let Some(def) = self
+            .def(ctx)
+            .and_then(|d| d.instances.get(&id))
+            .map(|i| i.def)
+        else {
+            return false;
+        };
+        let Some(d) = self.def_mut_live(def) else {
+            return false;
+        };
+        d.model = p.build();
+        d.primitive = Some(p);
+        true
     }
 
     /// Explode: the group's geometry, placed, joins `ctx`'s model, where
@@ -1737,6 +1807,7 @@ impl Assembly {
                 instances: placed,
                 name: None,
                 stack: None,
+                primitive: None,
             }),
         );
         out.prune();
@@ -1864,6 +1935,7 @@ impl Assembly {
             instances,
             name,
             stack: None,
+            primitive: None,
         });
         map.defs.insert(d, k);
         Some(k)
@@ -2256,6 +2328,7 @@ impl Assembly {
                 instances: BTreeMap::new(),
                 name: None,
                 stack: None,
+                primitive: None,
             });
             let id = self.new_instance();
             if let Some(d) = self.def_mut_live(ctx) {

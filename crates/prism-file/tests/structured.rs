@@ -504,3 +504,34 @@ fn a_file_keeps_several_tags_and_old_files_with_one_still_open() {
         all
     );
 }
+
+#[test]
+fn a_primitive_group_is_still_a_primitive_after_saving_and_opening() {
+    use prism_ops::primitives::Primitive;
+    let mut d = prism_doc::Document::new();
+    for p in Primitive::kinds() {
+        d.run(Command::AddPrimitive {
+            primitive: p,
+            at: prism_math::DVec3::ZERO,
+        });
+    }
+    let c = prism_file::Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let back = prism_file::read(&prism_file::write(&c, "test")).expect("opens");
+    let asm = &back.assembly;
+    let alive: Vec<_> = asm.root().instances.keys().copied().collect();
+    assert_eq!(alive.len(), 6);
+    let mut got: Vec<&str> = alive
+        .iter()
+        .filter_map(|i| asm.live_primitive(prism_doc::ROOT, *i))
+        .map(|p| p.name())
+        .collect();
+    got.sort_unstable();
+    assert_eq!(
+        got,
+        ["Box", "Capsule", "Cone", "Cylinder", "Sphere", "Torus"],
+        "each still knows what it is"
+    );
+}

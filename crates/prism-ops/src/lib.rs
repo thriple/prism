@@ -25,6 +25,7 @@ pub mod intersect;
 pub mod loft;
 mod meet;
 pub mod offset;
+pub mod primitives;
 pub mod pushpull;
 pub mod radius;
 pub mod reach;

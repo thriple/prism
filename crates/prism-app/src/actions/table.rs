@@ -2660,6 +2660,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         false,
     ),
     (
+        "Primitives: box, cylinder, cone, sphere, torus and capsule that remember their sizes",
+        false,
+    ),
+    (
         "Game words for Beverly: typed roles on groups and components, a Surface word on materials, in the GLB",
         false,
     ),

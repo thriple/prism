@@ -10102,3 +10102,163 @@ fn the_align_grid_lines_up_corners_edges_and_the_middle() {
     // The top view: green is up, so top means the back (high y).
     d.s.align_cell(2, 0, 0);
 }
+
+/// The one group of the root, and the primitive it still is.
+fn the_primitive(d: &Driver) -> Option<prism_ops::primitives::Primitive> {
+    let asm = d.s.document().assembly();
+    let (id, _) = asm.root().instances.iter().next()?;
+    asm.live_primitive(prism_doc::ROOT, *id)
+}
+
+#[test]
+fn a_click_sets_a_primitive_down_as_a_group_that_remembers_what_it_is() {
+    use prism_ops::primitives::Primitive;
+    let mut d = Driver::empty();
+    d.tool(prism_tools::session::PRIM_TOOL);
+    d.click(DVec3::new(2.0, 1.0, 0.0));
+    assert_eq!(d.s.document().assembly().root().instances.len(), 1);
+    assert_eq!(d.s.selected_groups().len(), 1, "the new group is selected");
+    assert_eq!(
+        the_primitive(&d),
+        Some(Primitive::Box {
+            w: 1.0,
+            d: 1.0,
+            h: 1.0
+        })
+    );
+    // It stands on the clicked point, its middle there.
+    let g = *d.s.selected_groups().iter().next().expect("one");
+    let (lo, hi) = {
+        let c = d.s.group_box(g).expect("a box");
+        (c[0].min(c[7]), c[0].max(c[7]))
+    };
+    assert!(
+        (lo.x - 1.5).abs() < 1e-9 && (hi.x - 2.5).abs() < 1e-9,
+        "{lo:?} {hi:?}"
+    );
+    assert!((lo.y - 0.5).abs() < 1e-9 && lo.z.abs() < 1e-9 && (hi.z - 1.0).abs() < 1e-9);
+    // One undo step.
+    act(&mut d, "edit.undo");
+    assert!(d.s.document().assembly().root().instances.is_empty());
+}
+
+#[test]
+fn a_drag_sizes_a_box_by_its_corners_and_a_round_one_by_its_radius() {
+    use prism_ops::primitives::Primitive;
+    let mut d = Driver::empty();
+    d.tool(prism_tools::session::PRIM_TOOL);
+    press_at(&mut d, DVec3::new(0.0, 0.0, 0.0));
+    d.hover(DVec3::new(3.0, 2.0, 0.0));
+    release(&mut d);
+    assert_eq!(
+        the_primitive(&d),
+        Some(Primitive::Box {
+            w: 3.0,
+            d: 2.0,
+            h: 1.0
+        }),
+        "the footprint from the corners, the height the window's"
+    );
+    act(&mut d, "edit.undo");
+    act(&mut d, "prim.cyl");
+    assert_eq!(d.s.tool(), prism_tools::session::PRIM_TOOL);
+    press_at(&mut d, DVec3::new(0.0, 0.0, 0.0));
+    d.hover(DVec3::new(0.0, 3.0, 0.0));
+    release(&mut d);
+    match the_primitive(&d) {
+        Some(Primitive::Cylinder { r, h }) => {
+            assert!((r - 3.0).abs() < 1e-6 && (h - 1.0).abs() < 1e-9, "{r} {h}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_window_sets_the_kind_and_the_sizes_and_refuses_bad_ones() {
+    use prism_ops::primitives::Primitive;
+    use prism_tools::session::PrimSet;
+    let mut d = Driver::empty();
+    d.tool(prism_tools::session::PRIM_TOOL);
+    let panel = d.s.prim_panel().expect("the window shows with the tool");
+    assert_eq!(panel.kinds.len(), 6);
+    d.s.prim_input(PrimSet::Kind(4));
+    d.s.prim_input(PrimSet::Size("major", "2".into()));
+    d.s.prim_input(PrimSet::Size("minor", "0.5".into()));
+    assert_eq!(
+        d.s.primitive(),
+        Primitive::Torus {
+            major: 2.0,
+            minor: 0.5
+        }
+    );
+    // A tube as thick as the ring is refused, and the sizes stay.
+    d.s.prim_input(PrimSet::Size("minor", "3".into()));
+    assert_eq!(d.s.hint(), prism_ops::primitives::TORUS_TUBE);
+    assert_eq!(
+        d.s.primitive(),
+        Primitive::Torus {
+            major: 2.0,
+            minor: 0.5
+        }
+    );
+    d.click(DVec3::new(0.0, 0.0, 0.0));
+    assert_eq!(the_primitive(&d), d.s.primitive().into(), "made as set");
+}
+
+#[test]
+fn the_inspector_shows_a_primitives_sizes_and_changing_one_makes_it_again() {
+    use prism_ops::primitives::Primitive;
+    let mut d = Driver::empty();
+    d.tool(prism_tools::session::PRIM_TOOL);
+    d.click(DVec3::ZERO);
+    let ins = d.s.inspector();
+    let sec = ins
+        .sections
+        .iter()
+        .find(|s| s.title == "Primitive")
+        .expect("a Primitive section");
+    assert_eq!(sec.fields.len(), 3, "width, depth and height");
+    let n = d.s.document().log().count();
+    d.s.inspector_set("prim.h", "3").expect("resized");
+    assert_eq!(d.s.document().log().count(), n + 1, "one undo step");
+    assert_eq!(
+        the_primitive(&d),
+        Some(Primitive::Box {
+            w: 1.0,
+            d: 1.0,
+            h: 3.0
+        })
+    );
+    let g = *d.s.selected_groups().iter().next().expect("one");
+    let top = d.s.group_box(g).expect("box")[7].z;
+    assert!((top - 3.0).abs() < 1e-9, "{top}");
+    assert!(d.s.inspector_set("prim.h", "0").is_err());
+    act(&mut d, "edit.undo");
+    assert_eq!(
+        the_primitive(&d),
+        Some(Primitive::Box {
+            w: 1.0,
+            d: 1.0,
+            h: 1.0
+        })
+    );
+    // Scaled, it no longer says its sizes (they would be wrong).
+    let g = *d.s.selected_groups().iter().next().expect("one");
+    d.send(Input::Commands {
+        commands: vec![prism_doc::Command::Place {
+            instances: [g].into(),
+            change: prism_doc::Change::Scale {
+                centre: DVec3::ZERO,
+                factor: DVec3::splat(2.0),
+            },
+        }],
+    });
+    assert!(the_primitive(&d).is_none());
+    assert!(
+        !d.s.inspector()
+            .sections
+            .iter()
+            .any(|s| s.title == "Primitive"),
+        "no sizes once it is scaled"
+    );
+}

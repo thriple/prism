@@ -393,6 +393,17 @@ pub enum Command {
         mode: prism_ops::text::TextMode,
         at: DAffine3,
     },
+    /// A new group made as a primitive (Shapes & Placement part 4), its
+    /// base middle at `at`, standing along `z` of the world.
+    AddPrimitive {
+        primitive: prism_ops::primitives::Primitive,
+        at: DVec3,
+    },
+    /// A primitive made again at other sizes, in place.
+    SetPrimitive {
+        instance: InstanceId,
+        primitive: prism_ops::primitives::Primitive,
+    },
     /// A new linear dimension (Annotation & Sections part 2), in world
     /// coordinates.
     AddDimension {
@@ -792,6 +803,8 @@ impl Command {
             Command::RenameSection { .. } => "Rename Section Plane",
             Command::DeleteSection { .. } => "Delete Section Plane",
             Command::AddText { .. } => "Text",
+            Command::AddPrimitive { primitive, .. } => primitive.name(),
+            Command::SetPrimitive { .. } => "Resize Primitive",
             Command::AddDimension { .. } => "Dimension",
             Command::MoveDimension { .. } => "Move Dimension",
             Command::DeleteDimension { .. } => "Delete Dimension",
@@ -1026,6 +1039,10 @@ impl Command {
                     at: DAffine3::from_cols(u, v, u.cross(v), p(at.translation)),
                 }
             }
+            Command::AddPrimitive { primitive, at } => Command::AddPrimitive {
+                primitive: *primitive,
+                at: p(*at),
+            },
             Command::AddGuide { guide } => Command::AddGuide {
                 guide: match *guide {
                     Guide::Line { origin, dir: d } => Guide::Line {
@@ -1113,6 +1130,15 @@ impl Command {
                 let first = text.lines().next().unwrap_or("").trim();
                 let short: String = first.chars().take(24).collect();
                 asm.add_group_model(ctx, model, &format!("Text: {short}"), *at);
+            }
+            Command::AddPrimitive { primitive, at } => {
+                asm.add_primitive(ctx, *primitive, DAffine3::from_translation(*at));
+            }
+            Command::SetPrimitive {
+                instance,
+                primitive,
+            } => {
+                asm.set_primitive(ctx, *instance, *primitive);
             }
             Command::AddDimension { a, b, offset } => {
                 asm.add_dimension(Dimension {
@@ -1685,6 +1711,8 @@ impl Command {
             | Command::Paste { .. }
             | Command::SetLocked { .. }
             | Command::AddText { .. }
+            | Command::AddPrimitive { .. }
+            | Command::SetPrimitive { .. }
             | Command::AddDimension { .. }
             | Command::MoveDimension { .. }
             | Command::DeleteDimension { .. }

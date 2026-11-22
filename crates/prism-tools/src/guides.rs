@@ -129,6 +129,15 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Polar with 360 degrees spreads the copies round a full circle, about the middle of the selection.",
             ],
         ),
+        s::PRIM_TOOL => g(
+            "Set down a box, cylinder, cone, sphere, torus or capsule as a group that remembers its sizes.",
+            &[
+                "Pick the kind in the Primitives window, or from Draw > Primitives, and type its sizes.",
+                "Click to set it down standing on that point, or press and drag: a box from corner to corner, the round ones from the middle out.",
+                "Select the group and the Inspector shows its sizes; change one and it is made again in place.",
+                "Edit its faces, or scale it, and it is just geometry from then on.",
+            ],
+        ),
         s::SECTION_TOOL => g(
             "Cut the model open with a plane, to look inside it.",
             &[

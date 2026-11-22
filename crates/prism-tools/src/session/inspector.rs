@@ -295,6 +295,15 @@ impl Session {
             out.sections.push(self.features_section(stack));
         }
 
+        if n == 1
+            && let Some(fields) = self.prim_fields(ids[0])
+        {
+            out.sections.push(Section {
+                title: "Primitive",
+                fields,
+            });
+        }
+
         let Some((lo, hi)) = self.groups_bounds() else {
             return;
         };
@@ -566,6 +575,7 @@ impl Session {
         }
         let ids = self.groups.clone();
         match key {
+            k if k.starts_with("prim.") => return self.prim_set(k, text),
             "name" => {
                 if ids.len() != 1 {
                     return Err("Name one group at a time".into());

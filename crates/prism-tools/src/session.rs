@@ -49,6 +49,7 @@ mod materials;
 mod mirror;
 mod paint;
 mod placement;
+mod primitives;
 mod rims;
 mod round;
 mod scalebox;
@@ -85,6 +86,7 @@ pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use mirror::{MIRROR_NOTHING, MIRROR_TOOL};
 pub use paint::{Brush, PAINT};
+pub use primitives::{PRIM_TOOL, PrimPanel, PrimSet};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use sections::{SECTION_TOOL, line_param};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
@@ -110,7 +112,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 45] = [
+pub const TOOLS: [&str; 46] = [
     SELECT,
     LINE,
     RECT,
@@ -157,6 +159,8 @@ pub const TOOLS: [&str; 45] = [
     // Shapes & Placement part 1.
     mirror::MIRROR_TOOL,
     arraying::ARRAY_TOOL,
+    // Shapes & Placement part 4.
+    primitives::PRIM_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
     workplanes::CPLANE_TOOL,
@@ -702,6 +706,11 @@ pub struct Session {
     mirror_ghost: Option<(DVec3, DVec3)>,
     /// The Array window's settings.
     array_set: arraying::ArraySettings,
+    /// The Primitives tool: what it makes, where a press began, and the
+    /// ghost shown.
+    prim: prism_ops::primitives::Primitive,
+    prim_down: Option<(DVec3, DVec2)>,
+    prim_shown: Option<(prism_ops::primitives::Primitive, DVec3)>,
     /// Where the Construction Plane tool would put a plane: origin, normal.
     cplane_ghost: Option<(DVec3, DVec3)>,
     /// The Dimensions tool (part 2): the one being made or moved, and the
@@ -737,6 +746,9 @@ impl Session {
             section_ghost: None,
             mirror_ghost: None,
             array_set: arraying::ArraySettings::default(),
+            prim: prism_ops::primitives::Primitive::kinds()[0],
+            prim_down: None,
+            prim_shown: None,
             cplane_ghost: None,
             dim_op: None,
             text_set: texting::TextSettings::default(),
@@ -1145,6 +1157,7 @@ impl Session {
             .or_else(|| self.axes_hint())
             .or_else(|| self.mirror_hint())
             .or_else(|| self.array_hint())
+            .or_else(|| self.prim_hint())
             .or_else(|| self.section_hint())
             .or_else(|| self.work_plane_hint())
             .or_else(|| self.dim_hint())
@@ -1504,7 +1517,7 @@ impl Session {
         if is_nav(id) && !is_nav(&self.tool) {
             self.before_nav = self.tool.clone();
         }
-        let was_array = self.tool == ARRAY_TOOL;
+        let was_array = self.tool == ARRAY_TOOL || self.tool == PRIM_TOOL;
         self.cancel();
         self.over_closed_group = false;
         self.tool = id.to_owned();
@@ -1513,6 +1526,10 @@ impl Session {
         }
         if id == ARRAY_TOOL {
             self.array_preview();
+        }
+        if id == PRIM_TOOL {
+            self.prim_shown = None;
+            self.prim_ghost();
         }
         // A new loop is for one pull at a time, never left on unseen.
         self.alt_loop = false;
@@ -1552,6 +1569,7 @@ impl Session {
         self.cancel_edit();
         self.paste_cancel();
         self.line_start = None;
+        self.prim_down = None;
         self.rect = None;
         self.shape = None;
         self.arc = None;
@@ -2021,6 +2039,7 @@ impl Session {
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
             "edit.duplicate" => self.duplicate_again(),
+            a if a.starts_with("prim.") => self.prim_pick(a),
             a if a.starts_with("align.") => self.align_action(a),
             "dist.x" => self.distribute(0),
             "dist.y" => self.distribute(1),
@@ -2100,6 +2119,7 @@ impl Session {
             || self.tool == AXES_TOOL
             || self.tool == SECTION_TOOL
             || self.tool == MIRROR_TOOL
+            || self.tool == PRIM_TOOL
             || self.tool == CPLANE_TOOL
             || self.tool == DIM_TOOL
             || self.tool == TEXT_TOOL
@@ -2271,6 +2291,7 @@ impl Session {
             self.axes_hover();
             self.section_hover(s, &view);
             self.mirror_hover(s, &view);
+            self.prim_hover(s, &view);
             self.dim_hover();
             self.work_plane_hover();
             self.text_hover(s, &view);
@@ -2399,6 +2420,7 @@ impl Session {
                 AXES_TOOL => self.axes_press(s),
                 SECTION_TOOL => self.section_press(s),
                 MIRROR_TOOL => self.mirror_press(s),
+                PRIM_TOOL => self.prim_press(s),
                 CPLANE_TOOL => self.work_plane_press(s, shift),
                 DIM_TOOL => self.dim_press(s),
                 TEXT_TOOL => self.text_press(s),
@@ -2501,6 +2523,7 @@ impl Session {
                 self.overlay_dirty = true;
                 self.dirty = true;
             }
+            Button::Left if self.tool == PRIM_TOOL => self.prim_release(),
             Button::Left if is_edit(&self.tool) && self.drag.is_none() => {
                 if let Some(c) = self.cursor {
                     self.edit_release(c);

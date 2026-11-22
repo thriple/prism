@@ -11,6 +11,7 @@ mod loft;
 mod materials;
 mod panels;
 mod placing;
+mod primitives;
 mod shell;
 mod texting;
 pub use materials::image_loaded;
@@ -302,6 +303,12 @@ impl Chrome {
             || self.shell_shown()
             || self.text_shown()
             || self.array_shown()
+            || self.prim_shown()
+    }
+
+    /// Whether the Primitives window shows: open, and only with its tool.
+    pub(crate) fn prim_shown(&self) -> bool {
+        self.panels.prim && self.active_tool == prism_tools::session::PRIM_TOOL
     }
 
     /// Whether the Shell / Thicken window shows: open, and only with its
@@ -456,6 +463,11 @@ impl Chrome {
                     self.panels.array = true;
                     self.panels.folded.remove("Array");
                 }
+                // So does the Primitives tool (Shapes & Placement part 4).
+                if id == prism_tools::session::PRIM_TOOL {
+                    self.panels.prim = true;
+                    self.panels.folded.remove("Primitives");
+                }
                 // So does the Loft tool (brief 34).
                 if id == prism_tools::session::LOFT {
                     self.panels.loft = true;
@@ -463,6 +475,13 @@ impl Chrome {
                 }
             }
             Run::Event => {
+                // A kind from the Primitives menu is the tool with that kind.
+                if id.starts_with("prim.") {
+                    self.active_tool = prism_tools::session::PRIM_TOOL;
+                    self.note = None;
+                    self.panels.prim = true;
+                    self.panels.folded.remove("Primitives");
+                }
                 if a.check == Check::Toggle && !self.toggles.remove(id) {
                     self.toggles.insert(id);
                 }
@@ -560,6 +579,7 @@ impl Chrome {
             || self.shell_shown()
             || self.text_shown()
             || self.array_shown()
+            || self.prim_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).

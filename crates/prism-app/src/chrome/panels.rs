@@ -55,6 +55,8 @@ pub enum PanelOp {
     /// The Text window: a change to its settings.
     Text(prism_tools::session::TextSet),
     Array(prism_tools::session::ArraySet),
+    /// The Primitives window: a kind, or a size as typed.
+    Prim(prism_tools::session::PrimSet),
     /// The Align window: a cell of its grid in a plane.
     Align {
         plane: usize,
@@ -97,6 +99,8 @@ pub struct PanelData {
     pub text: Option<prism_tools::session::TextPanel>,
     /// The Array window (while its tool is active).
     pub array: Option<prism_tools::session::ArrayPanel>,
+    /// The Primitives window (while its tool is active).
+    pub prim: Option<prism_tools::session::PrimPanel>,
     /// How many groups are selected (the Align and Distribute windows).
     pub groups: usize,
 }
@@ -160,6 +164,10 @@ pub struct Panels {
     pub array_count: Option<String>,
     pub array_spacing: Option<String>,
     pub array_angle: Option<String>,
+    /// The Primitives window (shown only with its tool), and the size
+    /// being typed (its key and text).
+    pub prim: bool,
+    pub prim_typing: Option<(&'static str, String)>,
     /// The Align and Distribute windows, and the plane the Align grid is
     /// seen from (0 front, 1 side, 2 top).
     pub align: bool,
@@ -230,6 +238,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     }
                     if chrome.active_tool == prism_tools::session::ARRAY_TOOL {
                         super::arraying::card(ui, &mut p, &data, &mut ops);
+                    }
+                    if chrome.active_tool == prism_tools::session::PRIM_TOOL {
+                        super::primitives::card(ui, &mut p, &data, &mut ops);
                     }
                     if chrome.active_tool == prism_tools::session::TEXT_TOOL {
                         super::texting::card(ui, &mut p, &data, &mut ops);
