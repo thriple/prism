@@ -55,6 +55,14 @@ pub enum PanelOp {
     /// The Text window: a change to its settings.
     Text(prism_tools::session::TextSet),
     Array(prism_tools::session::ArraySet),
+    /// The Align window: a cell of its grid in a plane.
+    Align {
+        plane: usize,
+        col: usize,
+        row: usize,
+    },
+    /// The Distribute window: along red (0), green (1) or blue (2).
+    Distribute(usize),
 }
 
 /// The panels' data, set by the app each frame.
@@ -89,6 +97,8 @@ pub struct PanelData {
     pub text: Option<prism_tools::session::TextPanel>,
     /// The Array window (while its tool is active).
     pub array: Option<prism_tools::session::ArrayPanel>,
+    /// How many groups are selected (the Align and Distribute windows).
+    pub groups: usize,
 }
 
 /// Which panels are open, and text being edited.
@@ -150,6 +160,11 @@ pub struct Panels {
     pub array_count: Option<String>,
     pub array_spacing: Option<String>,
     pub array_angle: Option<String>,
+    /// The Align and Distribute windows, and the plane the Align grid is
+    /// seen from (0 front, 1 side, 2 top).
+    pub align: bool,
+    pub distribute: bool,
+    pub align_plane: usize,
     /// Model Health's problems not drawn in the model (its switch off).
     pub health_marks_off: bool,
     /// The name field in Entity Info, and which instance it is for.
@@ -179,6 +194,8 @@ impl Panels {
             || self.solids
             || self.view
             || self.materials
+            || self.align
+            || self.distribute
     }
 }
 
@@ -217,6 +234,8 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     if chrome.active_tool == prism_tools::session::TEXT_TOOL {
                         super::texting::card(ui, &mut p, &data, &mut ops);
                     }
+                    super::placing::align_card(ui, &mut p, &data, &mut ops);
+                    super::placing::distribute_card(ui, &mut p, &data, &mut ops);
                     super::hints::card(chrome, ui, &mut p);
                     super::inspector::card(ui, &mut p, &data, &mut ops);
                     info(ui, &mut p, &data, &mut ops);

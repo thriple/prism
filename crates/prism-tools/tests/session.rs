@@ -10062,3 +10062,43 @@ fn centre_on_origin_puts_the_selection_round_the_zero_lines() {
         "{p:?}"
     );
 }
+
+#[test]
+fn the_align_grid_lines_up_corners_edges_and_the_middle() {
+    let mut d = Driver::empty();
+    groups_at(&mut d, &[4.0, 9.0]);
+    d.tool(SELECT);
+    act(&mut d, "edit.desel");
+    d.click(DVec3::new(5.0, 0.0, 1.0));
+    d.tool(MOVE);
+    d.click(DVec3::new(4.0, 0.0, 0.0));
+    d.hover(DVec3::new(4.0, 0.0, 1.0));
+    key(&mut d, Key::Up);
+    d.typed("3");
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    // Front plane, bottom right: right sides at 11 and all on the ground.
+    d.s.align_cell(0, 2, 2);
+    for (_, p) in group_places(&d) {
+        assert!((p.x - 9.0).abs() < 1e-9 && p.z.abs() < 1e-9, "{p:?}");
+    }
+    act(&mut d, "edit.undo");
+    // Top middle only lines the tops up (x stays).
+    d.s.align_cell(0, 1, 0);
+    let p = group_places(&d);
+    assert!(p.iter().all(|(_, q)| (q.z - 3.0).abs() < 1e-9), "{p:?}");
+    assert!((p[1].1.x - 4.0).abs() < 1e-9, "{p:?}");
+    act(&mut d, "edit.undo");
+    // Left middle only lines the left sides up.
+    d.s.align_cell(0, 0, 1);
+    let p = group_places(&d);
+    assert!(p.iter().all(|(_, q)| q.x.abs() < 1e-9), "{p:?}");
+    assert!((p[1].1.z - 3.0).abs() < 1e-9, "{p:?}");
+    act(&mut d, "edit.undo");
+    // The middle: centres meet both ways.
+    d.s.align_cell(0, 1, 1);
+    let p = group_places(&d);
+    assert!(p.iter().all(|(_, q)| (q.x - 4.5).abs() < 1e-9), "{p:?}");
+    // The top view: green is up, so top means the back (high y).
+    d.s.align_cell(2, 0, 0);
+}

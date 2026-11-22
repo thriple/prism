@@ -5026,3 +5026,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** `prism-tools/src/session/placement.rs`; actions `align.{x,y,z}.{low,middle,high}`, `dist.{x,y,z}`, `edit.drop`, `edit.center` (renamed "Center on Origin") in Edit; Drop is in the context menu too. No new document command (a batch of `Place`). Tests: align (low, high, centre; undo), distribute, the one-group message, drop to ground and onto another group, centre on origin.
 - **Left over:** align to a picked face; loose geometry (groups only); Drop to Face ignores loose faces inside an open group and sloped faces; not checked on screen.
+
+## Align and Distribute windows (2026-11-22, brief 51 part 3b)
+
+- **Built:** `prism-app/src/chrome/placing.rs` (the two cards, painted cells: nested frames and a light glyph as in the owner's picture), `PanelOp::Align { plane, col, row }` and `PanelOp::Distribute(axis)`, `Session::align_cell`; dock buttons Align, Distribute, Drop to Face, Center on Origin; right-click Align, Distribute, Drop and Center; the two Window menu items. Tests: the grid's glyphs, the windows opening and drawing (ready and not ready), every function an action with an empty hotkey slot, `align_cell` on corners, edges and the middle.
+- **Left over:** not looked at on screen (the cell size, the glyph weights, the dock icons for Distribute and Center on Origin are first drawings); no actions for the grid's two-way corners (hotkeys need a pair of the one-way lines); the "Seen from" choice is not remembered between runs.

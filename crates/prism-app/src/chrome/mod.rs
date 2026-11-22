@@ -10,6 +10,7 @@ mod inspector;
 mod loft;
 mod materials;
 mod panels;
+mod placing;
 mod shell;
 mod texting;
 pub use materials::image_loaded;
@@ -477,6 +478,14 @@ impl Chrome {
                     "win.info" => self.panels.info = true,
                     "win.inspector" => self.panels.inspector = true,
                     "win.tags" => self.panels.tags = true,
+                    "win.align" => {
+                        self.panels.align = true;
+                        self.panels.folded.remove("Align");
+                    }
+                    "win.distribute" => {
+                        self.panels.distribute = true;
+                        self.panels.folded.remove("Distribute");
+                    }
                     "win.health" => self.panels.health = true,
                     "solid.heal" => {
                         self.panels.solids = true;

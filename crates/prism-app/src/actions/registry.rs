@@ -111,7 +111,7 @@ pub struct Context {
 }
 
 /// Actions Rust runs in this chunk (opens a window, toggles a panel).
-const COMMANDS: [&str; 31] = [
+const COMMANDS: [&str; 33] = [
     // Effects (brief 47): kept in the preferences.
     "view.effects",
     // Solids & CAD part 1 (brief 37): opens the Solids window.
@@ -145,6 +145,8 @@ const COMMANDS: [&str; 31] = [
     "win.info",
     "win.inspector",
     "win.tags",
+    "win.align",
+    "win.distribute",
     "help.features",
     "help.search",
     "help.keys",
@@ -617,7 +619,25 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
             "Mirror Copy",
             vec![A("mirror.x"), A("mirror.y"), A("mirror.z")],
         ),
+        Sub(
+            "Align",
+            vec![
+                A("align.x.low"),
+                A("align.x.middle"),
+                A("align.x.high"),
+                S,
+                A("align.y.low"),
+                A("align.y.middle"),
+                A("align.y.high"),
+                S,
+                A("align.z.low"),
+                A("align.z.middle"),
+                A("align.z.high"),
+            ],
+        ),
+        Sub("Distribute", vec![A("dist.x"), A("dist.y"), A("dist.z")]),
         A("edit.drop"),
+        A("edit.center"),
         Sub(
             "Intersect Faces",
             vec![A("isect.model"), A("isect.sel"), A("isect.ctx")],

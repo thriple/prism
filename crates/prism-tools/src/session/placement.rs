@@ -88,6 +88,37 @@ impl Session {
             Some("high") => Side::High,
             _ => return,
         };
+        self.align_by(&[(axis, side)]);
+    }
+
+    /// The Align panel's grid: `plane` 0 is the front (red across, blue
+    /// up), 1 the side (green across, blue up), 2 the top (red across,
+    /// green up); `col` 0, 1, 2 is left, middle, right and `row` 0, 1, 2 is
+    /// top, middle, bottom. A corner lines up both ways, an edge one way,
+    /// the middle both ways to the centre.
+    pub fn align_cell(&mut self, plane: usize, col: usize, row: usize) {
+        let (across, up) = match plane {
+            0 => (0, 2),
+            1 => (1, 2),
+            _ => (0, 1),
+        };
+        let side = |k: usize, high_first: bool| match (k, high_first) {
+            (0, false) | (2, true) => Side::Low,
+            (1, _) => Side::Middle,
+            _ => Side::High,
+        };
+        let mut by = Vec::new();
+        match (col, row) {
+            (1, 1) => by.extend([(across, Side::Middle), (up, Side::Middle)]),
+            (1, r) => by.push((up, side(r, true))),
+            (c, 1) => by.push((across, side(c, false))),
+            (c, r) => by.extend([(across, side(c, false)), (up, side(r, true))]),
+        }
+        self.align_by(&by);
+    }
+
+    /// Line the selected groups up on each (axis, side), as one step.
+    fn align_by(&mut self, by: &[(usize, Side)]) {
         let boxes = self.selected_boxes();
         if boxes.len() < 2 {
             return self.placement_notice(ALIGN_NEED_TWO);
@@ -95,24 +126,20 @@ impl Session {
         if self.locked_selected() {
             return;
         }
-        let lo = boxes
-            .iter()
-            .map(|(_, b)| b.0[axis])
-            .fold(f64::MAX, f64::min);
-        let hi = boxes
-            .iter()
-            .map(|(_, b)| b.1[axis])
-            .fold(f64::MIN, f64::max);
         let steps = boxes
             .iter()
             .map(|(g, b)| {
-                let by = match side {
-                    Side::Low => lo - b.0[axis],
-                    Side::High => hi - b.1[axis],
-                    Side::Middle => (lo + hi) / 2.0 - (b.0[axis] + b.1[axis]) / 2.0,
-                };
                 let mut v = DVec3::ZERO;
-                v[axis] = by;
+                for (axis, side) in by {
+                    let a = *axis;
+                    let lo = boxes.iter().map(|(_, b)| b.0[a]).fold(f64::MAX, f64::min);
+                    let hi = boxes.iter().map(|(_, b)| b.1[a]).fold(f64::MIN, f64::max);
+                    v[a] = match side {
+                        Side::Low => lo - b.0[a],
+                        Side::High => hi - b.1[a],
+                        Side::Middle => (lo + hi) / 2.0 - (b.0[a] + b.1[a]) / 2.0,
+                    };
+                }
                 (*g, v)
             })
             .collect();
@@ -121,7 +148,7 @@ impl Session {
 
     /// Edit > Distribute: equal gaps between the boxes along an axis; the
     /// two outermost stay where they are.
-    pub(super) fn distribute(&mut self, axis: usize) {
+    pub fn distribute(&mut self, axis: usize) {
         let mut boxes = self.selected_boxes();
         if boxes.len() < 3 {
             return self.placement_notice(DISTRIBUTE_NEED_THREE);

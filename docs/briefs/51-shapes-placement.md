@@ -37,3 +37,11 @@ The chunk is large, so it goes in parts, each one tool or small group of tools t
 - **Drop to Face** (`edit.drop`): each group falls straight down until it rests on the highest thing under it: another group's top (boxes that overlap it in plan), a flat face looking up, or the ground (a group already below the ground is left on its side of it). The lowest falls first, so a selected stack stays a stack.
 - **Center / Align** (`edit.center`, now named **Center on Origin**): the selected groups together, their box middle on the red and green zero lines; the height stays.
 - **Left out:** working on picked faces (align to a face you click), loose faces and edges (these work on groups only), and Drop to Face using loose faces inside an open group or sloped faces; hidden groups never count as a support.
+
+### Part 3b: the Align and Distribute windows, toolbar buttons, context menu (2026-11-22)
+
+- **Align window** (`win.align`, side card; Window menu and the dock): a 3 x 3 grid like an anchor picker: a right-angle wedge in each corner, a short bar on each edge, a hollow square in the middle. Corners line up two ways, edges one way (the side the cell is on), the middle centres both ways. **Seen from** Front / Side / Top picks the two axes the grid means (red across and blue up; green across and blue up; red across and green up, the back being up). Greyed with fewer than two groups selected. One undo step per click (`Session::align_cell`).
+- **Distribute window** (`win.distribute`): three buttons, red, green and blue, each drawn as three evenly spaced marks. Greyed with fewer than three groups.
+- **Dock** ("Copy & place" group): Align window, Distribute window, Drop to Face and Center on Origin (the last two act at once). The old placeholder buttons `tool.align` and `tool.drop` are gone (Drop to Face is `edit.drop`).
+- **Right-click** (with a selection): Align (the nine one-way lines), Distribute, Drop to Face and Center on Origin.
+- **Hotkeys:** every function is an action with a hotkey slot and no key by default: `align.{x,y,z}.{low,middle,high}`, `dist.{x,y,z}`, `edit.drop`, `edit.center`, `win.align`, `win.distribute`. The grid's two-way corners are made of two of the one-way lines (there is no action for each corner in each plane), so a key on a corner is a pair: bind the two lines you want, or use the window.
