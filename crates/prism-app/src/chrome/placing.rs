@@ -15,8 +15,8 @@ const DISTRIBUTE: &str = "Distribute";
 
 const CELL: f32 = 46.0;
 const GAP: f32 = 8.0;
-const GLYPH: Color32 = Color32::from_rgb(0xc8, 0xc8, 0xc8);
-const FRAME: Color32 = Color32::from_rgb(0x56, 0x58, 0x60);
+const GLYPH: Color32 = color::CELL_GLYPH;
+const FRAME: Color32 = color::CELL_FRAME;
 
 pub(super) fn align_card(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<PanelOp>) {
     if !p.align {
@@ -193,13 +193,13 @@ fn cell(ui: &mut Ui, glyph: Glyph, enabled: bool, tip: &str) -> bool {
     } else {
         (FRAME, GLYPH)
     };
-    let stroke = Stroke::new(1.5, frame);
+    let stroke = Stroke::new(size::CELL_FRAME_OUTER, frame);
     painter.rect_stroke(rect, 3.0, stroke, egui::StrokeKind::Inside);
     let inner = rect.shrink(4.0);
     painter.rect_stroke(
         inner,
         2.0,
-        Stroke::new(1.0, frame),
+        Stroke::new(size::CELL_FRAME_INNER, frame),
         egui::StrokeKind::Inside,
     );
     draw_glyph(&painter, inner.shrink(6.0), glyph, ink);

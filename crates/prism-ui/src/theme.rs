@@ -25,6 +25,9 @@ pub mod color {
     pub const FROST: Color32 = Color32::from_rgb(0x26, 0x28, 0x30);
     /// Focus ring, active dots, selection.
     pub const ACCENT: Color32 = Color32::from_rgb(0x02, 0xce, 0xff);
+    /// The light mark in an Align or Distribute cell, and its two frames.
+    pub const CELL_GLYPH: Color32 = Color32::from_rgb(0xc8, 0xc8, 0xc8);
+    pub const CELL_FRAME: Color32 = Color32::from_rgb(0x56, 0x58, 0x60);
     /// Box select (feel test `boxDraw(`): window blue, crossing green.
     pub const BOX_WINDOW: Color32 = Color32::from_rgb(0x1f, 0x5f, 0xe0);
     pub const BOX_CROSSING: Color32 = Color32::from_rgb(0x2e, 0xa0, 0x5a);
@@ -149,6 +152,9 @@ pub mod text {
 
 /// Sizes of controls in points (kit components).
 pub mod size {
+    /// The outer and inner frame lines of an Align or Distribute cell.
+    pub const CELL_FRAME_OUTER: f32 = 1.5;
+    pub const CELL_FRAME_INNER: f32 = 1.0;
     pub const BUTTON_HEIGHT: f32 = 44.0;
     pub const BUTTON_PAD_X: f32 = 26.0;
     pub const TOGGLE: [f32; 2] = [64.0, 34.0];
