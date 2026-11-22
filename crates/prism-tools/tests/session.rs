@@ -10263,7 +10263,9 @@ fn the_inspector_shows_a_primitives_sizes_and_changing_one_makes_it_again() {
     );
 }
 
-fn drawn_lines(lines: &[((f64, f64, f64), (f64, f64, f64))]) -> Driver {
+type Point3 = (f64, f64, f64);
+
+fn drawn_lines(lines: &[(Point3, Point3)]) -> Driver {
     let mut m = prism_topo::Model::new();
     for (a, b) in lines {
         prism_ops::add_segment(&mut m, DVec3::new(a.0, a.1, a.2), DVec3::new(b.0, b.1, b.2));
