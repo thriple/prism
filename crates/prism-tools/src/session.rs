@@ -61,6 +61,7 @@ mod solids;
 mod surfacing;
 mod texpos;
 mod texting;
+mod trimming;
 mod views;
 mod workplanes;
 use crate::units::NumberFormat;
@@ -95,6 +96,7 @@ pub use smart::BUDGET_MS as SMART_BUDGET_MS;
 pub use solids::{SolidOf, SolidRow};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
 pub use texting::{MAX_TEXT, TEXT_TOOL, TextKind, TextPanel, TextSet, TextSettings, frame_on};
+pub use trimming::{PROJECT_FIRST, PROJECT_TOOL, TRIM_TOOL};
 pub use views::{LOOK, WALK, WINDOW};
 pub use workplanes::CPLANE_TOOL;
 
@@ -112,7 +114,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 46] = [
+pub const TOOLS: [&str; 48] = [
     SELECT,
     LINE,
     RECT,
@@ -161,6 +163,8 @@ pub const TOOLS: [&str; 46] = [
     arraying::ARRAY_TOOL,
     // Shapes & Placement part 4.
     primitives::PRIM_TOOL,
+    trimming::TRIM_TOOL,
+    trimming::PROJECT_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
     workplanes::CPLANE_TOOL,

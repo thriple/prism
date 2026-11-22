@@ -10262,3 +10262,93 @@ fn the_inspector_shows_a_primitives_sizes_and_changing_one_makes_it_again() {
         "no sizes once it is scaled"
     );
 }
+
+fn drawn_lines(lines: &[((f64, f64, f64), (f64, f64, f64))]) -> Driver {
+    let mut m = prism_topo::Model::new();
+    for (a, b) in lines {
+        prism_ops::add_segment(&mut m, DVec3::new(a.0, a.1, a.2), DVec3::new(b.0, b.1, b.2));
+    }
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(3.0, -8.0, 9.0),
+        target: DVec3::new(3.0, 2.0, 0.0),
+    });
+    d
+}
+
+#[test]
+fn trim_takes_away_the_piece_clicked_and_leaves_what_bounds_a_face() {
+    use prism_tools::session::TRIM_TOOL;
+    // A long line crossed by a short one, and a square with a side on it.
+    let mut d = drawn_lines(&[
+        ((0.0, 0.0, 0.0), (4.0, 0.0, 0.0)),
+        ((2.0, -1.0, 0.0), (2.0, 1.0, 0.0)),
+        ((0.0, 4.0, 0.0), (1.0, 4.0, 0.0)),
+        ((1.0, 4.0, 0.0), (1.0, 5.0, 0.0)),
+        ((1.0, 5.0, 0.0), (0.0, 5.0, 0.0)),
+        ((0.0, 5.0, 0.0), (0.0, 4.0, 0.0)),
+    ]);
+    let edges = d.s.model().edge_count();
+    d.tool(TRIM_TOOL);
+    // A side of the square is a face's: refused, nothing changes.
+    d.click(DVec3::new(0.5, 4.0, 0.0));
+    assert_eq!(d.s.model().edge_count(), edges);
+    assert_eq!(d.s.hint(), prism_ops::trim::NOT_LOOSE);
+    // The right half of the long line: that piece goes, the crossing stays.
+    d.click(DVec3::new(3.0, 0.0, 0.0));
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(4.0, 0.0, 0.0)).is_none());
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(2.0, 0.0, 0.0)).is_some());
+    assert_eq!(d.s.model().edge_count(), edges - 1);
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.model().edge_count(), edges, "one undo step");
+}
+
+#[test]
+fn alt_click_extends_a_free_end_to_what_is_in_the_way() {
+    use prism_tools::session::TRIM_TOOL;
+    let mut d = drawn_lines(&[
+        ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)),
+        ((3.0, -1.0, 0.0), (3.0, 1.0, 0.0)),
+    ]);
+    d.tool(TRIM_TOOL);
+    press_with(&mut d, DVec3::new(0.9, 0.0, 0.0), false, false, true);
+    assert!(
+        prism_ops::vertex_at(d.s.model(), DVec3::new(3.0, 0.0, 0.0)).is_some(),
+        "it reaches the other line"
+    );
+    // The other end is free too, with nothing beyond it: said so.
+    press_with(&mut d, DVec3::new(0.05, 0.0, 0.0), false, false, true);
+    assert_eq!(d.s.hint(), prism_ops::trim::NOTHING_IN_THE_WAY);
+}
+
+#[test]
+fn project_curves_drops_the_selected_lines_onto_a_face() {
+    use prism_tools::session::PROJECT_TOOL;
+    let mut d = drawn_lines(&[
+        ((0.0, 0.0, 0.0), (2.0, 0.0, 0.0)),
+        ((2.0, 0.0, 0.0), (2.0, 2.0, 0.0)),
+        ((2.0, 2.0, 0.0), (0.0, 2.0, 0.0)),
+        ((0.0, 2.0, 0.0), (0.0, 0.0, 0.0)),
+        // Floating above it, longer than the square.
+        ((1.0, -1.0, 3.0), (1.0, 3.0, 3.0)),
+    ]);
+    let faces = d.s.model().face_count();
+    assert_eq!(faces, 1);
+    d.tool(PROJECT_TOOL);
+    // Nothing selected: it says so.
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    assert_eq!(d.s.hint(), prism_tools::session::PROJECT_FIRST);
+    d.tool(SELECT);
+    d.click(DVec3::new(1.0, 1.0, 3.0));
+    assert_eq!(
+        d.s.selection().edges.len(),
+        1,
+        "the floating line is picked"
+    );
+    d.tool(PROJECT_TOOL);
+    d.click(DVec3::new(0.5, 0.5, 0.0));
+    assert_eq!(d.s.model().face_count(), 2, "it cut the square in two");
+    assert!(prism_ops::vertex_at(d.s.model(), DVec3::new(1.0, 0.0, 0.0)).is_some());
+    act(&mut d, "edit.undo");
+    assert_eq!(d.s.model().face_count(), 1);
+}

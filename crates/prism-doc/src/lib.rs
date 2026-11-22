@@ -399,6 +399,17 @@ pub enum Command {
         primitive: prism_ops::primitives::Primitive,
         at: DVec3,
     },
+    /// A straight edge carried on from its free end to the first thing it
+    /// meets (Shapes & Placement part 5).
+    Extend {
+        edge: prism_topo::EdgeId,
+        vertex: prism_topo::VertexId,
+    },
+    /// Edges dropped straight onto a flat face.
+    Project {
+        edges: BTreeSet<prism_topo::EdgeId>,
+        face: prism_topo::FaceId,
+    },
     /// A primitive made again at other sizes, in place.
     SetPrimitive {
         instance: InstanceId,
@@ -704,6 +715,8 @@ impl Command {
             Command::Loft { .. } => "Loft",
             Command::Shell { .. } => "Shell / Thicken",
             Command::Revolve { .. } => "Revolve",
+            Command::Extend { .. } => "Extend",
+            Command::Project { .. } => "Project Curves",
             Command::Sweep { .. } => "Sweep",
             Command::Patch { .. } => "Patch",
             Command::LoftSides { .. } => "Loft",
@@ -1360,6 +1373,14 @@ impl Command {
             Command::RoundEdge { edge, .. } => {
                 t.edges.insert(*edge);
             }
+            Command::Extend { edge, vertex } => {
+                t.edges.insert(*edge);
+                t.vertices.insert(*vertex);
+            }
+            Command::Project { edges, face } => {
+                t.edges.extend(edges);
+                t.faces.insert(*face);
+            }
             Command::ConvertFaces { faces }
             | Command::ReverseFaces { faces }
             | Command::PlaceTexture { faces, .. } => {
@@ -1420,6 +1441,10 @@ impl Command {
             }
             Command::Loft { edges } => prism_ops::loft::lofted(m, edges).err(),
             Command::Revolve { edges } => prism_ops::loft::revolved(m, edges).err(),
+            Command::Extend { edge, vertex } => prism_ops::trim::extension(m, *edge, *vertex).err(),
+            Command::Project { edges, face } => {
+                prism_ops::trim::project(&mut m.clone(), edges, *face).err()
+            }
             Command::Sweep { edges } => prism_ops::sweep::swept(m, edges).err(),
             Command::Patch { edges } => prism_ops::sweep::patched(m, edges).err(),
             Command::Weld { edges } => prism_ops::curves::weld_refusal(m, edges),
@@ -1520,6 +1545,12 @@ impl Command {
             }
             Command::Revolve { edges } => {
                 let _ = prism_ops::loft::revolve(m, edges);
+            }
+            Command::Extend { edge, vertex } => {
+                let _ = prism_ops::trim::extend(m, *edge, *vertex);
+            }
+            Command::Project { edges, face } => {
+                let _ = prism_ops::trim::project(m, edges, *face);
             }
             Command::Sweep { edges } => {
                 let _ = prism_ops::sweep::sweep(m, edges);

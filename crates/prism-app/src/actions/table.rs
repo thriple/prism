@@ -2664,6 +2664,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         false,
     ),
     (
+        "Trim loose edges, Extend a free end (Alt), and Project Curves onto a face",
+        false,
+    ),
+    (
         "Game words for Beverly: typed roles on groups and components, a Surface word on materials, in the GLB",
         false,
     ),

@@ -43,6 +43,7 @@ pub mod sweep;
 pub mod text;
 pub mod thicken;
 pub mod transform;
+pub mod trim;
 pub mod validate;
 
 pub use pushpull::push_pull;

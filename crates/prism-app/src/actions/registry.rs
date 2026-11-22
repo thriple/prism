@@ -706,7 +706,8 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 36] = [
+const BUILT_BEHAVIOURS: [&str; 37] = [
+    "Trim loose edges, Extend a free end (Alt), and Project Curves onto a face",
     "Primitives: box, cylinder, cone, sphere, torus and capsule that remember their sizes",
     "Align, Distribute, Drop to Face and Center on Origin for groups and components",
     "Duplicate Again (Ctrl+D) repeats the last copy; Ctrl before the first click copies",

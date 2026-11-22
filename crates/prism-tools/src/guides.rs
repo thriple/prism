@@ -129,6 +129,22 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "Polar with 360 degrees spreads the copies round a full circle, about the middle of the selection.",
             ],
         ),
+        s::TRIM_TOOL => g(
+            "Take away a piece of a loose line or arc, or carry a line on to what is in its way.",
+            &[
+                "Click a piece of a loose line or arc (the piece between where it is crossed or joined) to trim it away.",
+                "An edge that bounds a face is the Eraser's: Trim leaves faces alone.",
+                "Hold Alt and click near a free end of a straight edge to extend it to the first edge or face in the way.",
+            ],
+        ),
+        s::PROJECT_TOOL => g(
+            "Drop lines straight onto a flat face, where they cut it.",
+            &[
+                "Select the lines (or arcs turned the same way as the face) first.",
+                "Click a flat face: they are projected straight onto it along its normal.",
+                "The new edges cut the face like drawn edges; lines square to the face have nothing to drop.",
+            ],
+        ),
         s::PRIM_TOOL => g(
             "Set down a box, cylinder, cone, sphere, torus or capsule as a group that remembers its sizes.",
             &[

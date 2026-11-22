@@ -151,6 +151,8 @@ pub(super) fn is_edit(t: &str) -> bool {
             | FOLLOW
             | PAINT
             | TEXTURE
+            | super::trimming::TRIM_TOOL
+            | super::trimming::PROJECT_TOOL
     ) || super::booleans::is_solid_tool(t)
 }
 
@@ -284,6 +286,8 @@ impl Session {
             t if super::booleans::is_solid_tool(t) => self.solid_hover(s, view),
             TEXTURE => self.texpos_hover(s, view),
             FILLET => self.round_hover(s, view),
+            super::trimming::TRIM_TOOL => self.trim_hover(s, view),
+            super::trimming::PROJECT_TOOL => self.project_hover(s, view),
             SHELL => self.shell_hover(s, view),
             LOFT => self.loft_hover(s, view),
             FOLLOW => self.follow_hover(s, view),
@@ -830,6 +834,8 @@ impl Session {
             t if super::booleans::is_solid_tool(t) => self.solid_press(s),
             TEXTURE => self.texpos_press(s),
             FILLET => self.round_press(s, n_clicks, shift, ctrl),
+            super::trimming::TRIM_TOOL => self.trim_press(s),
+            super::trimming::PROJECT_TOOL => self.project_press(),
             SHELL => self.shell_press(s, shift),
             LOFT => self.loft_press(shift),
             FOLLOW => self.follow_press(s),
@@ -1453,6 +1459,8 @@ impl Session {
                 "Drag a grip: corners scale evenly, edges two ways, faces one way · Alt toggles scaling about the centre · click something to pick it"
             }
             (FILLET, _) => self.round_hint(),
+            (super::trimming::TRIM_TOOL, _) => self.trim_hint(),
+            (super::trimming::PROJECT_TOOL, _) => self.project_hint(),
             (SHELL, _) => self.shell_hint(),
             (LOFT, _) => self.loft_hint(),
             (PAINT, _) => self.paint_hint(),
