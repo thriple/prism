@@ -418,6 +418,14 @@ pub enum Command {
         pull: DVec3,
         angle: f64,
     },
+    /// A hole made in a solid group, live (Shapes & Placement part 6):
+    /// `frame` has its origin where the hole starts and its z axis out of
+    /// the face.
+    AddHole {
+        spec: prism_ops::hole::HoleSpec,
+        frame: DAffine3,
+        body: InstanceId,
+    },
     /// A primitive made again at other sizes, in place.
     SetPrimitive {
         instance: InstanceId,
@@ -725,6 +733,11 @@ impl Command {
             Command::Revolve { .. } => "Revolve",
             Command::Extend { .. } => "Extend",
             Command::Draft { .. } => "Draft Angle",
+            Command::AddHole { spec, .. } => match spec.kind {
+                prism_ops::hole::HoleKind::Plain => "Hole",
+                prism_ops::hole::HoleKind::Counterbore { .. } => "Counterbore",
+                prism_ops::hole::HoleKind::Countersink { .. } => "Countersink",
+            },
             Command::Project { .. } => "Project Curves",
             Command::Sweep { .. } => "Sweep",
             Command::Patch { .. } => "Patch",
@@ -1065,6 +1078,15 @@ impl Command {
                 primitive: *primitive,
                 at: p(*at),
             },
+            Command::AddHole { spec, frame, body } => {
+                let (u, v) = (dir(frame.matrix3.x_axis), dir(frame.matrix3.y_axis));
+                let (u, v) = (u.normalize_or_zero(), v.normalize_or_zero());
+                Command::AddHole {
+                    spec: *spec,
+                    frame: DAffine3::from_cols(u, v, u.cross(v), p(frame.translation)),
+                    body: *body,
+                }
+            }
             Command::Draft {
                 faces,
                 origin,
@@ -1166,6 +1188,9 @@ impl Command {
             }
             Command::AddPrimitive { primitive, at } => {
                 asm.add_primitive(ctx, *primitive, DAffine3::from_translation(*at));
+            }
+            Command::AddHole { spec, frame, body } => {
+                let _ = asm.add_hole(ctx, *spec, *frame, *body);
             }
             Command::SetPrimitive {
                 instance,
@@ -1440,6 +1465,7 @@ impl Command {
                 asm.is_locked(*first) || asm.is_locked(*second)
             }
             Command::OuterShell { instances } => any(instances),
+            Command::AddHole { body, .. } => asm.is_locked(*body),
             _ => false,
         }
     }
@@ -1778,6 +1804,7 @@ impl Command {
             | Command::SetLocked { .. }
             | Command::AddText { .. }
             | Command::AddPrimitive { .. }
+            | Command::AddHole { .. }
             | Command::SetPrimitive { .. }
             | Command::AddDimension { .. }
             | Command::MoveDimension { .. }

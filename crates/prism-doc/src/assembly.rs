@@ -2174,6 +2174,34 @@ impl Assembly {
         Ok((inst, m))
     }
 
+    /// A hole in the solid group `body`: the cutter made at `frame` (its z
+    /// axis out of the face, its origin where the hole starts) and
+    /// subtracted, live. Nothing changes if the kernel refuses.
+    pub fn add_hole(
+        &mut self,
+        ctx: DefId,
+        spec: prism_ops::hole::HoleSpec,
+        frame: DAffine3,
+        body: InstanceId,
+    ) -> Result<(), &'static str> {
+        let (_, bm) = self.solid_in(ctx, body)?;
+        let through = bm
+            .bbox()
+            .map_or(1.0, |(lo, hi)| (hi - lo).length() * 1.05 + 1e-3);
+        spec.check(through)?;
+        let before = self.clone();
+        let cutter = self
+            .add_group_model(ctx, spec.cutter(through), "Hole", frame)
+            .ok_or("The hole could not be made")?;
+        match self.boolean(ctx, SolidOp::Subtract, cutter, body) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                *self = before;
+                Err(e)
+            }
+        }
+    }
+
     /// The results of `op` on `first` and `second` (groups in `ctx`), each
     /// with the instance whose axes it takes, without changing anything.
     pub fn boolean_results(

@@ -22,6 +22,7 @@ pub mod draft;
 pub mod fillet;
 pub mod follow;
 pub mod health;
+pub mod hole;
 pub mod intersect;
 pub mod loft;
 mod meet;

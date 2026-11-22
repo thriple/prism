@@ -10401,3 +10401,64 @@ fn draft_angle_leans_the_selected_wall_about_the_neutral_face() {
     assert_eq!(d.s.hint(), prism_ops::draft::ANGLE_RANGE);
     assert!((d.s.draft_angle() - 10.0_f64.to_radians()).abs() < 1e-12);
 }
+
+#[test]
+fn the_hole_tool_makes_a_live_hole_in_a_solid_group() {
+    use prism_tools::session::{HOLE_TOOL, HoleSet};
+    let mut d = Driver::empty();
+    // A 2 m box made into a group (the cube of grouped_box, the top at 2 m).
+    let g = grouped_box(&mut d);
+    let _ = g;
+    d.tool(HOLE_TOOL);
+    d.s.hole_input(HoleSet::Size("diameter", "0.5".into()));
+    d.s.hole_input(HoleSet::Through(false));
+    d.s.hole_input(HoleSet::Size("depth", "1".into()));
+    let asm = d.s.document().assembly();
+    let before = asm
+        .def(
+            asm.context_def(&[*asm.root().instances.keys().next().unwrap()])
+                .unwrap(),
+        )
+        .unwrap()
+        .model
+        .face_count();
+    // Click the middle of the top face.
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    let asm = d.s.document().assembly();
+    assert_eq!(
+        asm.root().instances.len(),
+        1,
+        "the cutter is part of the group now"
+    );
+    let id = *asm.root().instances.keys().next().unwrap();
+    let def = asm.def(asm.context_def(&[id]).unwrap()).unwrap();
+    assert!(def.model.face_count() > before, "the hole added faces");
+    assert!(
+        def.stack.as_ref().is_some_and(|s| !s.features.is_empty()),
+        "and it stays live"
+    );
+    assert!(prism_ops::validate::validate(&def.model)[0].valid);
+    act(&mut d, "edit.undo");
+    let asm = d.s.document().assembly();
+    assert_eq!(asm.root().instances.len(), 1);
+    let id = *asm.root().instances.keys().next().unwrap();
+    assert!(
+        asm.def(asm.context_def(&[id]).unwrap())
+            .unwrap()
+            .stack
+            .is_none(),
+        "one undo takes it all back"
+    );
+    // A counterbore needs a wider bore than the hole.
+    d.s.hole_input(HoleSet::Kind(1));
+    d.s.hole_input(HoleSet::Size("bore_diameter", "0.2".into()));
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    assert_eq!(d.s.hint(), prism_ops::hole::BORE_SMALLER);
+    // Nowhere (the ground, no group): it says what to click.
+    d.click(DVec3::new(6.0, 6.0, 0.0));
+    assert!(
+        d.s.hint().contains("flat face of a solid group"),
+        "{}",
+        d.s.hint()
+    );
+}

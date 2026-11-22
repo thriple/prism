@@ -706,7 +706,8 @@ pub fn planned_features(reg: &Registry) -> Vec<(&'static str, Vec<Feature>)> {
 }
 
 /// Behaviours from the prototype's list that the Rust app has now.
-const BUILT_BEHAVIOURS: [&str; 38] = [
+const BUILT_BEHAVIOURS: [&str; 39] = [
+    "Hole: plain, counterbore and countersink holes in solid groups, live",
     "Draft Angle: lean selected flat faces about a neutral face",
     "Trim loose edges, Extend a free end (Alt), and Project Curves onto a face",
     "Primitives: box, cylinder, cone, sphere, torus and capsule that remember their sizes",

@@ -44,6 +44,7 @@ mod features;
 mod follow;
 mod groups;
 mod health;
+mod holing;
 mod inspector;
 mod lofting;
 mod materials;
@@ -84,6 +85,7 @@ use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
 pub use groups::{BEVERLY_TAGS, EntityInfo, FeatureItem, OutlineRow, Owner, TagOp};
 pub use health::HealthRow;
+pub use holing::{HOLE_TOOL, HolePanel, HoleSet, HoleSettings};
 pub use inspector::{Field, FieldKind, Inspector, Section};
 pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
@@ -116,7 +118,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 49] = [
+pub const TOOLS: [&str; 50] = [
     SELECT,
     LINE,
     RECT,
@@ -168,6 +170,7 @@ pub const TOOLS: [&str; 49] = [
     trimming::TRIM_TOOL,
     trimming::PROJECT_TOOL,
     drafting::DRAFT_TOOL,
+    holing::HOLE_TOOL,
     // Annotation & Sections part 1.
     sections::SECTION_TOOL,
     workplanes::CPLANE_TOOL,
@@ -719,6 +722,8 @@ pub struct Session {
     prim_down: Option<(DVec3, DVec2)>,
     /// The Draft Angle tool: the angle (radians).
     draft_angle: f64,
+    /// The Hole tool's settings.
+    hole: holing::HoleSettings,
     prim_shown: Option<(prism_ops::primitives::Primitive, DVec3)>,
     /// Where the Construction Plane tool would put a plane: origin, normal.
     cplane_ghost: Option<(DVec3, DVec3)>,
@@ -758,6 +763,7 @@ impl Session {
             prim: prism_ops::primitives::Primitive::kinds()[0],
             prim_down: None,
             draft_angle: 3.0_f64.to_radians(),
+            hole: holing::HoleSettings::default(),
             prim_shown: None,
             cplane_ghost: None,
             dim_op: None,
@@ -2130,6 +2136,7 @@ impl Session {
             || self.tool == SECTION_TOOL
             || self.tool == MIRROR_TOOL
             || self.tool == PRIM_TOOL
+            || self.tool == HOLE_TOOL
             || self.tool == CPLANE_TOOL
             || self.tool == DIM_TOOL
             || self.tool == TEXT_TOOL

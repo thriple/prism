@@ -145,6 +145,14 @@ pub fn guide(tool: &str) -> Option<Guide> {
                 "The new edges cut the face like drawn edges; lines square to the face have nothing to drop.",
             ],
         ),
+        s::HOLE_TOOL => g(
+            "Make a plain, counterbored or countersunk hole in a solid.",
+            &[
+                "Make the solid a group first, then pick the kind and type the sizes in the window (Through goes all the way).",
+                "Click a flat face of the group: the hole goes in straight down from where you click (a snapped middle or circle centre is used).",
+                "It is a live subtract: select the group and take the hole out or bake it in the Inspector.",
+            ],
+        ),
         s::DRAFT_TOOL => g(
             "Lean flat faces by an angle, as a mould or casting needs.",
             &[

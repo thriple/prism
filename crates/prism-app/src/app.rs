@@ -481,6 +481,7 @@ impl App {
                     array: s.array_panel(),
                     prim: s.prim_panel(),
                     draft: s.draft_panel(),
+                    hole: s.hole_panel(),
                     groups: s.selected_groups().len(),
                 };
             }
@@ -517,6 +518,7 @@ impl App {
                     crate::chrome::PanelOp::Array(op) => s.array_input(op),
                     crate::chrome::PanelOp::Prim(op) => s.prim_input(op),
                     crate::chrome::PanelOp::Draft(op) => s.draft_input(op),
+                    crate::chrome::PanelOp::Hole(op) => s.hole_input(op),
                     crate::chrome::PanelOp::Align { plane, col, row } => {
                         s.align_cell(plane, col, row)
                     }

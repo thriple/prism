@@ -2672,6 +2672,10 @@ pub const BEHAVIOURS: &[(&str, bool)] = &[
         false,
     ),
     (
+        "Hole: plain, counterbore and countersink holes in solid groups, live",
+        false,
+    ),
+    (
         "Game words for Beverly: typed roles on groups and components, a Surface word on materials, in the GLB",
         false,
     ),

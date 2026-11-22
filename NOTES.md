@@ -5047,3 +5047,8 @@ The owner found that rounding edges one click at a time blocks rounds that share
 
 - **Built:** `prism_ops::draft`, `Command::Draft`, the Draft Angle tool and window. Tests: a box's walls leaned make an exact frustum (volume checked), a negative angle, one wall alone, the refusals, the tool with the angle field and undo.
 - **Left over:** see brief 51 part 6a; not looked at on screen. Hole (6b) is next.
+
+## Shapes & Placement part 6b: Hole (2026-11-22, brief 51)
+
+- **Built:** `prism_ops::hole` (`HoleSpec`, `lathe`), `Assembly::add_hole`, `Command::AddHole`, the Hole tool and window. Tests: the three cutters valid with the right volumes and the refusals (`prism-ops/tests/hole.rs`), a live hole in a box group with undo, the counterbore refusal and the no-face message (`prism-tools`).
+- **Left over:** see brief 51 part 6b; not looked at on screen; no later size editing.

@@ -7,6 +7,7 @@ mod components;
 mod drafting;
 mod fillet;
 mod hints;
+mod holing;
 mod inspector;
 mod loft;
 mod materials;
@@ -306,6 +307,12 @@ impl Chrome {
             || self.array_shown()
             || self.prim_shown()
             || self.draft_shown()
+            || self.hole_shown()
+    }
+
+    /// Whether the Hole window shows: open, and only with its tool.
+    pub(crate) fn hole_shown(&self) -> bool {
+        self.panels.hole && self.active_tool == prism_tools::session::HOLE_TOOL
     }
 
     /// Whether the Draft Angle window shows: open, and only with its tool.
@@ -470,6 +477,11 @@ impl Chrome {
                     self.panels.array = true;
                     self.panels.folded.remove("Array");
                 }
+                // So does the Hole tool (Shapes & Placement part 6).
+                if id == prism_tools::session::HOLE_TOOL {
+                    self.panels.hole = true;
+                    self.panels.folded.remove("Hole");
+                }
                 // So does Draft Angle (Shapes & Placement part 6).
                 if id == prism_tools::session::DRAFT_TOOL {
                     self.panels.draft = true;
@@ -593,6 +605,7 @@ impl Chrome {
             || self.array_shown()
             || self.prim_shown()
             || self.draft_shown()
+            || self.hole_shown()
     }
 
     /// Close the topmost open thing (Esc rule, step 2).

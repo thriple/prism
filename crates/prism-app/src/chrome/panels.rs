@@ -55,6 +55,8 @@ pub enum PanelOp {
     /// The Text window: a change to its settings.
     Text(prism_tools::session::TextSet),
     Array(prism_tools::session::ArraySet),
+    /// The Hole window: a kind, the through switch, or a size as typed.
+    Hole(prism_tools::session::HoleSet),
     /// The Draft Angle window: the angle as typed.
     Draft(prism_tools::session::DraftSet),
     /// The Primitives window: a kind, or a size as typed.
@@ -101,6 +103,8 @@ pub struct PanelData {
     pub text: Option<prism_tools::session::TextPanel>,
     /// The Array window (while its tool is active).
     pub array: Option<prism_tools::session::ArrayPanel>,
+    /// The Hole window (while its tool is active).
+    pub hole: Option<prism_tools::session::HolePanel>,
     /// The Draft Angle window (while its tool is active).
     pub draft: Option<prism_tools::session::DraftPanel>,
     /// The Primitives window (while its tool is active).
@@ -170,6 +174,8 @@ pub struct Panels {
     pub array_angle: Option<String>,
     /// The Primitives window (shown only with its tool), and the size
     /// being typed (its key and text).
+    pub hole: bool,
+    pub hole_typing: Option<(&'static str, String)>,
     pub draft: bool,
     pub draft_typing: Option<String>,
     pub prim: bool,
@@ -244,6 +250,9 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                     }
                     if chrome.active_tool == prism_tools::session::ARRAY_TOOL {
                         super::arraying::card(ui, &mut p, &data, &mut ops);
+                    }
+                    if chrome.active_tool == prism_tools::session::HOLE_TOOL {
+                        super::holing::card(ui, &mut p, &data, &mut ops);
                     }
                     if chrome.active_tool == prism_tools::session::DRAFT_TOOL {
                         super::drafting::card(ui, &mut p, &data, &mut ops);
