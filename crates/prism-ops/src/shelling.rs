@@ -1094,6 +1094,11 @@ fn freeform_slab(
     let mut base: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     let mut up: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     let mut moved: BTreeMap<VertexId, DVec3> = BTreeMap::new();
+    let on_rim: BTreeSet<VertexId> = rims.iter().flat_map(|r| [r.1, r.2]).collect();
+    // Corners away from any rim where the faces' moved copies miss one
+    // point (four or more faces): placed below, once each crease is known
+    // to be inside or outside, by the faces between outside creases.
+    let mut torn: BTreeSet<VertexId> = BTreeSet::new();
     for (v, fs) in &at_vertex {
         let p = model.vertex(*v);
         base.insert(*v, s.add_vertex(p));
@@ -1136,20 +1141,14 @@ fn freeform_slab(
                     refine_flush_corner(&offsets, fs, planes, x0, &tol)
                 }
             }
-            None => {
-                let q = move_point(model, fs, p, d, &tol)?;
-                // Polished onto the faces' true offsets where it is already
-                // close (the flat corner is off a curved offset by a hair):
-                // the edges that end here are fitted to a hundredth of the
-                // tolerance and must meet it. A corner a face's offset does
-                // not reach is left as it is (it splits, below).
-                let polished = refine_flush_corner(&offsets, fs, &[], q, &tol);
-                if polished.distance(q) < tol.dist * 10.0 {
-                    polished
-                } else {
-                    q
+            None => match move_point(model, fs, p, d, &tol) {
+                Ok(q) => polish_corner(&offsets, fs, q, &tol),
+                Err(CORNER) if !on_rim.contains(v) => {
+                    torn.insert(*v);
+                    continue;
                 }
-            }
+                Err(e) => return Err(e),
+            },
         };
         moved.insert(*v, q);
         up.insert(*v, s.add_vertex(q));
@@ -1204,13 +1203,17 @@ fn freeform_slab(
     // towards tangent there, as `unique_normals` already allows along
     // its length). The ordinary two-face corner splits both, both
     // always missing the one point there is only room to share between
-    // them; three or more faces with more than one missing it (untried:
-    // which of them the gap is between is no longer obvious) is refused
-    // by the same name as a true multi-face corner, rather than built
-    // wrong.
+    // them. More than one missing it among three or more faces is parted
+    // into runs (below); on a rim that is still refused by the same name
+    // as a true multi-face corner (the rim walls' risers there would have
+    // to close the gap as well, which is not built yet).
     let mut split: BTreeMap<(VertexId, FaceId), VertexId> = BTreeMap::new();
     let mut split_pt: BTreeMap<(VertexId, FaceId), DVec3> = BTreeMap::new();
-    let mut checked: BTreeSet<VertexId> = BTreeSet::new();
+    let mut checked: BTreeSet<VertexId> = torn.clone();
+    // Corners parted into runs, with the faces there that miss the shared
+    // corner (at a torn one, every face: there is none).
+    let mut parted: Vec<(VertexId, Vec<FaceId>)> =
+        torn.iter().map(|v| (*v, at_vertex[v].clone())).collect();
     for (e, _fa, _fb) in &creases {
         if !outside[e] {
             continue;
@@ -1230,11 +1233,16 @@ fn freeform_slab(
             // even though this crease alone looked outside along the
             // way. One does: it splits on its own. Both of an ordinary
             // two-face corner do: the usual case, both split. More than
-            // one among three or more faces is refused, as above.
+            // one among three or more faces: parted away from a rim, and
+            // refused on one, as above.
             match bad.len() {
                 0 => continue,
                 1 => {}
                 n if n == at_vertex[&v].len() && n == 2 => {}
+                _ if !on_rim.contains(&v) => {
+                    parted.push((v, bad));
+                    continue;
+                }
                 _ => return Err(CORNER),
             }
             for f in bad {
@@ -1242,6 +1250,73 @@ fn freeform_slab(
                 split_pt.insert((v, f), q);
                 split.insert((v, f), s.add_vertex(q));
             }
+        }
+    }
+    // A corner away from any rim with more than one face missing the
+    // shared corner, or with no shared corner at all (torn): the faces
+    // round it between two outside creases (a run) share one point, the
+    // corner of just those faces; a run with any face that misses the
+    // shared corner moves to its own one, as one split. This is how the
+    // 2D Offset tool lets its lines cross rather than refuse: the gap
+    // left between the runs is closed by a flat face (below), however odd
+    // its shape, for the user to tidy. Refused only where there is no
+    // outside crease to part the faces at, or a run has no corner itself.
+    for (v, bad) in &parted {
+        let p = model.vertex(*v);
+        let round = ring(model, *v, &at_vertex[v]).ok_or(CORNER)?;
+        let cut = |i: usize| outside.get(&round[i].1) == Some(&true);
+        let Some(first) = (0..round.len()).find(|i| cut(*i)) else {
+            return Err(CORNER);
+        };
+        let mut runs: Vec<Vec<FaceId>> = vec![vec![]];
+        for k in 1..=round.len() {
+            let i = (first + k) % round.len();
+            runs.last_mut().ok_or(CORNER)?.push(round[i].0);
+            if cut(i) && k < round.len() {
+                runs.push(vec![]);
+            }
+        }
+        // The points made here so far (None: the shared corner): a run
+        // landing on one of them (faces fading to tangent at the corner)
+        // shares it rather than leave two points in the same place.
+        let mut made: Vec<(DVec3, Option<VertexId>)> =
+            moved.get(v).map(|q| (*q, None)).into_iter().collect();
+        for run in runs.iter().filter(|r| r.iter().any(|f| bad.contains(f))) {
+            let q = polish_corner(&offsets, run, move_point(model, run, p, d, &tol)?, &tol);
+            let (q, id) = match made.iter().find(|(x, _)| tol.same_point(*x, q)) {
+                Some((_, None)) => continue,
+                Some((x, Some(id))) => (*x, *id),
+                None => {
+                    let id = s.add_vertex(q);
+                    // A torn corner's first run stands for the shared corner.
+                    if !moved.contains_key(v) {
+                        moved.insert(*v, q);
+                        up.insert(*v, id);
+                        made.push((q, None));
+                        continue;
+                    }
+                    made.push((q, Some(id)));
+                    (q, id)
+                }
+            };
+            for f in run {
+                split_pt.insert((*v, *f), q);
+                split.insert((*v, *f), id);
+            }
+        }
+    }
+    // Where some faces split away from a shared corner, it is polished
+    // onto the true offsets of just the faces that keep it (it could not
+    // be onto all of them, so it was left as the flat corner).
+    for (v, q) in moved.iter_mut() {
+        let keep: Vec<FaceId> = at_vertex[v]
+            .iter()
+            .copied()
+            .filter(|f| !split.contains_key(&(*v, *f)))
+            .collect();
+        if keep.len() < at_vertex[v].len() && !keep.is_empty() && !flush_at.contains_key(v) {
+            *q = polish_corner(&offsets, &keep, *q, &tol);
+            s.set_vertex(up[v], *q);
         }
     }
     let vertex_for = |v: VertexId, f: FaceId| split.get(&(v, f)).copied().unwrap_or(up[&v]);
@@ -1391,6 +1466,7 @@ fn freeform_slab(
             crease_top.insert((*e, *fa), ta);
             crease_top.insert((*e, *fb), tb);
             bridges.push(Bridge {
+                crease: *e,
                 fa: *fa,
                 fb: *fb,
                 ea: edge_data.a,
@@ -1413,10 +1489,17 @@ fn freeform_slab(
             let guess = corner(&ns, d, &tol).map_or(p, |x| p + x);
             meet_to(off_a, off_b, guess, &tol, eps * 1e-3)
         };
-        let (corr_a, corr_b) = (
-            moved[&edge_data.a] - raw_meet(pa),
-            moved[&edge_data.b] - raw_meet(pb),
-        );
+        // The mitre ends where both its faces are: the shared corner, or
+        // their run's own at a torn corner (both split there together).
+        let end = |v: VertexId| {
+            if split.contains_key(&(v, *fa)) && vertex_for(v, *fa) == vertex_for(v, *fb) {
+                (vertex_for(v, *fa), point_for(v, *fa))
+            } else {
+                (up[&v], moved[&v])
+            }
+        };
+        let (end_a, end_b) = (end(edge_data.a), end(edge_data.b));
+        let (corr_a, corr_b) = (end_a.1 - raw_meet(pa), end_b.1 - raw_meet(pb));
         let meet_at = |t: f64| -> DVec3 {
             let p = along(t);
             let bt = ((p - pa).dot(pb - pa) / span).clamp(0.0, 1.0);
@@ -1442,8 +1525,8 @@ fn freeform_slab(
         )?;
         let t = edge(
             &mut s,
-            up[&edge_data.a],
-            up[&edge_data.b],
+            end_a.0,
+            end_b.0,
             Curve::Spline(Spline::whole(curve)),
             None,
         )?;
@@ -1555,7 +1638,7 @@ fn freeform_slab(
     // directly (part 2c: pinched to a triangle at an end nothing
     // splits, the loop is shorter, but still the one true winding to
     // match, found the same way regardless).
-    let mut asym_cap: BTreeMap<VertexId, EdgeId> = BTreeMap::new();
+    let mut asym_cap: BTreeMap<(VertexId, VertexId), EdgeId> = BTreeMap::new();
     for br in bridges {
         // Each end's own cap faces past that end, along the crease: the
         // same direction its two rim walls' own end caps already face
@@ -1594,8 +1677,29 @@ fn freeform_slab(
             loop_e.push(cap);
             loop_v.push(v);
         }
+        // Walked against the moved copy of `fa` beside it (which goes
+        // along `ta` the way `fa` goes along the crease, turned round
+        // with it where the copy is), so each edge the bridge shares is
+        // walked once each way.
+        let fa_ahead = model
+            .face(br.fa)
+            .ok_or(NOTHING)?
+            .sides()
+            .any(|x| x.edge == br.crease && x.from == br.ea);
+        if fa_ahead == (d > 0.0) {
+            loop_v[1..].reverse();
+            loop_e.reverse();
+        }
         let raw = Patch::whole(crate::thicken::ruled(&br.high_a, &br.high_b).ok_or(TOO_THICK)?);
-        let flipped = raw.normal(0.5, 0.5).dot(loop_normal(&s, &loop_v)) < 0.0;
+        // Wound by the points along its edges, not just its corners: a
+        // bridge pinched at both ends has only two.
+        let drawn = Face::with_edges(
+            loop_v.clone(),
+            vec![],
+            Surface::Nurbs(raw.clone()),
+            vec![loop_e.clone()],
+        );
+        let flipped = raw.normal(0.5, 0.5).dot(newell(&s.loop_points(&drawn, 0))) < 0.0;
         let bridge = Patch { flipped, ..raw };
         s.add_face(Face::with_edges(
             loop_v,
@@ -1603,6 +1707,26 @@ fn freeform_slab(
             crate::thicken::flat(&bridge, eps).unwrap_or(Surface::Nurbs(bridge)),
             vec![loop_e],
         ));
+    }
+    // A split corner away from any rim whose faces' points, in order
+    // round it, are three or more apart: the bridges' ends there leave a
+    // gap, closed by a flat face facing the way the faces move (the high
+    // side of the slab). Two points need nothing more: the one edge
+    // between them is already both bridges' end.
+    let cornered: BTreeSet<VertexId> = split.keys().map(|k| k.0).collect();
+    for v in cornered.iter().filter(|v| !on_rim.contains(v)) {
+        let round = ring(model, *v, &at_vertex[v]).ok_or(CORNER)?;
+        let gap =
+            gap_loop(round.iter().map(|(f, _)| vertex_for(*v, *f)).collect()).ok_or(CORNER)?;
+        if gap.len() < 3 {
+            continue;
+        }
+        let p = model.vertex(*v);
+        let mut out = DVec3::ZERO;
+        for f in &at_vertex[v] {
+            out += model.face(*f).ok_or(NOTHING)?.surface.normal_at(p);
+        }
+        close_gap(&mut s, gap, out * d.signum(), &asym_cap, &tol)?;
     }
     if !crate::boolean::is_solid(&s) {
         return Err(TOO_THICK);
@@ -1613,6 +1737,7 @@ fn freeform_slab(
 /// An outside corner's own bridge (part 2b), kept until the rims below
 /// have given it the risers its ends close against.
 struct Bridge {
+    crease: EdgeId,
     fa: FaceId,
     fb: FaceId,
     ea: VertexId,
@@ -1668,10 +1793,10 @@ fn corner_triangle(
 /// there already (its own where it split, the one shared riser of
 /// whichever did not) to close `corner_triangle` against; with no rim
 /// at all there (an interior corner, part 2c), a plain edge between
-/// the two points does it instead, built once per vertex and reused by
-/// every bridge meeting there (always the same pair, since at most one
-/// face there ever splits away from the rest). Returns the new edge,
-/// and the vertex at its far end, for the bridge's own loop.
+/// the two points does it instead, built once per pair of points and
+/// reused by every bridge (and the flat face closing a gap of three or
+/// more points) that meets it. Returns the new edge, and the vertex at
+/// its far end, for the bridge's own loop.
 #[allow(clippy::too_many_arguments)]
 fn close_bridge_end(
     s: &mut Model,
@@ -1683,7 +1808,7 @@ fn close_bridge_end(
     up: &BTreeMap<VertexId, VertexId>,
     rise: &BTreeMap<(VertexId, Option<FaceId>), EdgeId>,
     split: &BTreeMap<(VertexId, FaceId), VertexId>,
-    asym_cap: &mut BTreeMap<VertexId, EdgeId>,
+    asym_cap: &mut BTreeMap<(VertexId, VertexId), EdgeId>,
 ) -> Result<Option<(EdgeId, VertexId)>, &'static str> {
     let key = |f: FaceId| (v, split.contains_key(&(v, f)).then_some(f));
     let pa_v = split.get(&(v, fa)).copied().unwrap_or(up[&v]);
@@ -1697,11 +1822,12 @@ fn close_bridge_end(
             pb_v,
         ))),
         (None, None) => {
-            let cap = match asym_cap.get(&v) {
+            let key = (pa_v.min(pb_v), pa_v.max(pb_v));
+            let cap = match asym_cap.get(&key) {
                 Some(e) => *e,
                 None => {
                     let e = edge(s, pa_v, pb_v, Curve::Line, None)?;
-                    asym_cap.insert(v, e);
+                    asym_cap.insert(key, e);
                     e
                 }
             };
@@ -1709,6 +1835,85 @@ fn close_bridge_end(
         }
         _ => Err(TOO_THICK),
     }
+}
+
+/// The gap a split corner leaves, from each face's own corner vertex in
+/// order round it: faces next to each other that share a point leave no
+/// gap between them, and a point a bridge goes out to and straight back
+/// from (x, y, x) is one edge both bridges' ends share, so it leaves none
+/// either. What is left is the loop the gap's own face closes (fewer than
+/// three points: none needed). None where that loop passes a point twice
+/// (two gaps touching at a point, which one flat face cannot close).
+fn gap_loop(mut seq: Vec<VertexId>) -> Option<Vec<VertexId>> {
+    loop {
+        let n = seq.len();
+        if let Some(i) = (0..n).find(|i| n > 1 && seq[*i] == seq[(i + 1) % n]) {
+            seq.remove(i);
+            continue;
+        }
+        if n < 3 {
+            return Some(seq);
+        }
+        match (0..n).find(|i| seq[(i + n - 1) % n] == seq[(i + 1) % n]) {
+            Some(i) => {
+                seq.remove(i);
+            }
+            None => break,
+        }
+    }
+    let each: BTreeSet<VertexId> = seq.iter().copied().collect();
+    (each.len() == seq.len()).then_some(seq)
+}
+
+/// The flat face closing the gap `gap` (a loop of three or more points,
+/// each next pair already joined by a bridge's end in `asym_cap`), facing
+/// `out`: one face where the points lie on one plane, a fan of triangles
+/// from the first point where they do not (the gap need not be tidy:
+/// as with an over-long 2D offset, tidying it is the user's to do).
+fn close_gap(
+    s: &mut Model,
+    mut gap: Vec<VertexId>,
+    out: DVec3,
+    asym_cap: &BTreeMap<(VertexId, VertexId), EdgeId>,
+    tol: &Tol,
+) -> Result<(), &'static str> {
+    if loop_normal(s, &gap).dot(out) < 0.0 {
+        gap.reverse();
+    }
+    let n = gap.len();
+    let mut sides: Vec<EdgeId> = Vec::with_capacity(n);
+    for i in 0..n {
+        let (a, b) = (gap[i], gap[(i + 1) % n]);
+        sides.push(*asym_cap.get(&(a.min(b), a.max(b))).ok_or(CORNER)?);
+    }
+    let face = |s: &mut Model, l: Vec<VertexId>, es: Vec<EdgeId>| {
+        let pts: Vec<DVec3> = l.iter().map(|x| s.vertex(*x)).collect();
+        let normal = newell(&pts).normalize_or_zero();
+        s.add_face(Face::with_edges(
+            l,
+            vec![],
+            Surface::Plane(Plane::new(pts[0], normal)),
+            vec![es],
+        ));
+    };
+    if n == 3 || flat_plane(s, &gap, tol).is_some() {
+        face(s, gap, sides);
+        return Ok(());
+    }
+    // From the first point to each it does not already reach.
+    let mut spoke = vec![sides[0]];
+    for x in &gap[2..n - 1] {
+        spoke.push(edge(s, gap[0], *x, Curve::Line, None)?);
+    }
+    spoke.push(sides[n - 1]);
+    for i in 1..n - 1 {
+        face(
+            s,
+            vec![gap[0], gap[i], gap[i + 1]],
+            vec![spoke[i - 1], sides[i], spoke[i]],
+        );
+    }
+    Ok(())
 }
 
 /// The point of `s` nearest `x`, and its normal there: for a freeform
@@ -2281,6 +2486,49 @@ fn refine_flush_corner(
         x -= step;
     }
     x
+}
+
+/// A corner `q` of the faces `fs` polished onto their true offsets where
+/// it is already close (the flat corner is off a curved offset by a
+/// hair), or wherever the polished point is truly on every one of them
+/// (a cylinder's offset curves away from the flat corner by more than a
+/// hair): the edges that end there are fitted to a hundredth of the
+/// tolerance and must meet it. A corner a face's offset does not reach is
+/// left as it is (it splits, in `freeform_slab`).
+fn polish_corner(offsets: &BTreeMap<FaceId, Surface>, fs: &[FaceId], q: DVec3, tol: &Tol) -> DVec3 {
+    let polished = refine_flush_corner(offsets, fs, &[], q, tol);
+    let on_all = fs.iter().all(|f| {
+        truly_on(&offsets[f], polished, tol)
+            && offset_distance(&offsets[f], polished).abs() <= tol.dist * 1e-3
+    });
+    if polished.distance(q) < tol.dist * 10.0 || on_all {
+        polished
+    } else {
+        q
+    }
+}
+
+/// The faces round `v` in order, each with the edge it leaves `v` by
+/// (which the next face comes in by): None unless every face in `fs`
+/// passes `v` exactly once and they close one ring.
+fn ring(model: &Model, v: VertexId, fs: &[FaceId]) -> Option<Vec<(FaceId, EdgeId)>> {
+    let mut by_in: BTreeMap<EdgeId, (FaceId, EdgeId)> = BTreeMap::new();
+    for f in fs {
+        let sides: Vec<_> = model.face(*f)?.sides().collect();
+        let ins: Vec<_> = sides.iter().filter(|s| s.to == v).collect();
+        let outs: Vec<_> = sides.iter().filter(|s| s.from == v).collect();
+        let ([e_in], [e_out]) = (ins.as_slice(), outs.as_slice()) else {
+            return None;
+        };
+        by_in.insert(e_in.edge, (*f, e_out.edge));
+    }
+    let start = *by_in.values().next()?;
+    let mut out = vec![start];
+    while out.len() < fs.len() {
+        out.push(*by_in.get(&out[out.len() - 1].1)?);
+    }
+    let each: BTreeSet<FaceId> = out.iter().map(|x| x.0).collect();
+    (each.len() == fs.len() && by_in.get(&out[out.len() - 1].1) == Some(&start)).then_some(out)
 }
 
 /// The shortest move `x` with `n·x = c` for every `(n, c)`: exact where up

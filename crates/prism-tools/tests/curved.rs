@@ -104,19 +104,42 @@ fn patch_closes_the_lofts_end_in_the_recorded_session() {
 /// a body with a curved wall of six lofted panels was refused as "too
 /// thick", at every thickness, both ways. One panel's trim ran a few ULPs
 /// past its knots, so its edge read the next panel's normal and its offset
-/// could not be fitted. Each click now gets the body's true reason: a
-/// corner where four faces meet, which Shell does not do yet.
+/// could not be fitted. Then each click got the body's true reason: a
+/// corner where four faces meet (`CORNER`). That refusal is gone (NOTES.md,
+/// "Shell/Thicken research, and a correction: refusal is the wrong answer
+/// to a crossing"): the corner's gap is closed by a flat face instead, so
+/// the first click (0.25 m by the pointer) now makes the shell. The
+/// owner's later clicks were retries after that refusal, so they now land
+/// on the shelled wall itself, which the window refuses as "too thick"
+/// (shelling a shell again; not the corner).
 #[test]
-fn shell_names_the_true_reason_at_each_click_of_the_recorded_session() {
+fn shell_is_made_at_the_first_click_of_the_recorded_session() {
     let r: prism_tools::Recording =
         serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+    let upto = |n: usize| {
+        let mut r = r.clone();
+        r.events.truncate(n);
+        prism_tools::Session::replay(&r)
+    };
+    // Just before the first press, the ghost of the shell builds.
+    let before = upto(367);
+    assert_eq!(before.shell_panel().expect("the Shell tool").refused, None);
     // Each press of the owner's clicks on the body: 0.25 m by the pointer,
     // then the window's 1 m outside, 1 m inside and 0.025 m inside.
     for press in [367, 590, 669, 1050, 1136] {
-        let mut upto = r.clone();
-        upto.events.truncate(press + 1);
-        let s = prism_tools::Session::replay(&upto);
+        let s = upto(press + 1);
         let panel = s.shell_panel().expect("the Shell tool");
-        assert_eq!(panel.refused, Some(prism_ops::shelling::CORNER), "{press}");
+        // The first press made the shell, and nothing after it did.
+        assert_eq!(s.version(), before.version() + 1, "{press}");
+        assert_eq!(
+            prism_ops::check::problems(s.work_model()),
+            Vec::<String>::new(),
+            "{press}"
+        );
+        assert_eq!(
+            panel.refused,
+            Some(prism_ops::shelling::TOO_THICK),
+            "{press}"
+        );
     }
 }
