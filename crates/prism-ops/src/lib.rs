@@ -42,6 +42,7 @@ pub mod sides;
 pub mod solid;
 pub mod sticky;
 pub mod sweep;
+pub mod taper;
 pub mod text;
 pub mod thicken;
 pub mod transform;

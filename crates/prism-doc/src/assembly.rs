@@ -117,6 +117,8 @@ pub enum SolidOp {
     Split,
 }
 
+/// Said when there is no group there to taper.
+pub const NO_GROUP: &str = "Select a group to taper";
 /// Said when a boolean has fewer than two groups.
 pub const TWO_SOLIDS: &str = "Pick two different solid groups or components.";
 /// Said for a group with groups inside.
@@ -1723,6 +1725,33 @@ impl Assembly {
         d.model = p.build();
         d.primitive = Some(p);
         true
+    }
+
+    /// Shrink or grow a whole group toward its own upright axis (Shapes &
+    /// Placement part 7a): `top_scale` at its top, 1.0 at its bottom. Live
+    /// features are baked first, so nothing is lost or put out of step;
+    /// nothing is baked or changed unless this would succeed.
+    pub fn taper(
+        &mut self,
+        ctx: DefId,
+        instance: InstanceId,
+        top_scale: f64,
+    ) -> Result<(), &'static str> {
+        let def_id = self
+            .def(ctx)
+            .and_then(|d| d.instances.get(&instance))
+            .map(|i| i.def)
+            .ok_or(NO_GROUP)?;
+        let model = self.def(def_id).ok_or(NO_GROUP)?.model.clone();
+        let (lo, hi) = model.bbox().ok_or(NO_GROUP)?;
+        let origin = DVec3::new((lo.x + hi.x) * 0.5, (lo.y + hi.y) * 0.5, lo.z);
+        if let Some(e) = prism_ops::taper::refusal(&model, origin, DVec3::Z, lo.z, hi.z, top_scale)
+        {
+            return Err(e);
+        }
+        let def = self.def_mut(def_id).ok_or(NO_GROUP)?;
+        let _ = prism_ops::taper::taper(&mut def.model, origin, DVec3::Z, lo.z, hi.z, top_scale);
+        Ok(())
     }
 
     /// Explode: the group's geometry, placed, joins `ctx`'s model, where

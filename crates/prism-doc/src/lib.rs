@@ -431,6 +431,14 @@ pub enum Command {
         instance: InstanceId,
         primitive: prism_ops::primitives::Primitive,
     },
+    /// A whole group shrunk or grown toward its own upright axis
+    /// (Shapes & Placement part 7a): `top_scale` at its top, 1.0 at its
+    /// bottom, linear in between. Live features are baked first; nothing
+    /// changes unless every face of the group allows it exactly.
+    Taper {
+        instance: InstanceId,
+        top_scale: f64,
+    },
     /// A new linear dimension (Annotation & Sections part 2), in world
     /// coordinates.
     AddDimension {
@@ -733,6 +741,7 @@ impl Command {
             Command::Revolve { .. } => "Revolve",
             Command::Extend { .. } => "Extend",
             Command::Draft { .. } => "Draft Angle",
+            Command::Taper { .. } => "Taper",
             Command::AddHole { spec, .. } => match spec.kind {
                 prism_ops::hole::HoleKind::Plain => "Hole",
                 prism_ops::hole::HoleKind::Counterbore { .. } => "Counterbore",
@@ -1192,6 +1201,12 @@ impl Command {
             Command::AddHole { spec, frame, body } => {
                 let _ = asm.add_hole(ctx, *spec, *frame, *body);
             }
+            Command::Taper {
+                instance,
+                top_scale,
+            } => {
+                let _ = asm.taper(ctx, *instance, *top_scale);
+            }
             Command::SetPrimitive {
                 instance,
                 primitive,
@@ -1466,6 +1481,7 @@ impl Command {
             }
             Command::OuterShell { instances } => any(instances),
             Command::AddHole { body, .. } => asm.is_locked(*body),
+            Command::Taper { instance, .. } => asm.is_locked(*instance),
             _ => false,
         }
     }
@@ -1806,6 +1822,7 @@ impl Command {
             | Command::AddPrimitive { .. }
             | Command::AddHole { .. }
             | Command::SetPrimitive { .. }
+            | Command::Taper { .. }
             | Command::AddDimension { .. }
             | Command::MoveDimension { .. }
             | Command::DeleteDimension { .. }
