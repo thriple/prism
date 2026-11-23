@@ -99,3 +99,24 @@ fn patch_closes_the_lofts_end_in_the_recorded_session() {
         }
     }
 }
+
+/// The owner's session 17 (2026-11-23): every click of Shell / Thicken on
+/// a body with a curved wall of six lofted panels was refused as "too
+/// thick", at every thickness, both ways. One panel's trim ran a few ULPs
+/// past its knots, so its edge read the next panel's normal and its offset
+/// could not be fitted. Each click now gets the body's true reason: a
+/// corner where four faces meet, which Shell does not do yet.
+#[test]
+fn shell_names_the_true_reason_at_each_click_of_the_recorded_session() {
+    let r: prism_tools::Recording =
+        serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+    // Each press of the owner's clicks on the body: 0.25 m by the pointer,
+    // then the window's 1 m outside, 1 m inside and 0.025 m inside.
+    for press in [367, 590, 669, 1050, 1136] {
+        let mut upto = r.clone();
+        upto.events.truncate(press + 1);
+        let s = prism_tools::Session::replay(&upto);
+        let panel = s.shell_panel().expect("the Shell tool");
+        assert_eq!(panel.refused, Some(prism_ops::shelling::CORNER), "{press}");
+    }
+}

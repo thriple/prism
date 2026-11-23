@@ -642,29 +642,40 @@ impl Patch {
         self.surface.eval(u, v)
     }
 
-    /// Which way the face points at (`u`, `v`): a hair inside the
-    /// patch's own edge, not exactly on it. Where that edge lands on a
-    /// knot the surface repeats (to join another face at an angle, not
-    /// smoothly, as two trimmed from the same surface can), landing on
-    /// the knot exactly reads whichever side a knot's own convention
-    /// favours, not necessarily this patch's own.
+    /// Which way the face points at (`u`, `v`): read at least a hair
+    /// inside the patch's own edge ([`Patch::inner`]), not on it or past
+    /// it. Where that edge lands on (or a few ULPs off) a knot the surface
+    /// repeats (to join another face at an angle, not smoothly, as two
+    /// trimmed from the same surface can), reading on the knot reads
+    /// whichever side a knot's own convention favours, not necessarily
+    /// this patch's own.
     pub fn normal(&self, u: f64, v: f64) -> DVec3 {
-        // A repeated knot's span is right-continuous (favours the patch
-        // that starts there), so only the numerically higher of a trim's
-        // two ends can land on the wrong side; which of `from`/`to` that
-        // is depends on the trim's own direction (part of a `flipped`
-        // patch's trim can run from a larger value to a smaller one).
-        let inward = |t: f64, (from, to): (f64, f64)| {
-            let (plo, phi) = (from.min(to), from.max(to));
-            if phi > plo && t >= phi {
-                phi - (phi - plo) * 1e-9
-            } else {
-                t
-            }
+        let inward = |t: f64, k: usize| match self.inner(k) {
+            Some((lo, hi)) => t.clamp(lo, hi),
+            None => t,
         };
-        let (iu, iv) = (inward(u, self.u), inward(v, self.v));
-        let n = self.surface.normal(iu, iv);
+        let n = self.surface.normal(inward(u, 0), inward(v, 1));
         if self.flipped { -n } else { n }
+    }
+
+    /// The patch's range along `k` (0 for u, 1 for v), lower end first,
+    /// a hair (a billionth of it) inside both ends: where a point on its
+    /// edge is read, so as to be on the patch's own side of a knot there.
+    /// Both ends, and points just inside them too, not only past them. A
+    /// repeated knot's span is right-continuous (favours the patch that
+    /// starts there), so a trim on its knot exactly is only wrong at its
+    /// higher end; but a trim found by projecting a point (as a loft cuts
+    /// its faces) can sit a few ULPs to either side of its knot, and then
+    /// a point on or just inside either end (an edge's own points,
+    /// projected) can be on the far side of it, in the neighbour's span.
+    /// Which of `from`/`to` is lower depends on the trim's direction (a
+    /// `flipped` patch's trim can run from a larger value to a smaller
+    /// one). None for a range of no width.
+    pub fn inner(&self, k: usize) -> Option<(f64, f64)> {
+        let (from, to) = self.range()[k];
+        let (lo, hi) = (from.min(to), from.max(to));
+        let hair = (hi - lo) * 1e-9;
+        (hi > lo).then_some((lo + hair, hi - hair))
     }
 
     pub fn normal_at(&self, p: DVec3) -> DVec3 {
@@ -866,6 +877,40 @@ mod tests {
         assert!(n_below.distance(n_above) > 1.0, "the fold is a right angle");
         assert!(below.normal(0.5, 0.5).distance(n_below) < 1e-6);
         assert!(above.normal(0.5, 0.5).distance(n_above) < 1e-6);
+    }
+
+    /// Trims a few ULPs off the fold's knot, as a loft cuts its faces
+    /// where a projected point lands (the owner's curved wall, recording
+    /// 17: a panel's trim ran 1e-16 past both of its knots, so its lower
+    /// edge read the panel below's normal and Shell / Thicken could not
+    /// fit its offset). Each patch reads its own side on its edge and
+    /// between its edge and the knot, at either end.
+    #[test]
+    fn a_patch_trimmed_a_hair_off_its_fold_still_reads_its_own_side() {
+        use std::sync::Arc;
+        let s = Arc::new(folded_surface());
+        let ulps = |x: f64, n: i64| f64::from_bits((x.to_bits() as i64 + n) as u64);
+        // Each runs 2 ULPs past the fold, into the other's span.
+        let below = Patch {
+            surface: s.clone(),
+            u: (0.0, 1.0),
+            v: (0.0, ulps(0.5, 2)),
+            flipped: false,
+        };
+        let above = Patch {
+            surface: s,
+            u: (0.0, 1.0),
+            v: (ulps(0.5, -2), 1.0),
+            flipped: false,
+        };
+        let n_below = below.normal(0.5, 0.25);
+        let n_above = above.normal(0.5, 0.75);
+        assert!(n_below.distance(n_above) > 1.0, "the fold is a right angle");
+        for n in -2..=2 {
+            let v = ulps(0.5, n);
+            assert!(below.normal(0.5, v).distance(n_below) < 1e-6, "{n}");
+            assert!(above.normal(0.5, v).distance(n_above) < 1e-6, "{n}");
+        }
     }
 
     #[test]

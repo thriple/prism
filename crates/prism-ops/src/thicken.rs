@@ -318,7 +318,16 @@ pub(crate) fn kinks(curve: &Curve, along: &dyn Fn(f64) -> DVec3, patch: &Patch) 
         .collect();
     for k in 0..2 {
         let at = |x: (f64, f64)| if k == 0 { x.0 } else { x.1 };
-        for knot in patch.surface.knots()[k] {
+        // Only the knot lines inside the patch: one within a hair of its
+        // own trim (a trim found by projecting a point can be a few ULPs
+        // off its knot) is that edge, as `Patch::normal` reads it, and an
+        // edge along it would otherwise cross it back and forth wherever
+        // its projected points jitter, a crease at each.
+        let (lo, hi) = patch.inner(k).unwrap_or((f64::INFINITY, f64::NEG_INFINITY));
+        let inside = patch.surface.knots()[k]
+            .iter()
+            .filter(|x| **x > lo && **x < hi);
+        for knot in inside {
             for i in 0..N {
                 let (x, y) = (at(uv[i]) - knot, at(uv[i + 1]) - knot);
                 if x == 0.0 || (x < 0.0) == (y < 0.0) {
