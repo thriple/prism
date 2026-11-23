@@ -1,6 +1,9 @@
-//! The MCP endpoint's socket (brief 21): `http://127.0.0.1:<port>/mcp`,
-//! on its own thread. It checks the token and the `Origin`, speaks the
-//! protocol, and sends tool calls to the main thread, waiting for them.
+//! The MCP endpoint's socket (brief 21): `http://127.0.0.1:<port>/mcp` by
+//! default, or every interface once the user turns on "Allow connections
+//! from other devices" (brief 52), on its own thread. It checks the
+//! token and, unless remote connections are allowed, the `Origin`;
+//! speaks the protocol; and sends tool calls to the main thread, waiting
+//! for them.
 
 use std::io::Read;
 use std::sync::Arc;
@@ -27,12 +30,14 @@ pub struct Server {
 }
 
 impl Server {
-    /// Listen on the local machine only. Port 0 picks a free one (tests).
-    pub fn start(port: u16, token: String, wake: Wake) -> Result<Server, String> {
+    /// Listen on the local machine only, or (`remote`, brief 52) on
+    /// every interface. Port 0 picks a free one (tests).
+    pub fn start(port: u16, token: String, remote: bool, wake: Wake) -> Result<Server, String> {
+        let host = if remote { "0.0.0.0" } else { "127.0.0.1" };
         // A server just stopped on this port lets it go a moment later.
         let mut tries = 0;
         let http = loop {
-            match tiny_http::Server::http(("127.0.0.1", port)) {
+            match tiny_http::Server::http((host, port)) {
                 Ok(h) => break h,
                 Err(_) if tries < 20 => {
                     tries += 1;
@@ -56,7 +61,7 @@ impl Server {
             .spawn(move || {
                 loop {
                     match h.recv() {
-                        Ok(request) => respond(request, &token, &tx, &wake),
+                        Ok(request) => respond(request, &token, remote, &tx, &wake),
                         Err(_) if stopping.load(std::sync::atomic::Ordering::SeqCst) => break,
                         // A failed connection: keep listening.
                         Err(_) => std::thread::sleep(Duration::from_millis(50)),
@@ -95,7 +100,11 @@ fn header<'a>(r: &'a Request, name: &str) -> Option<&'a str> {
         .map(|h| h.value.as_str())
 }
 
-/// Browsers send `Origin`; only pages on this machine may call.
+/// Browsers send `Origin`; only pages on this machine may call. Not
+/// checked at all once the user allows remote connections (brief 52): a
+/// caller reaching in from elsewhere (a tunnel, a VPN) has an origin
+/// that looks the same as a stranger's, so the token alone guards it
+/// then, as a plain bearer-token API does.
 pub fn local_origin(origin: &str) -> bool {
     let Some((scheme, rest)) = origin.split_once("://") else {
         return false;
@@ -147,7 +156,7 @@ impl Host for Remote<'_> {
     }
 }
 
-fn respond(mut request: Request, token: &str, tx: &Sender<Call>, wake: &Wake) {
+fn respond(mut request: Request, token: &str, remote: bool, tx: &Sender<Call>, wake: &Wake) {
     let reply = (|| {
         if request.url().split('?').next() != Some("/mcp") {
             return json_response(
@@ -155,7 +164,8 @@ fn respond(mut request: Request, token: &str, tx: &Sender<Call>, wake: &Wake) {
                 Some(&error_body(-32600, "Not the MCP endpoint (/mcp)")),
             );
         }
-        if let Some(o) = header(&request, "Origin")
+        if !remote
+            && let Some(o) = header(&request, "Origin")
             && !local_origin(o)
         {
             return json_response(403, Some(&error_body(-32600, "Origin not allowed")));
@@ -228,7 +238,7 @@ mod tests {
 
     #[test]
     fn the_endpoint_checks_token_origin_and_method() {
-        let server = Server::start(0, "secret".into(), Arc::new(|| {})).expect("starts");
+        let server = Server::start(0, "secret".into(), false, Arc::new(|| {})).expect("starts");
         let port = server.port();
         let auth = "Authorization: Bearer secret";
         let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#;
@@ -250,13 +260,32 @@ mod tests {
         assert_eq!(send(port, "POST", &[auth], note).0, 202);
         server.stop();
         // The port is free again at once.
-        let again = Server::start(port, "secret".into(), Arc::new(|| {})).expect("restarts");
+        let again = Server::start(port, "secret".into(), false, Arc::new(|| {})).expect("restarts");
         again.stop();
+    }
+
+    /// Brief 52: with remote connections on, a stranger's origin is no
+    /// longer refused (the server now listens past this machine on
+    /// purpose; the token is the only guard left), but a missing or
+    /// wrong token still is.
+    #[test]
+    fn remote_connections_skip_the_origin_check_but_still_need_the_token() {
+        let server = Server::start(0, "secret".into(), true, Arc::new(|| {})).expect("starts");
+        let port = server.port();
+        let auth = "Authorization: Bearer secret";
+        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#;
+        assert_eq!(
+            send(port, "POST", &["Authorization: Bearer nope"], init).0,
+            401
+        );
+        let (status, _) = send(port, "POST", &[auth, "Origin: https://evil.example"], init);
+        assert_eq!(status, 200);
+        server.stop();
     }
 
     #[test]
     fn tool_calls_are_answered_by_the_main_thread() {
-        let server = Server::start(0, "t".into(), Arc::new(|| {})).expect("starts");
+        let server = Server::start(0, "t".into(), false, Arc::new(|| {})).expect("starts");
         let port = server.port();
         let call = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_model","arguments":{}}}"#;
         let client =

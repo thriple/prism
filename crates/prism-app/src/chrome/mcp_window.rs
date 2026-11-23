@@ -42,12 +42,46 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
                 "Let AI assistants connect",
             ));
             ui.add_space(size::MENU_PAD * 0.5);
+            let was_remote = settings.remote;
+            ui.add(SoftToggle::new(
+                &mut settings.remote,
+                "Allow connections from other devices",
+            ));
+            if settings.remote && !was_remote {
+                // A fresh token for the wider exposure, so an old one
+                // that may have been seen or copied before does not
+                // carry over into it.
+                settings.token = new_token();
+            }
+            ui.add_space(size::MENU_PAD * 0.5);
             match &listen {
-                Listen::On(port) => text(
-                    ui,
-                    &format!("Listening on http://127.0.0.1:{port}/mcp (this computer only)."),
-                    color::INK,
-                ),
+                Listen::On(port) => {
+                    if settings.remote {
+                        text(
+                            ui,
+                            &format!(
+                                "Listening on port {port}, reachable from other devices too \
+                                 (a local network, a VPN or a tunnel you set up to it)."
+                            ),
+                            color::INK,
+                        );
+                        text(
+                            ui,
+                            "Anyone who can reach this computer on that port and has the \
+                             token can connect. Keep the token secret, and turn this off \
+                             when you are done.",
+                            color::WARN,
+                        );
+                    } else {
+                        text(
+                            ui,
+                            &format!(
+                                "Listening on http://127.0.0.1:{port}/mcp (this computer only)."
+                            ),
+                            color::INK,
+                        );
+                    }
+                }
                 Listen::Failed(e) => text(ui, e, color::INK),
                 Listen::Off | Listen::Unavailable => text(ui, "Off.", color::MUTED),
             }
@@ -96,10 +130,13 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) {
             }
             ui.add_space(size::MENU_PAD);
             ui.label(
-                RichText::new(
+                RichText::new(if settings.remote {
+                    "Anyone who can reach this computer and has the token can connect. \
+                     What they change can be undone like any edit."
+                } else {
                     "Only programs on this computer that have the token can connect. \
-                     What they change can be undone like any edit.",
-                )
+                     What they change can be undone like any edit."
+                })
                 .font(theme::small())
                 .color(color::MUTED),
             );

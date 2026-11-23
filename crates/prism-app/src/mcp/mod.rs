@@ -1,5 +1,8 @@
 //! The local MCP server (brief 21): off by default; when on, an AI
-//! assistant on this machine can read the model and run actions. The
+//! assistant on this machine can read the model and run actions. Brief
+//! 52: a second switch, "Allow connections from other devices", also
+//! listens on every interface and drops the same-machine-only check, for
+//! an assistant reached through a VPN or a tunnel the user set up. The
 //! protocol is in [`protocol`], the socket in `server` (native only), and
 //! the tools run on the main thread through [`host`].
 
@@ -29,6 +32,9 @@ pub struct Settings {
     pub enabled: bool,
     pub port: u16,
     pub token: String,
+    /// "Allow connections from other devices" (brief 52): off by
+    /// default, so an older save with no such row stays local-only.
+    pub remote: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +43,7 @@ impl Default for Settings {
             enabled: false,
             port: DEFAULT_PORT,
             token: new_token(),
+            remote: false,
         }
     }
 }
@@ -143,7 +150,12 @@ impl Mcp {
                 return;
             }
             let wake = self.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
-            match server::Server::start(self.settings.port, self.settings.token.clone(), wake) {
+            match server::Server::start(
+                self.settings.port,
+                self.settings.token.clone(),
+                self.settings.remote,
+                wake,
+            ) {
                 Ok(s) => {
                     self.listen = Listen::On(s.port());
                     self.server = Some(s);
@@ -200,6 +212,10 @@ mod tests {
         assert_eq!(serde_json::from_str::<Settings>(&text).unwrap(), s);
         let partial: Settings = serde_json::from_str(r#"{"enabled": true}"#).unwrap();
         assert!(partial.enabled && partial.port == DEFAULT_PORT && partial.token.len() == 32);
+        assert!(
+            !partial.remote,
+            "an old save with no such row stays local-only"
+        );
         assert!(s.claude_command().contains(&format!("Bearer {}", s.token)));
         assert!(s.claude_command().contains("http://127.0.0.1:47615/mcp"));
     }
