@@ -649,9 +649,15 @@ impl Patch {
     /// the knot exactly reads whichever side a knot's own convention
     /// favours, not necessarily this patch's own.
     pub fn normal(&self, u: f64, v: f64) -> DVec3 {
-        let inward = |t: f64, (lo, hi): (f64, f64)| {
-            if hi > lo && t >= hi {
-                hi - (hi - lo) * 1e-9
+        // A repeated knot's span is right-continuous (favours the patch
+        // that starts there), so only the numerically higher of a trim's
+        // two ends can land on the wrong side; which of `from`/`to` that
+        // is depends on the trim's own direction (part of a `flipped`
+        // patch's trim can run from a larger value to a smaller one).
+        let inward = |t: f64, (from, to): (f64, f64)| {
+            let (plo, phi) = (from.min(to), from.max(to));
+            if phi > plo && t >= phi {
+                phi - (phi - plo) * 1e-9
             } else {
                 t
             }
@@ -828,6 +834,36 @@ mod tests {
         assert!(n_below.distance(n_above) > 1.0, "the fold is a right angle");
         // At the fold itself, each patch still reads its own side, not
         // the other's (the knot there is right-continuous by default).
+        assert!(below.normal(0.5, 0.5).distance(n_below) < 1e-6);
+        assert!(above.normal(0.5, 0.5).distance(n_above) < 1e-6);
+    }
+
+    /// A patch trimmed backwards (brief 51's Taper work turned this up in
+    /// the owner's own model, 2026-11-23): a flipped patch's trim can run
+    /// from a larger value to a smaller one. The end next to the fold
+    /// still needs pulling inward, whichever of `from`/`to` that end is
+    /// named -- not only when it happens to be `to`.
+    #[test]
+    fn a_backwards_trimmed_patch_still_reads_its_own_side_of_a_fold() {
+        use std::sync::Arc;
+        let s = Arc::new(folded_surface());
+        let below = Patch {
+            surface: s.clone(),
+            u: (0.0, 1.0),
+            // Covers the same [0, 0.5] as the forward test, stored
+            // backwards: `from` (0.5) is now the end next to the fold.
+            v: (0.5, 0.0),
+            flipped: false,
+        };
+        let above = Patch {
+            surface: s,
+            u: (0.0, 1.0),
+            v: (0.5, 1.0),
+            flipped: false,
+        };
+        let n_below = below.normal(0.5, 0.25);
+        let n_above = above.normal(0.5, 0.75);
+        assert!(n_below.distance(n_above) > 1.0, "the fold is a right angle");
         assert!(below.normal(0.5, 0.5).distance(n_below) < 1e-6);
         assert!(above.normal(0.5, 0.5).distance(n_above) < 1e-6);
     }
