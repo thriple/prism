@@ -122,9 +122,12 @@ fn place_of(m: &Model, id: FaceId, faces: &[ShellFace], tol: &prism_math::Tol) -
 
 /// Cutting a solid by a face that runs right across it leaves that face
 /// inside it, with the solid on both sides. If the other solid's face lies
-/// on it, it is placed as Same or Opposite and would be kept. A face that
-/// is not on its own solid's boundary is no part of the result: remove it.
-/// `m` is `own` cut by the other; `None` if a face could not be told.
+/// on it, it is placed as Same or Opposite and would be kept. Cutting an
+/// open-ended solid (a tray, its walls ending in one plane) by a face
+/// lying across its open end likewise fills the end with a face that has
+/// the solid on neither side. A face that is not on its own solid's
+/// boundary is no part of the result: remove it. `m` is `own` cut by the
+/// other; `None` if a face could not be told.
 fn drop_membranes(
     m: &mut Model,
     places: &mut BTreeMap<FaceId, Place>,
@@ -138,7 +141,10 @@ fn drop_membranes(
         .map(|(id, _)| *id)
         .collect();
     for id in on_other {
-        if place_of(m, id, &faces, tol)? == Place::Inside {
+        if matches!(
+            place_of(m, id, &faces, tol)?,
+            Place::Inside | Place::Outside
+        ) {
             m.remove_face(id);
             places.remove(&id);
         }
@@ -150,6 +156,19 @@ fn drop_membranes(
 /// coincide. Edges are matched by their middle as well as their ends: the
 /// two halves of a circle join the same two points.
 pub(crate) fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
+    join_mapped(out, b, tol);
+}
+
+/// Where each point, edge and face of `b` went in `out`.
+pub(crate) type Joined = (
+    BTreeMap<VertexId, VertexId>,
+    BTreeMap<EdgeId, EdgeId>,
+    BTreeMap<FaceId, FaceId>,
+);
+
+/// [`join`], and where each of `b`'s points, edges and faces went.
+pub(crate) fn join_mapped(out: &mut Model, b: &Model, tol: &prism_math::Tol) -> Joined {
+    let mut fmap: BTreeMap<FaceId, FaceId> = BTreeMap::new();
     let mut vmap: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     for (id, p) in b.vertices() {
         let at = out
@@ -187,7 +206,7 @@ pub(crate) fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
             emap.insert(id, x);
         }
     }
-    for (_, f) in b.faces() {
+    for (id, f) in b.faces() {
         let map = |l: &Vec<VertexId>| l.iter().map(|v| vmap[v]).collect::<Vec<_>>();
         let edges: Vec<Vec<EdgeId>> = (0..=f.holes.len())
             .map(|k| {
@@ -203,8 +222,9 @@ pub(crate) fn join(out: &mut Model, b: &Model, tol: &prism_math::Tol) {
             edges,
         );
         face.paint = f.paint;
-        out.add_face(face);
+        fmap.insert(id, out.add_face(face));
     }
+    (vmap, emap, fmap)
 }
 
 /// Remove the faces whose place is not in `keep`, then what only they used.

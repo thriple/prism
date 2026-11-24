@@ -316,7 +316,7 @@ fn runs(model: &Model) -> BTreeMap<EdgeId, Vec<(FaceId, bool)>> {
 /// Faces that should be turned round: in each piece, the faces that
 /// disagree with the most of their neighbours; then, for closed shells, all
 /// of them if the piece faces into its solid.
-fn reversed(model: &Model) -> BTreeSet<FaceId> {
+pub(crate) fn reversed(model: &Model) -> BTreeSet<FaceId> {
     let runs = runs(model);
     // Neighbours across edges with exactly two faces: same direction means
     // they disagree.

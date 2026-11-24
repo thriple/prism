@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use prism_math::DVec3;
-use prism_ops::shelling::{self, ALL_OPEN, BRANCHES, CORNER, FREEFORM, MIXED, TOO_THICK, ZERO};
+use prism_ops::shelling::{self, ALL_OPEN, CORNER, TOO_THICK, ZERO};
 use prism_ops::{add_segment, boolean::is_solid, health::face_volume};
 use prism_topo::{FaceId, Model};
 
@@ -174,74 +174,25 @@ fn shelling_is_refused_with_a_reason() {
         shelling::refusal(&m, &any_face(&m), &none, -0.6),
         Some(TOO_THICK)
     );
+}
 
-    // A face bounded by a freeform curve.
+/// An upside-down T of three unit squares at one edge (x = 0, y 0 to 1):
+/// `f` (x 0 to 1) and `g` (x -1 to 0) flat on z = 0, facing up, and `h`
+/// standing on their shared edge (z 0 to 1), facing +x.
+fn tee() -> (Model, FaceId, FaceId, FaceId) {
     let p = DVec3::new;
-    let mut c = Model::new();
-    let curve = prism_geom::Nurbs::open(
-        &[
-            DVec3::new(0.0, 0.0, 0.0),
-            DVec3::new(0.5, 0.8, 0.0),
-            DVec3::new(1.5, -0.5, 0.0),
-            DVec3::new(2.0, 0.0, 0.0),
-        ],
-        3,
-    )
-    .unwrap();
-    prism_ops::sticky::add_spline(&mut c, &curve);
-    poly(
-        &mut c,
-        &[
-            p(2.0, 0.0, 0.0),
-            p(2.0, 1.0, 0.0),
-            p(0.0, 1.0, 0.0),
-            p(0.0, 0.0, 0.0),
-        ],
-    );
-    assert!(c.face_count() >= 1);
-    assert_eq!(
-        shelling::refusal(&c, &any_face(&c), &none, 0.1),
-        Some(FREEFORM)
-    );
-
-    // Two faces that face different ways.
-    let (mut m2, f) = square();
+    let (mut m, f) = square();
     let g = poly(
-        &mut m2,
-        &[
-            p(1.0, 0.0, 0.0),
-            p(2.0, 0.0, 0.0),
-            p(2.0, 1.0, 0.0),
-            p(1.0, 1.0, 0.0),
-        ],
-    )[0];
-    let same = |m: &Model| {
-        m.face(f)
-            .unwrap()
-            .plane()
-            .unwrap()
-            .normal
-            .dot(m.face(g).unwrap().plane().unwrap().normal)
-            > 0.0
-    };
-    if same(&m2) {
-        m2.edit_face(g, |x| x.reverse());
-    }
-    assert_eq!(shelling::refusal(&m2, &[f].into(), &none, 0.1), Some(MIXED));
-
-    // Three faces at one edge.
-    let (mut m3, f) = square();
-    poly(
-        &mut m3,
+        &mut m,
         &[
             p(0.0, 0.0, 0.0),
             p(0.0, 1.0, 0.0),
             p(-1.0, 1.0, 0.0),
             p(-1.0, 0.0, 0.0),
         ],
-    );
+    )[0];
     poly(
-        &mut m3,
+        &mut m,
         &[
             p(0.0, 0.0, 0.0),
             p(0.0, 1.0, 0.0),
@@ -249,11 +200,393 @@ fn shelling_is_refused_with_a_reason() {
             p(0.0, 0.0, 1.0),
         ],
     );
-    assert_eq!(m3.face_count(), 3);
-    assert_eq!(
-        shelling::refusal(&m3, &[f].into(), &none, 0.1),
-        Some(BRANCHES)
+    assert_eq!(m.face_count(), 3);
+    let h = m
+        .faces()
+        .map(|(id, _)| id)
+        .find(|id| *id != f && *id != g)
+        .unwrap();
+    for (x, want) in [(f, DVec3::Z), (g, DVec3::Z), (h, DVec3::X)] {
+        if m.face(x).unwrap().plane().unwrap().normal.dot(want) < 0.0 {
+            m.edit_face(x, |face| face.reverse());
+        }
+    }
+    (m, f, g, h)
+}
+
+/// Three faces at one edge used to be refused (`BRANCHES`). Now the body
+/// is parted there into sheets that each have at most two faces at an
+/// edge (neighbours round the edge that could be one sheet folded there
+/// are joined: here `f` with `h`, an L, mitred inside its fold), each is
+/// shelled on its own, and their shells are joined, merged where they
+/// overlap. By hand: up, the three slabs (3d) less the square where the
+/// L's two overlap at its fold (d^2); down, the three slabs only touch.
+#[test]
+fn three_faces_at_one_edge_are_shelled_as_sheets_and_joined() {
+    let none = BTreeSet::new();
+    for (d, want) in [(0.1f64, 0.3 - 0.01), (-0.1, 0.3), (0.02, 0.06 - 0.0004)] {
+        let (m, f, g, h) = tee();
+        assert_eq!(shelling::refusal(&m, &[f].into(), &none, d), None, "by {d}");
+        let built = shelling::slab_flagged(&m, &[f].into(), &none, d, &Default::default()).unwrap();
+        sound(&built.model);
+        assert_eq!(built.replaced, [f, g, h].into());
+        near(volume(&built.model).abs(), want);
+        let branched = &built.flags[shelling::BRANCHED];
+        assert!(
+            !branched.faces.is_empty() && !branched.edges.is_empty(),
+            "by {d}"
+        );
+        // Only what is near the edge is flagged: not the far ends.
+        for e in &branched.edges {
+            let x = built.model.edge(*e).unwrap();
+            for v in [x.a, x.b] {
+                assert!(
+                    built.model.vertex(v).x.abs() <= 2.0 * d.abs() + 1e-9,
+                    "by {d}"
+                );
+            }
+        }
+        let mut joined = m.clone();
+        shelling::shell(&mut joined, &[f].into(), &none, d).unwrap();
+        sound(&joined);
+        near(volume(&joined).abs(), want);
+    }
+}
+
+/// The same upside-down T, of three flat freeform (NURBS) faces. Each
+/// sheet shells on its own, but joining the shells is still refused: the
+/// end wall of `g`'s shell lies right on the face of `h` it stands
+/// against, and the boolean's inside test cannot tell which side of a
+/// freeform face a point that close to it is on (every ray is unsure),
+/// so it says so rather than guess. Flat faces (`tee`) are placed exactly.
+/// When the boolean can place a face lying on a freeform one, this should
+/// build (by hand, as `tee`: 3d less d^2 up, 3d down).
+#[test]
+fn three_freeform_faces_at_one_edge_are_refused_where_their_shells_touch() {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_topo::Face;
+    let p = DVec3::new;
+    let mut m = Model::new();
+    let (o0, o1) = (
+        m.add_vertex(p(0.0, 0.0, 0.0)),
+        m.add_vertex(p(0.0, 1.0, 0.0)),
     );
+    let shared = m.add_edge(o0, o1).unwrap();
+    // A flat patch from the shared edge out to `far` (two corners),
+    // walking the shared edge from `o0` when `forward`, facing `want`.
+    let sheet = |m: &mut Model, far: [DVec3; 2], forward: bool, want: DVec3| {
+        let k = vec![0.0, 0.0, 1.0, 1.0];
+        let s = NurbsSurface::new(
+            [1, 1],
+            [k.clone(), k],
+            [2, 2],
+            vec![p(0.0, 0.0, 0.0), p(0.0, 1.0, 0.0), far[0], far[1]],
+            vec![1.0; 4],
+            [false, false],
+        )
+        .unwrap();
+        let patch = Patch::whole(s);
+        let mid = (far[0] + far[1]) * 0.25 + p(0.0, 0.25, 0.0);
+        let patch = if Surface::Nurbs(patch.clone()).normal_at(mid).dot(want) < 0.0 {
+            Patch {
+                flipped: true,
+                ..patch
+            }
+        } else {
+            patch
+        };
+        let (f0, f1) = (m.add_vertex(far[0]), m.add_vertex(far[1]));
+        let (e0, e1, e2) = (
+            m.add_edge(o1, f1).unwrap(),
+            m.add_edge(f1, f0).unwrap(),
+            m.add_edge(f0, o0).unwrap(),
+        );
+        let (vs, es) = if forward {
+            (vec![o0, o1, f1, f0], vec![shared, e0, e1, e2])
+        } else {
+            (vec![o1, o0, f0, f1], vec![shared, e2, e1, e0])
+        };
+        m.add_face(Face::with_edges(
+            vs,
+            vec![],
+            Surface::Nurbs(patch),
+            vec![es],
+        ))
+    };
+    // As `tee`: f (x 0 to 1) and g (x -1 to 0) up, h standing, facing +x.
+    let f = sheet(
+        &mut m,
+        [p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0)],
+        false,
+        DVec3::Z,
+    );
+    let g = sheet(
+        &mut m,
+        [p(-1.0, 0.0, 0.0), p(-1.0, 1.0, 0.0)],
+        true,
+        DVec3::Z,
+    );
+    let h = sheet(&mut m, [p(0.0, 0.0, 1.0), p(0.0, 1.0, 1.0)], true, DVec3::X);
+    assert!(
+        prism_ops::check::problems(&m).is_empty(),
+        "{:?}",
+        prism_ops::check::problems(&m)
+    );
+    let none = BTreeSet::new();
+    let _ = (g, h);
+    for d in [0.1f64, -0.1] {
+        assert_eq!(
+            shelling::refusal(&m, &[f].into(), &none, d),
+            Some(shelling::BRANCHES),
+            "by {d}"
+        );
+    }
+}
+
+/// A box 2 by 1 by 1, its faces facing out, with a wall across its middle
+/// (x = 1): each of the wall's four edges has three faces.
+fn parted_box() -> Model {
+    let p = DVec3::new;
+    let mut m = Model::new();
+    let f = poly(
+        &mut m,
+        &[
+            p(0.0, 0.0, 0.0),
+            p(2.0, 0.0, 0.0),
+            p(2.0, 1.0, 0.0),
+            p(0.0, 1.0, 0.0),
+        ],
+    )[0];
+    let up = if m.face(f).unwrap().plane().unwrap().normal.z > 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
+    prism_ops::pushpull::push_pull(&mut m, f, up, false);
+    assert!((volume(&m) - 2.0).abs() < 1e-9, "faces out");
+    poly(
+        &mut m,
+        &[
+            p(1.0, 0.0, 0.0),
+            p(1.0, 1.0, 0.0),
+            p(1.0, 1.0, 1.0),
+            p(1.0, 0.0, 1.0),
+        ],
+    );
+    assert_eq!(m.face_count(), 11);
+    m
+}
+
+/// A box with a wall inside it: each half is one closed box (one half
+/// and the wall) or an open one (the other half), each shelled on its
+/// own, then joined. By hand, `t` the thickness: inward, the two halves'
+/// shells only touch at the wall, so it is the closed half hollowed (1 -
+/// (1 - 2t)^3) and the open half hollowed (1 - (1 - t)(1 - 2t)^2);
+/// outward, they overlap where the wall's offset meets the open half's
+/// grown walls round its open end (the ring round it by t).
+#[test]
+fn a_box_with_a_wall_inside_shells_both_ways() {
+    let none = BTreeSet::new();
+    for t in [0.1f64, 0.05] {
+        let inward = 1.0 - (1.0 - 2.0 * t).powi(3) + 1.0 - (1.0 - t) * (1.0 - 2.0 * t).powi(2);
+        let ring = (1.0 + 2.0 * t).powi(2) - 1.0;
+        let outward =
+            (1.0 + 2.0 * t).powi(3) - 1.0 + (1.0 + t) * (1.0 + 2.0 * t).powi(2) - 1.0 - t * ring;
+        for (d, want) in [(-t, inward), (t, outward)] {
+            let m = parted_box();
+            let all = any_face(&m);
+            let built = shelling::slab_flagged(&m, &all, &none, d, &Default::default())
+                .unwrap_or_else(|e| panic!("by {d}: {e}"));
+            sound(&built.model);
+            assert_eq!(built.replaced.len(), 11);
+            near(volume(&built.model).abs(), want);
+            assert!(built.flags.contains_key(shelling::BRANCHED));
+        }
+    }
+}
+
+/// A flat face bounded by a freeform curve (from x = 0 to 2 along y = 0,
+/// bulging out and in) and three straight sides up to y = 1, and its area
+/// by hand (the rectangle less the curve's own signed area under y = 0,
+/// by the trapezium rule on many samples of it).
+fn spline_bounded() -> (Model, FaceId, f64) {
+    let p = DVec3::new;
+    let mut c = Model::new();
+    let curve = prism_geom::Nurbs::open(
+        &[
+            p(0.0, 0.0, 0.0),
+            p(0.5, 0.8, 0.0),
+            p(1.5, -0.5, 0.0),
+            p(2.0, 0.0, 0.0),
+        ],
+        3,
+    )
+    .unwrap();
+    prism_ops::sticky::add_spline(&mut c, &curve);
+    let corners = [
+        p(2.0, 0.0, 0.0),
+        p(2.0, 1.0, 0.0),
+        p(0.0, 1.0, 0.0),
+        p(0.0, 0.0, 0.0),
+    ];
+    for w in corners.windows(2) {
+        add_segment(&mut c, w[0], w[1]);
+    }
+    assert_eq!(c.face_count(), 1);
+    let f = c.faces().map(|(id, _)| id).next().unwrap();
+    let n = 20000;
+    let mut under = 0.0;
+    for i in 0..n {
+        let (a, b) = (
+            curve.eval(i as f64 / n as f64),
+            curve.eval((i + 1) as f64 / n as f64),
+        );
+        under += (b.x - a.x) * (a.y + b.y) * 0.5;
+    }
+    (c, f, 2.0 - under)
+}
+
+/// A face bounded by a freeform curve used to be refused (`FREEFORM`).
+/// Now the curve's offset is fitted through points moved along the face's
+/// normal and the wall between them is ruled, as a freeform face's rim
+/// is: the slab is the face's area by the thickness, either way.
+#[test]
+fn a_face_bounded_by_a_freeform_curve_is_thickened() {
+    let none = BTreeSet::new();
+    for d in [0.1, -0.1, 0.01] {
+        let (mut c, f, area) = spline_bounded();
+        let seeds: BTreeSet<FaceId> = [f].into();
+        assert_eq!(shelling::refusal(&c, &seeds, &none, d), None, "by {d}");
+        let (s, replaced) = shelling::slab(&c, &seeds, &none, d).unwrap();
+        sound(&s);
+        assert_eq!(replaced, seeds);
+        assert!(
+            (volume(&s).abs() - area * d.abs()).abs() < 1e-6 * d.abs(),
+            "by {d}: {} vs {}",
+            volume(&s),
+            area * d
+        );
+        // The wall along the curve is ruled between it and its offset.
+        assert!(
+            s.faces()
+                .any(|(_, f)| matches!(f.surface, prism_geom::Surface::Nurbs(_)))
+        );
+        shelling::shell(&mut c, &seeds, &none, d).unwrap();
+        sound(&c);
+    }
+}
+
+/// The same face with a flat wall standing on its straight far side (y =
+/// 1, up to z = 1): the wall's fold with it is mitred as any flat fold is
+/// (by hand, as the L of two faces: the faces' area by the thickness, less
+/// or more the fold's length by its square), while the freeform rim gets
+/// its fitted wall.
+#[test]
+fn a_freeform_rim_and_a_mitred_fold_together() {
+    let p = DVec3::new;
+    let none = BTreeSet::new();
+    let (c0, f, area) = spline_bounded();
+    let mut c = c0.clone();
+    for w in [
+        p(2.0, 1.0, 0.0),
+        p(2.0, 1.0, 1.0),
+        p(0.0, 1.0, 1.0),
+        p(0.0, 1.0, 0.0),
+    ]
+    .windows(2)
+    {
+        add_segment(&mut c, w[0], w[1]);
+    }
+    assert_eq!(c.face_count(), 2);
+    let seeds: BTreeSet<FaceId> = [f].into();
+    let mut got = Vec::new();
+    for d in [0.1f64, -0.1] {
+        let (s, _) = shelling::slab(&c, &seeds, &none, d).unwrap_or_else(|e| panic!("{d}: {e}"));
+        sound(&s);
+        let v = volume(&s).abs();
+        let (less, more) = (
+            (area + 2.0) * d.abs() - 2.0 * d * d,
+            (area + 2.0) * d.abs() + 2.0 * d * d,
+        );
+        assert!(
+            (v - less).abs() < 1e-6 || (v - more).abs() < 1e-6,
+            "by {d}: {v} vs {less} or {more}"
+        );
+        got.push((v - less).abs() < 1e-6);
+    }
+    assert_ne!(got[0], got[1], "one way into the fold, the other out of it");
+}
+
+/// Two squares side by side (x 0 to 2), the second turned to face the
+/// other way from the first, and the two.
+fn mixed_pair() -> (Model, FaceId, FaceId) {
+    let p = DVec3::new;
+    let (mut m, f) = square();
+    let g = poly(
+        &mut m,
+        &[
+            p(1.0, 0.0, 0.0),
+            p(2.0, 0.0, 0.0),
+            p(2.0, 1.0, 0.0),
+            p(1.0, 1.0, 0.0),
+        ],
+    )[0];
+    let normal = |m: &Model, x: FaceId| m.face(x).unwrap().plane().unwrap().normal;
+    if normal(&m, f).dot(normal(&m, g)) > 0.0 {
+        m.edit_face(g, |x| x.reverse());
+    }
+    (m, f, g)
+}
+
+/// Faces that face different ways used to be refused (`MIXED`, "Solid >
+/// Heal turns them"). Now they are turned to agree on a copy first, as
+/// Heal would, and the shell is the one Heal then Shell would make; the
+/// turned face's two copies are flagged.
+#[test]
+fn faces_that_face_different_ways_are_turned_to_agree_and_flagged() {
+    let (m, f, g) = mixed_pair();
+    let none = BTreeSet::new();
+    assert_eq!(shelling::refusal(&m, &[f].into(), &none, 0.1), None);
+    let built = shelling::slab_flagged(&m, &[f].into(), &none, 0.1, &Default::default()).unwrap();
+    sound(&built.model);
+    near(volume(&built.model).abs(), 0.2);
+    assert_eq!(built.replaced, [f, g].into());
+    // Heal turns the second square (the fewer), so its copies are flagged.
+    let turned = &built.flags[shelling::TURNED];
+    assert_eq!(turned.faces.len(), 2, "{:?}", built.flags);
+    assert_eq!(built.flags.len(), 1);
+    // The same as healing first, then shelling.
+    let mut healed = m.clone();
+    prism_ops::health::orient(&mut healed, None);
+    let (plain, _) = shelling::slab(&healed, &[f].into(), &none, 0.1).unwrap();
+    near(volume(&plain), volume(&built.model));
+    // Flagged faces are both copies of the turned square: their corners
+    // are over it.
+    for id in &turned.faces {
+        let c = built.model.face(*id).unwrap();
+        assert!(
+            c.outer
+                .iter()
+                .all(|v| built.model.vertex(*v).x >= 1.0 - 1e-9)
+        );
+    }
+    // Joined into the model, the flags name faces of the model.
+    let mut joined = m.clone();
+    let flags =
+        shelling::shell_flagged(&mut joined, &[f].into(), &none, 0.1, &Default::default()).unwrap();
+    sound(&joined);
+    assert_eq!(flags[shelling::TURNED].faces.len(), 2);
+    assert!(
+        flags[shelling::TURNED]
+            .faces
+            .iter()
+            .all(|x| joined.face(*x).is_some())
+    );
+    // A body that already agrees is left as it is, with nothing flagged.
+    let (sq, one) = square();
+    let plain =
+        shelling::slab_flagged(&sq, &[one].into(), &none, 0.1, &Default::default()).unwrap();
+    assert!(plain.flags.is_empty());
 }
 
 #[test]
@@ -1078,32 +1411,92 @@ fn a_lone_freeform_face_takes_a_chosen_flush_rim_both_ways() {
     assert!(shelling::default_rims(&m, &body, &BTreeSet::new(), d).is_empty());
 }
 
+/// A flush plane that cannot end its rim (it misses the edge, or lies
+/// along the face) used to refuse the whole shell (`FLUSH_OFF`,
+/// `FLUSH_PARALLEL`). Now that rim is cut square instead, flagged, and
+/// the shell is the square one.
 #[test]
-fn a_flush_plane_must_hold_the_edge_and_not_lie_along_the_face() {
+fn a_flush_plane_that_cannot_end_its_rim_is_cut_square_and_flagged() {
     let (m, a, b, edges) = flat_pair();
     let body: BTreeSet<FaceId> = [a, b].into();
+    let none = BTreeSet::new();
+    let (square, _) = shelling::slab(&m, &body, &none, 0.1).unwrap();
     let off = prism_math::Plane::new(DVec3::new(0.0, 0.0, 0.2), DVec3::new(0.0, 0.5, 1.0));
-    assert_eq!(
-        shelling::refusal_with(&m, &body, &BTreeSet::new(), 0.1, &flush_both(edges, off)),
-        Some(shelling::FLUSH_OFF)
-    );
     let along = prism_math::Plane::new(DVec3::ZERO, DVec3::Y);
-    assert_eq!(
-        shelling::refusal_with(&m, &body, &BTreeSet::new(), 0.1, &flush_both(edges, along)),
-        Some(shelling::FLUSH_PARALLEL)
-    );
+    for (plane, why) in [
+        (off, shelling::SQUARED_OFF),
+        (along, shelling::SQUARED_ALONG),
+    ] {
+        let styles = flush_both(edges, plane);
+        assert_eq!(shelling::refusal_with(&m, &body, &none, 0.1, &styles), None);
+        let built = shelling::slab_flagged(&m, &body, &none, 0.1, &styles).unwrap();
+        sound(&built.model);
+        near_enough(volume(&built.model).abs(), volume(&square).abs());
+        assert_eq!(built.flags.len(), 1, "{:?}", built.flags);
+        // One wall for each of the two bottom edges, with its edges.
+        let found = &built.flags[why];
+        assert_eq!(found.faces.len(), 2, "{found:?}");
+        assert!(found.edges.len() >= 4, "{found:?}");
+        // The walls are the square ones: square to the sheet (in y = 0).
+        for f in &found.faces {
+            let wall = built.model.face(*f).unwrap();
+            assert!(
+                wall.outer
+                    .iter()
+                    .all(|v| built.model.vertex(*v).z.abs() < 1e-9)
+            );
+        }
+    }
+    // The program never picks a plane that would be cut square.
+    let picked = shelling::default_rims(&m, &body, &none, 0.1);
+    assert!(picked.values().all(|s| match s {
+        shelling::RimStyle::Flush(p) => !p.normal.abs().abs_diff_eq(DVec3::Y, 1e-9),
+        shelling::RimStyle::Square => true,
+    }));
 }
 
+/// A rim style the shape cannot take at all (a flush rim on flat faces
+/// alone) used to refuse the whole shell (`RIM_STYLE`). Now that rim is
+/// cut square instead, flagged, and the rest is built.
 #[test]
-fn a_rim_style_on_a_shape_that_does_not_support_it_is_refused() {
+fn a_rim_style_on_a_shape_that_does_not_support_it_is_cut_square_and_flagged() {
     let (m, f) = square();
-    let styles: shelling::RimStyles = m
+    let none = BTreeSet::new();
+    // The bottom edge (y = 0), and a plane through it leaning across it.
+    let bottom = m
+        .edges()
+        .find(|(_, e)| m.vertex(e.a).y.abs() < 1e-9 && m.vertex(e.b).y.abs() < 1e-9)
+        .map(|(id, _)| id)
+        .unwrap();
+    let plane = prism_math::Plane::new(DVec3::ZERO, DVec3::new(0.0, 1.0, 0.5));
+    let styles: shelling::RimStyles = [(bottom, shelling::RimStyle::Flush(plane))].into();
+    assert_eq!(
+        shelling::refusal_with(&m, &[f].into(), &none, 0.1, &styles),
+        None
+    );
+    let built = shelling::slab_flagged(&m, &[f].into(), &none, 0.1, &styles).unwrap();
+    sound(&built.model);
+    near(volume(&built.model).abs(), 0.1);
+    let found = &built.flags[shelling::SQUARED];
+    assert_eq!(found.faces.len(), 1, "{:?}", built.flags);
+    // Every edge of the square named with a plane that lies along it: each
+    // is cut square, named for that reason instead.
+    let along: shelling::RimStyles = m
         .edges()
         .map(|(e, _)| (e, shelling::RimStyle::Flush(leaning_plane(0.0))))
         .collect();
+    let built = shelling::slab_flagged(&m, &[f].into(), &none, 0.1, &along).unwrap();
+    assert_eq!(built.flags[shelling::SQUARED_ALONG].faces.len(), 4);
+    // A thickness that cannot be built at all is still refused for that.
+    let cube = cube();
+    let all = any_face(&cube);
+    let any_edge: shelling::RimStyles = cube
+        .edges()
+        .map(|(e, _)| (e, shelling::RimStyle::Flush(plane)))
+        .collect();
     assert_eq!(
-        shelling::refusal_with(&m, &[f].into(), &BTreeSet::new(), 0.1, &styles),
-        Some(shelling::RIM_STYLE)
+        shelling::refusal_with(&cube, &all, &none, -0.6, &any_edge),
+        Some(TOO_THICK)
     );
 }
 
@@ -1125,4 +1518,176 @@ fn boundaries_are_runs_between_corners_and_a_straight_one_has_no_plane() {
     let runs = shelling::boundaries(&m, &body, &open);
     assert_eq!(runs.iter().flatten().count(), 4, "{runs:?}");
     assert!(runs.iter().flatten().all(|e| *e != bottom_b));
+}
+
+/// A sheet folded right back on itself (a hairpin): `a` flat (x 0 to 1,
+/// in z = 0, facing up, +z), and `b` leaving their shared edge (x = 0, y 0
+/// to 1) along +x too, tangent to `a` there, then curving up to z = 1 at
+/// x = 1 (a quadratic). They face opposite ways at the fold (a sheet
+/// folded back keeps its one side facing into the fold), so the fold is
+/// as sharp as a fold can be: no mitre exists there.
+fn hairpin() -> (Model, FaceId, FaceId) {
+    use prism_geom::{NurbsSurface, Patch, Surface};
+    use prism_topo::Face;
+    let p = DVec3::new;
+    let k1 = vec![0.0, 0.0, 1.0, 1.0];
+    let k2 = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let sa = NurbsSurface::new(
+        [1, 1],
+        [k1.clone(), k1.clone()],
+        [2, 2],
+        vec![
+            p(0.0, 0.0, 0.0),
+            p(0.0, 1.0, 0.0),
+            p(1.0, 0.0, 0.0),
+            p(1.0, 1.0, 0.0),
+        ],
+        vec![1.0; 4],
+        [false, false],
+    )
+    .unwrap();
+    let sb = NurbsSurface::new(
+        [2, 1],
+        [k2, k1],
+        [3, 2],
+        vec![
+            p(0.0, 0.0, 0.0),
+            p(0.0, 1.0, 0.0),
+            p(0.5, 0.0, 0.0),
+            p(0.5, 1.0, 0.0),
+            p(1.0, 0.0, 1.0),
+            p(1.0, 1.0, 1.0),
+        ],
+        vec![1.0; 6],
+        [false, false],
+    )
+    .unwrap();
+    // Each patch turned to face the way its loop goes round.
+    let facing = |s: NurbsSurface, at: DVec3, want: DVec3| {
+        let patch = Patch::whole(s);
+        if Surface::Nurbs(patch.clone()).normal_at(at).dot(want) < 0.0 {
+            Patch {
+                flipped: !patch.flipped,
+                ..patch
+            }
+        } else {
+            patch
+        }
+    };
+    let mut m = Model::new();
+    let (p0, p1) = (
+        m.add_vertex(p(0.0, 0.0, 0.0)),
+        m.add_vertex(p(0.0, 1.0, 0.0)),
+    );
+    let (q0, q1) = (
+        m.add_vertex(p(1.0, 0.0, 0.0)),
+        m.add_vertex(p(1.0, 1.0, 0.0)),
+    );
+    let (r0, r1) = (
+        m.add_vertex(p(1.0, 0.0, 1.0)),
+        m.add_vertex(p(1.0, 1.0, 1.0)),
+    );
+    let fold = m.add_edge(p1, p0).unwrap();
+    let (a0, a1, a2) = (
+        m.add_edge(p0, q0).unwrap(),
+        m.add_edge(q0, q1).unwrap(),
+        m.add_edge(q1, p1).unwrap(),
+    );
+    // Round +z: p0, q0, q1, p1 (and back along the fold).
+    let a = m.add_face(Face::with_edges(
+        vec![p0, q0, q1, p1],
+        vec![],
+        Surface::Nurbs(facing(sa, p(0.5, 0.5, 0.0), DVec3::Z)),
+        vec![vec![a0, a1, a2, fold]],
+    ));
+    let b_curve = |m: &mut Model, from: prism_topo::VertexId, to: prism_topo::VertexId, y: f64| {
+        let c =
+            prism_geom::Nurbs::open(&[p(0.0, y, 0.0), p(0.5, y, 0.0), p(1.0, y, 1.0)], 2).unwrap();
+        let c = if from == p0 || from == p1 {
+            c
+        } else {
+            c.reversed()
+        };
+        m.add_curve_edge(
+            from,
+            to,
+            prism_geom::Curve::Spline(prism_geom::Spline::whole(c)),
+            None,
+        )
+        .unwrap()
+    };
+    // The other way along the fold: p0, p1, r1, r0.
+    let b1 = b_curve(&mut m, p1, r1, 1.0);
+    let b2 = m.add_edge(r1, r0).unwrap();
+    let b3 = b_curve(&mut m, r0, p0, 0.0);
+    let b = m.add_face(Face::with_edges(
+        vec![p0, p1, r1, r0],
+        vec![],
+        Surface::Nurbs(facing(sb, p(0.05, 0.5, 0.0), -DVec3::Z)),
+        vec![vec![fold, b1, b2, b3]],
+    ));
+    (m, a, b)
+}
+
+/// Every edge of `s` walked once each way by the two faces that use it.
+fn walked_both_ways(s: &Model) {
+    let mut from: std::collections::BTreeMap<prism_topo::EdgeId, Vec<prism_topo::VertexId>> =
+        Default::default();
+    for (_, f) in s.faces() {
+        for side in f.sides() {
+            from.entry(side.edge).or_default().push(side.from);
+        }
+    }
+    for (e, ends) in from {
+        assert!(
+            ends.len() != 2 || ends[0] != ends[1],
+            "{e:?} walked one way twice"
+        );
+    }
+}
+
+/// A sheet folded right back on itself used to be refused at the fold's
+/// ends (`CORNER`: no corner both faces' offsets share) or along it
+/// (`SHARP`, before even trying). Thickened away from the fold, the two
+/// offsets are parallel at the fold and never meet: a gap, bridged as an
+/// outside corner's is, but out round the fold through a middle line a
+/// thickness past it (two strips, so the bridge keeps a thickness at the
+/// fold instead of passing through it). By hand: the flat face's slab
+/// (its area by the thickness), the curved face's (its length, the
+/// parabola z = x^2 to x = 1, by the thickness, less its turning, atan 2,
+/// by half the thickness squared: it moves towards its own centre of
+/// curvature), and the bridge's triangle (two thicknesses across, one
+/// out) along the fold's length of 1.
+#[test]
+fn a_sheet_folded_right_back_is_bridged_round_the_fold() {
+    let (m, a, b) = hairpin();
+    let body: BTreeSet<FaceId> = [a, b].into();
+    let none = BTreeSet::new();
+    let length = 0.5 * 5f64.sqrt() + 0.25 * (2.0 + 5f64.sqrt()).ln();
+    for t in [0.1f64, 0.02] {
+        let d = -t;
+        assert_eq!(shelling::refusal(&m, &body, &none, d), None, "by {d}");
+        let built = shelling::slab_flagged(&m, &body, &none, d, &Default::default()).unwrap();
+        sound(&built.model);
+        walked_both_ways(&built.model);
+        let want = t + (length * t - 2f64.atan() * t * t * 0.5) + t * t;
+        near_enough(volume(&built.model).abs(), want);
+        // The two strips and the two triangles closing each end of them.
+        let bridged = &built.flags[shelling::BRIDGED];
+        assert_eq!(bridged.faces.len(), 6, "{:?}", built.flags);
+        assert_eq!(built.flags.len(), 1);
+        let mut joined = m.clone();
+        shelling::shell(&mut joined, &body, &none, d).unwrap();
+        sound(&joined);
+    }
+    // Into the fold, the offsets cross well away from it, where there is no
+    // straight line up from the fold inside the solid to part the two
+    // faces' end walls at: still refused, by name.
+    for d in [0.1, 0.02] {
+        assert_eq!(
+            shelling::refusal(&m, &body, &none, d),
+            Some(shelling::SHARP),
+            "by {d}"
+        );
+    }
 }

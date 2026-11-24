@@ -9713,11 +9713,16 @@ fn a_rims_tilt_is_typed_in_degrees_and_the_kernels_refusals_say_why() {
         volumes[0] < whole - 1e-6 && volumes[1] > whole + 1e-6,
         "{volumes:?}"
     );
-    // A plane lying along the sheet is refused in the kernel's words.
-    let before = model_volume(d.s.model()).abs();
-    let why = d.s.inspector_set("feature.0.rim.0.tilt", "0").unwrap_err();
-    assert!(why.contains("along"), "{why}");
-    assert!((model_volume(d.s.model()).abs() - before).abs() < 1e-12);
+    // A plane lying along the sheet cannot end the wall: the kernel cuts
+    // that rim square instead of refusing the shell (and flags it,
+    // `shelling::SQUARED_ALONG`), so the wall is the square one.
+    d.s.inspector_set("feature.0.rim.0.tilt", "0")
+        .expect("cut square, not refused");
+    assert!(
+        (model_volume(d.s.model()).abs() - whole).abs() < 1e-6,
+        "{} vs {whole}",
+        model_volume(d.s.model()).abs()
+    );
     // A degree sign is allowed; words are not.
     d.s.inspector_set("feature.0.rim.0.tilt", "20°")
         .expect("a degree sign is allowed");
