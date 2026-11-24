@@ -37,23 +37,18 @@ fn every_primitive_is_a_valid_solid_of_its_size_standing_on_the_ground() {
             volume_of(&p)
         );
         let (lo, hi) = m.bbox().expect("a box");
-        if let Primitive::Torus { minor, .. } = p {
-            // Its points are all at the tube's middle height.
-            assert!((lo.z - minor).abs() < 1e-9 && (hi.z - minor).abs() < 1e-9);
-        } else {
-            assert!(
-                lo.z.abs() < 1e-9,
-                "{} stands on the ground: {lo:?}",
-                p.name()
-            );
-            assert!(
-                (hi.z - p.height()).abs() < 1e-9,
-                "{} is {} tall, not {}",
-                p.name(),
-                p.height(),
-                hi.z
-            );
-        }
+        assert!(
+            lo.z.abs() < 1e-9,
+            "{} stands on the ground: {lo:?}",
+            p.name()
+        );
+        assert!(
+            (hi.z - p.height()).abs() < 1e-9,
+            "{} is {} tall, not {}",
+            p.name(),
+            p.height(),
+            hi.z
+        );
         assert!(
             ((lo.x + hi.x) / 2.0).abs() < 1e-9 && ((lo.y + hi.y) / 2.0).abs() < 1e-9,
             "{} is centred: {lo:?} {hi:?}",

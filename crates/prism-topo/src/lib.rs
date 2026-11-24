@@ -331,6 +331,37 @@ pub fn loop_pairs(l: &[VertexId]) -> impl Iterator<Item = (VertexId, VertexId)> 
     (0..l.len()).map(move |i| (l[i], l[(i + 1) % l.len()]))
 }
 
+/// The points of an arc from `a` to `b` where it runs furthest along each
+/// axis (x, y and z, each way), for the ones the arc actually sweeps past.
+/// An arc's own bulge can reach further than either of its ends.
+fn arc_extremes(
+    centre: DVec3,
+    axis: DVec3,
+    radius: f64,
+    a: DVec3,
+    b: DVec3,
+    curve: &Curve,
+) -> Vec<DVec3> {
+    let axis = axis.normalize_or_zero();
+    let r = a - centre;
+    let u = (r - axis * r.dot(axis)).normalize_or_zero();
+    let v = axis.cross(u);
+    let sweep = curve.sweep(a, b);
+    let mut out = Vec::new();
+    for k in [DVec3::X, DVec3::Y, DVec3::Z] {
+        // u·k cos θ + v·k sin θ peaks at θ = atan2(v·k, u·k), and is lowest
+        // half a turn later.
+        let peak = v.dot(k).atan2(u.dot(k));
+        for theta in [peak, peak + std::f64::consts::PI] {
+            let t = theta.rem_euclid(std::f64::consts::TAU);
+            if t <= sweep {
+                out.push(centre + (u * t.cos() + v * t.sin()) * radius);
+            }
+        }
+    }
+    out
+}
+
 fn is_zero(n: &u32) -> bool {
     *n == 0
 }
@@ -1187,11 +1218,39 @@ impl Model {
         Tol::for_points(self.vertices.values())
     }
 
-    /// The bounding box of all vertices, or None if there are none.
+    /// The bounding box of the geometry: every vertex, and the true extent
+    /// of every arc or spline edge, which can bulge out past its own
+    /// vertices.
     pub fn bbox(&self) -> Option<(DVec3, DVec3)> {
         let mut it = self.vertices.values();
         let first = *it.next()?;
-        Some(it.fold((first, first), |(lo, hi), p| (lo.min(*p), hi.max(*p))))
+        let (mut lo, mut hi) = it.fold((first, first), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+        for (_, e) in self.edges() {
+            match &e.curve {
+                Curve::Line => {}
+                Curve::Arc {
+                    centre,
+                    axis,
+                    radius,
+                } => {
+                    let (a, b) = (self.vertex(e.a), self.vertex(e.b));
+                    for p in arc_extremes(*centre, *axis, *radius, a, b, &e.curve) {
+                        lo = lo.min(p);
+                        hi = hi.max(p);
+                    }
+                }
+                Curve::Spline(s) => {
+                    // The control polygon's box holds the curve exactly,
+                    // by the convex-hull property (not the tightest box,
+                    // but a true one).
+                    for p in s.curve.points() {
+                        lo = lo.min(*p);
+                        hi = hi.max(*p);
+                    }
+                }
+            }
+        }
+        Some((lo, hi))
     }
 
     pub fn counters(&self) -> Counters {
@@ -1532,6 +1591,64 @@ mod tests {
         assert_eq!(f.outer, vec![v[0], mid, v[1], v[2], v[3]]);
         assert!(m.bookkeeping_problems().is_empty());
         assert_eq!(m.face_area(FaceId(0)), 16.0);
+    }
+
+    #[test]
+    fn bbox_reaches_past_a_circles_two_seam_vertices() {
+        let mut m = Model::new();
+        let centre = DVec3::new(1.0, 2.0, 3.0);
+        let radius = 2.0;
+        let a = m.add_vertex(centre + DVec3::X * radius);
+        let b = m.add_vertex(centre - DVec3::X * radius);
+        m.add_curve_edge(
+            a,
+            b,
+            Curve::Arc {
+                centre,
+                axis: DVec3::Z,
+                radius,
+            },
+            None,
+        );
+        m.add_curve_edge(
+            b,
+            a,
+            Curve::Arc {
+                centre,
+                axis: DVec3::Z,
+                radius,
+            },
+            None,
+        );
+        // Only the two seam vertices are stored, both at x = centre.x, so a
+        // vertex-only box would miss the whole circle on y.
+        let (lo, hi) = m.bbox().expect("box");
+        assert!((lo - (centre - DVec3::new(radius, radius, 0.0))).length() < 1e-9);
+        assert!((hi - (centre + DVec3::new(radius, radius, 0.0))).length() < 1e-9);
+    }
+
+    #[test]
+    fn bbox_of_a_quarter_arc_stops_at_its_own_sweep() {
+        let mut m = Model::new();
+        let centre = DVec3::ZERO;
+        let radius = 1.0;
+        // A quarter turn from +X to +Y: bulges towards (1,1,0), never
+        // reaching -X or -Y.
+        let a = m.add_vertex(DVec3::new(radius, 0.0, 0.0));
+        let b = m.add_vertex(DVec3::new(0.0, radius, 0.0));
+        m.add_curve_edge(
+            a,
+            b,
+            Curve::Arc {
+                centre,
+                axis: DVec3::Z,
+                radius,
+            },
+            None,
+        );
+        let (lo, hi) = m.bbox().expect("box");
+        assert!((lo - DVec3::ZERO).length() < 1e-9);
+        assert!((hi - DVec3::new(radius, radius, 0.0)).length() < 1e-9);
     }
 
     #[test]

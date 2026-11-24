@@ -125,7 +125,11 @@ fn run(
             .unwrap_or(Tag::Still)
     };
 
-    // Faces by plane cell, and the planes the edit touched.
+    // Faces by plane cell, and the planes the edit touched: either a
+    // face's own vertex moved, or new geometry with nothing of its own to
+    // own it yet (a pasted or appended sketch) landed on its plane without
+    // touching any of its vertices.
+    let touched_points: Vec<DVec3> = tags.keys().map(|v| model.vertex(*v)).collect();
     let mut cells: BTreeMap<Cell, Vec<FaceId>> = BTreeMap::new();
     let mut planes: Vec<Plane> = Vec::new();
     let mut plane_cells: BTreeMap<Cell, Vec<usize>> = BTreeMap::new();
@@ -134,7 +138,9 @@ fn run(
         let Some(&p) = f.plane() else { continue };
         let c = cell(&p, &tol);
         cells.entry(c).or_default().push(id);
-        if face_tag(f) == Tag::Still {
+        let landed_on =
+            face_tag(f) != Tag::Still || touched_points.iter().any(|q| p.contains(*q, &tol));
+        if !landed_on {
             continue;
         }
         let known = around(c).any(|k| {

@@ -96,6 +96,68 @@ fn paste_in_place_on_itself_joins_by_the_overlap_rules() {
     assert!(check::problems(d.model()).is_empty());
 }
 
+/// A loose circle, as its own two-arc clip (the shape a copied circle
+/// takes): built directly, not drawn, so pasting it is the only thing
+/// that ever touches the box.
+fn circle_clip(centre: DVec3, radius: f64) -> Model {
+    let mut m = Model::new();
+    let axis = DVec3::X;
+    let a = m.add_vertex(centre + v(0.0, radius, 0.0));
+    let b = m.add_vertex(centre - v(0.0, radius, 0.0));
+    m.add_curve_edge(
+        a,
+        b,
+        prism_geom::Curve::Arc {
+            centre,
+            axis,
+            radius,
+        },
+        None,
+    );
+    m.add_curve_edge(
+        b,
+        a,
+        prism_geom::Curve::Arc {
+            centre,
+            axis,
+            radius,
+        },
+        None,
+    );
+    m
+}
+
+#[test]
+fn a_pasted_circle_cuts_the_coplanar_face_it_lands_on() {
+    // A box from (0,0,0) to (2,2,1). Its face at x = 2 spans y in [0,2],
+    // z in [0,1]. A circle centred right on that face's bottom-back
+    // corner (2,2,0), so it pokes out below and behind the box, used to
+    // land on the model as two bare arcs that never cut the face at all
+    // (the plane was never found: nothing of the circle's own coincided
+    // with one of the face's vertices, so the coplanar rule never ran
+    // on it as drawing would have).
+    let mut d = Document::new();
+    boxed(&mut d, v(0.0, 0.0, 0.0), 2.0, 1.0);
+    let before = d.model().face_count();
+    let circle = circle_clip(v(2.0, 2.0, 0.0), 0.6);
+    let clip = d
+        .assembly()
+        .clip(ROOT, &DAffine3::IDENTITY, circle, &BTreeSet::new());
+    assert!(paste(&mut d, &clip, DVec3::ZERO));
+    assert!(check::problems(d.model()).is_empty());
+    assert!(
+        d.model().face_count() > before,
+        "the circle should have split the face it landed on, not just sat on top of it"
+    );
+    let in_faces: BTreeSet<_> = d.model().faces().flat_map(|(_, f)| f.edge_ids()).collect();
+    assert!(
+        d.model()
+            .edges()
+            .any(|(id, e)| e.curve.is_curved() && in_faces.contains(&id)),
+        "at least part of the circle should bound a face, not be left as bare wire"
+    );
+}
+
 #[test]
 fn a_group_pastes_as_its_own_group_and_a_component_stays_shared() {
     let mut d = Document::new();
