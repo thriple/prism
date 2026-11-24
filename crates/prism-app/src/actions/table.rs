@@ -1287,20 +1287,6 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
-        id: "tool.hinge",
-        name: "Hinge",
-        key: "",
-        proto_run: "",
-        when: "",
-    },
-    RawAction {
-        id: "tool.slide",
-        name: "Slide",
-        key: "",
-        proto_run: "",
-        when: "",
-    },
-    RawAction {
         id: "tool.cplane",
         name: "Construction Plane",
         key: "",
@@ -2334,8 +2320,6 @@ pub const DOCK: &[(&str, &[&str])] = &[
             "tool.section",
             "tool.cplane",
             "tool.project",
-            "tool.hinge",
-            "tool.slide",
         ],
     ),
     (
