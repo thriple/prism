@@ -449,3 +449,94 @@ fn delete_key_removes_the_selected_joint() {
     d.action("edit.delete");
     assert!(d.s.document().assembly().joints().0.is_empty());
 }
+
+#[test]
+fn the_island_shows_while_the_tool_is_active_or_a_joint_is_selected_and_closes_otherwise() {
+    let (s, ..) = two_boxes();
+    let mut d = Driver::new(s);
+    d.tool(SELECT);
+    assert!(
+        d.s.joint_island().is_none(),
+        "nothing to show with no joints at all"
+    );
+
+    d.tool(HINGE_TOOL);
+    assert!(
+        d.s.joint_island().is_none(),
+        "still nothing: the tool is active but no joint exists yet"
+    );
+    d.click(DVec3::new(0.5, 0.5, 0.5));
+    d.click(DVec3::new(2.5, 0.5, 0.5));
+    d.click(top_of(DVec3::new(0.0, 0.0, 0.0)));
+    let j = d.s.joint_island().expect("a joint now exists");
+    assert_eq!(j.kind, JointKind::Hinge);
+    assert!(j.min.is_none() && j.max.is_none(), "{j:?}");
+
+    d.tool(SELECT);
+    assert!(
+        d.s.joint_island().is_none(),
+        "closes once the tool is no longer Hinge/Slide and nothing is selected"
+    );
+
+    // Alt + click the gizmo's own circle, away from either default
+    // handle (at +/- 30 degrees round from the axis' own `u`), selects
+    // it. The axis comes from wherever the third click's inference
+    // landed, not necessarily the world origin, so read it back rather
+    // than assuming.
+    let (joints, _) = d.s.document().assembly().joints();
+    let j = *joints.values().next().expect("one");
+    let (u, _) = prism_infer::plane_frame(j.axis_dir);
+    d.alt_click(j.axis_origin - u * model_reach());
+    assert!(
+        d.s.joint_island().is_some(),
+        "shows again once the joint is selected"
+    );
+}
+
+#[test]
+fn the_islands_fields_show_only_the_bounds_that_are_set() {
+    let (doc, ..) = slide_doc();
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    d.alt_click(DVec3::new(model_reach() * 0.4, 0.0, 0.0));
+    d.typed("0.6"); // sets the max bound exactly
+
+    let j =
+        d.s.joint_island()
+            .expect("selected after setting its bound");
+    assert_eq!(j.max.as_deref(), Some("0.600 m"));
+    assert!(j.min.is_none(), "the min bound is still unset: {j:?}");
+}
+
+#[test]
+fn typing_in_the_islands_field_sets_the_bound_exactly() {
+    let (mut doc, a, b) = two_boxes_doc();
+    doc.run(Command::AddJoint {
+        kind: JointKind::Hinge,
+        a,
+        b,
+        origin: DVec3::new(0.0, 0.0, 0.0),
+        dir: DVec3::new(0.0, 0.0, 1.0),
+    });
+    let mut s = session_on(doc);
+    // No selection needed: with nothing selected, the island (and
+    // joint_target, which it shares with Edit > Joint) acts on the
+    // newest joint, the only one here.
+    s.joint_island_input(prism_tools::session::JointIslandSet::Max("60".into()));
+
+    let (joints, _) = s.document().assembly().joints();
+    let j = joints.values().next().unwrap();
+    assert!(
+        j.max.is_some_and(|v| (v - 60f64.to_radians()).abs() < 1e-9),
+        "{:?}",
+        j.max
+    );
+}
+
+#[test]
+fn removing_from_the_island_deletes_the_joint_in_context() {
+    let (doc, ..) = slide_doc();
+    let mut s = session_on(doc);
+    s.joint_remove_selected();
+    assert!(s.document().assembly().joints().0.is_empty());
+}

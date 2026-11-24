@@ -59,6 +59,9 @@ pub enum PanelOp {
     Hole(prism_tools::session::HoleSet),
     /// The Draft Angle window: the angle as typed.
     Draft(prism_tools::session::DraftSet),
+    /// The joint island: a bound as typed, or Remove Joint.
+    JointBound(prism_tools::session::JointIslandSet),
+    JointRemove,
     /// The Primitives window: a kind, or a size as typed.
     Prim(prism_tools::session::PrimSet),
     /// The Align window: a cell of its grid in a plane.
@@ -111,6 +114,9 @@ pub struct PanelData {
     pub prim: Option<prism_tools::session::PrimPanel>,
     /// How many groups are selected (the Align and Distribute windows).
     pub groups: usize,
+    /// The bottom-centre joint island (while a Hinge/Slide tool is
+    /// active, or an existing joint is selected).
+    pub joint_island: Option<prism_tools::session::JointIsland>,
 }
 
 /// Which panels are open, and text being edited.
@@ -178,6 +184,9 @@ pub struct Panels {
     pub hole_typing: Option<(&'static str, String)>,
     pub draft: bool,
     pub draft_typing: Option<String>,
+    /// The joint island's own field being typed: which bound (true for
+    /// max), and the text.
+    pub joint_typing: Option<(bool, String)>,
     pub prim: bool,
     pub prim_typing: Option<(&'static str, String)>,
     /// The Align and Distribute windows, and the plane the Align grid is

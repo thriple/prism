@@ -9,6 +9,7 @@ mod fillet;
 mod hints;
 mod holing;
 mod inspector;
+mod joints;
 mod loft;
 mod materials;
 mod panels;

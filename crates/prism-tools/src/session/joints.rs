@@ -45,6 +45,24 @@ pub(super) struct JointDrag {
     pub t: f64,
 }
 
+/// What the bottom-centre island shows for the joint in context: each
+/// bound that is set, as text to correct exactly. An unset bound has no
+/// field here — drag its handle out on the gizmo to give it one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JointIsland {
+    pub id: JointId,
+    pub kind: JointKind,
+    pub min: Option<String>,
+    pub max: Option<String>,
+}
+
+/// A value typed into the island.
+#[derive(Clone, Debug, PartialEq)]
+pub enum JointIslandSet {
+    Min(String),
+    Max(String),
+}
+
 /// How near the cursor must be to a joint's gizmo or handle, in pixels.
 const BORDER_PX: f64 = 8.0;
 const HANDLE_PX: f64 = 10.0;
@@ -460,6 +478,75 @@ impl Session {
             }
             _ => {}
         }
+        self.overlay_dirty = true;
+        self.dirty = true;
+    }
+
+    /// Remove Joint, from the bottom-centre island.
+    pub fn joint_remove_selected(&mut self) {
+        self.joint_action("joint.delete");
+    }
+
+    /// A bound's value as text: degrees for a Hinge, the document's own
+    /// length units for a Slide.
+    fn joint_bound_text(&self, kind: JointKind, v: f64) -> String {
+        match kind {
+            JointKind::Hinge => format!("{}", (v.to_degrees() * 1000.0).round() / 1000.0),
+            JointKind::Slide => self.number.show(v),
+        }
+    }
+
+    /// The bottom-centre island (brief 53's diegetic design): while a
+    /// Hinge/Slide tool is active, or an existing joint is selected, the
+    /// joint in context (`joint_target`), and each bound that is set, as
+    /// a typed value to correct exactly. Nothing else lives here — no
+    /// part picker, axis field or Stopped toggle; those are the gizmo's
+    /// own job.
+    pub fn joint_island(&self) -> Option<JointIsland> {
+        if !is_joint_tool(&self.tool) && self.joint_sel.is_none() {
+            return None;
+        }
+        let id = self.joint_target()?;
+        let j = self.doc.assembly().joint(id)?;
+        Some(JointIsland {
+            id,
+            kind: j.kind,
+            min: j.min.map(|v| self.joint_bound_text(j.kind, v)),
+            max: j.max.map(|v| self.joint_bound_text(j.kind, v)),
+        })
+    }
+
+    /// The island's own typed field for a bound: parsed the same way the
+    /// gizmo handle's typed value already is (degrees for a Hinge, a
+    /// length for a Slide).
+    pub fn joint_island_input(&mut self, op: JointIslandSet) {
+        let Some(id) = self.joint_target() else {
+            return;
+        };
+        let Some(j) = self.doc.assembly().joint(id) else {
+            return;
+        };
+        let (max, text) = match op {
+            JointIslandSet::Min(t) => (false, t),
+            JointIslandSet::Max(t) => (true, t),
+        };
+        let value = match j.kind {
+            JointKind::Hinge => text
+                .trim()
+                .trim_end_matches('°')
+                .parse::<f64>()
+                .ok()
+                .map(f64::to_radians),
+            JointKind::Slide => self.number.length(&text),
+        };
+        let Some(value) = value else {
+            return;
+        };
+        self.run(Command::SetJointBound {
+            id,
+            max,
+            value: Some(value),
+        });
         self.overlay_dirty = true;
         self.dirty = true;
     }

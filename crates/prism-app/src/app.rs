@@ -484,6 +484,7 @@ impl App {
                     draft: s.draft_panel(),
                     hole: s.hole_panel(),
                     groups: s.selected_groups().len(),
+                    joint_island: s.joint_island(),
                 };
             }
             for op in std::mem::take(&mut chrome.panel_ops) {
@@ -519,6 +520,8 @@ impl App {
                     crate::chrome::PanelOp::Array(op) => s.array_input(op),
                     crate::chrome::PanelOp::Prim(op) => s.prim_input(op),
                     crate::chrome::PanelOp::Draft(op) => s.draft_input(op),
+                    crate::chrome::PanelOp::JointBound(op) => s.joint_island_input(op),
+                    crate::chrome::PanelOp::JointRemove => s.joint_remove_selected(),
                     crate::chrome::PanelOp::Hole(op) => s.hole_input(op),
                     crate::chrome::PanelOp::Align { plane, col, row } => {
                         s.align_cell(plane, col, row)

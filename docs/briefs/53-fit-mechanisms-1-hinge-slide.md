@@ -57,8 +57,8 @@
 
 ## Acceptance
 
-- [ ] A door (one group hinged to another) swings open and closed with a limit, by dragging or typing an angle.
-- [ ] A wheel (one group hinged to a chassis, no limit) spins freely through Rotate.
-- [ ] A shock absorber (a piston group slid in a housing group, with a range) compresses and extends by dragging or typing a distance, and stops at its travel limit.
-- [ ] A joint's limits are set by dragging its gizmo, not by opening a settings panel; the only floating control is the bottom-centre island, and only while it's relevant.
-- [ ] PLAN, NOTES and this brief's checkboxes are updated when the part is done.
+- [x] A door (one group hinged to another) swings open and closed with a limit, by dragging or typing an angle.
+- [x] A wheel (one group hinged to a chassis, no limit) spins freely through Rotate.
+- [x] A shock absorber (a piston group slid in a housing group, with a range) compresses and extends by dragging or typing a distance, and stops at its travel limit.
+- [x] A joint's limits are set by dragging its gizmo, not by opening a settings panel; the only floating control is the bottom-centre island, and only while it's relevant.
+- [ ] PLAN, NOTES and this brief's checkboxes are updated when the part is done. (MCP support — list/read/create/remove a joint — is still outstanding; this line stays unchecked until it lands.)

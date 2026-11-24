@@ -88,7 +88,7 @@ pub use groups::{BEVERLY_TAGS, EntityInfo, FeatureItem, OutlineRow, Owner, TagOp
 pub use health::HealthRow;
 pub use holing::{HOLE_TOOL, HolePanel, HoleSet, HoleSettings};
 pub use inspector::{Field, FieldKind, Inspector, Section};
-pub use joints::{HINGE_TOOL, SLIDE_TOOL};
+pub use joints::{HINGE_TOOL, JointIsland, JointIslandSet, SLIDE_TOOL};
 pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use mirror::{MIRROR_NOTHING, MIRROR_TOOL};

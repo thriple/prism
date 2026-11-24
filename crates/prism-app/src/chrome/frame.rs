@@ -127,6 +127,17 @@ pub(super) fn show(chrome: &mut Chrome, ctx: &Context) -> Layout {
         })
         .inner;
 
+    // The joint island (brief 53): floats over the viewport, bottom
+    // centre, independent of the side column.
+    {
+        let data = chrome.panel_data.clone();
+        let mut p = chrome.panels.clone();
+        let mut ops = Vec::new();
+        super::joints::show(ctx, viewport, &data, &mut p, &mut ops);
+        chrome.panels = p;
+        chrome.panel_ops.extend(ops);
+    }
+
     // The status bar: the tool's hint, then the lock chip, the measurement
     // box and the build.
     Area::new(Id::unique("status"))
