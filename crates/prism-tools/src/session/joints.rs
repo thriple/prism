@@ -551,6 +551,50 @@ impl Session {
         self.dirty = true;
     }
 
+    /// Add a joint between parts `a` and `b` (for the assistant). None
+    /// if refused — the same instance twice, an instance outside the
+    /// open group, or an axis with no length. Returns the new joint's
+    /// id.
+    pub fn add_joint_mcp(
+        &mut self,
+        kind: JointKind,
+        a: u32,
+        b: u32,
+        origin: DVec3,
+        dir: DVec3,
+    ) -> Option<u32> {
+        self.cancel();
+        if !self.run(Command::AddJoint {
+            kind,
+            a: InstanceId(a),
+            b: InstanceId(b),
+            origin,
+            dir,
+        }) {
+            return None;
+        }
+        self.doc
+            .assembly()
+            .joints()
+            .0
+            .keys()
+            .next_back()
+            .map(|id| id.0)
+    }
+
+    /// Remove a joint (for the assistant). False if there is no such
+    /// joint.
+    pub fn remove_joint_mcp(&mut self, id: u32) -> bool {
+        let id = JointId(id);
+        if self.doc.assembly().joint(id).is_none() {
+            return false;
+        }
+        self.cancel();
+        self.joint_remove(id);
+        self.ann_clear();
+        true
+    }
+
     /// Every joint's gizmo: a Hinge's circle (a filled arc between its
     /// bounds) or a Slide's rail (a bar between them), with a handle at
     /// each bound, solid where it is set.

@@ -338,6 +338,40 @@ pub fn tools() -> Value {
             },
         },
         {
+            "name": "list_joints",
+            "title": "List joints",
+            "description": "The document's Hinge and Slide joints: id, kind, the two parts' instance ids (a, b), axis origin and dir ([x, y, z]), min and max (radians for a Hinge, metres for a Slide; null where unset), and whether it is stopped (held at its current pose).",
+            "inputSchema": none,
+        },
+        {
+            "name": "add_joint",
+            "title": "Add a joint",
+            "description": "Add a Hinge or Slide joint between parts `a` and `b` (instance ids, from get_model or get_selection), about the line through `origin` [x, y, z] (metres) along `dir` [x, y, z]. No limit is set; a limit is dragged on the joint's own gizmo in the viewport, the same as a person would. Refused if a and b are the same part, either is outside the open group, or dir has no length. One undo step (run_action edit.undo). Returns its id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["hinge", "slide"]},
+                    "a": {"type": "integer"},
+                    "b": {"type": "integer"},
+                    "origin": {"type": "array", "items": {"type": "number"}},
+                    "dir": {"type": "array", "items": {"type": "number"}},
+                },
+                "required": ["kind", "a", "b", "origin", "dir"],
+            },
+        },
+        {
+            "name": "remove_joint",
+            "title": "Remove a joint",
+            "description": "Remove joint `id` (from list_joints). The two parts stay where they are; Rotate and Move go back to their usual plane-normal guess, unclamped.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                },
+                "required": ["id"],
+            },
+        },
+        {
             "name": "paint",
             "title": "Paint faces or groups",
             "description": "Paint faces (by id, from get_geometry) or the selection with a material, in one undoable step. The material is an existing one by `material` (its id or name, from get_model), a new plain colour by `colour` (\"#rrggbb\", with an optional `name`), or `default` (back to Default). `side` is front (the outside, the default), back, or both. With `selection`, the selected faces and groups are painted (a group as a whole: its Default faces show the material). The Paint Bucket itself is tool.paint in use_tool, whose clicks take `keys` (ctrl fills connected, shift replaces everywhere, ctrl+shift in the open group, alt samples).",
@@ -614,6 +648,9 @@ mod tests {
                 "list_construction_planes",
                 "add_construction_plane",
                 "set_construction_plane_active",
+                "list_joints",
+                "add_joint",
+                "remove_joint",
                 "paint",
                 "screenshot",
                 "replay_session",

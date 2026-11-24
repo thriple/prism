@@ -156,6 +156,47 @@ impl Host for AppHost<'_> {
                 }
                 self.work_planes()
             }
+            "list_joints" => self.joints(),
+            "add_joint" => {
+                let kind = match args.get("kind").and_then(Value::as_str) {
+                    Some("hinge") => prism_doc::JointKind::Hinge,
+                    Some("slide") => prism_doc::JointKind::Slide,
+                    _ => return Err("kind is \"hinge\" or \"slide\"".into()),
+                };
+                let a = args.get("a").and_then(Value::as_u64);
+                let b = args.get("b").and_then(Value::as_u64);
+                let origin = args.get("origin").and_then(parse_point);
+                let dir = args.get("dir").and_then(parse_point);
+                let (Some(a), Some(b), Some(origin), Some(dir)) = (a, b, origin, dir) else {
+                    return Err(
+                        "a, b (instance ids), origin and dir are required ([x, y, z] for origin and dir)"
+                            .into(),
+                    );
+                };
+                match self
+                    .viewport
+                    .session
+                    .add_joint_mcp(kind, a as u32, b as u32, origin, dir)
+                {
+                    Some(id) => json!({"id": id, "joints": self.joints()}),
+                    None => {
+                        return Err(
+                            "a and b must be two different parts in the open group, with an axis that has length"
+                                .into(),
+                        );
+                    }
+                }
+            }
+            "remove_joint" => {
+                let id = args
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .ok_or("id is the number from list_joints")?;
+                if !self.viewport.session.remove_joint_mcp(id as u32) {
+                    return Err(format!("no joint {id}"));
+                }
+                self.joints()
+            }
             "paint" => self.paint(args)?,
             "replay_session" => replay(args)?,
             "run_action" => self.run(args.get("id").and_then(Value::as_str))?,
@@ -563,6 +604,32 @@ impl AppHost<'_> {
                     "origin": point(p.origin),
                     "normal": point(p.normal),
                     "active": active == Some(*id),
+                })
+            })
+            .collect();
+        json!(rows)
+    }
+
+    fn joints(&self) -> Value {
+        let asm = self.viewport.session.document().assembly();
+        let rows: Vec<Value> = asm
+            .joints()
+            .0
+            .iter()
+            .map(|(id, j)| {
+                json!({
+                    "id": id.0,
+                    "kind": match j.kind {
+                        prism_doc::JointKind::Hinge => "hinge",
+                        prism_doc::JointKind::Slide => "slide",
+                    },
+                    "a": j.a.0,
+                    "b": j.b.0,
+                    "origin": point(j.axis_origin),
+                    "dir": point(j.axis_dir),
+                    "min": j.min,
+                    "max": j.max,
+                    "stopped": j.stopped,
                 })
             })
             .collect();
@@ -1349,6 +1416,96 @@ mod tests {
             .is_err(),
             "three in a line"
         );
+    }
+
+    /// Two 1 m boxed groups, side by side, each its own group, and their
+    /// instance ids.
+    fn two_boxes() -> (prism_doc::Document, u32, u32) {
+        let mut doc = prism_doc::Document::new();
+        let mut ids = Vec::new();
+        for at in [0.0, 2.0] {
+            doc.run(prism_doc::Command::Rect {
+                x0: at,
+                y0: 0.0,
+                x1: at + 1.0,
+                y1: 1.0,
+                z: 0.0,
+            });
+            let f = prism_ops::face_at(doc.model(), prism_math::DVec3::new(at + 0.5, 0.5, 0.0))
+                .expect("base");
+            doc.run(prism_doc::Command::PushPull {
+                face: f,
+                distance: 1.0,
+                new_loop: false,
+            });
+            ids.push(doc.assembly().next_instance().0);
+            let n = everything(doc.model());
+            doc.run(prism_doc::Command::MakeGroup {
+                selection: n,
+                instances: std::collections::BTreeSet::new(),
+            });
+        }
+        (doc, ids[0], ids[1])
+    }
+
+    fn everything(m: &prism_topo::Model) -> prism_ops::Selection {
+        prism_ops::Selection {
+            edges: m.edges().map(|(id, _)| id).collect(),
+            faces: m.faces().map(|(id, _)| id).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn joints_are_listed_added_and_removed() {
+        let (doc, a, b) = two_boxes();
+        let (mut chrome, mut viewport, mut files) = parts(doc);
+        let (mut tabs, mut tool) = (Vec::new(), "tool.select");
+        let mut h = AppHost {
+            chrome: &mut chrome,
+            viewport: &mut viewport,
+            files: &mut files,
+            tab_actions: &mut tabs,
+            last_tool: &mut tool,
+        };
+        assert_eq!(value(h.call("list_joints", &json!({}))), json!([]));
+        let r = value(h.call(
+            "add_joint",
+            &json!({
+                "kind": "hinge",
+                "a": a,
+                "b": b,
+                "origin": [0.0, 0.0, 0.0],
+                "dir": [0.0, 0.0, 1.0],
+            }),
+        ));
+        assert_eq!(r["id"], 0);
+        assert_eq!(r["joints"][0]["kind"], "hinge");
+        assert_eq!(r["joints"][0]["dir"], json!([0.0, 0.0, 1.0]));
+        assert_eq!(r["joints"][0]["min"], Value::Null);
+        assert_eq!(r["joints"][0]["stopped"], false);
+
+        assert!(
+            h.call(
+                "add_joint",
+                &json!({"kind": "hinge", "a": a, "b": a, "origin": [0, 0, 0], "dir": [0, 0, 1]})
+            )
+            .is_err(),
+            "the same part twice"
+        );
+        assert!(
+            h.call(
+                "add_joint",
+                &json!({"kind": "slide", "a": a, "b": b, "origin": [0, 0, 0], "dir": [0, 0, 0]})
+            )
+            .is_err(),
+            "an axis with no length"
+        );
+        assert!(h.call("remove_joint", &json!({"id": 7})).is_err());
+
+        let r = value(h.call("remove_joint", &json!({"id": 0})));
+        assert_eq!(r, json!([]));
+        assert_eq!(value(h.call("list_joints", &json!({}))), json!([]));
     }
 
     /// DXF and SVG over MCP (brief 45): a box laid flat is one closed
