@@ -73,6 +73,10 @@ pub(super) enum EditOp {
         verts: BTreeSet<VertexId>,
         delta: DVec3,
         copy: bool,
+        /// A Slide joint the moved instance is one part of (Fit &
+        /// Mechanisms part 1): `delta` is kept along its axis and clamped
+        /// to its range.
+        joint: Option<prism_doc::JointId>,
     },
     Rotate {
         centre: DVec3,
@@ -87,6 +91,10 @@ pub(super) enum EditOp {
         copy: bool,
         /// Where the centre was pressed, while the button is still down.
         pressed: Option<DVec2>,
+        /// A Hinge joint the rotated instance is one part of (Fit &
+        /// Mechanisms part 1): `centre` and `normal` are its axis, and
+        /// `angle` is clamped to its limit.
+        joint: Option<prism_doc::JointId>,
     },
     /// Scale by a grip of the box round the selection (`scalebox`).
     Scale {
@@ -556,22 +564,28 @@ impl Session {
         };
         let shift = self.shift_held;
         // Move: Smart Guides adjust where the cursor puts it.
-        if let Some(EditOp::Move { from, .. }) = &self.edit {
-            let raw = i.point - *from;
+        if let Some(EditOp::Move { from, joint, .. }) = &self.edit {
+            let (from, joint) = (*from, *joint);
+            let raw = i.point - from;
             let d = self.smart_adjust(raw, view);
+            let d = self.joint_clamp_delta(joint, d);
             if let Some(EditOp::Move { delta, .. }) = &mut self.edit {
                 *delta = d;
             }
             self.update_preview();
             return;
         }
-        let (c, n, start, rotate) = match &self.edit {
+        let (c, n, start, rotate, joint) = match &self.edit {
             Some(EditOp::Rotate {
-                centre, normal, u0, ..
-            }) => (*centre, *normal, *u0, true),
+                centre,
+                normal,
+                u0,
+                joint,
+                ..
+            }) => (*centre, *normal, *u0, true, *joint),
             Some(EditOp::Protractor {
                 centre, normal, u0, ..
-            }) => (*centre, *normal, *u0, false),
+            }) => (*centre, *normal, *u0, false, None),
             _ => return,
         };
         let Some(p) = plane_point(view, s, c, n) else {
@@ -601,6 +615,7 @@ impl Session {
         if shift {
             self.smart_clear();
         }
+        let a = a.map(|v| self.joint_clamp_angle(joint, v));
         if let Some(EditOp::Rotate { u1, angle, .. } | EditOp::Protractor { u1, angle, .. }) =
             &mut self.edit
         {
@@ -1033,12 +1048,19 @@ impl Session {
         };
         let verts = selection.all_vertices(self.work_model());
         self.smart_begin_move(&verts);
+        // A Slide joint on the one part selected keeps the drag along its
+        // own axis (Fit & Mechanisms part 1). Not while copying.
+        let joint = (!self.ctrl_copy)
+            .then(|| self.joint_for_edit(&selection))
+            .flatten()
+            .map(|(id, _)| id);
         self.edit = Some(EditOp::Move {
             from: i.point,
             selection,
             verts,
             delta: DVec3::ZERO,
             copy: self.ctrl_copy,
+            joint,
         });
         self.after_start();
     }
@@ -1060,11 +1082,21 @@ impl Session {
                 let Some(i) = self.inference.clone() else {
                     return;
                 };
-                let normal = self.protractor_normal();
+                // A Hinge joint on the one part selected overrides the
+                // usual face-hover plane: it turns about its own axis
+                // (Fit & Mechanisms part 1). Not while copying: the copy
+                // is not the joint's own part.
+                let joint = (!self.ctrl_copy)
+                    .then(|| self.joint_for_edit(&selection))
+                    .flatten();
+                let (centre, normal) = match &joint {
+                    Some((_, j)) => (j.axis_origin, j.axis_dir),
+                    None => (i.point, self.protractor_normal()),
+                };
                 let verts = selection.all_vertices(self.work_model());
                 self.smart_begin_turn(&verts, normal);
                 self.edit = Some(EditOp::Rotate {
-                    centre: i.point,
+                    centre,
                     normal,
                     u0: None,
                     u1: None,
@@ -1073,6 +1105,7 @@ impl Session {
                     verts,
                     copy: self.ctrl_copy,
                     pressed: Some(s),
+                    joint: joint.map(|(id, _)| id),
                 });
                 self.after_start();
             }
@@ -1234,7 +1267,9 @@ impl Session {
                 let sign = if d < 0.0 { -1.0 } else { 1.0 };
                 self.commit_push(face, sign * v, new_loop);
             }
-            EditOp::Move { mut delta, .. } => {
+            EditOp::Move {
+                mut delta, joint, ..
+            } => {
                 let Some(v) = nf.length(text) else {
                     return true;
                 };
@@ -1246,18 +1281,21 @@ impl Session {
                 if dir == DVec3::ZERO {
                     dir = DVec3::X;
                 }
-                delta = dir * v;
+                delta = self.joint_clamp_delta(joint, dir * v);
                 if let Some(EditOp::Move { delta: d, .. }) = &mut self.edit {
                     *d = delta;
                 }
                 self.finish_edit();
             }
-            EditOp::Rotate { u0: Some(_), .. } => {
+            EditOp::Rotate {
+                u0: Some(_), joint, ..
+            } => {
                 let Ok(deg) = text.trim().trim_end_matches('°').parse::<f64>() else {
                     return true;
                 };
+                let a = self.joint_clamp_angle(joint, deg.to_radians());
                 if let Some(EditOp::Rotate { angle, .. }) = &mut self.edit {
-                    *angle = deg.to_radians();
+                    *angle = a;
                 }
                 self.finish_edit();
             }
@@ -1349,15 +1387,16 @@ impl Session {
                     }
                 }
                 match &mut e {
-                    EditOp::Move { delta, .. } => {
+                    EditOp::Move { delta, joint, .. } => {
                         let Some(v) = nf.length(t) else { return true };
-                        *delta = delta.normalize_or_zero() * v.abs();
+                        *delta =
+                            self.joint_clamp_delta(*joint, delta.normalize_or_zero() * v.abs());
                     }
-                    EditOp::Rotate { angle, .. } => {
+                    EditOp::Rotate { angle, joint, .. } => {
                         let Ok(deg) = t.trim_end_matches('°').parse::<f64>() else {
                             return true;
                         };
-                        *angle = deg.to_radians();
+                        *angle = self.joint_clamp_angle(*joint, deg.to_radians());
                     }
                     EditOp::Scale { k, grip, .. } => {
                         let Ok(f) = t.trim_end_matches(['x', '×']).parse::<f64>() else {

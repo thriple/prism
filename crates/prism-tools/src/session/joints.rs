@@ -8,9 +8,10 @@
 //! - A joint changes no geometry; it is a document object of its own
 //!   (`prism_doc::Joint`), the same way a Section Plane or Dimension is.
 
-use prism_doc::{Command, InstanceId, JointKind};
+use prism_doc::{Command, InstanceId, Joint, JointId, JointKind};
 use prism_geom::{Curve, Surface};
 use prism_math::{DVec2, DVec3};
+use prism_ops::Selection;
 use prism_view::View;
 use prism_view::overlay::{Line, Overlay};
 use prism_view::pick;
@@ -180,5 +181,32 @@ impl Session {
             width: fb.rubber_band_width,
             dash: [0.0, 0.0],
         });
+    }
+
+    /// The joint naming the one part this Rotate or Move would act on, if
+    /// the selection is exactly that one whole part and nothing else: the
+    /// axis it turns or slides about, and the id to clamp to.
+    pub(super) fn joint_for_edit(&self, selection: &Selection) -> Option<(JointId, Joint)> {
+        if self.groups.len() != 1 || !selection.is_empty() {
+            return None;
+        }
+        let i = *self.groups.iter().next()?;
+        self.doc.assembly().joint_of(i).map(|(id, j)| (id, *j))
+    }
+
+    /// `angle` brought inside `id`'s limit, unchanged if `id` is None or
+    /// gone.
+    pub(super) fn joint_clamp_angle(&self, id: Option<JointId>, angle: f64) -> f64 {
+        id.and_then(|id| self.doc.assembly().joint(id))
+            .map_or(angle, |j| j.clamp(angle))
+    }
+
+    /// `delta` kept along `id`'s own axis and brought inside its range,
+    /// unchanged if `id` is None or gone.
+    pub(super) fn joint_clamp_delta(&self, id: Option<JointId>, delta: DVec3) -> DVec3 {
+        let Some(j) = id.and_then(|id| self.doc.assembly().joint(id)) else {
+            return delta;
+        };
+        j.axis_dir * j.clamp(delta.dot(j.axis_dir))
     }
 }

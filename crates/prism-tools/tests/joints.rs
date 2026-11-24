@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use prism_doc::{Command, Document, InstanceId, JointKind};
 use prism_math::{DVec2, DVec3};
 use prism_ops::Selection;
-use prism_tools::session::{HINGE_TOOL, SLIDE_TOOL};
+use prism_tools::session::{HINGE_TOOL, MOVE, ROTATE, SELECT, SLIDE_TOOL};
 use prism_tools::{Button, Event, Input, Session};
 use prism_view::Camera;
 
@@ -42,12 +42,17 @@ fn boxed_group(d: &mut Document, at: DVec3) -> InstanceId {
     id
 }
 
-/// Two boxes side by side, each its own group, and a session looking at
-/// both from an angle that sees their tops and sides.
-fn two_boxes() -> (Session, InstanceId, InstanceId) {
+/// Two boxes side by side, each its own group.
+fn two_boxes_doc() -> (Document, InstanceId, InstanceId) {
     let mut d = Document::new();
     let a = boxed_group(&mut d, DVec3::new(0.0, 0.0, 0.0));
     let b = boxed_group(&mut d, DVec3::new(2.0, 0.0, 0.0));
+    (d, a, b)
+}
+
+/// A session looking at `d` from an angle that sees both boxes' tops and
+/// sides.
+fn session_on(d: Document) -> Session {
     let mut s = Session::new(Document::new());
     s.open_document(
         d,
@@ -56,7 +61,14 @@ fn two_boxes() -> (Session, InstanceId, InstanceId) {
             target: DVec3::new(1.5, 0.5, 0.5),
         }),
     );
-    (s, a, b)
+    s
+}
+
+/// Two boxes side by side, each its own group, and a session looking at
+/// both from an angle that sees their tops and sides.
+fn two_boxes() -> (Session, InstanceId, InstanceId) {
+    let (d, a, b) = two_boxes_doc();
+    (session_on(d), a, b)
 }
 
 struct Driver {
@@ -102,6 +114,18 @@ impl Driver {
 
     fn tool(&mut self, id: &str) {
         self.send(Input::Tool { id: id.into() });
+    }
+
+    fn hover(&mut self, p: DVec3) {
+        let s = self.screen(p);
+        self.send(Input::Move { x: s.x, y: s.y });
+    }
+
+    fn typed(&mut self, text: &str) {
+        self.send(Input::Text { text: text.into() });
+        self.send(Input::Key {
+            key: prism_tools::Key::Enter,
+        });
     }
 }
 
@@ -170,4 +194,110 @@ fn clicking_the_same_part_twice_does_not_make_a_joint() {
     d.click(DVec3::new(0.5, 0.5, 0.5));
     d.click(top_of(DVec3::new(0.0, 0.0, 0.0)));
     assert!(d.s.document().assembly().joints().0.is_empty());
+}
+
+#[test]
+fn rotating_a_hinged_part_turns_about_the_joints_axis_and_clamps_the_typed_angle() {
+    let (mut doc, a, b) = two_boxes_doc();
+    doc.run(Command::AddJoint {
+        kind: JointKind::Hinge,
+        a,
+        b,
+        origin: DVec3::new(0.0, 0.0, 0.0),
+        dir: DVec3::new(0.0, 0.0, 1.0),
+    });
+    let id = *doc.assembly().joints().0.keys().next().expect("one");
+    doc.run(Command::SetJointBound {
+        id,
+        max: true,
+        value: Some(45f64.to_radians()),
+    });
+
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.5));
+    d.tool(ROTATE);
+    // The first two clicks would normally set the centre and the rotation
+    // plane from the hovered face; the joint overrides both to its own
+    // axis, so where exactly these land does not matter beyond landing on
+    // the selected part and setting a start arm.
+    d.click(DVec3::new(0.5, 0.5, 0.5));
+    d.click(DVec3::new(1.0, 0.0, 0.0));
+    d.hover(DVec3::new(0.0, 1.0, 0.0)); // 90 degrees round from the start arm
+    d.typed("90"); // past the 45 degree limit
+
+    let (_, inst) =
+        d.s.document()
+            .assembly()
+            .find_instance(a)
+            .expect("still there");
+    let moved = inst.transform.transform_point3(DVec3::new(1.0, 0.0, 0.0));
+    let (s45, c45) = (45f64.to_radians().sin(), 45f64.to_radians().cos());
+    assert!(
+        (moved - DVec3::new(c45, s45, 0.0)).length() < 1e-6,
+        "clamped to 45 degrees: {moved:?}"
+    );
+}
+
+#[test]
+fn rotating_the_other_part_of_the_same_hinge_turns_about_the_same_axis() {
+    let (mut doc, a, b) = two_boxes_doc();
+    doc.run(Command::AddJoint {
+        kind: JointKind::Hinge,
+        a,
+        b,
+        origin: DVec3::new(2.0, 0.0, 0.0),
+        dir: DVec3::new(0.0, 0.0, 1.0),
+    });
+
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    d.click(DVec3::new(2.5, 0.5, 0.5)); // part b this time
+    d.tool(ROTATE);
+    d.click(DVec3::new(2.5, 0.5, 0.5));
+    d.click(DVec3::new(3.0, 0.0, 0.0));
+    d.hover(DVec3::new(2.0, 1.0, 0.0));
+    d.typed("90");
+
+    let (_, inst) = d.s.document().assembly().find_instance(b).expect("there");
+    // b's own local corner at its own low corner's +x neighbour, (1,0,0)
+    // in its own coordinates (the group's corner is its own origin).
+    let moved = inst.transform.transform_point3(DVec3::new(1.0, 0.0, 0.0));
+    assert!(
+        (moved - DVec3::new(2.0, 1.0, 0.0)).length() < 1e-6,
+        "turned 90 degrees about the joint's axis through (2,0,0): {moved:?}"
+    );
+}
+
+#[test]
+fn sliding_a_slide_joints_part_stays_on_its_axis_and_clamps_the_typed_distance() {
+    let (mut doc, a, b) = two_boxes_doc();
+    doc.run(Command::AddJoint {
+        kind: JointKind::Slide,
+        a,
+        b,
+        origin: DVec3::new(0.0, 0.0, 0.0),
+        dir: DVec3::new(1.0, 0.0, 0.0),
+    });
+    let id = *doc.assembly().joints().0.keys().next().expect("one");
+    doc.run(Command::SetJointBound {
+        id,
+        max: true,
+        value: Some(0.5),
+    });
+
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    d.click(DVec3::new(0.5, 0.5, 0.5));
+    d.tool(MOVE);
+    d.click(DVec3::new(0.5, 0.5, 0.5));
+    d.hover(DVec3::new(1.5, 0.5, 0.5)); // a diagonal-ish drag, off the axis
+    d.typed("2"); // past the 0.5 limit
+
+    let (_, inst) = d.s.document().assembly().find_instance(a).expect("there");
+    let moved = inst.transform.transform_point3(DVec3::ZERO);
+    assert!(
+        (moved - DVec3::new(0.5, 0.0, 0.0)).length() < 1e-6,
+        "kept on the axis and clamped to 0.5: {moved:?}"
+    );
 }

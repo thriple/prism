@@ -84,6 +84,8 @@ impl Session {
                 verts,
                 delta: delta * kf,
                 copy: true,
+                // A copy is not the joint's own part.
+                joint: None,
             },
             EditOp::Rotate {
                 centre,
@@ -102,6 +104,7 @@ impl Session {
                 verts,
                 copy: true,
                 pressed: None,
+                joint: None,
             },
             _ => return,
         };
