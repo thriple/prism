@@ -97,6 +97,63 @@ impl Dimension {
     }
 }
 
+/// A joint's id (Fit & Mechanisms part 1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct JointId(pub u32);
+
+/// What a joint lets its two parts do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JointKind {
+    /// Rotate about the axis. A limit, if any, is in degrees.
+    Hinge,
+    /// Move along the axis. A limit, if any, is in model units.
+    Slide,
+}
+
+/// A joint between two instances: an axis in the world, an independent
+/// min and max either side of the pose it was made at (its own zero, each
+/// set or cleared on its own, dragged out from the gizmo), and whether it
+/// is stopped at its current pose. It changes no geometry.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Joint {
+    pub a: InstanceId,
+    pub b: InstanceId,
+    pub axis_origin: DVec3,
+    /// Unit length.
+    pub axis_dir: DVec3,
+    pub kind: JointKind,
+    /// Relative to the joint's own zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub stopped: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+impl Joint {
+    /// A bound that is not a usable number is unset instead.
+    fn usable_bound(bound: Option<f64>) -> Option<f64> {
+        bound.filter(|v| v.is_finite())
+    }
+
+    /// Whether `value` is within this joint's own bounds (`true` always
+    /// without a limit on that side).
+    pub fn in_bounds(&self, value: f64) -> bool {
+        self.min.is_none_or(|lo| value >= lo) && self.max.is_none_or(|hi| value <= hi)
+    }
+
+    /// `value` brought inside this joint's bounds, nearest side.
+    pub fn clamp(&self, value: f64) -> f64 {
+        let value = self.min.map_or(value, |lo| value.max(lo));
+        self.max.map_or(value, |hi| value.min(hi))
+    }
+}
+
 /// A tag: a name, and whether what is on it is shown.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tag {
@@ -254,6 +311,11 @@ pub struct Assembly {
     /// The working plane the drawing tools use, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     active_work_plane: Option<WorkPlaneId>,
+    /// Hinge and Slide joints (Fit & Mechanisms part 1).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    joints: BTreeMap<JointId, Joint>,
+    #[serde(default)]
+    next_joint: u32,
 }
 
 /// An instance's name, tag and whether it is hidden (for files).
@@ -307,6 +369,8 @@ impl Assembly {
             dimensions: BTreeMap::new(),
             next_dim: 0,
             dim_anchors: BTreeMap::new(),
+            joints: BTreeMap::new(),
+            next_joint: 0,
         }
     }
 
@@ -388,6 +452,8 @@ impl Assembly {
             dimensions: BTreeMap::new(),
             next_dim: 0,
             dim_anchors: BTreeMap::new(),
+            joints: BTreeMap::new(),
+            next_joint: 0,
         })
     }
 
@@ -844,6 +910,129 @@ impl Assembly {
         if self.active_work_plane == Some(id) {
             self.active_work_plane = None;
         }
+    }
+
+    // ---------- joints (Fit & Mechanisms part 1) ----------
+
+    /// The joints, and the counter for new ones (for files).
+    pub fn joints(&self) -> (&BTreeMap<JointId, Joint>, u32) {
+        (&self.joints, self.next_joint)
+    }
+
+    pub fn joint(&self, id: JointId) -> Option<&Joint> {
+        self.joints.get(&id)
+    }
+
+    /// The joint naming `i` as one of its two parts, if any (for Rotate
+    /// and Move to find, and for Remove Joint on a selected part).
+    pub fn joint_of(&self, i: InstanceId) -> Option<(JointId, &Joint)> {
+        self.joints
+            .iter()
+            .find(|(_, j)| j.a == i || j.b == i)
+            .map(|(id, j)| (*id, j))
+    }
+
+    /// Set the joints from a file. One with an unusable axis, naming the
+    /// same instance for both parts, or with a backwards limit (`max` less
+    /// than `min`) is dropped.
+    pub fn with_joints(mut self, joints: BTreeMap<JointId, Joint>, next: u32) -> Self {
+        self.joints = joints
+            .into_iter()
+            .filter_map(|(id, mut j)| {
+                let n = j.axis_dir.normalize_or_zero();
+                if n == DVec3::ZERO || !j.axis_origin.is_finite() || j.a == j.b {
+                    return None;
+                }
+                // A unit axis is kept as it is, so files round trip exactly.
+                if (j.axis_dir.length() - 1.0).abs() > 1e-12 {
+                    j.axis_dir = n;
+                }
+                j.min = Joint::usable_bound(j.min);
+                j.max = Joint::usable_bound(j.max);
+                if let (Some(lo), Some(hi)) = (j.min, j.max)
+                    && lo > hi
+                {
+                    return None;
+                }
+                Some((id, j))
+            })
+            .collect();
+        self.next_joint = next.max(self.joints.keys().next_back().map_or(0, |k| k.0 + 1));
+        self
+    }
+
+    /// A new joint between `a` and `b`, two different instances of `ctx`,
+    /// about the axis through `origin` along `dir`. None if `a` and `b`
+    /// are not two different instances of the same group, or the axis is
+    /// unusable. No limit either side, not stopped.
+    pub fn add_joint(
+        &mut self,
+        ctx: DefId,
+        kind: JointKind,
+        a: InstanceId,
+        b: InstanceId,
+        origin: DVec3,
+        dir: DVec3,
+    ) -> Option<JointId> {
+        let n = dir.normalize_or_zero();
+        if a == b || n == DVec3::ZERO || !origin.is_finite() {
+            return None;
+        }
+        let def = self.def(ctx)?;
+        if !def.instances.contains_key(&a) || !def.instances.contains_key(&b) {
+            return None;
+        }
+        let id = JointId(self.next_joint);
+        self.next_joint += 1;
+        self.joints.insert(
+            id,
+            Joint {
+                a,
+                b,
+                axis_origin: origin,
+                axis_dir: n,
+                kind,
+                min: None,
+                max: None,
+                stopped: false,
+            },
+        );
+        Some(id)
+    }
+
+    /// Set or clear one of a joint's two bounds (`true` for `max`, `false`
+    /// for `min`); `None` clears it. The other bound is unchanged.
+    pub fn set_joint_bound(&mut self, id: JointId, max: bool, value: Option<f64>) {
+        let Some(j) = self.joints.get_mut(&id) else {
+            return;
+        };
+        let value = Joint::usable_bound(value);
+        if max {
+            j.max = value;
+        } else {
+            j.min = value;
+        }
+        // A bound dragged past the other is refused, not swapped: the
+        // other bound is left as it was instead of flipping meaning.
+        if let (Some(lo), Some(hi)) = (j.min, j.max)
+            && lo > hi
+        {
+            if max {
+                j.max = None;
+            } else {
+                j.min = None;
+            }
+        }
+    }
+
+    pub fn set_joint_stopped(&mut self, id: JointId, stopped: bool) {
+        if let Some(j) = self.joints.get_mut(&id) {
+            j.stopped = stopped;
+        }
+    }
+
+    pub fn delete_joint(&mut self, id: JointId) {
+        self.joints.remove(&id);
     }
 
     /// Lock or unlock instances (anywhere: instance ids are unique).
@@ -1550,6 +1739,8 @@ impl Assembly {
         self.on_tag.retain(|i, _| alive.contains(i));
         self.painted.retain(|i, _| alive.contains(i));
         self.locked.retain(|i| alive.contains(i));
+        self.joints
+            .retain(|_, j| alive.contains(&j.a) && alive.contains(&j.b));
     }
 
     /// Make Group: the selection (and the selected groups) in `ctx` move
@@ -2091,6 +2282,10 @@ impl Assembly {
             d.a = back.transform_point3(d.a);
             d.b = back.transform_point3(d.b);
             d.offset = back.transform_vector3(d.offset);
+        }
+        for j in self.joints.values_mut() {
+            j.axis_origin = back.transform_point3(j.axis_origin);
+            j.axis_dir = back.transform_vector3(j.axis_dir).normalize();
         }
         true
     }

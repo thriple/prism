@@ -53,8 +53,9 @@ pub use migrate::{Raw, migrate};
 /// Schema 13: dimensions (`dimensions.json`). Schema 14: construction
 /// planes (`planes.json`). Schema 16: a live boolean's tool is saved beside the base (`<id>.tool<k>.bin`). Schema 15: live features (`features` in
 /// `groups.json`, the base in `geometry/defs/<id>.base.bin`). Schema 17: the
-/// live shell. Schema 18: a live shell's rim styles (`rims`).
-pub const SCHEMA: u32 = 18;
+/// live shell. Schema 18: a live shell's rim styles (`rims`). Schema 19:
+/// Hinge and Slide joints (`joints.json`).
+pub const SCHEMA: u32 = 19;
 /// The `format` field of every manifest.
 pub const FORMAT: &str = "prism";
 /// The file extension.
@@ -68,6 +69,7 @@ const MATERIALS: &str = "materials.json";
 const SECTIONS: &str = "sections.json";
 const DIMENSIONS: &str = "dimensions.json";
 const PLANES: &str = "planes.json";
+const JOINTS: &str = "joints.json";
 
 /// The document's construction planes (schema 14).
 #[derive(Serialize, Deserialize)]
@@ -129,6 +131,29 @@ struct SectionV1 {
     name: String,
     origin: [f64; 3],
     normal: [f64; 3],
+}
+
+/// The document's Hinge and Slide joints (schema 19).
+#[derive(Serialize, Deserialize)]
+struct JointsV1 {
+    next: u32,
+    joints: Vec<JointV1>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct JointV1 {
+    id: u32,
+    a: u32,
+    b: u32,
+    kind: prism_doc::JointKind,
+    axis_origin: [f64; 3],
+    axis_dir: [f64; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max: Option<f64>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    stopped: bool,
 }
 
 /// The document's materials (schema 8).
@@ -431,6 +456,32 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         };
         files.push((DIMENSIONS.to_owned(), pretty(&m)));
     }
+    let (joints, next_joint) = asm.joints();
+    if !joints.is_empty() {
+        manifest.entries.push(Entry {
+            path: JOINTS.to_owned(),
+            kind: "joints".to_owned(),
+            version: 1,
+        });
+        let m = JointsV1 {
+            next: next_joint,
+            joints: joints
+                .iter()
+                .map(|(id, j)| JointV1 {
+                    id: id.0,
+                    a: j.a.0,
+                    b: j.b.0,
+                    kind: j.kind,
+                    axis_origin: j.axis_origin.to_array(),
+                    axis_dir: j.axis_dir.to_array(),
+                    min: j.min,
+                    max: j.max,
+                    stopped: j.stopped,
+                })
+                .collect(),
+        };
+        files.push((JOINTS.to_owned(), pretty(&m)));
+    }
     for image in asm.images().values() {
         let path = image_path(image);
         manifest.entries.push(Entry {
@@ -664,6 +715,31 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
                 m.next,
             )
             .with_dim_anchors(anchors);
+    }
+    if let Some(json) = raw.files.get(JOINTS) {
+        let m: JointsV1 = serde_json::from_slice(json)
+            .map_err(|e| FileError::Damaged(format!("{JOINTS}: {e}")))?;
+        assembly = assembly.with_joints(
+            m.joints
+                .into_iter()
+                .map(|j| {
+                    (
+                        prism_doc::JointId(j.id),
+                        prism_doc::Joint {
+                            a: InstanceId(j.a),
+                            b: InstanceId(j.b),
+                            axis_origin: prism_math::DVec3::from_array(j.axis_origin),
+                            axis_dir: prism_math::DVec3::from_array(j.axis_dir),
+                            kind: j.kind,
+                            min: j.min,
+                            max: j.max,
+                            stopped: j.stopped,
+                        },
+                    )
+                })
+                .collect(),
+            m.next,
+        );
     }
     Ok(Contents { assembly, settings })
 }

@@ -14,9 +14,9 @@ pub mod material;
 pub mod stack;
 
 pub use assembly::{
-    Anchor, Assembly, Attributes, DefId, Definition, DimId, Dimension, Instance, InstanceId,
-    NESTED, Placed, ROOT, Section, SectionId, SolidOp, TWO_SOLIDS, Tag, TagId, WorkPlane,
-    WorkPlaneId,
+    Anchor, Assembly, Attributes, DefId, Definition, DimId, Dimension, Instance, InstanceId, Joint,
+    JointId, JointKind, NESTED, Placed, ROOT, Section, SectionId, SolidOp, TWO_SOLIDS, Tag, TagId,
+    WorkPlane, WorkPlaneId,
 };
 pub use image::{Image, ImageId, Pixels, Texture};
 pub use material::{FaceSide, Material, Principled};
@@ -459,6 +459,28 @@ pub enum Command {
         a: Option<Anchor>,
         b: Option<Anchor>,
     },
+    /// A new Hinge or Slide joint (Fit & Mechanisms part 1) between two
+    /// different instances of the open context, about a world-space axis.
+    AddJoint {
+        kind: JointKind,
+        a: InstanceId,
+        b: InstanceId,
+        origin: DVec3,
+        dir: DVec3,
+    },
+    /// Set or clear one of a joint's two bounds (`max`: which one).
+    SetJointBound {
+        id: JointId,
+        max: bool,
+        value: Option<f64>,
+    },
+    SetJointStopped {
+        id: JointId,
+        stopped: bool,
+    },
+    DeleteJoint {
+        id: JointId,
+    },
     /// Lock or unlock groups (anywhere: instance ids are unique).
     SetLocked {
         instances: BTreeSet<InstanceId>,
@@ -853,6 +875,15 @@ impl Command {
             Command::MoveDimension { .. } => "Move Dimension",
             Command::DeleteDimension { .. } => "Delete Dimension",
             Command::AnchorDimension { .. } => "Attach Dimension",
+            Command::AddJoint {
+                kind: JointKind::Hinge,
+                ..
+            } => "Hinge",
+            Command::AddJoint { .. } => "Slide",
+            Command::SetJointBound { .. } => "Set Joint Limit",
+            Command::SetJointStopped { stopped: true, .. } => "Stop Joint",
+            Command::SetJointStopped { .. } => "Unstop Joint",
+            Command::DeleteJoint { .. } => "Remove Joint",
             Command::SetLocked { locked: true, .. } => "Lock",
             Command::SetLocked { .. } => "Unlock",
             Command::IntersectWith { .. } => "Intersect Faces",
@@ -1225,6 +1256,18 @@ impl Command {
             Command::AnchorDimension { id, a, b } => {
                 asm.anchor_dimension(*id, a.clone(), b.clone())
             }
+            Command::AddJoint {
+                kind,
+                a,
+                b,
+                origin,
+                dir,
+            } => {
+                asm.add_joint(ctx, *kind, *a, *b, *origin, *dir);
+            }
+            Command::SetJointBound { id, max, value } => asm.set_joint_bound(*id, *max, *value),
+            Command::SetJointStopped { id, stopped } => asm.set_joint_stopped(*id, *stopped),
+            Command::DeleteJoint { id } => asm.delete_joint(*id),
             Command::AddSection { origin, normal } => {
                 asm.add_section(*origin, *normal);
             }
@@ -1827,6 +1870,10 @@ impl Command {
             | Command::MoveDimension { .. }
             | Command::DeleteDimension { .. }
             | Command::AnchorDimension { .. }
+            | Command::AddJoint { .. }
+            | Command::SetJointBound { .. }
+            | Command::SetJointStopped { .. }
+            | Command::DeleteJoint { .. }
             | Command::AddSection { .. }
             | Command::MoveSection { .. }
             | Command::AddWorkPlane { .. }

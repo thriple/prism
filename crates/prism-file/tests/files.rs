@@ -418,6 +418,88 @@ fn dimensions_round_trip() {
     assert_eq!(d2.assembly().dimensions().0.len(), 3);
 }
 
+/// A box, made into its own group at `at`. Returns its instance id.
+fn boxed_group(d: &mut prism_doc::Document, at: DVec3) -> prism_doc::InstanceId {
+    d.run(Command::Rect {
+        x0: at.x,
+        y0: at.y,
+        x1: at.x + 1.0,
+        y1: at.y + 1.0,
+        z: at.z,
+    });
+    let f = prism_ops::face_at(d.model(), at + DVec3::new(0.5, 0.5, 0.0)).expect("base");
+    let up = d.model().face(f).expect("face").plane().unwrap().normal.z > 0.0;
+    d.run(Command::PushPull {
+        face: f,
+        distance: if up { 1.0 } else { -1.0 },
+        new_loop: false,
+    });
+    let id = d.assembly().next_instance();
+    assert!(d.run(Command::MakeGroup {
+        selection: prism_ops::Selection {
+            edges: d.model().edges().map(|(id, _)| id).collect(),
+            faces: d.model().faces().map(|(id, _)| id).collect(),
+            ..Default::default()
+        },
+        instances: Default::default(),
+    }));
+    id
+}
+
+/// Joints are saved and read back exactly (schema 19); a file with none
+/// has no `joints.json`.
+#[test]
+fn joints_round_trip() {
+    let mut d = prism_doc::Document::new();
+    let a = boxed_group(&mut d, DVec3::ZERO);
+    let b = boxed_group(&mut d, DVec3::new(2.0, 0.0, 0.0));
+    let plain = write(
+        &Contents {
+            assembly: d.assembly().clone(),
+            settings: Default::default(),
+        },
+        "test",
+    );
+    assert!(!String::from_utf8_lossy(&plain).contains("joints.json"));
+    d.run(Command::AddJoint {
+        kind: prism_doc::JointKind::Hinge,
+        a,
+        b,
+        origin: DVec3::new(1.0, 1.0 / 3.0, 0.0),
+        dir: DVec3::new(0.0, 1.0, 0.0),
+    });
+    let id = *d.assembly().joints().0.keys().next().unwrap();
+    d.run(Command::SetJointBound {
+        id,
+        max: true,
+        value: Some(90.0),
+    });
+    d.run(Command::SetJointStopped { id, stopped: true });
+    let c = Contents {
+        assembly: d.assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = write(&c, "test");
+    let back = read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    assert_eq!(back.assembly.joints().0.len(), 1);
+    let j = back.assembly.joint(id).expect("kept");
+    assert_eq!(j.max, Some(90.0));
+    assert_eq!(j.min, None);
+    assert!(j.stopped);
+    assert_eq!(write(&back, "test"), bytes);
+    // A new joint after reading gets a fresh id.
+    let mut d2 = prism_doc::Document::with_assembly(back.assembly);
+    d2.run(Command::AddJoint {
+        kind: prism_doc::JointKind::Slide,
+        a,
+        b,
+        origin: DVec3::ZERO,
+        dir: DVec3::X,
+    });
+    assert_eq!(d2.assembly().joints().0.len(), 2);
+}
+
 /// Curved faces are saved and read back exactly (Exact Curves 4a).
 #[test]
 fn cylinders_round_trip_exactly() {
