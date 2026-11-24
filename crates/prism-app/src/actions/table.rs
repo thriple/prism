@@ -422,6 +422,27 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "joint.stop",
+        name: "Stop Joint",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "joint.unstop",
+        name: "Unstop Joint",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "joint.delete",
+        name: "Remove Joint",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "flip.x",
         name: "X (red)",
         key: "",
@@ -1266,6 +1287,20 @@ pub const ACTIONS: &[RawAction] = &[
         when: "",
     },
     RawAction {
+        id: "tool.hinge",
+        name: "Hinge",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
+        id: "tool.slide",
+        name: "Slide",
+        key: "",
+        proto_run: "",
+        when: "",
+    },
+    RawAction {
         id: "tool.cplane",
         name: "Construction Plane",
         key: "",
@@ -1890,6 +1925,17 @@ pub const MENUBAR: &[(&str, &[Item])] = &[
                     Item::Action("section.delete"),
                 ],
             ),
+            Item::Sub(
+                "Joint",
+                &[
+                    Item::Action("tool.hinge"),
+                    Item::Action("tool.slide"),
+                    Item::Separator,
+                    Item::Action("joint.stop"),
+                    Item::Action("joint.unstop"),
+                    Item::Action("joint.delete"),
+                ],
+            ),
             Item::Separator,
             Item::Sub(
                 "Flip Along",
@@ -2288,6 +2334,8 @@ pub const DOCK: &[(&str, &[&str])] = &[
             "tool.section",
             "tool.cplane",
             "tool.project",
+            "tool.hinge",
+            "tool.slide",
         ],
     ),
     (

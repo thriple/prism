@@ -87,6 +87,7 @@ pub(crate) fn rules(viewport: &Viewport, recent: usize) -> crate::actions::Conte
         has_sections: viewport.session.has_sections(),
         has_dimensions: viewport.session.has_dimensions(),
         has_work_planes: viewport.session.has_work_planes(),
+        has_joints: viewport.session.has_joints(),
         recent,
     }
 }

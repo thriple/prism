@@ -2,6 +2,7 @@
 //! parts then an axis makes a joint, the way a person would.
 
 use std::collections::BTreeSet;
+use std::f64::consts::FRAC_PI_6;
 
 use prism_doc::{Command, Document, InstanceId, JointKind};
 use prism_math::{DVec2, DVec3};
@@ -126,6 +127,29 @@ impl Driver {
         self.send(Input::Key {
             key: prism_tools::Key::Enter,
         });
+    }
+
+    /// Alt + click, the way picking up a joint's handle or selecting its
+    /// gizmo works.
+    fn alt_click(&mut self, p: DVec3) {
+        let s = self.screen(p);
+        self.send(Input::Move { x: s.x, y: s.y });
+        self.send(Input::Press {
+            button: Button::Left,
+            x: s.x,
+            y: s.y,
+            shift: false,
+            ctrl: false,
+            alt: true,
+        });
+        self.send(Input::Release {
+            button: Button::Left,
+        });
+        self.t += 0.5;
+    }
+
+    fn action(&mut self, id: &str) {
+        self.send(Input::Action { id: id.into() });
     }
 }
 
@@ -300,4 +324,128 @@ fn sliding_a_slide_joints_part_stays_on_its_axis_and_clamps_the_typed_distance()
         (moved - DVec3::new(0.5, 0.0, 0.0)).length() < 1e-6,
         "kept on the axis and clamped to 0.5: {moved:?}"
     );
+}
+
+/// A doc with one Slide joint between the two boxes, along x, with no
+/// bounds set yet.
+fn slide_doc() -> (Document, InstanceId, InstanceId, prism_doc::JointId) {
+    let (mut doc, a, b) = two_boxes_doc();
+    doc.run(Command::AddJoint {
+        kind: JointKind::Slide,
+        a,
+        b,
+        origin: DVec3::new(0.0, 0.0, 0.0),
+        dir: DVec3::new(1.0, 0.0, 0.0),
+    });
+    let id = *doc.assembly().joints().0.keys().next().expect("one");
+    (doc, a, b, id)
+}
+
+/// The gizmo's own reach for the two-box scene: a share of the model's
+/// diagonal (both boxes span (0,0,0) to (3,1,1)), the same formula
+/// `joint_reach` uses.
+fn model_reach() -> f64 {
+    (DVec3::new(3.0, 1.0, 1.0).length() * 0.2_f64).max(0.3)
+}
+
+/// Where a Hinge's handle sits at angle `v` round an axis along z, origin
+/// at the world origin: `prism_infer::plane_frame((0,0,1))` gives
+/// `u = (0,1,0)`, `w = (-1,0,0)`.
+fn hinge_handle_point(v: f64, reach: f64) -> DVec3 {
+    let u = DVec3::new(0.0, 1.0, 0.0);
+    let w = DVec3::new(-1.0, 0.0, 0.0);
+    (u * v.cos() + w * v.sin()) * reach
+}
+
+#[test]
+fn alt_clicking_a_slide_handle_and_dragging_sets_its_limit() {
+    let (doc, ..) = slide_doc();
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    // The default (unset) max handle sits reach*0.4 out along the axis,
+    // from the origin at (0,0,0): the handle starts life there so there is
+    // something to grab.
+    d.alt_click(DVec3::new(model_reach() * 0.4, 0.0, 0.0));
+    d.hover(DVec3::new(0.6, 0.0, 0.0));
+    d.click(DVec3::new(0.6, 0.0, 0.0)); // sets it down
+
+    let (joints, _) = d.s.document().assembly().joints();
+    let j = joints.values().next().expect("one");
+    assert!(j.max.is_some_and(|v| (v - 0.6).abs() < 1e-3), "{:?}", j.max);
+    assert!(j.min.is_none());
+}
+
+#[test]
+fn typing_a_distance_while_a_slide_handle_is_picked_up_sets_it_exactly() {
+    let (doc, ..) = slide_doc();
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    d.alt_click(DVec3::new(model_reach() * 0.4, 0.0, 0.0));
+    d.typed("0.75");
+
+    let (joints, _) = d.s.document().assembly().joints();
+    let j = joints.values().next().unwrap();
+    assert!(
+        j.max.is_some_and(|v| (v - 0.75).abs() < 1e-9),
+        "{:?}",
+        j.max
+    );
+}
+
+#[test]
+fn alt_clicking_a_hinge_handle_and_typing_an_angle_sets_its_limit() {
+    let (mut doc, a, b) = two_boxes_doc();
+    doc.run(Command::AddJoint {
+        kind: JointKind::Hinge,
+        a,
+        b,
+        origin: DVec3::new(0.0, 0.0, 0.0),
+        dir: DVec3::new(0.0, 0.0, 1.0),
+    });
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    // The unset min handle defaults to -30 degrees round the axis.
+    let handle = hinge_handle_point(-FRAC_PI_6, model_reach());
+    d.alt_click(handle);
+    d.typed("-60");
+
+    let (joints, _) = d.s.document().assembly().joints();
+    let j = joints.values().next().unwrap();
+    assert!(
+        j.min
+            .is_some_and(|v| (v - (-60f64).to_radians()).abs() < 1e-9),
+        "{:?}",
+        j.min
+    );
+}
+
+#[test]
+fn alt_clicking_a_joints_body_selects_it_and_stop_unstop_and_remove_act_on_it() {
+    let (doc, .., id) = slide_doc();
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    // Click the rail itself, away from either handle's default position.
+    d.alt_click(DVec3::new(-0.5, 0.0, 0.0));
+    assert_eq!(d.s.picked_annotation(), Some("joint"));
+
+    d.action("joint.stop");
+    assert!(d.s.document().assembly().joint(id).unwrap().stopped);
+
+    d.action("joint.unstop");
+    assert!(!d.s.document().assembly().joint(id).unwrap().stopped);
+
+    d.action("joint.delete");
+    assert!(d.s.document().assembly().joints().0.is_empty());
+}
+
+#[test]
+fn delete_key_removes_the_selected_joint() {
+    let (doc, ..) = slide_doc();
+    let mut d = Driver::new(session_on(doc));
+    d.tool(SELECT);
+    d.alt_click(DVec3::new(-0.5, 0.0, 0.0));
+    assert_eq!(d.s.picked_annotation(), Some("joint"));
+
+    d.action("edit.delete");
+    assert!(d.s.document().assembly().joints().0.is_empty());
 }

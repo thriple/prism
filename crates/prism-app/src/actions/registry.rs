@@ -36,6 +36,8 @@ pub enum When {
     HasDimensions,
     /// The document has a construction plane (Annotation & Sections part 4).
     HasWorkPlanes,
+    /// The document has a joint (Fit & Mechanisms part 1).
+    HasJoints,
     /// A recent-file slot: enabled while that many files are remembered.
     Recent(usize),
     /// A label only ("No recent files").
@@ -106,6 +108,8 @@ pub struct Context {
     pub has_dimensions: bool,
     /// The document has a construction plane.
     pub has_work_planes: bool,
+    /// The document has a joint.
+    pub has_joints: bool,
     /// How many recent files are remembered.
     pub recent: usize,
 }
@@ -282,6 +286,7 @@ fn run_of(id: &str, proto_run: &str) -> Run {
         || id.starts_with("section.")
         || id.starts_with("dim.")
         || id.starts_with("cplane.")
+        || id.starts_with("joint.")
         || id == "win.nexttab"
         || id == "win.prevtab"
     {
@@ -374,6 +379,7 @@ impl Registry {
                         None if r.id.starts_with("section.") => When::HasSections,
                         None if r.id.starts_with("dim.") => When::HasDimensions,
                         None if r.id.starts_with("cplane.") => When::HasWorkPlanes,
+                        None if r.id.starts_with("joint.") => When::HasJoints,
                         None if r.id.starts_with("mirror.") => When::HasSelection,
                         None if r.id == "edit.explode_feature" || r.id == "edit.remove_feature" => {
                             When::HasFeature
@@ -428,6 +434,7 @@ impl Registry {
                     When::HasSections => ctx.has_sections,
                     When::HasDimensions => ctx.has_dimensions,
                     When::HasWorkPlanes => ctx.has_work_planes,
+                    When::HasJoints => ctx.has_joints,
                     When::Recent(n) => n <= ctx.recent,
                     When::Never => false,
                 }
@@ -449,6 +456,7 @@ impl Registry {
             When::HasSections if !ctx.has_sections => Some("Place a section plane first"),
             When::HasDimensions if !ctx.has_dimensions => Some("Make a dimension first"),
             When::HasWorkPlanes if !ctx.has_work_planes => Some("Place a construction plane first"),
+            When::HasJoints if !ctx.has_joints => Some("Make a joint first"),
             When::Recent(n) if n > ctx.recent => Some("No file here yet"),
             When::Never => Some("Files you open or save are listed here"),
             _ => None,
@@ -513,8 +521,9 @@ pub struct Selection {
     pub edges: usize,
     pub points: usize,
     pub groups: usize,
-    /// A section plane, dimension or construction plane picked with
-    /// Alt + click or by right-click: "section", "dimension" or "cplane".
+    /// A section plane, dimension, construction plane or joint picked
+    /// with Alt + click or by right-click: "section", "dimension",
+    /// "cplane" or "joint".
     pub annotation: Option<&'static str>,
     /// A live feature is selected: "Fillet" or "Chamfer".
     pub feature: Option<&'static str>,
@@ -531,6 +540,7 @@ impl Selection {
             Some("section") => return "Section plane".to_owned(),
             Some("dimension") => return "Dimension".to_owned(),
             Some("cplane") => return "Construction plane".to_owned(),
+            Some("joint") => return "Joint".to_owned(),
             _ => {}
         }
         if let Some(name) = self.feature {
@@ -568,6 +578,9 @@ pub fn context_menu(sel: Selection) -> Vec<Entry> {
         }
         Some("dimension") => return vec![A("dim.delete")],
         Some("cplane") => return vec![A("cplane.active"), S, A("cplane.delete")],
+        Some("joint") => {
+            return vec![A("joint.stop"), A("joint.unstop"), S, A("joint.delete")];
+        }
         _ => {}
     }
     if sel.feature.is_some() {

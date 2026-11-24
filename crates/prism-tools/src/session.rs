@@ -714,6 +714,10 @@ pub struct Session {
     axes_op: Option<axes::AxesOp>,
     /// The Hinge/Slide tool's clicks (Fit & Mechanisms part 1).
     joint_op: Option<joints::JointOp>,
+    /// The selected joint, and a handle picked up to drag (Alt + click,
+    /// the same way a section plane or construction plane is).
+    joint_sel: Option<prism_doc::JointId>,
+    joint_drag: Option<joints::JointDrag>,
     /// The Section Plane tool (Annotation & Sections part 1): the plane
     /// being moved, the one picked, and the ghost on the face under the cursor.
     section_op: Option<sections::SectionOp>,
@@ -763,6 +767,8 @@ impl Session {
             freehand: None,
             axes_op: None,
             joint_op: None,
+            joint_sel: None,
+            joint_drag: None,
             section_op: None,
             section_sel: None,
             section_ghost: None,
@@ -1603,6 +1609,7 @@ impl Session {
         self.freehand = None;
         self.axes_op = None;
         self.joint_op = None;
+        self.joint_drag = None;
         self.section_op = None;
         self.section_ghost = None;
         self.cplane_ghost = None;
@@ -2061,6 +2068,7 @@ impl Session {
             "section.flip" | "section.active" | "section.delete" => self.section_action(id),
             "dim.delete" => self.dim_delete(),
             "cplane.active" | "cplane.delete" => self.work_plane_action(id),
+            "joint.stop" | "joint.unstop" | "joint.delete" => self.joint_action(id),
             "flip.x" => self.flip(0),
             "flip.y" => self.flip(1),
             "flip.z" => self.flip(2),
@@ -2998,6 +3006,7 @@ impl Session {
         self.mirror_overlay(&mut o);
         self.work_plane_overlay(&mut o);
         self.dim_overlay(&mut o);
+        self.joints_overlay(&mut o);
         self.text_overlay(&mut o);
         if !self.wants_inference() {
             return o;

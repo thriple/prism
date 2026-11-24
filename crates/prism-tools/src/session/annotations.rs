@@ -13,7 +13,7 @@
 //!   menu.
 //! - Esc leaves a move where it was.
 
-use prism_doc::{Command, DimId, SectionId, WorkPlaneId};
+use prism_doc::{Command, DimId, JointId, SectionId, WorkPlaneId};
 use prism_math::{DVec2, DVec3};
 use prism_view::View;
 
@@ -27,6 +27,7 @@ pub(super) enum Ann {
     Section(SectionId),
     Dim(DimId),
     CPlane(WorkPlaneId),
+    Joint(JointId),
 }
 
 /// A construction plane being moved along its normal.
@@ -65,23 +66,34 @@ impl Session {
                     .filter(|id| asm.work_plane(*id).is_some())
                     .map(Ann::CPlane)
             })
+            .or_else(|| {
+                self.joint_sel
+                    .filter(|id| asm.joint(*id).is_some())
+                    .map(Ann::Joint)
+            })
     }
 
-    /// What is picked, for the right-click menu: "section", "dimension" or
-    /// "cplane".
+    /// What is picked, for the right-click menu: "section", "dimension",
+    /// "cplane" or "joint".
     pub fn picked_annotation(&self) -> Option<&'static str> {
         self.ann_picked().map(|a| match a {
             Ann::Section(_) => "section",
             Ann::Dim(_) => "dimension",
             Ann::CPlane(_) => "cplane",
+            Ann::Joint(_) => "joint",
         })
     }
 
     pub(super) fn ann_clear(&mut self) {
-        if self.section_sel.is_some() || self.dim_sel.is_some() || self.cplane_sel.is_some() {
+        if self.section_sel.is_some()
+            || self.dim_sel.is_some()
+            || self.cplane_sel.is_some()
+            || self.joint_sel.is_some()
+        {
             self.section_sel = None;
             self.dim_sel = None;
             self.cplane_sel = None;
+            self.joint_sel = None;
             self.overlay_dirty = true;
             self.dirty = true;
         }
@@ -93,6 +105,7 @@ impl Session {
             Ann::Section(id) => self.section_sel = Some(id),
             Ann::Dim(id) => self.dim_sel = Some(id),
             Ann::CPlane(id) => self.cplane_sel = Some(id),
+            Ann::Joint(id) => self.joint_sel = Some(id),
         }
         // One thing is picked at a time: Delete and the menus know which.
         self.set_selection(Selection::default());
@@ -129,8 +142,8 @@ impl Session {
     }
 
     /// What is under the cursor: a dimension's line first, then a section
-    /// plane's outline, then a construction plane's (the ones that are
-    /// drawn).
+    /// plane's outline, a construction plane's, then a joint's gizmo (the
+    /// ones that are drawn).
     pub(super) fn ann_pick(&self, s: DVec2, view: &View) -> Option<Ann> {
         if self.view.dimensions
             && let Some(id) = self.dim_at(s, view)
@@ -147,18 +160,35 @@ impl Session {
         {
             return Some(Ann::CPlane(id));
         }
+        if let Some(id) = self.joint_border_at(s, view) {
+            return Some(Ann::Joint(id));
+        }
         None
     }
 
     /// Whether a move picked up in Select is under way.
     pub(super) fn ann_moving(&self) -> bool {
         self.tool == SELECT
-            && (self.section_op.is_some() || self.cplane_op.is_some() || self.dim_op.is_some())
+            && (self.section_op.is_some()
+                || self.cplane_op.is_some()
+                || self.dim_op.is_some()
+                || self.joint_drag.is_some())
     }
 
-    /// Alt + click in Select.
+    /// Alt + click in Select: a joint's handle is picked up directly (one
+    /// click, not two: it is not the whole joint moving, only one of its
+    /// bounds), everything else the usual pick, then pick-up-on-the-second
+    /// way.
     pub(super) fn ann_press(&mut self, s: DVec2) {
         let view = self.view();
+        if let Some((id, max)) = self.joint_handle_at(s, &view) {
+            self.ann_select(Ann::Joint(id));
+            self.joint_pick_up_handle(id, max);
+            self.overlay_dirty = true;
+            self.dirty = true;
+            self.refresh();
+            return;
+        }
         match self.ann_pick(s, &view) {
             None => self.ann_clear(),
             Some(a) if self.ann_picked() == Some(a) => self.ann_pick_up(a, s, &view),
@@ -210,6 +240,10 @@ impl Session {
                     });
                 }
             }
+            // A joint's own handle is picked up directly in `ann_press`,
+            // before this; clicking its gizmo body again (already
+            // selected) does nothing more.
+            Ann::Joint(_) => {}
         }
     }
 
@@ -232,6 +266,7 @@ impl Session {
         if self.tool != SELECT {
             return;
         }
+        self.joint_drag_hover(s, view);
         // Planes and dimension lines go level with a snapped point.
         if let Some(op) = self.section_op {
             if let Some(t) = self.plane_t(s, view, op.origin, op.normal, op.t0)
@@ -274,6 +309,13 @@ impl Session {
     /// The click that sets a picked-up one down.
     pub(super) fn ann_set(&mut self, s: DVec2) {
         self.update_hover(s);
+        if self.joint_drag.is_some() {
+            self.joint_drag_set();
+            self.overlay_dirty = true;
+            self.dirty = true;
+            self.refresh();
+            return;
+        }
         if let Some(op) = self.section_op.take()
             && (op.t - op.t0).abs() > self.scene.tol.dist
         {
@@ -311,6 +353,7 @@ impl Session {
             || self.cplane_op.is_some()
             || self.dim_op.is_some_and(|o| o.b.is_some())
             || !self.cplane_pts.is_empty()
+            || self.joint_drag.is_some()
     }
 
     /// Enter with a typed distance while a plane or dimension line is
@@ -319,6 +362,9 @@ impl Session {
     pub(super) fn ann_enter(&mut self, text: &str) -> bool {
         if text.is_empty() {
             return false;
+        }
+        if self.joint_drag.is_some() {
+            return self.joint_drag_enter(text);
         }
         if self.section_op.is_none()
             && self.cplane_op.is_none()
@@ -387,6 +433,7 @@ impl Session {
                     self.model_changed();
                 }
             }
+            Ann::Joint(id) => self.joint_remove(id),
         }
         self.ann_clear();
         true
