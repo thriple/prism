@@ -365,6 +365,24 @@ pub fn guide(tool: &str) -> Option<Guide> {
             "Look around from where you stand.",
             &["Drag to turn your head."],
         ),
+        s::HINGE_TOOL => g(
+            "Join two parts so one turns about an axis through the other.",
+            &[
+                "Click the first part, then the second.",
+                "Click an edge, a hole or cylinder's axis, or a face to set the axis.",
+                "Drag a handle on the gizmo to limit how far it turns either way; drag it back to clear that limit. A click on its centre pin stops it at its current pose.",
+                "Esc at any point starts over. Undo removes the joint.",
+            ],
+        ),
+        s::SLIDE_TOOL => g(
+            "Join two parts so one slides along an axis through the other.",
+            &[
+                "Click the first part, then the second.",
+                "Click an edge, a hole or cylinder's axis, or a face to set the axis.",
+                "Drag a handle on the gizmo to limit how far it slides either way; drag it back to clear that limit. A click on its centre pin stops it at its current pose.",
+                "Esc at any point starts over. Undo removes the joint.",
+            ],
+        ),
         _ => return None,
     })
 }

@@ -46,6 +46,7 @@ mod groups;
 mod health;
 mod holing;
 mod inspector;
+mod joints;
 mod lofting;
 mod materials;
 mod mirror;
@@ -87,6 +88,7 @@ pub use groups::{BEVERLY_TAGS, EntityInfo, FeatureItem, OutlineRow, Owner, TagOp
 pub use health::HealthRow;
 pub use holing::{HOLE_TOOL, HolePanel, HoleSet, HoleSettings};
 pub use inspector::{Field, FieldKind, Inspector, Section};
+pub use joints::{HINGE_TOOL, SLIDE_TOOL};
 pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use mirror::{MIRROR_NOTHING, MIRROR_TOOL};
@@ -118,7 +120,7 @@ pub const ZOOM: &str = "cam.zoom";
 pub const CLOSED_GROUP: &str =
     "That is inside a group: double-click it with Select (Space) to open it, then use this tool";
 
-pub const TOOLS: [&str; 50] = [
+pub const TOOLS: [&str; 52] = [
     SELECT,
     LINE,
     RECT,
@@ -184,6 +186,9 @@ pub const TOOLS: [&str; 50] = [
     booleans::INTERSECT,
     booleans::TRIM,
     booleans::SPLIT,
+    // Fit & Mechanisms part 1 (brief 53): Hinge and Slide joints.
+    joints::HINGE_TOOL,
+    joints::SLIDE_TOOL,
 ];
 
 fn is_nav(t: &str) -> bool {
@@ -707,6 +712,8 @@ pub struct Session {
     freehand: Option<draw::Freehand>,
     /// The Axes tool's clicks (brief 36).
     axes_op: Option<axes::AxesOp>,
+    /// The Hinge/Slide tool's clicks (Fit & Mechanisms part 1).
+    joint_op: Option<joints::JointOp>,
     /// The Section Plane tool (Annotation & Sections part 1): the plane
     /// being moved, the one picked, and the ghost on the face under the cursor.
     section_op: Option<sections::SectionOp>,
@@ -755,6 +762,7 @@ impl Session {
             rrect: None,
             freehand: None,
             axes_op: None,
+            joint_op: None,
             section_op: None,
             section_sel: None,
             section_ghost: None,
@@ -1179,6 +1187,7 @@ impl Session {
             .or_else(|| self.dim_hint())
             .or_else(|| self.text_hint())
             .or_else(|| self.solid_hint())
+            .or_else(|| self.joint_hint())
         {
             return h;
         }
@@ -1593,6 +1602,7 @@ impl Session {
         self.rrect = None;
         self.freehand = None;
         self.axes_op = None;
+        self.joint_op = None;
         self.section_op = None;
         self.section_ghost = None;
         self.cplane_ghost = None;
@@ -2140,6 +2150,7 @@ impl Session {
             || self.tool == CPLANE_TOOL
             || self.tool == DIM_TOOL
             || self.tool == TEXT_TOOL
+            || joints::is_joint_tool(&self.tool)
             || self.ann_moving()
             || self.cage_wants_inference()
             || self.edit_wants_inference()
@@ -2311,6 +2322,7 @@ impl Session {
             self.prim_hover(s, &view);
             self.dim_hover();
             self.work_plane_hover();
+            self.joint_hover(s, &view);
             self.text_hover(s, &view);
             self.arc_hover(s, &view);
             self.cage_hover();
@@ -2440,6 +2452,7 @@ impl Session {
                 PRIM_TOOL => self.prim_press(s),
                 CPLANE_TOOL => self.work_plane_press(s, shift),
                 DIM_TOOL => self.dim_press(s),
+                t if joints::is_joint_tool(t) => self.joint_press(s),
                 TEXT_TOOL => self.text_press(s),
                 FREEHAND => self.freehand_press(s, shift),
                 t if is_edit(t) => {
@@ -3099,6 +3112,7 @@ impl Session {
         self.curve_overlay(&mut o);
         self.rrect_overlay(&mut o);
         self.axes_overlay(&mut o);
+        self.joint_overlay(&mut o);
         self.freehand_overlay(&mut o);
         self.cage_overlay(&mut o);
         // The snap: its target, glyph and label.
