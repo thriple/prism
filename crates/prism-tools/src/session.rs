@@ -308,6 +308,15 @@ pub enum Input {
     Commands {
         commands: Vec<prism_doc::Command>,
     },
+    /// The view, open group or selection changed outside the viewport's
+    /// inputs (a Model Health row zooming to its problem, the Outliner):
+    /// added to a recording so a replay clicks where the person did.
+    View {
+        camera: Camera,
+        open: Vec<InstanceId>,
+        groups: BTreeSet<InstanceId>,
+        selection: Selection,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -637,6 +646,8 @@ pub struct Session {
     /// The document's revision and log length after the last recorded
     /// input, to see edits no input made.
     rec_seen: (u64, usize),
+    /// The view, open group and selection after the last recorded input.
+    rec_view: Option<(Camera, Vec<InstanceId>, BTreeSet<InstanceId>, Selection)>,
     timings: Timings,
     /// Time measurements are taken by the app; the session never reads a clock.
     pub measure: Option<fn() -> f64>,
@@ -912,6 +923,7 @@ impl Session {
             overlay_dirty: true,
             recording: None,
             rec_seen: (0, 0),
+            rec_view: None,
             timings: Timings {
                 pick_ms: 0.0,
                 infer_ms: 0.0,
@@ -1285,6 +1297,16 @@ impl Session {
             }),
         });
         self.rec_seen = (self.doc.revision(), self.doc.log().count());
+        self.rec_view = Some(self.view_state());
+    }
+
+    fn view_state(&self) -> (Camera, Vec<InstanceId>, BTreeSet<InstanceId>, Selection) {
+        (
+            self.camera,
+            self.ctx.clone(),
+            self.groups.clone(),
+            self.selection.clone(),
+        )
     }
 
     /// Stop recording and return it, as JSON.
@@ -1355,7 +1377,31 @@ impl Session {
     /// field, the Inspector): put in the recording as commands, so the
     /// replay makes them. Undo made the same way becomes Undo actions.
     fn record_outside(&mut self) {
-        if self.recording.is_none() || self.doc.revision() == self.rec_seen.0 {
+        if self.recording.is_none() {
+            return;
+        }
+        self.record_commands_outside();
+        let now = self.view_state();
+        if self.rec_view.as_ref() != Some(&now) {
+            let (camera, open, groups, selection) = now.clone();
+            let t = self.time;
+            if let Some(r) = &mut self.recording {
+                r.events.push(Event {
+                    t,
+                    input: Input::View {
+                        camera,
+                        open,
+                        groups,
+                        selection,
+                    },
+                });
+            }
+            self.rec_view = Some(now);
+        }
+    }
+
+    fn record_commands_outside(&mut self) {
+        if self.doc.revision() == self.rec_seen.0 {
             return;
         }
         let (_, len) = self.rec_seen;
@@ -1387,6 +1433,7 @@ impl Session {
         let resp = self.handle_input(e);
         if self.recording.is_some() {
             self.rec_seen = (self.doc.revision(), self.doc.log().count());
+            self.rec_view = Some(self.view_state());
         }
         resp
     }
@@ -1528,6 +1575,26 @@ impl Session {
                     self.doc.run(c.clone());
                 }
                 self.model_changed();
+            }
+            Input::View {
+                camera,
+                open,
+                groups,
+                selection,
+            } => {
+                self.motion = None;
+                self.camera = *camera;
+                if self.ctx != *open {
+                    self.cancel();
+                    self.ctx = open.clone();
+                    self.model_changed();
+                }
+                self.groups = groups.clone();
+                self.selection = selection.clone();
+                self.highlight_dirty = true;
+                self.overlay_dirty = true;
+                self.dirty = true;
+                self.refresh();
             }
             Input::Time => {
                 if self.mem.tick(self.time, &self.settings) {

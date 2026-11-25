@@ -10610,3 +10610,31 @@ fn intersect_with_selection_cuts_selected_groups_and_faces_and_says_when_nothing
     assert_eq!(def_faces(&d), 6);
     assert_eq!(d.faces(), loose_before);
 }
+
+/// What a window does to the view, the open group or the selection (a
+/// Model Health row zooming to its problem) goes into a recording, so the
+/// clicks after it land in the same place when it is replayed (owner's
+/// session 10 drifted from here).
+#[test]
+fn a_window_moving_the_view_is_recorded_and_replayed() {
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 1.0);
+    d.s.start_recording();
+    // A loose edge for Model Health to zoom to.
+    d.tool(LINE);
+    d.click(DVec3::new(5.0, 5.0, 0.0));
+    d.click(DVec3::new(6.0, 5.0, 0.0));
+    d.send(Input::Key { key: Key::Escape });
+    let before = d.s.camera();
+    d.s.select_health("stray");
+    assert_ne!(d.s.camera(), before, "the row zoomed");
+    let selected = d.s.selection().clone();
+    assert!(!selected.is_empty());
+    // A click after it: the next input records the window's change first.
+    d.tool(SELECT);
+    let json = d.s.stop_recording().expect("recording");
+    let r: Recording = serde_json::from_str(&json).expect("valid");
+    let s = Session::replay(&r);
+    assert_eq!(s.camera(), d.s.camera());
+    assert_eq!(s.model().geometry_json(), r.result);
+}
