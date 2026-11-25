@@ -2581,7 +2581,6 @@ dependencies = [
  "glam 0.34.2",
  "pollster 1.0.1",
  "prism-doc",
- "prism-file",
  "prism-geom",
  "prism-math",
  "prism-ops",
