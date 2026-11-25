@@ -583,6 +583,18 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let test: Option<&dyn Fn(DVec3) -> Option<bool>> =
         test.as_ref().map(|f| f as &dyn Fn(DVec3) -> Option<bool>);
     crate::settle::settle_with(model, &touched, &around_planes, test);
+    // Alt's new loop is not stopped by faces in its way, so it cuts them
+    // where it crosses them, as any edit does (owner, 2026-11-25: a floor
+    // pushed down past half-round wheel wells left them crossing, uncut).
+    if new_loop {
+        let made: BTreeSet<FaceId> = std::iter::once(face)
+            .chain(walls.iter().copied())
+            .filter(|g| model.face(*g).is_some())
+            .collect();
+        if crate::intersect::intersect_faces(model, Some(&made)) > 0 {
+            crate::settle::dedupe_faces(model);
+        }
+    }
     // New edges lying on a curved face beside it (a wall on a cylinder's
     // own surface) split it, so the solid rule can take its pieces.
     let added: Vec<EdgeId> = model

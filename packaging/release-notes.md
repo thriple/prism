@@ -3,6 +3,8 @@
 - **Circles no longer vanish.** Moving, copying or pushing anything onto existing geometry could delete every circle's face nearby. Fixed, along with arcs left twice in the same place after a Push/Pull, which made thin slivers and doubled walls.
 - **Intersect Faces > With Selection works with groups.** Select groups (and faces): each is cut where the others cross it, in one undo step. With nothing selected it says what to select instead of doing nothing.
 - **Reversed faces draw no false outlines.** A purple (reversed) face no longer gets thick profile lines along edges it shares with faces in its own plane.
+- **Shell works on shapes with round cut-outs.** A box with half-round wheel wells (or any curved face meeting flat ones) used to be refused ("more than three faces meet at a corner"). It now hollows or thickens properly, with or without open faces.
+- **Alt/Option Push/Pull cuts through what it passes.** A plain push still stops at the first face in its way. A new-loop push goes on past, and now cuts the faces it crosses (a floor pushed down past wheel wells), instead of leaving them crossing.
 - **The camera can orbit under the ground** to look at a model from below.
 - **Bend / Twist / Taper (groundwork).** Taper on a group is now a live feature you can change in the Inspector afterwards; the Bend / Twist / Taper tool itself comes next.
 

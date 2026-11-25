@@ -52,15 +52,23 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
 /// The owner's recorded test (2026-11-14): a face lofted between four
 /// curves, then the flat back face beside it pulled out, once plainly and
 /// twice with Alt's new loop. Every pull was refused ("would bend a curved
-/// face"); now each one adds faces and the model stays valid.
+/// face"); now each one adds faces and the model stays valid. The face a
+/// new loop leaves behind crosses the loft, so the two cut each other
+/// (2026-11-25; before, Model Health found them crossing).
 #[test]
 fn the_back_of_a_lofted_face_pulls_out_in_the_recorded_session() {
     let r: prism_tools::Recording =
         serde_json::from_str(include_str!("data/pull-beside-loft.json")).expect("recording");
     let s = prism_tools::Session::replay(&r);
     let m = s.model();
-    assert_eq!(m.face_count(), 19, "three pulls, each adding faces");
+    assert_eq!(m.face_count(), 21, "three pulls, each adding faces");
     assert_eq!(prism_ops::check::problems(m), Vec::<String>::new());
+    let h = prism_ops::health::check(m);
+    assert!(
+        h.crossing.faces.is_empty(),
+        "crossing: {:?}",
+        h.crossing.faces
+    );
 }
 
 /// The owner's session 9 (2026-11-17): closing a loft's end with Patch.

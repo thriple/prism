@@ -3050,11 +3050,28 @@ fn plan(
         }
     }
     let on_rim: BTreeSet<VertexId> = rims.iter().flat_map(|r| [r.1, r.2]).collect();
+    // Each kept face's moved surface: a corner where a curved face meets
+    // others is polished onto them (the flat corner from the normals alone
+    // is off a cylinder's offset where its floor and side cut it, as at
+    // the foot of a half-round wheel well).
+    let mut offsets: BTreeMap<FaceId, Surface> = BTreeMap::new();
+    for id in &kept {
+        let f = model.face(*id).ok_or(NOTHING)?;
+        offsets.insert(*id, offset_surface(&f.surface, d, &tol).ok_or(TOO_THICK)?);
+    }
     let mut moved = BTreeMap::new();
     let mut splits = BTreeMap::new();
     for (v, fs) in &at_vertex {
         match move_point(model, fs, model.vertex(*v), d, &tol) {
             Ok(p) => {
+                let curved = fs
+                    .iter()
+                    .any(|f| model.face(*f).is_some_and(|x| x.is_curved()));
+                let p = if curved {
+                    polish_corner(&offsets, fs, p, &tol)
+                } else {
+                    p
+                };
                 moved.insert(*v, p);
             }
             Err(CORNER) if !on_rim.contains(v) => {
@@ -3081,7 +3098,18 @@ fn plan(
         let x = model.edge(*e).ok_or(NOTHING)?;
         let (a, b) = (end(x.a, *e), end(x.b, *e));
         let (pa, pb) = (model.vertex(x.a), model.vertex(x.b));
-        let at = |t: f64| move_point(model, fs, x.curve.point(pa, pb, t), d, &tol);
+        let curved = fs
+            .iter()
+            .any(|f| model.face(*f).is_some_and(|x| x.is_curved()));
+        let at = |t: f64| {
+            move_point(model, fs, x.curve.point(pa, pb, t), d, &tol).map(|q| {
+                if curved {
+                    polish_corner(&offsets, fs, q, &tol)
+                } else {
+                    q
+                }
+            })
+        };
         let c = match &x.curve {
             Curve::Line => {
                 let m = at(0.5)?;
