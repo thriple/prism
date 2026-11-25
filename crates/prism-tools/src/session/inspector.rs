@@ -417,6 +417,45 @@ impl Session {
                     fields.extend(self.rim_fields(i));
                 }
             }
+            prism_doc::Feature::Deform { spec, .. } => {
+                use prism_ops::deform::DeformKind;
+                if f.is_broken() {
+                    fields.push(field(
+                        &format!("feature.{i}.amount"),
+                        f.name(),
+                        FieldKind::Fixed,
+                        "Broken: the shape no longer takes it. Remove it or bake.".into(),
+                    ));
+                } else {
+                    let label = match spec.kind {
+                        DeformKind::Bend => "Bend angle (degrees)",
+                        DeformKind::Twist => "Twist angle (degrees)",
+                        DeformKind::Taper => "Scale at the top",
+                    };
+                    let amount = match spec.kind {
+                        DeformKind::Taper => format!("{}", (spec.amount * 1000.0).round() / 1000.0),
+                        _ => format!("{}", (spec.amount.to_degrees() * 1000.0).round() / 1000.0),
+                    };
+                    fields.push(field(
+                        &format!("feature.{i}.amount"),
+                        label,
+                        FieldKind::Text,
+                        amount,
+                    ));
+                    fields.push(field(
+                        &format!("feature.{i}.low"),
+                        "Starts at (along its axis)",
+                        FieldKind::Length,
+                        self.number.show(spec.low),
+                    ));
+                    fields.push(field(
+                        &format!("feature.{i}.high"),
+                        "Ends at (along its axis)",
+                        FieldKind::Length,
+                        self.number.show(spec.high),
+                    ));
+                }
+            }
             prism_doc::Feature::Boolean { .. } => {
                 let note = if f.is_broken() {
                     "Broken: the shapes no longer make a solid. Remove it or bake."
@@ -691,6 +730,7 @@ impl Session {
         let (def, index) = match c {
             Command::SetFeatureSize { def, index, .. }
             | Command::SetCutter { def, index, .. }
+            | Command::SetDeform { def, index, .. }
             | Command::SetRimStyle { def, index, .. } => (*def, *index),
             _ => return None,
         };
@@ -707,7 +747,13 @@ impl Session {
             Command::SetFeatureSize { size, .. } => match f {
                 prism_doc::Feature::Round { size: s, .. } => *s = *size,
                 prism_doc::Feature::Shell { thickness, .. } => *thickness = *size,
-                prism_doc::Feature::Boolean { .. } => return None,
+                prism_doc::Feature::Boolean { .. } | prism_doc::Feature::Deform { .. } => {
+                    return None;
+                }
+            },
+            Command::SetDeform { spec, .. } => match f {
+                prism_doc::Feature::Deform { spec: s, .. } => *s = *spec,
+                _ => return None,
             },
             Command::SetCutter { min, max, .. } => {
                 if !f.set_tool_box(*min, *max) {
@@ -764,6 +810,47 @@ impl Session {
                         return Err(why.into());
                     }
                     Command::SetFeatureSize { def, index, size }
+                }
+                Some(part @ ("amount" | "low" | "high")) => {
+                    let mut spec = *asm
+                        .def(def)
+                        .and_then(|d| d.stack.as_ref())
+                        .and_then(|s| s.features[index].deform())
+                        .ok_or("That feature is not a bend, twist or taper")?;
+                    match part {
+                        "amount" => {
+                            let t = text.trim().trim_end_matches('°').trim();
+                            let t = t.strip_prefix('×').unwrap_or(t);
+                            // A plain number: not a length, so no units.
+                            let v: f64 = t
+                                .replace(self.number.decimal, ".")
+                                .parse()
+                                .ok()
+                                .filter(|v: &f64| v.is_finite())
+                                .ok_or(format!("{text:?} is not a number"))?;
+                            spec.amount = if spec.kind == prism_ops::deform::DeformKind::Taper {
+                                v
+                            } else {
+                                v.to_radians()
+                            };
+                        }
+                        "low" | "high" => {
+                            let v = self
+                                .number
+                                .expression(text)
+                                .ok_or(format!("{text:?} is not a length"))?;
+                            if part == "low" {
+                                spec.low = v;
+                            } else {
+                                spec.high = v;
+                            }
+                        }
+                        _ => {}
+                    }
+                    if let Some(why) = spec.check() {
+                        return Err(why.into());
+                    }
+                    Command::SetDeform { def, index, spec }
                 }
                 Some("rim") => self.rim_command(def, index, parts.next(), parts.next(), text)?,
                 Some("edges") => {

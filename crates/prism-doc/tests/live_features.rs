@@ -709,3 +709,62 @@ fn a_texture_placed_on_a_round_face_bakes_it_instead_of_being_lost() {
     // Naming a face the round made takes the round off, as any edit does.
     assert!(d.assembly().def(def).unwrap().stack.is_none());
 }
+
+fn top_box(m: &Model) -> (DVec3, DVec3) {
+    let (lo, hi) = m.bbox().unwrap();
+    let top: Vec<DVec3> = m
+        .vertices()
+        .map(|(_, p)| p)
+        .filter(|p| (p.z - hi.z).abs() < 1e-6)
+        .collect();
+    let l = top.iter().fold(DVec3::MAX, |a, p| a.min(*p));
+    let h = top.iter().fold(DVec3::MIN, |a, p| a.max(*p));
+    let _ = lo;
+    (l, h)
+}
+
+/// A live taper (Shapes & Placement part 7c) is a feature of the group: it
+/// follows the group's body when the group is placed or exploded, and
+/// undo takes it back.
+#[test]
+fn a_live_taper_follows_its_body_and_undoes() {
+    use prism_ops::deform::DeformKind;
+    let (mut d, id, def) = grouped_cube();
+    let spec = d
+        .assembly()
+        .upright_deform(def, DeformKind::Taper, 0.5)
+        .expect("a group with geometry");
+    assert!(d.run(Command::AddDeform { instance: id, spec }));
+    let (lo, hi) = top_box(model(&d, def));
+    assert!((lo.x - 0.5).abs() < 1e-9 && (hi.x - 1.5).abs() < 1e-9);
+    assert_eq!(
+        d.assembly()
+            .def(def)
+            .unwrap()
+            .stack
+            .as_ref()
+            .unwrap()
+            .features[0]
+            .name(),
+        "Taper"
+    );
+    // Placed elsewhere, the same stack gives the same shape, moved.
+    let by = prism_math::DAffine3::from_translation(DVec3::new(5.0, 3.0, 0.0));
+    let mut stack = d.assembly().def(def).unwrap().stack.clone().unwrap();
+    stack.moved(&by);
+    let (mlo, mhi) = top_box(&stack.evaluate());
+    assert!((mlo - lo - DVec3::new(5.0, 3.0, 0.0)).length() < 1e-9);
+    assert!((mhi - hi - DVec3::new(5.0, 3.0, 0.0)).length() < 1e-9);
+    // Exploded, the feature goes with the geometry.
+    assert!(d.run(Command::Explode { instance: id }));
+    let root = d.assembly().root();
+    assert!(root.stack.as_ref().is_some_and(|s| s.features.len() == 1));
+    let (lo2, hi2) = top_box(&root.model);
+    assert!((lo2 - lo).length() < 1e-9 && (hi2 - hi).length() < 1e-9);
+    // Undo the explode, then the taper.
+    assert!(d.undo());
+    assert!(d.undo());
+    assert!(d.assembly().def(def).unwrap().stack.is_none());
+    let (lo3, hi3) = top_box(model(&d, def));
+    assert!(lo3.x.abs() < 1e-9 && (hi3.x - 2.0).abs() < 1e-9);
+}

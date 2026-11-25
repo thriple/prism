@@ -1919,30 +1919,100 @@ impl Assembly {
     }
 
     /// Shrink or grow a whole group toward its own upright axis (Shapes &
-    /// Placement part 7a): `top_scale` at its top, 1.0 at its bottom. Live
-    /// features are baked first, so nothing is lost or put out of step;
-    /// nothing is baked or changed unless this would succeed.
+    /// Placement part 7): `top_scale` at its top, 1.0 at its bottom. It is
+    /// a live feature, so it can be changed afterwards.
     pub fn taper(
         &mut self,
         ctx: DefId,
         instance: InstanceId,
         top_scale: f64,
     ) -> Result<(), &'static str> {
-        let def_id = self
+        let def = self
             .def(ctx)
             .and_then(|d| d.instances.get(&instance))
             .map(|i| i.def)
             .ok_or(NO_GROUP)?;
-        let model = self.def(def_id).ok_or(NO_GROUP)?.model.clone();
-        let (lo, hi) = model.bbox().ok_or(NO_GROUP)?;
-        let origin = DVec3::new((lo.x + hi.x) * 0.5, (lo.y + hi.y) * 0.5, lo.z);
-        if let Some(e) = prism_ops::taper::refusal(&model, origin, DVec3::Z, lo.z, hi.z, top_scale)
-        {
-            return Err(e);
+        let spec = self
+            .upright_deform(def, prism_ops::deform::DeformKind::Taper, top_scale)
+            .ok_or(NO_GROUP)?;
+        self.deform_live(def, spec)
+    }
+
+    /// A deform of `kind` about the group's own upright axis through the
+    /// middle of its base, over its whole height, by `amount`. A bend goes
+    /// towards +X. None for a group with no geometry.
+    pub fn upright_deform(
+        &self,
+        def: DefId,
+        kind: prism_ops::deform::DeformKind,
+        amount: f64,
+    ) -> Option<prism_ops::deform::Deform> {
+        let (lo, hi) = self.def(def)?.model.bbox()?;
+        Some(prism_ops::deform::Deform {
+            kind,
+            origin: DVec3::new((lo.x + hi.x) * 0.5, (lo.y + hi.y) * 0.5, lo.z),
+            axis: DVec3::Z,
+            dir: DVec3::X,
+            low: 0.0,
+            high: hi.z - lo.z,
+            amount,
+        })
+    }
+
+    /// Bend, twist or taper the body of `def` as a live feature (Shapes &
+    /// Placement part 7c). Nothing changes, and the reason comes back, when
+    /// the shape cannot take it.
+    pub fn deform_live(
+        &mut self,
+        def: DefId,
+        spec: prism_ops::deform::Deform,
+    ) -> Result<(), &'static str> {
+        let d = self.def_mut_live(def).ok_or(NO_GROUP)?;
+        let mut stack = d
+            .stack
+            .clone()
+            .unwrap_or_else(|| Stack::new(d.model.clone()));
+        stack.features.push(Feature::Deform {
+            spec,
+            broken: false,
+        });
+        let model = stack.evaluate();
+        if stack.features.last().is_some_and(Feature::is_broken) {
+            return Err(
+                prism_ops::deform::refusal(&d.model, &spec).unwrap_or(prism_ops::deform::FAILED)
+            );
         }
-        let def = self.def_mut(def_id).ok_or(NO_GROUP)?;
-        let _ = prism_ops::taper::taper(&mut def.model, origin, DVec3::Z, lo.z, hi.z, top_scale);
+        d.model = model;
+        d.stack = Some(stack);
         Ok(())
+    }
+
+    /// Change a live deform's axis, span or amount and run the features
+    /// again. A change the shape cannot take is not taken.
+    pub fn set_deform(
+        &mut self,
+        def: DefId,
+        index: usize,
+        spec: prism_ops::deform::Deform,
+    ) -> bool {
+        let Some(d) = self.def_mut_live(def) else {
+            return false;
+        };
+        let Some(stack) = &mut d.stack else {
+            return false;
+        };
+        let mut next = stack.clone();
+        match next.features.get_mut(index) {
+            Some(Feature::Deform { spec: s, .. }) if *s != spec => *s = spec,
+            _ => return false,
+        }
+        let model = next.evaluate();
+        if next.features[index].is_broken() {
+            return false;
+        }
+        d.model = model;
+        d.stack = Some(next);
+        true
     }
 
     /// Explode: the group's geometry, placed, joins `ctx`'s model, where

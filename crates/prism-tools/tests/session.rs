@@ -10467,3 +10467,105 @@ fn the_hole_tool_makes_a_live_hole_in_a_solid_group() {
         d.s.hint()
     );
 }
+
+/// The widest the group's top face reaches along x.
+fn top_x_range(d: &Driver) -> (f64, f64) {
+    let asm = d.s.document().assembly();
+    let id = *asm.root().instances.keys().next().unwrap();
+    let def = asm.def(asm.context_def(&[id]).unwrap()).unwrap();
+    def.model
+        .vertices()
+        .map(|(_, p)| p)
+        .filter(|p| (p.z - 2.0).abs() < 1e-6)
+        .fold((f64::MAX, f64::MIN), |(l, h), p| (l.min(p.x), h.max(p.x)))
+}
+
+#[test]
+fn a_live_taper_can_be_changed_and_taken_out_in_the_inspector() {
+    use prism_ops::deform::DeformKind;
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    assert_eq!(top_x_range(&d), (0.0, 2.0));
+    assert!(d.s.deform_selected(DeformKind::Taper, 0.5));
+    let (lo, hi) = top_x_range(&d);
+    assert!(
+        (lo - 0.5).abs() < 1e-9 && (hi - 1.5).abs() < 1e-9,
+        "{lo} {hi}"
+    );
+    // It is a live feature, shown with its amount.
+    assert_eq!(inspector_text(&d, "feature.0.amount").0, "0.5");
+    // Another amount: the top changes, one undo step.
+    d.s.inspector_set("feature.0.amount", "0.25").unwrap();
+    let (lo, hi) = top_x_range(&d);
+    assert!(
+        (lo - 0.75).abs() < 1e-9 && (hi - 1.25).abs() < 1e-9,
+        "{lo} {hi}"
+    );
+    act(&mut d, "edit.undo");
+    assert!((top_x_range(&d).0 - 0.5).abs() < 1e-9, "undone to 0.5");
+    // Nonsense and refused amounts say why and change nothing.
+    assert!(d.s.inspector_set("feature.0.amount", "wide").is_err());
+    let why = d.s.inspector_set("feature.0.amount", "0").unwrap_err();
+    assert_eq!(why, prism_ops::deform::SCALE);
+    assert!(d.s.inspector_set("feature.0.high", "0").is_err(), "no span");
+    // Taking it out gives the plain box back.
+    d.s.inspector_set("feature.0.remove", "").unwrap();
+    assert_eq!(top_x_range(&d), (0.0, 2.0));
+}
+
+#[test]
+fn a_live_bend_keeps_a_valid_solid_and_a_tight_one_is_refused() {
+    use prism_ops::deform::DeformKind;
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    assert!(d.s.deform_selected(DeformKind::Bend, 0.5));
+    let asm = d.s.document().assembly();
+    let id = *asm.root().instances.keys().next().unwrap();
+    let def = asm.def(asm.context_def(&[id]).unwrap()).unwrap();
+    assert!(
+        def.model
+            .vertices()
+            .any(|(_, p)| p.x > 2.0 + 0.1 || p.x < -0.1),
+        "it bent"
+    );
+    assert!(prism_ops::validate::validate(&def.model)[0].valid);
+    assert_eq!(inspector_text(&d, "feature.0.amount").0, "28.648");
+    // A half turn is too tight for a 2 m cube bent over its own 2 m height.
+    let before = d.s.document().assembly().clone();
+    assert!(!d.s.deform_selected(DeformKind::Bend, 2.0 * std::f64::consts::PI));
+    assert_eq!(d.s.hint(), prism_ops::deform::FOLD);
+    assert_eq!(*d.s.document().assembly(), before, "nothing changed");
+    // With nothing selected it says what to do.
+    d.tool(SELECT);
+    d.click(DVec3::new(9.0, 9.0, 0.0));
+    assert!(d.s.selected_groups().is_empty());
+    assert!(!d.s.deform_selected(DeformKind::Twist, 0.5));
+    assert_eq!(d.s.hint(), prism_tools::session::DEFORM_FIRST);
+}
+
+#[test]
+fn a_live_twist_turns_the_top_and_saving_keeps_the_feature() {
+    use prism_ops::deform::DeformKind;
+    let mut d = Driver::empty();
+    grouped_box(&mut d);
+    assert!(d.s.deform_selected(DeformKind::Twist, std::f64::consts::FRAC_PI_2));
+    // A quarter turn about the middle sends the top corners to each other's place.
+    let (lo, hi) = top_x_range(&d);
+    assert!(lo.abs() < 1e-6 && (hi - 2.0).abs() < 1e-6, "{lo} {hi}");
+    let c = prism_file::Contents {
+        assembly: d.s.document().assembly().clone(),
+        settings: Default::default(),
+    };
+    let bytes = prism_file::write(&c, "test");
+    let back = prism_file::read(&bytes).expect("reads");
+    assert_eq!(back.assembly, c.assembly);
+    let id = *back.assembly.root().instances.keys().next().unwrap();
+    let def = back
+        .assembly
+        .def(back.assembly.context_def(&[id]).unwrap())
+        .unwrap();
+    assert!(matches!(
+        def.stack.as_ref().unwrap().features[0],
+        prism_doc::Feature::Deform { .. }
+    ));
+}

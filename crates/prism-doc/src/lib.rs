@@ -432,12 +432,24 @@ pub enum Command {
         primitive: prism_ops::primitives::Primitive,
     },
     /// A whole group shrunk or grown toward its own upright axis
-    /// (Shapes & Placement part 7a): `top_scale` at its top, 1.0 at its
-    /// bottom, linear in between. Live features are baked first; nothing
-    /// changes unless every face of the group allows it exactly.
+    /// (Shapes & Placement part 7): `top_scale` at its top, 1.0 at its
+    /// bottom, linear in between. A live feature, like `AddDeform`.
     Taper {
         instance: InstanceId,
         top_scale: f64,
+    },
+    /// A group bent, twisted or tapered about an axis, as a live feature
+    /// (Shapes & Placement part 7c). `spec` is in the group's own
+    /// coordinates.
+    AddDeform {
+        instance: InstanceId,
+        spec: prism_ops::deform::Deform,
+    },
+    /// Change a live deform's axis, span or amount (Inspector).
+    SetDeform {
+        def: DefId,
+        index: usize,
+        spec: prism_ops::deform::Deform,
     },
     /// A new linear dimension (Annotation & Sections part 2), in world
     /// coordinates.
@@ -764,6 +776,7 @@ impl Command {
             Command::Extend { .. } => "Extend",
             Command::Draft { .. } => "Draft Angle",
             Command::Taper { .. } => "Taper",
+            Command::AddDeform { spec, .. } | Command::SetDeform { spec, .. } => spec.kind.name(),
             Command::AddHole { spec, .. } => match spec.kind {
                 prism_ops::hole::HoleKind::Plain => "Hole",
                 prism_ops::hole::HoleKind::Counterbore { .. } => "Counterbore",
@@ -1238,6 +1251,14 @@ impl Command {
             } => {
                 let _ = asm.taper(ctx, *instance, *top_scale);
             }
+            Command::AddDeform { instance, spec } => {
+                if let Some(def) = asm.def(ctx).and_then(|d| d.instances.get(instance)) {
+                    let _ = asm.deform_live(def.def, *spec);
+                }
+            }
+            Command::SetDeform { def, index, spec } => {
+                asm.set_deform(*def, *index, *spec);
+            }
             Command::SetPrimitive {
                 instance,
                 primitive,
@@ -1524,7 +1545,9 @@ impl Command {
             }
             Command::OuterShell { instances } => any(instances),
             Command::AddHole { body, .. } => asm.is_locked(*body),
-            Command::Taper { instance, .. } => asm.is_locked(*instance),
+            Command::Taper { instance, .. } | Command::AddDeform { instance, .. } => {
+                asm.is_locked(*instance)
+            }
             _ => false,
         }
     }
@@ -1866,6 +1889,8 @@ impl Command {
             | Command::AddHole { .. }
             | Command::SetPrimitive { .. }
             | Command::Taper { .. }
+            | Command::AddDeform { .. }
+            | Command::SetDeform { .. }
             | Command::AddDimension { .. }
             | Command::MoveDimension { .. }
             | Command::DeleteDimension { .. }

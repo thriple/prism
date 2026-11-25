@@ -543,6 +543,9 @@ impl Session {
                         format!("{} {}", f.name(), self.number.show(*thickness))
                     }
                     prism_doc::Feature::Boolean { .. } => f.name().to_owned(),
+                    prism_doc::Feature::Deform { spec, .. } => {
+                        format!("{} {}", f.name(), deform_amount_text(spec))
+                    }
                 },
                 broken: f.is_broken(),
                 selected: chosen == Some(i),
@@ -1271,4 +1274,15 @@ pub(crate) fn corners(lo: DVec3, hi: DVec3) -> [DVec3; 8] {
             if i & 4 == 0 { lo.z } else { hi.z },
         )
     })
+}
+
+/// A deform's amount as the Inspector and Outliner say it: degrees for a
+/// bend or twist, a scale for a taper.
+pub(super) fn deform_amount_text(spec: &prism_ops::deform::Deform) -> String {
+    use prism_ops::deform::DeformKind;
+    let round = |x: f64| (x * 1000.0).round() / 1000.0;
+    match spec.kind {
+        DeformKind::Bend | DeformKind::Twist => format!("{}°", round(spec.amount.to_degrees())),
+        DeformKind::Taper => format!("×{}", round(spec.amount)),
+    }
 }

@@ -121,6 +121,14 @@ pub enum Feature {
         #[serde(default)]
         broken: bool,
     },
+    /// A bend, twist or taper of the whole body about an axis (Shapes &
+    /// Placement part 7), in the body's own coordinates.
+    Deform {
+        spec: prism_ops::deform::Deform,
+        /// Set by the last run: the shape no longer deforms that way.
+        #[serde(default)]
+        broken: bool,
+    },
 }
 
 /// What a live boolean does with its tool.
@@ -161,6 +169,7 @@ impl Feature {
                 op: BoolKind::Intersect,
                 ..
             } => "Intersect",
+            Feature::Deform { spec, .. } => spec.kind.name(),
         }
     }
 
@@ -168,7 +177,8 @@ impl Feature {
         match self {
             Feature::Round { broken, .. }
             | Feature::Shell { broken, .. }
-            | Feature::Boolean { broken, .. } => *broken,
+            | Feature::Boolean { broken, .. }
+            | Feature::Deform { broken, .. } => *broken,
         }
     }
 
@@ -229,6 +239,16 @@ impl Feature {
                 match run {
                     Ok(r) => {
                         *m = r;
+                        *broken = false;
+                    }
+                    Err(_) => *broken = true,
+                }
+            }
+            Feature::Deform { spec, broken } => {
+                let mut t = m.clone();
+                match prism_ops::deform::deform(&mut t, spec) {
+                    Ok(()) => {
+                        *m = t;
                         *broken = false;
                     }
                     Err(_) => *broken = true,
@@ -726,7 +746,15 @@ impl Feature {
     pub fn tool_box(&self) -> Option<(DVec3, DVec3)> {
         match self {
             Feature::Boolean { tool, .. } => tool.bbox(),
-            Feature::Round { .. } | Feature::Shell { .. } => None,
+            Feature::Round { .. } | Feature::Shell { .. } | Feature::Deform { .. } => None,
+        }
+    }
+
+    /// The deform a live bend, twist or taper does.
+    pub fn deform(&self) -> Option<&prism_ops::deform::Deform> {
+        match self {
+            Feature::Deform { spec, .. } => Some(spec),
+            _ => None,
         }
     }
 
@@ -755,21 +783,21 @@ impl Feature {
         match self {
             Feature::Round { size, .. } => Some(*size),
             Feature::Shell { thickness, .. } => Some(*thickness),
-            Feature::Boolean { .. } => None,
+            Feature::Boolean { .. } | Feature::Deform { .. } => None,
         }
     }
 
     fn refs(&self) -> &[EdgeRef] {
         match self {
             Feature::Round { edges, .. } => edges,
-            Feature::Boolean { .. } | Feature::Shell { .. } => &[],
+            Feature::Boolean { .. } | Feature::Shell { .. } | Feature::Deform { .. } => &[],
         }
     }
 
     fn refs_mut(&mut self) -> &mut [EdgeRef] {
         match self {
             Feature::Round { edges, .. } => edges,
-            Feature::Boolean { .. } | Feature::Shell { .. } => &mut [],
+            Feature::Boolean { .. } | Feature::Shell { .. } | Feature::Deform { .. } => &mut [],
         }
     }
 
@@ -777,7 +805,7 @@ impl Feature {
     fn face_refs_mut(&mut self) -> Vec<&mut FaceRef> {
         match self {
             Feature::Shell { faces, open, .. } => faces.iter_mut().chain(open.iter_mut()).collect(),
-            Feature::Round { .. } | Feature::Boolean { .. } => Vec::new(),
+            Feature::Round { .. } | Feature::Boolean { .. } | Feature::Deform { .. } => Vec::new(),
         }
     }
 }
@@ -797,6 +825,18 @@ impl Stack {
             }
             if let Feature::Boolean { tool, .. } = f {
                 prism_ops::transform::affine(tool, by);
+            }
+            if let Feature::Deform { spec, .. } = f {
+                // The axis goes where the body goes; lengths along it grow
+                // with a scaled placement.
+                let k = by.transform_vector3(spec.axis.normalize_or_zero()).length();
+                spec.origin = by.transform_point3(spec.origin);
+                spec.axis = by.transform_vector3(spec.axis).normalize_or_zero();
+                spec.dir = by.transform_vector3(spec.dir).normalize_or_zero();
+                if k > 0.0 {
+                    spec.low *= k;
+                    spec.high *= k;
+                }
             }
         }
     }
