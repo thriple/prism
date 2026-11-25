@@ -114,6 +114,15 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     let Some(&plane) = f.plane() else {
         return Pulled::Nothing;
     };
+    // A face against an edge already shared by two others (a flat glued to
+    // a solid's own edge) can need a wall that, once its vertices land on
+    // existing ones, leaves no single edge to give a curved wall: rare, and
+    // only caught by bookkeeping after the fact (owner's recorded session,
+    // 2026-11-24: an arc-bottomed flap pulled to a door's height came out
+    // using a far-off edge that was not on its own surface). Checked
+    // cheaply (no geometry, just references) and backed out if so, rather
+    // than committing it.
+    let before = model.clone();
     // It stops at the first face in its way (Alt's new loop is not
     // limited: the original loop stays behind).
     let distance = if new_loop {
@@ -614,6 +623,10 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     walls.retain(|w| model.face(*w).is_some());
     soften_seams(model, &seams);
 
+    if !model.bookkeeping_problems().is_empty() {
+        *model = before;
+        return Pulled::Nothing;
+    }
     if new.is_empty() {
         Pulled::Stretched
     } else {

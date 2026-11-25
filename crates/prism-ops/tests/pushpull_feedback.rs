@@ -391,3 +391,51 @@ fn a_triangle_against_a_box_pushed_back_makes_a_closed_wedge() {
     // The box's side is inside the joined solid now.
     assert!(prism_ops::face_at(&m, v(2.0, 1.0, 1.0)).is_none());
 }
+
+/// Owner report (2026-11-24, recorded session `Prism_session_6.json`,
+/// building a door): an arc drawn with both ends snapped onto an existing
+/// box edge (a half circle, bulging away from the box) makes a small flap
+/// face attached to that edge — which now has three faces on it (the box's
+/// own two, plus the flap). Pulling the flap up far enough that its new
+/// edge lands exactly on the box's own top corners (its vertices weld onto
+/// them, `transform::weld_new`) never refused, and the box's own wall came
+/// out with a face that used an edge far from it that was not on its
+/// surface: silently corrupted geometry, read by the owner as "inside out"
+/// faces. `push_pull` now checks its own bookkeeping before returning, and
+/// backs out to `Pulled::Nothing` rather than hand back a broken model.
+#[test]
+fn a_flap_glued_to_a_box_edge_welded_onto_its_top_does_not_corrupt() {
+    let mut m = Model::new();
+    block(&mut m, 0.0, 0.0, 4.0, 4.0, 4.0);
+    // A half circle on the base, chord along the box's own edge x = 0,
+    // bulging out to x = -2 (away from the box).
+    prism_ops::add_arc(
+        &mut m,
+        v(0.0, 2.0, 0.0),
+        v(0.0, 0.0, 1.0),
+        2.0,
+        v(0.0, 4.0, 0.0),
+        std::f64::consts::PI,
+    );
+    let flap = prism_ops::face_at(&m, v(-1.0, 2.0, 0.0)).expect("the flap");
+    // The shared edge now has three faces: the box's base, its own side,
+    // and the flap.
+    let shared = m
+        .edges()
+        .find(|(_, e)| {
+            let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+            matches!(e.curve, prism_geom::Curve::Line)
+                && a.distance(v(0.0, 0.0, 0.0)) < 1e-9
+                && b.distance(v(0.0, 4.0, 0.0)) < 1e-9
+        })
+        .map(|(id, _)| id)
+        .expect("the box's own edge");
+    assert_eq!(m.edge_faces().get(&shared).map(|v| v.len()), Some(3));
+    let before = m.clone();
+    // The flap's own normal is -z (same as the box's base), so -4.0 pulls
+    // it up by 4.0: exactly to the box's own top corners.
+    let pulled = prism_ops::push_pull(&mut m, flap, -4.0, false);
+    assert_eq!(pulled, prism_ops::pushpull::Pulled::Nothing);
+    assert_eq!(m, before);
+    assert!(check::problems(&m).is_empty());
+}
