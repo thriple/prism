@@ -211,6 +211,7 @@ impl Session {
             return;
         }
         self.round_shown = key;
+        let collected = !self.round_selected().is_empty();
         let (why, preview) = match target.map(|t| self.round_command(&t, fillet)) {
             None => (None, None),
             Some(Err(why)) => (Some(why), None),
@@ -220,14 +221,49 @@ impl Session {
                 (None, Some(m))
             }
         };
+        // The collected edges' round is not made yet: what it would make
+        // (the faces the model does not have, and their lines) shows
+        // selected until Enter. A hovered edge's preview is not marked.
+        self.round_pending = match (&preview, collected) {
+            (Some(m), true) => {
+                let have = self.work_model();
+                let faces: BTreeSet<_> = m
+                    .faces()
+                    .map(|(id, _)| id)
+                    .filter(|id| have.face(*id).is_none())
+                    .collect();
+                let edges = faces
+                    .iter()
+                    .filter_map(|f| m.face(*f))
+                    .flat_map(|f| f.edge_ids())
+                    .collect();
+                prism_ops::Selection {
+                    faces,
+                    edges,
+                    ..Default::default()
+                }
+            }
+            _ => prism_ops::Selection::default(),
+        };
         self.round_refused = why;
         self.set_preview(preview);
         self.overlay_dirty = true;
         self.dirty = true;
     }
 
+    /// What to draw as selected: the round waiting for Enter while there
+    /// is one (its faces and lines, in the preview), else the selection.
+    pub fn shown_selection(&self) -> &prism_ops::Selection {
+        if self.tool == FILLET && self.preview.is_some() && !self.round_pending.is_empty() {
+            &self.round_pending
+        } else {
+            &self.selection
+        }
+    }
+
     /// Take the preview away (leaving the tool, Esc, after a click).
     pub(super) fn round_clear(&mut self) {
+        self.round_pending = prism_ops::Selection::default();
         self.round_handle = None;
         self.round_refused = None;
         self.round_at = None;

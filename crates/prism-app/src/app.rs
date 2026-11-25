@@ -649,7 +649,7 @@ impl App {
         let overlay = overlay_changed.then(|| s.overlay());
         let highlight = prism_render::gpu::Highlight {
             hover: s.hover(),
-            selection: s.selection().clone(),
+            selection: s.shown_selection().clone(),
             hover_more: s.hover_more(),
             paint_preview: s.paint_preview(),
             group_edges: s.group_edges(),

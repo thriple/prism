@@ -571,6 +571,10 @@ pub struct Session {
     round_at: Option<DVec2>,
     round_shown: Option<(round::Target, bool, Option<f64>)>,
     round_refused: Option<&'static str>,
+    /// The faces and lines the collected edges' round would make, shown
+    /// selected until Enter makes it (owner, 2026-11-25: a click looked
+    /// finished, so Space left the tool and the round was gone).
+    round_pending: Selection,
     round_down: Option<round::Down>,
     /// The size handle of the selected feature, while it is dragged, and
     /// its guide.
@@ -873,6 +877,7 @@ impl Session {
             round_at: None,
             round_shown: None,
             round_refused: None,
+            round_pending: Selection::default(),
             round_down: None,
             round_handle: None,
             shell_handle: None,

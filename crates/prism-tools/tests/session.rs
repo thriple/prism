@@ -10662,3 +10662,41 @@ fn a_selected_group_highlights_all_its_lines() {
     assert_eq!(lines.len(), 12);
     assert!(lines.iter().all(|(_, locked)| *locked));
 }
+
+/// A clicked edge is only collected: its round shows, and it shows
+/// selected (the faces it would make), until Enter makes it. Leaving the
+/// tool makes nothing (owner, 2026-11-25: the round looked done, Space
+/// left the tool and it was gone).
+#[test]
+fn a_collected_round_shows_selected_until_enter() {
+    use prism_tools::session::FILLET;
+    let mut d = Driver::empty();
+    rect_on_ground(&mut d, 0.0, 0.0, 2.0, 2.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(1.0, 1.0, 0.5));
+    d.typed("2");
+    let faces = d.faces();
+    d.tool(FILLET);
+    d.click(DVec3::new(2.0, 0.0, 1.0));
+    assert_eq!(d.faces(), faces, "a click only collects");
+    let shown = d.s.shown_selection().clone();
+    assert_eq!(shown.faces.len(), 1, "the round's face, waiting");
+    assert!(!shown.edges.is_empty(), "and its lines");
+    let f = *shown.faces.first().unwrap();
+    assert!(d.s.work_model().face(f).is_none(), "not made yet");
+    assert!(
+        d.s.display_scene().face(f).is_some(),
+        "drawn in the preview"
+    );
+    // Enter makes it: what shows selected is the selection again.
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(d.faces(), faces + 1);
+    assert_eq!(d.s.shown_selection(), d.s.selection());
+    // Collected again, then another tool: nothing made, nothing pending.
+    d.click(DVec3::new(0.0, 0.0, 1.0));
+    assert_eq!(d.s.shown_selection().faces.len(), 1);
+    d.tool(SELECT);
+    assert_eq!(d.faces(), faces + 1, "leaving the tool makes nothing");
+    assert_eq!(d.s.shown_selection(), d.s.selection());
+}
