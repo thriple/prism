@@ -237,6 +237,9 @@ impl Session {
         for p in &pieces {
             scene.merge(p.scene.clone(), p.owner, p.faded);
         }
+        if !pieces.is_empty() {
+            scene.join_open_edges();
+        }
         if !self.view.hidden {
             scene.drop_soft();
         }
@@ -268,6 +271,9 @@ impl Session {
         dress(self.doc.assembly(), &self.ctx, &mut own);
         for p in &self.pieces {
             own.merge(p.scene.clone(), p.owner, p.faded);
+        }
+        if !self.pieces.is_empty() {
+            own.join_open_edges();
         }
         if !self.view.hidden {
             own.drop_soft();

@@ -5,6 +5,8 @@
 - **Reversed faces draw no false outlines.** A purple (reversed) face no longer gets thick profile lines along edges it shares with faces in its own plane.
 - **Shell works on shapes with round cut-outs.** A box with half-round wheel wells (or any curved face meeting flat ones) used to be refused ("more than three faces meet at a corner"). It now hollows or thickens properly, with or without open faces.
 - **Alt/Option Push/Pull cuts through what it passes.** A plain push still stops at the first face in its way. A new-loop push goes on past, and now cuts the faces it crosses (a floor pushed down past wheel wells), instead of leaving them crossing.
+- **Hover lights the whole curved face.** Pushing a wheel well deeper, or pushing a face across onto one, could leave hard lines inside the curved surface, so hovering lit only part of it. Those lines are now soft, as a cylinder's own seams are.
+- **The line where two mirrored halves meet** draws as an ordinary line between both halves, not as a heavy outline that could flicker when orbiting low.
 - **The camera can orbit under the ground** to look at a model from below.
 - **Bend / Twist / Taper (groundwork).** Taper on a group is now a live feature you can change in the Inspector afterwards; the Bend / Twist / Taper tool itself comes next.
 

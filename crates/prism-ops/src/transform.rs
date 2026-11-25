@@ -480,11 +480,18 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
     // curve (owner's recorded session, 2026-11-24: a wall picked up a far
     // edge that only coincided by vertex, not by being its own).
     let mut edge_map: BTreeMap<prism_topo::EdgeId, prism_topo::EdgeId> = BTreeMap::new();
+    // Edges that landed on one already there, and whether either was soft.
+    let mut landed: Vec<(prism_topo::EdgeId, bool)> = Vec::new();
     for (id, a, b) in edges {
         let (ma, mb) = (map(a), map(b));
         if (ma, mb) != (a, b) {
             let e = model.edge(id).cloned();
             model.remove_edge(id);
+            let there = match &e {
+                Some(e) if e.curve.is_curved() => same_piece(model, ma, mb, &e.curve),
+                _ => model.line_between(ma, mb),
+            }
+            .and_then(|x| model.edge(x).map(|y| (x, y.soft, y.smooth)));
             let made = match &e {
                 // Landed on the same piece of the same curve as an edge that
                 // is already there (a circle's arc swept by Push/Pull onto
@@ -494,8 +501,18 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
                 _ => model.add_edge(ma, mb),
             };
             if let Some(new) = made {
-                if let Some(e) = &e {
-                    model.set_soft(new, e.soft, e.smooth);
+                match (&e, there) {
+                    // A hard edge landing on a soft seam (the outline of a
+                    // push swept onto a wheel well's top seam) must not make
+                    // it hard: settled once the faces are known, below.
+                    (Some(e), Some((x, soft, smooth))) if x == new => {
+                        model.set_soft(new, soft || e.soft, smooth || e.smooth);
+                        if soft != e.soft {
+                            landed.push((new, true));
+                        }
+                    }
+                    (Some(e), _) => model.set_soft(new, e.soft, e.smooth),
+                    _ => {}
                 }
                 edge_map.insert(id, new);
             }
@@ -616,6 +633,28 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
     }
     for id in gone {
         model.remove_face(id);
+    }
+    // A soft edge that a hard one landed on stays soft only where its two
+    // faces still meet smoothly; at a crease the line shows.
+    if !landed.is_empty() {
+        let edge_faces = model.edge_faces();
+        for (e, _) in landed {
+            let smooth = model.edge(e).is_some_and(|edge| {
+                let fs: Vec<_> = edge_faces
+                    .get(&e)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|f| model.face(*f))
+                    .collect();
+                let (ea, eb) = (model.vertex(edge.a), model.vertex(edge.b));
+                let mid = edge.curve.point(ea, eb, 0.5);
+                matches!(fs.as_slice(), [x, y]
+                    if x.surface.normal_at(mid).dot(y.surface.normal_at(mid)) > 1.0 - 1e-9)
+            });
+            if !smooth {
+                model.set_soft(e, false, false);
+            }
+        }
     }
     for v in into.keys() {
         model.remove_vertex(*v);

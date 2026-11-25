@@ -694,6 +694,11 @@ impl Model {
         self.edges.remove(&id);
         // Arcs split into two arcs of the same circle and curve; splines
         // into the two parts of the same curve.
+        // A straight half may be a line already there (a soft seam the edge
+        // ran over): that line keeps its own look and curve (owner,
+        // 2026-11-25: a push swept a hard line over a wheel well's soft top
+        // seam, the seam turned hard, and hovering lit half the well).
+        let mut had = Vec::new();
         let (first, second) = if e.curve.is_curved() {
             let (c1, c2) = e.curve.split_at(self.vertex(mid));
             (
@@ -701,16 +706,22 @@ impl Model {
                 self.push_edge(mid, e.b, c2, e.curve_id),
             )
         } else {
+            had.extend(self.line_between(e.a, mid));
+            had.extend(self.line_between(mid, e.b));
             let first = self.add_edge(e.a, mid)?;
             let second = self.add_edge(mid, e.b)?;
             for h in [first, second] {
-                self.set_curve_id(h, e.curve_id);
+                if !had.contains(&h) {
+                    self.set_curve_id(h, e.curve_id);
+                }
             }
             (first, second)
         };
-        // Both halves keep the edge's look.
+        // Both new halves keep the edge's look.
         for h in [first, second] {
-            self.set_soft(h, e.soft, e.smooth);
+            if !had.contains(&h) {
+                self.set_soft(h, e.soft, e.smooth);
+            }
         }
         for face in self.faces.values_mut() {
             let Face {
@@ -1568,6 +1579,23 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn splitting_onto_a_soft_line_keeps_it_soft() {
+        // A hard line from a to c, split at b where a soft line a-b is
+        // already there: a-b stays soft, b-c is new and hard.
+        let mut m = Model::new();
+        let a = m.add_vertex(DVec3::ZERO);
+        let b = m.add_vertex(DVec3::X);
+        let c = m.add_vertex(DVec3::X * 2.0);
+        let ab = m.add_edge(a, b).expect("a-b");
+        m.set_soft(ab, true, true);
+        let ac = m.add_edge(a, c).expect("a-c");
+        let (first, second) = m.split_edge(ac, b).expect("split");
+        assert_eq!(first, ab);
+        assert!(m.edge(ab).is_some_and(|e| e.soft && e.smooth));
+        assert!(m.edge(second).is_some_and(|e| !e.soft));
+    }
 
     fn square(m: &mut Model) -> [VertexId; 4] {
         let v = [

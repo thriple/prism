@@ -608,6 +608,9 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         crate::solid::keep_boundary(model, &touched, swept.as_ref());
     }
     crate::settle::dedupe_faces(model);
+    if !new_loop {
+        join_left_behind(model, &f.edge_ids().collect::<Vec<_>>());
+    }
     // Edges the edit left without a face (a box pushed flat, faces
     // removed as inside) go, with their points; loose lines drawn before
     // stay.
@@ -633,6 +636,17 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         }
     }
     walls.retain(|w| model.face(*w).is_some());
+    // The walls' seams, and any edge the pull made in their place (a weld
+    // or a cut can replace a seam with an edge of its own).
+
+    let edge_faces = model.edge_faces();
+    seams.extend(model.edges().map(|(id, _)| id).filter(|id| {
+        !before_ids.contains(id)
+            && edge_faces.get(id).is_some_and(|fs| {
+                fs.iter()
+                    .any(|f| model.face(*f).is_some_and(|x| x.is_curved()))
+            })
+    }));
     soften_seams(model, &seams);
 
     if !model.bookkeeping_problems().is_empty() {
@@ -643,6 +657,40 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         Pulled::Stretched
     } else {
         Pulled::Extruded { walls }
+    }
+}
+
+/// The pulled face's old outline, where it now only parts two pieces of
+/// one smooth curved surface (a wheel well's back pushed deeper: new
+/// curved walls under the old, round the same cylinder), is a soft, smooth
+/// line, as a cylinder's two halves are, so hovering or clicking one
+/// piece takes the whole surface (owner, 2026-11-25: a wheel well pushed
+/// deeper lit only part of itself on hover). Alt's new loop keeps its
+/// outline on purpose. (The flat case, a pocket's floor pushed deeper,
+/// still leaves its line between the walls: NOTES.)
+fn join_left_behind(model: &mut Model, edges: &[EdgeId]) {
+    let edge_faces = model.edge_faces();
+    for e in edges {
+        let (Some(edge), Some(fs)) = (model.edge(*e), edge_faces.get(e)) else {
+            continue;
+        };
+        let [a, b] = fs.as_slice() else {
+            continue;
+        };
+        let (Some(fa), Some(fb)) = (model.face(*a), model.face(*b)) else {
+            continue;
+        };
+        if edge.soft || !fa.is_curved() || !fb.is_curved() {
+            continue;
+        }
+        let (ea, eb) = (model.vertex(edge.a), model.vertex(edge.b));
+        let smooth = [0.25, 0.5, 0.75].iter().all(|t| {
+            let p = edge.curve.point(ea, eb, *t);
+            fa.surface.normal_at(p).dot(fb.surface.normal_at(p)) > 1.0 - 1e-9
+        });
+        if smooth {
+            model.set_soft(*e, true, true);
+        }
     }
 }
 

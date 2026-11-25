@@ -909,6 +909,59 @@ impl Scene {
         Some(s)
     }
 
+    /// Open edges (one face) of different pieces that lie on each other,
+    /// as where two mirrored halves of a component meet, are one edge
+    /// between both faces: each copy takes the other's face as its second.
+    /// Drawn alone, each was an outline (thick, as any edge with one face)
+    /// and the other half's face counted as a stranger, hiding it by a
+    /// hair at grazing angles (owner, 2026-11-25: the centre line between
+    /// two halves jittered while orbiting low).
+    pub fn join_open_edges(&mut self) {
+        let cell = (self.tol.dist * 64.0).max(f64::MIN_POSITIVE);
+        let key = |p: DVec3| {
+            let q = (p / cell).round();
+            (q.x as i64, q.y as i64, q.z as i64)
+        };
+        type Cell = (i64, i64, i64);
+        let mut by_ends: BTreeMap<(Cell, Cell), Vec<usize>> = BTreeMap::new();
+        for (i, e) in self.edges.iter().enumerate() {
+            if e.faces[0].is_none() || e.faces[1].is_some() {
+                continue;
+            }
+            let (ka, kb) = (key(e.a), key(e.b));
+            by_ends.entry((ka.min(kb), ka.max(kb))).or_default().push(i);
+        }
+        // The same line, or the same arc (its drawn points the same, in
+        // either order).
+        let same_path = |x: &SceneEdge, y: &SceneEdge| {
+            let near = |p: &DVec3, q: &DVec3| p.distance(*q) <= cell;
+            let forward = x.mid.iter().zip(&y.mid).all(|(p, q)| near(p, q));
+            let backward = x
+                .mid
+                .iter()
+                .zip(y.mid.iter().rev())
+                .all(|(p, q)| near(p, q));
+            x.mid.len() == y.mid.len() && (forward || backward)
+        };
+        for group in by_ends.values() {
+            // Exactly two copies, of different faces: one edge between
+            // them. More than two is left as it is.
+            let [i, j] = group.as_slice() else {
+                continue;
+            };
+            let (x, y) = (&self.edges[*i], &self.edges[*j]);
+            if x.faces[0] == y.faces[0] || !same_path(x, y) {
+                continue;
+            }
+            let (fx, nx) = (x.faces[0], x.normals[0]);
+            let (fy, ny) = (y.faces[0], y.normals[0]);
+            self.edges[*i].faces[1] = fy;
+            self.edges[*i].normals[1] = ny;
+            self.edges[*j].faces[1] = fx;
+            self.edges[*j].normals[1] = nx;
+        }
+    }
+
     /// Merge another model's scene in (a group's geometry, already in
     /// world coordinates), with new ids at or above [`FOREIGN`] and owned by
     /// `owner`. Its guides are left out: guides belong to the open group.

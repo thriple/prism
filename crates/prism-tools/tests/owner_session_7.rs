@@ -50,3 +50,46 @@ fn the_pushed_side_merges_with_the_wheel_well_it_lands_on() {
         r.crossing.faces
     );
 }
+
+/// Hard lines inside one smooth curved surface: two curved faces meeting
+/// with the same normal along a line that is not soft. Hover (and a click)
+/// takes a smooth surface only across soft lines, so such a line lit part
+/// of a wheel well (owner, 2026-11-25).
+fn hard_inside_smooth(m: &prism_topo::Model) -> Vec<prism_topo::EdgeId> {
+    let edge_faces = m.edge_faces();
+    edge_faces
+        .iter()
+        .filter(|(e, fs)| {
+            let (Some(edge), [a, b]) = (m.edge(**e), fs.as_slice()) else {
+                return false;
+            };
+            let (Some(fa), Some(fb)) = (m.face(*a), m.face(*b)) else {
+                return false;
+            };
+            let mid = edge.curve.point(m.vertex(edge.a), m.vertex(edge.b), 0.5);
+            !edge.soft
+                && fa.is_curved()
+                && fb.is_curved()
+                && fa.surface.normal_at(mid).dot(fb.surface.normal_at(mid)) > 1.0 - 1e-9
+        })
+        .map(|(e, _)| *e)
+        .collect()
+}
+
+#[test]
+fn the_wheel_wells_stay_one_smooth_surface_through_both_pushes() {
+    // The well's back pushed deeper (event 309): new curved walls under
+    // the old, parted from them by the old outline's arcs, which stayed
+    // hard. Then the side pushed across onto the wells (event 735): its
+    // lines were split along the wells' soft top seams, and the split
+    // copied the hard look onto them.
+    for n in [310, 736] {
+        let s = replay_to(n);
+        let m = s.work_model();
+        assert_eq!(hard_inside_smooth(m), Vec::new(), "after event {}", n - 1);
+    }
+    let s = replay_to(310);
+    let m = s.work_model();
+    let well = prism_ops::select::surface(m, prism_topo::FaceId(17));
+    assert_eq!(well.len(), 4, "the whole well lights: {well:?}");
+}
