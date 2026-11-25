@@ -475,8 +475,27 @@ impl Scene {
         }
         for (id, e) in model.edges() {
             let mid = model.vertex(e.a).lerp(model.vertex(e.b), 0.5);
-            let normal = |f: FaceId| model.face(f).map(|f| f.surface.normal_at(mid));
             let mut fs: Vec<FaceId> = edge_faces.get(&id).cloned().unwrap_or_default();
+            // Which way each face walks the edge: two faces that agree on
+            // which side is out walk it opposite ways. A face walking it
+            // the same way as the first is reversed against it (purple), so
+            // its normal is turned back for the profile pass: a reversed
+            // face is not a fold (owner, 2026-11-25).
+            let walks = |f: FaceId| {
+                model
+                    .face(f)
+                    .and_then(|x| {
+                        (0..x.loops().count()).find_map(|k| x.loop_edges(k).find(|s| s.edge == id))
+                    })
+                    .map(|s| s.from == e.a)
+            };
+            let reference = fs.first().copied();
+            let first = reference.and_then(walks);
+            let normal = |f: FaceId| {
+                let n = model.face(f).map(|x| x.surface.normal_at(mid))?;
+                let against = Some(f) != reference && first.is_some() && walks(f) == first;
+                Some(if against { -n } else { n })
+            };
             // An edge with three or more faces (a face left inside a solid,
             // as after Push/Pull's new loop): where two of them lie flat on
             // one side, those two are the ones seen, so the edge is not an
