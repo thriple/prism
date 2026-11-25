@@ -473,6 +473,13 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
     let map = |v: VertexId| into.get(&v).copied().unwrap_or(v);
     let edges: Vec<(prism_topo::EdgeId, VertexId, VertexId)> =
         model.edges().map(|(id, e)| (id, e.a, e.b)).collect();
+    // Old id -> new id, for every edge this rebuilds under new endpoints: a
+    // face that named the old one follows it here first (`edit_face_remapped`),
+    // ahead of the ambiguous "any edge between these two vertices" guess,
+    // since two edges can join the same two vertices without being the same
+    // curve (owner's recorded session, 2026-11-24: a wall picked up a far
+    // edge that only coincided by vertex, not by being its own).
+    let mut edge_map: BTreeMap<prism_topo::EdgeId, prism_topo::EdgeId> = BTreeMap::new();
     for (id, a, b) in edges {
         let (ma, mb) = (map(a), map(b));
         if (ma, mb) != (a, b) {
@@ -484,8 +491,11 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
                 }
                 _ => model.add_edge(ma, mb),
             };
-            if let (Some(id), Some(e)) = (made, e) {
-                model.set_soft(id, e.soft, e.smooth);
+            if let Some(new) = made {
+                if let Some(e) = &e {
+                    model.set_soft(new, e.soft, e.smooth);
+                }
+                edge_map.insert(id, new);
             }
         }
     }
@@ -495,7 +505,7 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
     let mut seen: BTreeMap<Vec<VertexId>, (FaceId, Vec<VertexId>)> = BTreeMap::new();
     let mut gone: Vec<FaceId> = Vec::new();
     for id in ids {
-        model.edit_face(id, |f| {
+        model.edit_face_remapped(id, &edge_map, |f| {
             let fix = |l: &mut Vec<VertexId>| {
                 for v in l.iter_mut() {
                     *v = map(*v);

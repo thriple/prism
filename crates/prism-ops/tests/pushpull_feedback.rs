@@ -401,10 +401,26 @@ fn a_triangle_against_a_box_pushed_back_makes_a_closed_wedge() {
 /// them, `transform::weld_new`) never refused, and the box's own wall came
 /// out with a face that used an edge far from it that was not on its
 /// surface: silently corrupted geometry, read by the owner as "inside out"
-/// faces. `push_pull` now checks its own bookkeeping before returning, and
-/// backs out to `Pulled::Nothing` rather than hand back a broken model.
+/// faces. Root cause: `apply_weld` rebuilds any edge whose endpoints
+/// changed under a new id, but `Model::link`'s relink only knew to search
+/// by vertex pair, which can name the wrong edge once more than one
+/// candidate joins the same two vertices (two edges can join the same two
+/// points without being the same curve). `apply_weld` now carries its old
+/// id -> new id edge map into `Model::edit_face_remapped`, so a face
+/// follows its own edge to its new id first.
+///
+/// This fixes the corruption: the pull now succeeds (no refusal) and
+/// never produces a face naming an edge that isn't its own. It does not
+/// yet make the flap fully *join* the box into one closed solid (its own
+/// cap, where the arc meets the box's top, is still left open) — that is
+/// a second, separate gap in Push/Pull's "does this shape need its own
+/// closing face" decision, left for its own fix: an attempt at it here
+/// broke an already-correct, unrelated case (a flat face pulled out
+/// beside a lofted one, `the_back_of_a_lofted_face_pulls_out_in_the_recorded_session`
+/// in `prism-tools/tests/curved.rs`), so it was backed out rather than
+/// shipped half right.
 #[test]
-fn a_flap_glued_to_a_box_edge_welded_onto_its_top_does_not_corrupt() {
+fn a_flap_glued_to_a_box_edge_pulls_without_corrupting_its_wall() {
     let mut m = Model::new();
     block(&mut m, 0.0, 0.0, 4.0, 4.0, 4.0);
     // A half circle on the base, chord along the box's own edge x = 0,
@@ -431,11 +447,18 @@ fn a_flap_glued_to_a_box_edge_welded_onto_its_top_does_not_corrupt() {
         .map(|(id, _)| id)
         .expect("the box's own edge");
     assert_eq!(m.edge_faces().get(&shared).map(|v| v.len()), Some(3));
-    let before = m.clone();
     // The flap's own normal is -z (same as the box's base), so -4.0 pulls
     // it up by 4.0: exactly to the box's own top corners.
     let pulled = prism_ops::push_pull(&mut m, flap, -4.0, false);
-    assert_eq!(pulled, prism_ops::pushpull::Pulled::Nothing);
-    assert_eq!(m, before);
-    assert!(check::problems(&m).is_empty());
+    assert!(matches!(
+        pulled,
+        prism_ops::pushpull::Pulled::Extruded { .. }
+    ));
+    // The actual corruption the owner hit: a face using an edge that was
+    // not really its own. Gone.
+    assert!(check::problems(&m).is_empty(), "{:?}", check::problems(&m));
+    assert!(
+        prism_ops::health::check(&m).reversed.is_empty(),
+        "no face should be turned the wrong way either"
+    );
 }

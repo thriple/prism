@@ -744,7 +744,7 @@ impl Model {
     /// Add a face. Its loops find their edges: edges it was given that
     /// still join the right vertices are kept, the rest are looked up.
     pub fn add_face(&mut self, mut face: Face) -> FaceId {
-        self.link(&mut face);
+        self.link(&mut face, &BTreeMap::new());
         let id = FaceId(self.next_face);
         self.next_face += 1;
         self.faces.insert(id, face);
@@ -758,9 +758,28 @@ impl Model {
     /// Change a face (its loops or surface); its loops find their edges
     /// again afterwards, as in [`Model::add_face`].
     pub fn edit_face<R>(&mut self, id: FaceId, change: impl FnOnce(&mut Face) -> R) -> Option<R> {
+        self.edit_face_remapped(id, &BTreeMap::new(), change)
+    }
+
+    /// [`edit_face`](Model::edit_face), but a side whose old edge is a key
+    /// in `edge_map` follows it to the edge it now names, ahead of the
+    /// usual "named elsewhere on this face" or "any edge between them"
+    /// search. For edges a caller just rebuilt wholesale under new
+    /// endpoints (welding two vertices together: [`crate`]'s callers,
+    /// `apply_weld`), a face must follow its own edge to its new id, not
+    /// guess from the vertices alone — two edges can join the same two
+    /// vertices without being the same curve (regions.rs's own two arcs
+    /// joining the same two points), so the general vertex-pair fallback
+    /// can pick the wrong one once more than one candidate exists.
+    pub fn edit_face_remapped<R>(
+        &mut self,
+        id: FaceId,
+        edge_map: &BTreeMap<EdgeId, EdgeId>,
+        change: impl FnOnce(&mut Face) -> R,
+    ) -> Option<R> {
         let mut face = self.faces.remove(&id)?;
         let r = change(&mut face);
-        self.link(&mut face);
+        self.link(&mut face, edge_map);
         self.faces.insert(id, face);
         Some(r)
     }
@@ -771,8 +790,10 @@ impl Model {
     }
 
     /// Give each loop of `face` its edges: an edge it already names that
-    /// joins the same two vertices is kept, else the edge between them.
-    fn link(&self, face: &mut Face) {
+    /// joins the same two vertices is kept (else, when `edge_map` has it,
+    /// the edge it was replaced by, if that one joins them), else the edge
+    /// between them.
+    fn link(&self, face: &mut Face, edge_map: &BTreeMap<EdgeId, EdgeId>) {
         let mut old = std::mem::take(&mut face.edges);
         // A point repeated next to itself (a loop closed back onto its
         // start) names no edge: drop the repeat, and the side it made.
@@ -813,10 +834,15 @@ impl Model {
                     .map(|(i, (a, b))| {
                         // The edge named at this side, then one named
                         // elsewhere, then a straight edge, then any.
-                        old.get(k)
-                            .and_then(|le| le.get(i))
-                            .copied()
+                        let named_here = old.get(k).and_then(|le| le.get(i)).copied();
+                        named_here
                             .filter(|e| joins(*e, a, b))
+                            .or_else(|| {
+                                named_here
+                                    .and_then(|e| edge_map.get(&e))
+                                    .copied()
+                                    .filter(|e| joins(*e, a, b))
+                            })
                             .or_else(|| named.get(&(a.min(b), a.max(b))).copied())
                             .or_else(|| self.line_between(a, b))
                             .or_else(|| self.edge_between(a, b))
