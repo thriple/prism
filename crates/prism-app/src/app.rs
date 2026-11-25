@@ -652,6 +652,7 @@ impl App {
             selection: s.selection().clone(),
             hover_more: s.hover_more(),
             paint_preview: s.paint_preview(),
+            group_edges: s.group_edges(),
         };
         let (scene, style) = (s.display_scene(), &s.style);
         let shadow = style.ground_shadow;

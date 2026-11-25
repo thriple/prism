@@ -5273,3 +5273,8 @@ None of these were built. The owner did not want to pursue any of them further t
 - **Fixed:** `Scene::join_open_edges`, run when the session puts the scene together from pieces: two open edges of different faces lying on each other (same ends, same arc) each take the other's face as their second. The centre line then draws as an ordinary line between both halves' faces (1 to 2 px), and both faces count as its own in the line test. Test: `prism-view/tests/halves.rs`. **Not checked in the real app**; ask the owner whether the jitter is gone, and for a file or a new recording (recordings now replay window clicks correctly) if not.
 
 - **Owner's standing rule (2026-11-25):** when fixes are done and tested, make a release too (hand-start the Release workflow on `main`, or put `[release]` in the commit message), without asking.
+
+## A selected group shows all its lines (owner request, 2026-11-25)
+
+- **Asked:** "if a group or component is selected - all the lines should be highlighted, not just the outline. So i know i'm not just selecting the outer edges, but all of the thing."
+- **Done:** `Highlight::group_edges` (prism-render) draws every line of the selected groups and components, and of the groups inside them, in the selection colour (the locked colour for a locked one), as selected loose edges are drawn: hidden lines stay hidden. The box round each is kept. `Session::group_edges` picks them from the drawn scene by owner. Tests: `a_selected_group_highlights_all_its_lines` (session), `a_selected_groups_lines_are_all_drawn_selected` (screens; checked by eye: all twelve cube edges blue). Not checked in the app itself. While a group is being moved, copies in the preview may not light up until dropped.

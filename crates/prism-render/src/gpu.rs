@@ -410,6 +410,10 @@ pub struct Highlight {
     /// The Paint Bucket's preview: these faces drawn lit in this colour,
     /// on the side seen.
     pub paint_preview: Option<(Vec<prism_topo::FaceId>, Rgba)>,
+    /// Every line of the selected groups and components, drawn as
+    /// selected (true: locked, in the locked colour), so the whole of each
+    /// shows as taken, not just its box (owner, 2026-11-25).
+    pub group_edges: Vec<(prism_topo::EdgeId, bool)>,
 }
 
 struct Target {
@@ -1592,6 +1596,16 @@ impl Renderer {
                     .collect()
             })
         };
+        lines.extend(h.group_edges.iter().flat_map(|(e, locked)| {
+            edge_line(
+                *e,
+                if *locked {
+                    style.locked
+                } else {
+                    style.selected
+                },
+            )
+        }));
         lines.extend(
             h.selection
                 .edges

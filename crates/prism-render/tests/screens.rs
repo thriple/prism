@@ -1390,3 +1390,42 @@ fn solid_text_draws_in_every_font() {
         assert!(dark > 300, "{font:?}: edges drawn ({dark})");
     }
 }
+
+/// A selected group's lines are drawn in the selection colour, every one
+/// of them (owner, 2026-11-25), and a locked group's in the locked colour.
+#[test]
+fn a_selected_groups_lines_are_all_drawn_selected() {
+    let Some((_turn, mut g)) = gpu() else { return };
+    let style = Style::default();
+    let m = golden::cube(1.0);
+    let colour = |c: prism_render::style::Rgba| [c.0[0], c.0[1], c.0[2]];
+    let plain = g.shot(
+        &m,
+        Camera::home(),
+        640,
+        400,
+        1.0,
+        &style,
+        &Highlight::default(),
+    );
+    let all: Vec<_> = m.edges().map(|(id, _)| (id, false)).collect();
+    let h = Highlight {
+        group_edges: all.clone(),
+        ..Highlight::default()
+    };
+    let picked = g.shot(&m, Camera::home(), 640, 400, 1.0, &style, &h);
+    picked.save("group-lines-selected");
+    let blue = colour(style.selected);
+    assert_eq!(plain.count_near(blue, 30), 0, "nothing blue unselected");
+    assert!(picked.count_near(blue, 30) > 300, "the lines drawn blue");
+    let h = Highlight {
+        group_edges: all.into_iter().map(|(e, _)| (e, true)).collect(),
+        ..Highlight::default()
+    };
+    let locked = g.shot(&m, Camera::home(), 640, 400, 1.0, &style, &h);
+    assert!(
+        locked.count_near(colour(style.locked), 30) > 300,
+        "locked colour"
+    );
+    assert_eq!(locked.count_near(blue, 30), 0);
+}

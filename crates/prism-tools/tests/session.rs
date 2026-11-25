@@ -10638,3 +10638,27 @@ fn a_window_moving_the_view_is_recorded_and_replayed() {
     assert_eq!(s.camera(), d.s.camera());
     assert_eq!(s.model().geometry_json(), r.result);
 }
+
+/// A selected group shows every one of its lines as selected, not only the
+/// box round it (owner, 2026-11-25: "so i know i'm not just selecting the
+/// outer edges, but all of the thing"). A second box beside it, not
+/// selected, has none; a locked group's lines are marked locked.
+#[test]
+fn a_selected_group_highlights_all_its_lines() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let lines = d.s.group_edges();
+    assert_eq!(lines.len(), 12, "the box's twelve edges");
+    assert!(lines.iter().all(|(_, locked)| !locked));
+    // Nothing selected: nothing highlighted.
+    act(&mut d, "edit.desel");
+    assert!(d.s.selected_groups().is_empty());
+    assert!(d.s.group_edges().is_empty());
+    // Selected and locked: still all of it, in the locked colour.
+    act(&mut d, "edit.selall");
+    assert!(d.s.selected_groups().contains(&g));
+    act(&mut d, "edit.lock");
+    let lines = d.s.group_edges();
+    assert_eq!(lines.len(), 12);
+    assert!(lines.iter().all(|(_, locked)| *locked));
+}

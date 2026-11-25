@@ -326,6 +326,30 @@ impl Session {
         true
     }
 
+    /// Every line drawn for the selected groups and components (and the
+    /// groups inside them), with whether each is locked: the highlight
+    /// draws them all, not only the box round each.
+    pub fn group_edges(&self) -> Vec<(prism_topo::EdgeId, bool)> {
+        if self.groups.is_empty() {
+            return Vec::new();
+        }
+        let asm = self.doc.assembly();
+        let picked: std::collections::BTreeMap<u32, bool> = self
+            .owners
+            .iter()
+            .enumerate()
+            .filter_map(|(k, o)| match o {
+                Owner::Child(g) if self.groups.contains(g) => Some((k as u32, asm.is_locked(*g))),
+                _ => None,
+            })
+            .collect();
+        self.display_scene()
+            .edge_owner
+            .iter()
+            .filter_map(|(e, k)| picked.get(k).map(|locked| (*e, *locked)))
+            .collect()
+    }
+
     /// Set the selected groups.
     pub(super) fn set_groups(&mut self, g: BTreeSet<InstanceId>) {
         if g != self.groups {

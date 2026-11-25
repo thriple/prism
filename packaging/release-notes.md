@@ -1,4 +1,6 @@
-**New in this build: curves follow the same rules as flat faces.**
+**New in this build: a selected group or component lights up all its lines,** not just the box round it, so you can see the whole thing is selected (a locked one in the locked colour).
+
+**Also new: curves follow the same rules as flat faces.**
 - **Curved faces cut and merge like flat ones.** An arc or circle lying on a cylinder, cone or sphere cuts it, as a line cuts a flat face. Where two curved faces overlap on one surface (a wall pushed over an existing wheel well), they become one set of faces instead of two on top of each other. It happens after every edit, not just Push/Pull.
 - **Circles no longer vanish.** Moving, copying or pushing anything onto existing geometry could delete every circle's face nearby. Fixed, along with arcs left twice in the same place after a Push/Pull, which made thin slivers and doubled walls.
 - **Intersect Faces > With Selection works with groups.** Select groups (and faces): each is cut where the others cross it, in one undo step. With nothing selected it says what to select instead of doing nothing.
