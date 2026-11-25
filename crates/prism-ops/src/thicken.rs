@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prism_geom::{Curve, Nurbs, NurbsSurface, Patch, Spline, Surface, knots_over};
+use prism_geom::{Curve, Nurbs, NurbsSurface, Patch, Spline, Surface, knots_over_corners};
 use prism_math::{DVec2, DVec3};
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
@@ -226,6 +226,17 @@ pub(crate) fn fit_unit(
     creases: &[Vec<f64>; 2],
     eps: f64,
 ) -> Option<NurbsSurface> {
+    fit_unit_corners(f, creases, &[vec![], vec![]], eps)
+}
+
+/// `fit_unit` with `corners` too (each way): knot lines `f` bends sharply
+/// across (its speed jumps), where the surface need only be joined.
+pub(crate) fn fit_unit_corners(
+    f: &dyn Fn(f64, f64) -> DVec3,
+    creases: &[Vec<f64>; 2],
+    corners: &[Vec<f64>; 2],
+    eps: f64,
+) -> Option<NurbsSurface> {
     // Straight across one way (a wall's offset up its height): degree 1
     // that way.
     let straight = |k: usize| {
@@ -244,7 +255,7 @@ pub(crate) fn fit_unit(
     let way = |k: usize| -> Option<Vec<f64>> {
         let mut nodes = creases[k].clone();
         for _ in 0..ROUNDS {
-            let knots = knots_over(degree[k], &nodes, &creases[k])?;
+            let knots = knots_over_corners(degree[k], &nodes, &creases[k], &corners[k])?;
             let mut split = vec![false; nodes.len() - 1];
             for i in 0..=8 {
                 let w = i as f64 / 8.0;
@@ -268,8 +279,8 @@ pub(crate) fn fit_unit(
             &f,
             degree,
             [
-                knots_over(degree[0], &us, &creases[0])?,
-                knots_over(degree[1], &vs, &creases[1])?,
+                knots_over_corners(degree[0], &us, &creases[0], &corners[0])?,
+                knots_over_corners(degree[1], &vs, &creases[1], &corners[1])?,
             ],
         )?;
         let mut split_u = vec![false; us.len() - 1];
@@ -390,9 +401,21 @@ pub(crate) fn twin_fit(
     nodes: &[f64],
     eps: f64,
 ) -> Option<(Nurbs, Nurbs)> {
+    twin_fit_corners(f, g, nodes, &[], eps)
+}
+
+/// `twin_fit` where the curves may also bend sharply at `corners` (nodes
+/// too), joined there but not smooth: their speed jumps.
+pub(crate) fn twin_fit_corners(
+    f: &dyn Fn(f64) -> DVec3,
+    g: &dyn Fn(f64) -> DVec3,
+    nodes: &[f64],
+    corners: &[f64],
+    eps: f64,
+) -> Option<(Nurbs, Nurbs)> {
     let mut ts = nodes.to_vec();
     for _ in 0..ROUNDS {
-        let knots = knots_over(DEGREE, &ts, nodes)?;
+        let knots = knots_over_corners(DEGREE, &ts, nodes, corners)?;
         let cf = Nurbs::fitted(f, DEGREE, knots.clone())?;
         let cg = Nurbs::fitted(g, DEGREE, knots)?;
         let split: Vec<bool> = ts

@@ -137,13 +137,31 @@ pub(crate) fn clamped_knots(p: usize, n: usize) -> Vec<f64> {
 /// node, `p - 1` times at one of `creases` (the same numbers), where a
 /// curve on them need only be smooth once. None for nodes that do not rise.
 pub fn knots_over(p: usize, nodes: &[f64], creases: &[f64]) -> Option<Vec<f64>> {
+    knots_over_corners(p, nodes, creases, &[])
+}
+
+/// `knots_over` with `corners` too: `p` times at one of those (the same
+/// numbers), where the curve may bend sharply (it need only be joined, not
+/// smooth), as where a bend's span begins and its speed jumps.
+pub fn knots_over_corners(
+    p: usize,
+    nodes: &[f64],
+    creases: &[f64],
+    corners: &[f64],
+) -> Option<Vec<f64>> {
     let n = nodes.len();
     if n < 2 || p == 0 || nodes.windows(2).any(|w| w[1] <= w[0]) {
         return None;
     }
     let mut k = vec![nodes[0]; p + 1];
     for t in &nodes[1..n - 1] {
-        let times = if creases.contains(t) { p - 1 } else { 1 };
+        let times = if corners.contains(t) {
+            p
+        } else if creases.contains(t) {
+            p - 1
+        } else {
+            1
+        };
         k.extend(std::iter::repeat_n(*t, times.max(1)));
     }
     k.extend(std::iter::repeat_n(nodes[n - 1], p + 1));

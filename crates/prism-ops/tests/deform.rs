@@ -110,29 +110,28 @@ fn a_negative_bend_goes_the_other_way() {
     assert!(m.vertices().all(|(_, p)| p.x < 0.2));
 }
 
-// Fails to fit (NOTES.md, 2026-11-25): where an edge crosses a bend's span
-// end its speed jumps, but `knots_over` creases at multiplicity p-1 (C1);
-// the jump needs multiplicity p (C0) there.
+// Where an edge crosses a bend's span end its speed jumps, so the fit joins
+// there with multiplicity p (C0), not p-1.
 #[test]
-#[ignore]
 fn below_the_span_nothing_moves_and_above_it_carries_on_straight() {
     let mut m = bar(0.2, 4.0);
     // Bend only the middle 2 m, a half turn.
     let d = about_z(DeformKind::Bend, 1.0, 3.0, PI);
     assert_eq!(deform::deform(&mut m, &d), Ok(()));
-    let bottom: Vec<DVec3> = m
+    // A half turn sends the last metre straight back down, to the ground
+    // again but out at x = 2r; the base itself, below the span, stays put.
+    let r = 2.0 / PI;
+    let ground: Vec<DVec3> = m
         .vertices()
         .map(|(_, p)| p)
-        .filter(|p| p.z == 0.0)
+        .filter(|p| p.z.abs() < 1e-9)
         .collect();
-    assert_eq!(bottom.len(), 4, "the base has not moved");
-    // A half turn sends the last metre straight back down.
-    let r = 2.0 / PI;
-    assert!(
-        m.vertices()
-            .any(|(_, p)| (p.z - 0.0).abs() < 1e-9 && (p.x - 2.0 * r).abs() < 0.2),
-        "the top comes back down to the ground"
-    );
+    let base = ground.iter().filter(|p| p.x < 1.0).count();
+    let top = ground
+        .iter()
+        .filter(|p| (p.x - 2.0 * r).abs() < 0.2 + 1e-9)
+        .count();
+    assert_eq!((base, top), (4, 4), "the base stays, the top comes down");
     solid_volume(&m);
 }
 

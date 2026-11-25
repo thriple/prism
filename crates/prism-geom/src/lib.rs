@@ -15,7 +15,7 @@ mod nurbs;
 mod patch;
 mod revolved;
 pub use meeting::curves_meet;
-pub use nurbs::{MAX_DEGREE, Nurbs, Spline, knots_over};
+pub use nurbs::{MAX_DEGREE, Nurbs, Spline, knots_over, knots_over_corners};
 pub use patch::{NurbsSurface, Patch};
 pub use revolved::{Cone, Profile, Revolution, Sphere, Torus, axis_frame};
 

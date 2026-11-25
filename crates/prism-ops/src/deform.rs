@@ -250,6 +250,9 @@ fn refit_edge(
     // Knots allowed to crease where the curve itself does (a spline's own
     // knots) and where it crosses either end of a bend's span.
     let mut nodes = vec![0.0, 1.0];
+    // Where it crosses a span's end its speed jumps, so it is only joined
+    // there, not smooth.
+    let mut corners: Vec<f64> = Vec::new();
     if let Curve::Spline(sp) = curve {
         let (t0, t1) = (sp.t0, sp.t1);
         nodes.extend(
@@ -273,6 +276,7 @@ fn refit_edge(
                     let t = t0 + (t1 - t0) * (end - h0) / (h1 - h0);
                     if t > 1e-9 && t < 1.0 - 1e-9 {
                         nodes.push(t);
+                        corners.push(t);
                     }
                 }
             }
@@ -280,7 +284,9 @@ fn refit_edge(
     }
     nodes.sort_by(f64::total_cmp);
     nodes.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
-    let (mut fit, _) = crate::thicken::twin_fit(&along, &along, &nodes, eps).ok_or(FAILED)?;
+    corners.retain(|c| nodes.contains(c));
+    let (mut fit, _) =
+        crate::thicken::twin_fit_corners(&along, &along, &nodes, &corners, eps).ok_or(FAILED)?;
     let last = fit.points().len() - 1;
     fit.set_control(0, a);
     fit.set_control(last, b);
@@ -355,21 +361,24 @@ fn refit_face(model: &Model, f: &Face, d: &Deform, eps: f64) -> Result<Surface, 
             let g = |s: f64, t: f64| d.map(at(s, t));
             // Height along the axis is a function of t alone in this frame.
             let mut across = vec![0.0, 1.0];
+            let mut corner = Vec::new();
             if d.kind == DeformKind::Bend {
                 let height = |t: f64| (at(0.0, t) - d.origin).dot(d.axis());
                 let (h0, h1) = (height(0.0), height(1.0));
                 if (h1 - h0).abs() > 1e-12 {
-                    across.extend(
-                        [d.low, d.high]
-                            .iter()
-                            .map(|end| (end - h0) / (h1 - h0))
-                            .filter(|x| *x > 1e-9 && *x < 1.0 - 1e-9),
-                    );
+                    corner = [d.low, d.high]
+                        .iter()
+                        .map(|end| (end - h0) / (h1 - h0))
+                        .filter(|x| *x > 1e-9 && *x < 1.0 - 1e-9)
+                        .collect();
+                    across.extend(corner.iter().copied());
                     across.sort_by(f64::total_cmp);
                 }
             }
             let creases = [vec![0.0, 1.0], across];
-            let surface = crate::thicken::fit_unit(&g, &creases, eps).ok_or(FAILED)?;
+            let corners = [vec![], corner];
+            let surface =
+                crate::thicken::fit_unit_corners(&g, &creases, &corners, eps).ok_or(FAILED)?;
             let flipped = surface.normal(0.5, 0.5).dot(looks) < 0.0;
             Ok(Surface::Nurbs(Patch {
                 flipped,
