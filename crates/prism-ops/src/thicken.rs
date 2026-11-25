@@ -214,6 +214,18 @@ pub(crate) fn offset_surface(
         out
     };
     let creases = [breaks(0), breaks(1)];
+    fit_unit(&f, &creases, eps)
+}
+
+/// A NURBS surface over the unit square within `eps` of `f` everywhere,
+/// with knots allowed to crease at `creases` (each way, including 0 and
+/// 1): degree 1 any way `f` is straight across, `DEGREE` otherwise, its
+/// spans halved until close.
+pub(crate) fn fit_unit(
+    f: &dyn Fn(f64, f64) -> DVec3,
+    creases: &[Vec<f64>; 2],
+    eps: f64,
+) -> Option<NurbsSurface> {
     // Straight across one way (a wall's offset up its height): degree 1
     // that way.
     let straight = |k: usize| {
