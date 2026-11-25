@@ -202,9 +202,11 @@ impl Curve {
     }
 
     /// The curve after `m`, if it is still this kind of curve. An arc stays
-    /// an arc under moves, turns, mirrors and even scales; an uneven scale
-    /// would make an ellipse, so it gives None. A spline stays a spline
-    /// under any `m`.
+    /// an arc under any `m` that is an even scale within the arc's own
+    /// plane (moves, turns, mirrors, even scales, and a flat circle scaled
+    /// evenly across while its height is not: a box's corner grip);
+    /// otherwise it would be an ellipse, so it gives None. A spline stays
+    /// a spline under any `m`.
     pub fn transformed(&self, m: &DAffine3) -> Option<Curve> {
         match self {
             Curve::Line => Some(Curve::Line),
@@ -213,12 +215,21 @@ impl Curve {
                 axis,
                 radius,
             } => {
-                let s = even_scale(m)?;
-                let flip = m.matrix3.determinant().signum();
+                let n = axis.try_normalize()?;
+                let u = n.any_orthonormal_vector();
+                let v = n.cross(u);
+                let (mu, mv) = (m.matrix3 * u, m.matrix3 * v);
+                let (lu, lv) = (mu.length(), mv.length());
+                let k = lu.max(lv);
+                if k <= 0.0 || (lu - lv).abs() > 1e-12 * k || mu.dot(mv).abs() > 1e-12 * k * k {
+                    return None;
+                }
+                // The way round is kept: what ran from u towards v still
+                // does, about the new axis.
                 Some(Curve::Arc {
                     centre: m.transform_point3(*centre),
-                    axis: (m.matrix3 * *axis).normalize() * flip,
-                    radius: radius * s,
+                    axis: mu.cross(mv).normalize(),
+                    radius: radius * lu,
                 })
             }
             Curve::Spline(s) => Some(Curve::Spline(s.transformed(m))),

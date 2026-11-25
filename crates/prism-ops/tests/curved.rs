@@ -180,7 +180,13 @@ fn bending_a_cylinder_is_refused() {
         .map(|(id, _)| id)
         .collect();
     let up = DAffine3::from_translation(DVec3::Z);
-    assert_eq!(arcs_refusal(&model, &top, &up), Some(CURVED_WOULD_BEND));
+    // The whole top moves since 2026-11-25 (owner): the side follows as the
+    // surface between its ends (`bands.rs`). Part of the top would still
+    // bend it.
+    assert_eq!(arcs_refusal(&model, &top, &up), None);
+    let one: BTreeSet<VertexId> = top.iter().take(1).copied().collect();
+    assert!(arcs_refusal(&model, &one, &up).is_some());
+    let _ = CURVED_WOULD_BEND;
     // Squashing the whole cylinder is not refused since Exact Curves 6a:
     // it becomes flat facets (DECISIONS #32).
     let squash = prism_ops::transform::scaling(DVec3::ZERO, DVec3::new(2.0, 1.0, 1.0));

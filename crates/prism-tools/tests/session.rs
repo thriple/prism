@@ -10700,3 +10700,68 @@ fn a_collected_round_shows_selected_until_enter() {
     assert_eq!(d.faces(), faces + 1, "leaving the tool makes nothing");
     assert_eq!(d.s.shown_selection(), d.s.selection());
 }
+
+/// The Scale tool on a cylinder's top (owner, 2026-11-25: everyday in
+/// SketchUp, refused before as bending a curved face): about the centre
+/// (Alt) it makes a cone; from a corner grip the top shrinks toward the
+/// far corner and the side leans after it; a face grip makes it an
+/// ellipse. Each is one undo step and a valid solid.
+#[test]
+fn the_scale_tool_resizes_a_cylinders_top() {
+    use prism_geom::Surface;
+    use prism_tools::session::CIRCLE;
+    let cylinder = || {
+        let mut d = Driver::empty();
+        d.tool(CIRCLE);
+        d.click(DVec3::new(1.0, 1.0, 0.0));
+        d.click(DVec3::new(2.0, 1.0, 0.0));
+        d.tool(PUSH);
+        d.click(DVec3::new(1.0, 1.0, 0.0));
+        d.hover(DVec3::new(1.0, 1.0, 0.5));
+        d.typed("2");
+        // The top picked with Select (a click with Scale takes the whole
+        // solid), then Scale.
+        d.tool(SELECT);
+        d.click(DVec3::new(1.0, 1.0, 2.0));
+        assert_eq!(d.s.selection().faces.len(), 1, "the top");
+        d.tool(SCALE);
+        d
+    };
+    let sides = |d: &Driver| -> Vec<Surface> {
+        d.s.model()
+            .faces()
+            .filter(|(_, f)| f.is_curved())
+            .map(|(_, f)| f.surface.clone())
+            .collect()
+    };
+    let solid = |d: &Driver| {
+        valid(d);
+        assert!(prism_ops::boolean::is_solid(d.s.model()));
+    };
+    // About the centre: a cone.
+    let mut d = cylinder();
+    let faces = d.faces();
+    d.send(Input::AltTap);
+    d.click(DVec3::new(2.1, 2.1, 2.0));
+    d.typed("0.5");
+    solid(&d);
+    assert_eq!(d.faces(), faces);
+    assert!(sides(&d).iter().all(|s| matches!(s, Surface::Cone(_))));
+    act(&mut d, "edit.undo");
+    assert!(sides(&d).iter().all(|s| matches!(s, Surface::Cylinder(_))));
+    // From a corner: the top shrinks toward the far corner.
+    let mut d = cylinder();
+    d.click(DVec3::new(2.1, 2.1, 2.0));
+    d.typed("0.5");
+    solid(&d);
+    assert!(sides(&d).iter().all(|s| matches!(s, Surface::Nurbs(_))));
+    // A face grip: one way only, an ellipse.
+    let mut d = cylinder();
+    d.click(DVec3::new(2.1, 1.0, 2.0));
+    d.typed("2");
+    solid(&d);
+    assert!(
+        d.s.model().edges().any(|(_, e)| e.curve.is_spline()),
+        "the ellipse, exactly"
+    );
+}

@@ -114,10 +114,20 @@ impl Session {
                 .filter_map(|k| all.get(*k).copied())
                 .collect()
         } else {
+            // Curved edges reach past their ends (a circle's two points
+            // alone made a box with no width): their widest points too.
+            let mut edges: std::collections::BTreeSet<prism_topo::EdgeId> =
+                self.selection.edges.clone();
+            for f in &self.selection.faces {
+                if let Some(face) = m.face(*f) {
+                    edges.extend(face.edge_ids());
+                }
+            }
             self.selection
                 .all_vertices(m)
                 .iter()
                 .map(|v| m.vertex(*v))
+                .chain(edges.iter().flat_map(|e| curve_extremes(m, *e)))
                 .chain(self.groups_corners())
                 .collect()
         };
@@ -405,5 +415,34 @@ impl Session {
                 size: 4.5,
             });
         }
+    }
+}
+
+/// The points of a curved edge that reach furthest along each axis: for
+/// an arc, its exact widest points that lie on it; for a spline, its drawn
+/// points. None for a line (its ends are enough).
+fn curve_extremes(m: &prism_topo::Model, e: prism_topo::EdgeId) -> Vec<DVec3> {
+    let Some(edge) = m.edge(e) else {
+        return Vec::new();
+    };
+    let (pa, pb) = (m.vertex(edge.a), m.vertex(edge.b));
+    match edge.curve {
+        prism_geom::Curve::Line => Vec::new(),
+        prism_geom::Curve::Arc {
+            centre,
+            axis,
+            radius,
+        } => {
+            let n = axis.normalize_or_zero();
+            [DVec3::X, DVec3::Y, DVec3::Z]
+                .into_iter()
+                .filter_map(|w| (w - n * w.dot(n)).try_normalize())
+                .flat_map(|d| [centre + d * radius, centre - d * radius])
+                .filter(|p| {
+                    edge.curve.closest_point(pa, pb, *p).distance(*p) <= 1e-9 * radius.max(1.0)
+                })
+                .collect()
+        }
+        prism_geom::Curve::Spline(_) => m.edge_points(e),
     }
 }

@@ -95,11 +95,13 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
     if bends(true) {
         return Some(SPLINE_WOULD_BEND);
     }
-    // Curved faces move whole, or not at all (Exact Curves 4a).
-    let curved_bends = model.faces().any(|(_, f)| {
+    // Curved faces move whole, or not at all (Exact Curves 4a), except a
+    // band (a cylinder's or cone's side) whose one end moves: it follows
+    // as the surface between its ends (`band`).
+    let curved_bends = model.faces().any(|(id, f)| {
         f.is_curved() && {
             let n = f.loops().flatten().filter(|v| vs.contains(v)).count();
-            n > 0 && n < f.loops().flatten().count()
+            n > 0 && n < f.loops().flatten().count() && !crate::band::is_band(model, id, vs)
         }
     });
     if curved_bends {
@@ -135,6 +137,7 @@ pub fn arcs_refusal(model: &Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> Opt
             || (!f.holes.is_empty() && f.loops().flatten().any(|v| arc_ends.contains(v)));
         !touches_arcs
             || moved.is_empty()
+            || (f.is_curved() && crate::band::is_band(model, id, vs))
             || moved.len() == f.loops().flatten().count()
             || f.plane().is_some_and(|pl| {
                 moved
@@ -201,7 +204,12 @@ pub fn rotate_only(
 /// Before an uneven scale, what it moves whole and cannot keep exact
 /// becomes approximate (DECISIONS #32); `vs` grows by the new points.
 fn fallback(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> BTreeSet<VertexId> {
-    if prism_geom::even_scale(m).is_some() || !arcs_follow(model, vs, m) {
+    if !arcs_follow(model, vs, m) {
+        return vs.clone();
+    }
+    // A band's moving arcs become exact ellipses, not segments.
+    crate::band::exact_ends(model, vs, m);
+    if prism_geom::even_scale(m).is_some() {
         return vs.clone();
     }
     crate::approx::flatten_for(model, vs, m)
@@ -265,6 +273,9 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
         return;
     }
     let vs = &fallback(model, vs, m);
+    // Curved sides whose one end moves, taken before anything moves.
+    let bands = crate::band::plan(model, vs).unwrap_or_default();
+    let band_faces: BTreeSet<FaceId> = bands.iter().map(|b| b.face()).collect();
     keep_straight(model, vs);
     let maps = moved_maps(model, vs);
     for v in vs {
@@ -281,11 +292,15 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
         .map(|(id, _)| id)
         .collect();
     for id in touched {
+        if band_faces.contains(&id) {
+            continue;
+        }
         if move_curved(model, id, m) {
             continue;
         }
         settle_face(model, id, &tol);
     }
+    crate::band::rebuild(model, &bands, m);
 }
 
 /// The texture placement of every painted flat face that moves whole

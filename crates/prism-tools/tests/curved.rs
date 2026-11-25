@@ -12,10 +12,13 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
         .find(|(_, f)| f.is_curved())
         .map(|(id, _)| id)
         .expect("a side");
+    // One point of the top: the whole top moves since 2026-11-25 (the side
+    // follows, `bands.rs`), but one point of it would bend its arcs.
     let top = m
         .vertices()
         .filter(|(_, p)| p.z > 1.0)
         .map(|(id, _)| id)
+        .take(1)
         .collect();
     let cases = [
         (
@@ -38,7 +41,7 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
                 vertices: top,
                 by: DVec3::Z,
             },
-            prism_ops::transform::CURVED_WOULD_BEND,
+            prism_ops::transform::ARC_WOULD_BEND,
         ),
     ];
     for (c, why) in cases {
