@@ -10569,3 +10569,44 @@ fn a_live_twist_turns_the_top_and_saving_keeps_the_feature() {
         prism_doc::Feature::Deform { .. }
     ));
 }
+
+#[test]
+fn intersect_with_selection_cuts_selected_groups_and_faces_and_says_when_nothing_is() {
+    let mut d = Driver::empty();
+    let g = grouped_box(&mut d);
+    let def_faces = |d: &Driver| {
+        let asm = d.s.document().assembly();
+        asm.def(asm.context_def(&[g]).unwrap())
+            .unwrap()
+            .model
+            .face_count()
+    };
+    assert_eq!(def_faces(&d), 6);
+    // Nothing selected: it says what to select.
+    d.tool(SELECT);
+    d.click(DVec3::new(9.0, 9.0, 0.0));
+    act(&mut d, "isect.sel");
+    assert_eq!(d.s.hint(), prism_tools::session::ISECT_FIRST);
+    // A loose box through the group's corner.
+    rect_on_ground(&mut d, 1.0, 1.0, 3.0, 3.0);
+    d.tool(PUSH);
+    d.click(DVec3::new(2.5, 2.5, 0.0));
+    d.typed("1");
+    let loose_before = d.faces();
+    d.tool(SELECT);
+    act(&mut d, "edit.selall");
+    act(&mut d, "isect.sel");
+    assert!(
+        def_faces(&d) > 6,
+        "the group's faces were cut where the box crosses them"
+    );
+    assert!(
+        d.faces() > loose_before,
+        "and the box's faces where the group crosses them"
+    );
+    assert!(prism_ops::check::problems(d.s.model()).is_empty());
+    // One step to undo.
+    act(&mut d, "edit.undo");
+    assert_eq!(def_faces(&d), 6);
+    assert_eq!(d.faces(), loose_before);
+}

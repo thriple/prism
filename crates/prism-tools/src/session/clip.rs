@@ -21,6 +21,7 @@ use super::Session;
 
 /// What the status bar says when an edit would change a locked group.
 pub const LOCKED: &str = "Locked: Edit > Hide & Lock > Unlock it first";
+pub const ISECT_FIRST: &str = "Select the faces or groups to intersect first";
 
 /// The most edges a pasted copy shows while it follows the cursor.
 const PREVIEW_EDGES: usize = 4000;
@@ -297,6 +298,90 @@ impl Session {
         }
         self.cancel();
         self.run(Command::IntersectWith { others });
+        self.refresh();
+    }
+
+    /// Intersect Faces > With Selection: the selected loose faces cut
+    /// each other, and each selected group's own faces are cut where the
+    /// other selected groups and faces cross them (new edges go inside
+    /// each group, as SketchUp does). Nothing selected: it says so.
+    pub(super) fn intersect_selection(&mut self) {
+        let groups: Vec<InstanceId> = self.groups.iter().copied().collect();
+        let faces = self.selection.faces.clone();
+        if groups.is_empty() && faces.is_empty() {
+            self.notice = Some(ISECT_FIRST);
+            self.overlay_dirty = true;
+            self.dirty = true;
+            return;
+        }
+        if groups.is_empty() {
+            self.cancel();
+            self.run(Command::IntersectFaces { faces: Some(faces) });
+            self.refresh();
+            return;
+        }
+        if self.locked_selected() {
+            return;
+        }
+        let asm = self.doc.assembly();
+        // Each selected group's own faces, and the selected loose faces,
+        // in the world.
+        let placed: Vec<(Vec<InstanceId>, DAffine3, prism_topo::Model)> = groups
+            .iter()
+            .filter_map(|g| {
+                let path = self.path_of(*g);
+                let world = asm.world_of(&path)?;
+                let mut m = asm.def(asm.context_def(&path)?)?.model.clone();
+                prism_ops::transform::affine(&mut m, &world);
+                Some((path, world, m))
+            })
+            .collect();
+        let loose = (!faces.is_empty()).then(|| {
+            let mut w = self.work_model().clone();
+            let mut taken = prism_ops::select::take(
+                &mut w,
+                &Selection {
+                    faces: faces.clone(),
+                    ..Default::default()
+                },
+            );
+            prism_ops::transform::affine(&mut taken, &self.to_world);
+            taken
+        });
+        let mut commands = Vec::new();
+        for (i, (path, world, _)) in placed.iter().enumerate() {
+            let mut others = prism_topo::Model::new();
+            for (j, (_, _, m)) in placed.iter().enumerate() {
+                if i != j {
+                    others.append(m);
+                }
+            }
+            if let Some(l) = &loose {
+                others.append(l);
+            }
+            if others.faces().next().is_none() {
+                continue;
+            }
+            prism_ops::transform::affine(&mut others, &world.inverse());
+            commands.push(Command::In {
+                context: path.clone(),
+                command: Box::new(Command::IntersectWith { others }),
+            });
+        }
+        if loose.is_some() {
+            let mut others = prism_topo::Model::new();
+            for (_, _, m) in &placed {
+                others.append(m);
+            }
+            commands.push(Command::IntersectFaces { faces: Some(faces) });
+            commands.push(Command::IntersectWith { others });
+        }
+        if commands.is_empty() {
+            self.notice = Some(ISECT_FIRST);
+            return;
+        }
+        self.cancel();
+        self.run(Command::Batch { commands });
         self.refresh();
     }
 }

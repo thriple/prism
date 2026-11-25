@@ -227,8 +227,9 @@ impl Camera {
     }
 
     /// Orbit about `pivot`: `yaw` about the vertical, `pitch` about the
-    /// camera's right axis. The horizon stays level; the view never turns
-    /// straight up or down, and never dips further below the ground.
+    /// camera's right axis. The horizon stays level and the view never
+    /// turns straight up or down; it may go below the ground, to look at
+    /// a model from underneath (owner, 2026-11-25).
     pub fn orbit(&self, pivot: DVec3, yaw: f64, pitch: f64) -> Camera {
         let rot =
             |p: DVec3, axis: DVec3, a: f64| pivot + DQuat::from_axis_angle(axis, a) * (p - pivot);
@@ -239,14 +240,13 @@ impl Camera {
         let e2 = rot(eye, r, -pitch);
         let t2 = rot(target, r, -pitch);
         let f2 = (t2 - e2).normalize();
-        let above = e2.z > 0.0 || e2.z >= eye.z;
         // Not tipped over the top or the bottom (which would turn the view upside down).
         let same_way = f2.x * f.x + f2.y * f.y > 0.0;
         // From a view straight down or up (Top, Bottom), moving toward the
         // horizon is allowed.
         let leaving_pole = f.z.abs() >= MAX_LOOK_Z && f2.z.abs() < f.z.abs();
         let same_way = same_way || leaving_pole;
-        if (f2.z.abs() < MAX_LOOK_Z || leaving_pole) && above && same_way {
+        if (f2.z.abs() < MAX_LOOK_Z || leaving_pole) && same_way {
             Camera {
                 eye: e2,
                 target: t2,
@@ -489,6 +489,29 @@ mod tests {
 
     fn view(c: &Camera) -> View {
         View::new(c, 800.0, 600.0)
+    }
+
+    #[test]
+    fn orbiting_goes_below_the_ground_and_back_without_turning_over() {
+        let c = Camera::home();
+        let pivot = c.target;
+        let mut cam = c;
+        // Drag down a long way: the eye goes under the ground.
+        for _ in 0..200 {
+            cam = cam.orbit(pivot, 0.0, -0.02);
+        }
+        assert!(cam.eye.z < 0.0, "below the ground: {:?}", cam.eye);
+        let f = (cam.target - cam.eye).normalize();
+        assert!(
+            f.z > 0.0 && f.z < MAX_LOOK_Z + 1e-9,
+            "looking up, never straight up"
+        );
+        assert!(right_of(f).z.abs() < 1e-9, "the horizon stays level");
+        // And back up again.
+        for _ in 0..400 {
+            cam = cam.orbit(pivot, 0.0, 0.02);
+        }
+        assert!(cam.eye.z > 0.0);
     }
 
     #[test]

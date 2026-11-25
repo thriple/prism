@@ -411,13 +411,16 @@ fn split_at(model: &mut Model, p: DVec3, tol: &Tol) {
     }
 }
 
-/// Faces with the same loops facing the same way (overlapping faces left
-/// by an edit) become one: the lowest id stays.
+/// Faces with the same loops (overlapping faces left by an edit) become
+/// one: the lowest id stays. Curved faces back to back count too (one
+/// face per place); flat ones back to back are left to the plane's own
+/// region rebuild.
 pub fn dedupe_faces(model: &mut Model) {
     // Keyed by sides (start and edge), not corners: two arcs can join the
     // same two points (the halves of a sphere both run pole to pole).
     type Key = Vec<(VertexId, EdgeId)>;
     let mut seen: BTreeMap<Key, FaceId> = BTreeMap::new();
+    let mut back: BTreeMap<Vec<EdgeId>, FaceId> = BTreeMap::new();
     let mut extra = Vec::new();
     for (id, f) in model.faces() {
         // The outer loop from its smallest side, in its own direction.
@@ -441,9 +444,44 @@ pub fn dedupe_faces(model: &mut Model) {
             e.insert(id);
         } else {
             extra.push(id);
+            continue;
+        }
+        if f.is_curved() {
+            // The same sides whichever way round: back to back.
+            let mut sides: Vec<EdgeId> = f
+                .loops()
+                .enumerate()
+                .flat_map(|(k, _)| f.loop_edges(k).map(|s| s.edge).collect::<Vec<_>>())
+                .collect();
+            sides.sort();
+            match back.entry(sides) {
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert(id);
+                }
+                // Only if truly back to back: a sphere's two halves share
+                // their edges too, but face the same way.
+                std::collections::btree_map::Entry::Occupied(e) => {
+                    if back_to_back(model, *e.get(), id) {
+                        extra.push(id);
+                    }
+                }
+            }
         }
     }
     for id in extra {
         model.remove_face(id);
     }
+}
+
+/// Whether two faces with the same edges lie back to back (the same
+/// place, facing opposite ways), judged at a corner they share.
+pub(crate) fn back_to_back(model: &Model, a: FaceId, b: FaceId) -> bool {
+    let (Some(fa), Some(fb)) = (model.face(a), model.face(b)) else {
+        return false;
+    };
+    let Some(v) = fa.outer.first() else {
+        return false;
+    };
+    let p = model.vertex(*v);
+    fa.surface.normal_at(p).dot(fb.surface.normal_at(p)) < -0.5
 }

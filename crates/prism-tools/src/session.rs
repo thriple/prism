@@ -76,7 +76,7 @@ pub use arraying::{
 pub use axes::{AXES_TOOL, axes_from};
 pub use booleans::SOLID_TOOLS;
 pub use cage::PICK_FIRST;
-pub use clip::LOCKED;
+pub use clip::{ISECT_FIRST, LOCKED};
 pub use construct::{OFFSET, PROTRACTOR, TAPE};
 pub use curve::{CURVE, curve_for};
 pub use deforming::{DEFORM_FIRST, DEFORM_NOTHING};
@@ -2120,15 +2120,12 @@ impl Session {
             }
             "file.new" => self.load(Document::new()),
             // Edit > Intersect Faces (DECISIONS #29).
-            "isect.model" | "isect.sel" => {
-                let faces = (id == "isect.sel").then(|| self.selection.faces.clone());
-                if faces.as_ref().is_some_and(BTreeSet::is_empty) {
-                    return;
-                }
+            "isect.model" => {
                 self.cancel();
-                self.run(Command::IntersectFaces { faces });
+                self.run(Command::IntersectFaces { faces: None });
                 self.refresh();
             }
+            "isect.sel" => self.intersect_selection(),
             id if prism_view::view_style::TOGGLES.contains(&id) => {
                 let mut v = self.view.clone();
                 v.toggle(id);

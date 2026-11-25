@@ -486,9 +486,11 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
             let e = model.edge(id).cloned();
             model.remove_edge(id);
             let made = match &e {
-                Some(e) if e.curve.is_curved() => {
-                    model.add_curve_edge(ma, mb, e.curve.clone(), e.curve_id)
-                }
+                // Landed on the same piece of the same curve as an edge that
+                // is already there (a circle's arc swept by Push/Pull onto
+                // the arc it started from): that edge, not a second copy.
+                Some(e) if e.curve.is_curved() => same_piece(model, ma, mb, &e.curve)
+                    .or_else(|| model.add_curve_edge(ma, mb, e.curve.clone(), e.curve_id)),
                 _ => model.add_edge(ma, mb),
             };
             if let Some(new) = made {
@@ -540,9 +542,9 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
             // Curved faces can share their corners and differ (a sphere's
             // halves both run pole to pole): `settle::dedupe_faces` goes by
             // edges for those.
-            if f.outer.len() < 3 && f.plane().is_some() {
-                gone.push(id);
-            } else if f.is_curved() {
+            // A flat face down to two corners is judged below, by its
+            // sides: a circle is two arcs between two points.
+            if f.outer.len() < 3 && f.plane().is_some() || f.is_curved() {
             } else if let Some((other, loop_)) = seen.get(&key) {
                 if !same_direction(loop_, &f.outer) {
                     gone.push(*other);
@@ -553,12 +555,111 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
             }
         });
     }
+    // Curved faces that became the same, found by their edges (they can
+    // share corners and differ): one stays. A curved face
+    // now running out and back along one edge has no area: it goes.
+    let mut by_edges: BTreeMap<Vec<prism_topo::EdgeId>, FaceId> = BTreeMap::new();
+    for (id, f) in model.faces() {
+        let two_corner_flat = f.outer.len() < 3 && f.plane().is_some();
+        if !(f.is_curved() || two_corner_flat) || gone.contains(&id) {
+            continue;
+        }
+        let sides: Vec<prism_topo::EdgeId> = f.loop_edges(0).map(|s| s.edge).collect();
+        if f.outer.len() < 2
+            || f.holes.is_empty() && sides.len() <= 2 && sides.windows(2).all(|w| w[0] == w[1])
+        {
+            gone.push(id);
+            continue;
+        }
+        if two_corner_flat {
+            // No area unless a side bulges: two straight sides are one line.
+            // A side that is a spline is left to go, as it always did (a
+            // loft's straight-and-spline sliver, `curved.rs`'s recorded
+            // loft); arcs (a circle, a half disc) stay.
+            let curves: Vec<&prism_geom::Curve> = sides
+                .iter()
+                .filter_map(|e| model.edge(*e))
+                .map(|e| &e.curve)
+                .collect();
+            let arc = curves.iter().any(|c| c.is_arc());
+            let spline = curves
+                .iter()
+                .any(|c| matches!(c, prism_geom::Curve::Spline(_)));
+            if !arc || spline {
+                gone.push(id);
+                continue;
+            }
+        }
+        let mut key: Vec<prism_topo::EdgeId> = f
+            .loops()
+            .enumerate()
+            .flat_map(|(k, _)| f.loop_edges(k).map(|s| s.edge).collect::<Vec<_>>())
+            .collect();
+        key.sort();
+        // One face per place, whichever way the second faced (an open
+        // shell has no inside to lose it to): the older one stays.
+        match by_edges.get(&key) {
+            // The same face again, or the same place facing the other way;
+            // a sphere's halves share their edges but face the same way
+            // and are not the same place.
+            Some(other)
+                if same_sides(model, *other, id)
+                    || crate::settle::back_to_back(model, *other, id) =>
+            {
+                gone.push(id);
+            }
+            Some(_) => {}
+            None => {
+                by_edges.insert(key, id);
+            }
+        }
+    }
     for id in gone {
         model.remove_face(id);
     }
     for v in into.keys() {
         model.remove_vertex(*v);
     }
+}
+
+/// An edge already joining `a` and `b` along the same piece of curve that
+/// `curve` takes from `a` to `b`, if there is one.
+fn same_piece(
+    model: &Model,
+    a: VertexId,
+    b: VertexId,
+    curve: &prism_geom::Curve,
+) -> Option<prism_topo::EdgeId> {
+    let tol = model.tol();
+    let (pa, pb) = (model.vertex(a), model.vertex(b));
+    let along =
+        |c: &prism_geom::Curve, p: DVec3, q: DVec3| [0.25, 0.5, 0.75].map(|t| c.point(p, q, t));
+    let mine = along(curve, pa, pb);
+    model
+        .edges()
+        .filter(|(_, e)| e.curve.is_curved() && ((e.a, e.b) == (a, b) || (e.a, e.b) == (b, a)))
+        .find(|(_, e)| {
+            let theirs = along(&e.curve, model.vertex(e.a), model.vertex(e.b));
+            // The same three points, whichever way round it runs.
+            mine.iter()
+                .all(|p| theirs.iter().any(|q| tol.same_point(*p, *q)))
+        })
+        .map(|(id, _)| id)
+}
+
+/// Whether two faces' outer loops take the same edges from the same
+/// corners in the same order (the same face twice, not a sphere's other
+/// half, whose two-corner loop has the same corners).
+fn same_sides(model: &Model, a: FaceId, b: FaceId) -> bool {
+    let (Some(fa), Some(fb)) = (model.face(a), model.face(b)) else {
+        return false;
+    };
+    let x: Vec<(VertexId, prism_topo::EdgeId)> =
+        fa.loop_edges(0).map(|s| (s.from, s.edge)).collect();
+    let y: Vec<(VertexId, prism_topo::EdgeId)> =
+        fb.loop_edges(0).map(|s| (s.from, s.edge)).collect();
+    let n = x.len();
+    n == y.len() && n > 0 && (0..n).any(|k| (0..n).all(|i| x[i] == y[(i + k) % n]))
 }
 
 /// Whether two loops with the same vertices run the same way round.
