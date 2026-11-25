@@ -274,6 +274,53 @@ fn run(
             crate::solid::step(&tol),
         );
     }
+    curved_rule(model, &tags);
+}
+
+/// The same rule on curved faces (owner, 2026-11-25: "they should be
+/// merged like flat faces... cutting, same as flat faces"). A curved face
+/// the edit touched, or that a touched point lies in the box of, is cut
+/// by every edge lying on its surface inside it, old or new (a wall swept
+/// over an existing wheel well is cut where that well's arcs lie on it);
+/// any curved face is cut by the edit's own edges lying on it. Faces that
+/// overlapped on one surface are then faces with the same edges, and one
+/// face per place stays.
+fn curved_rule(model: &mut Model, tags: &BTreeMap<VertexId, Tag>) {
+    if !model.faces().any(|(_, f)| f.is_curved()) {
+        return;
+    }
+    let points: Vec<DVec3> = model
+        .vertices()
+        .filter(|(id, _)| tags.contains_key(id))
+        .map(|(_, p)| p)
+        .collect();
+    let near: BTreeSet<FaceId> = model
+        .faces()
+        .filter(|(_, f)| f.is_curved())
+        .filter(|(_, f)| {
+            f.loops().flatten().any(|v| tags.contains_key(v))
+                || crate::cut::face_box(model, f).is_some_and(|(lo, hi)| {
+                    points
+                        .iter()
+                        .any(|p| p.cmpge(lo).all() && p.cmple(hi).all())
+                })
+        })
+        .map(|(id, _)| id)
+        .collect();
+    let edges: Vec<EdgeId> = model
+        .edges()
+        .filter(|(_, e)| tags.contains_key(&e.a) || tags.contains_key(&e.b))
+        .map(|(id, _)| id)
+        .collect();
+    let mut changed = !crate::cut::split_along(model, &edges).is_empty();
+    let near: BTreeSet<FaceId> = near
+        .into_iter()
+        .filter(|f| model.face(*f).is_some())
+        .collect();
+    changed |= !crate::cut::split_curved(model, Some(&near)).is_empty();
+    if changed {
+        dedupe_faces(model);
+    }
 }
 
 /// Where pairs of segments that could have changed cross or touch.
@@ -460,9 +507,17 @@ pub fn dedupe_faces(model: &mut Model) {
                 }
                 // Only if truly back to back: a sphere's two halves share
                 // their edges too, but face the same way.
-                std::collections::btree_map::Entry::Occupied(e) => {
-                    if back_to_back(model, *e.get(), id) {
-                        extra.push(id);
+                std::collections::btree_map::Entry::Occupied(mut e) => {
+                    let other = *e.get();
+                    if back_to_back(model, other, id) {
+                        // The one that agrees with more of its neighbours
+                        // on which side is out stays (the older on a tie).
+                        if agreeing(model, id) > agreeing(model, other) {
+                            extra.push(other);
+                            e.insert(id);
+                        } else {
+                            extra.push(id);
+                        }
                     }
                 }
             }
@@ -484,4 +539,32 @@ pub(crate) fn back_to_back(model: &Model, a: FaceId, b: FaceId) -> bool {
     };
     let p = model.vertex(*v);
     fa.surface.normal_at(p).dot(fb.surface.normal_at(p)) < -0.5
+}
+
+/// How many faces beside `f` (across one of its edges) agree with it on
+/// which side is out: they walk the shared edge the other way.
+fn agreeing(model: &Model, f: FaceId) -> usize {
+    let Some(face) = model.face(f) else {
+        return 0;
+    };
+    let ef = model.edge_faces();
+    let mut n = 0;
+    for k in 0..face.loops().count() {
+        for side in face.loop_edges(k) {
+            for g in ef.get(&side.edge).into_iter().flatten() {
+                if *g == f {
+                    continue;
+                }
+                let Some(other) = model.face(*g) else {
+                    continue;
+                };
+                let theirs = (0..other.loops().count())
+                    .find_map(|j| other.loop_edges(j).find(|s| s.edge == side.edge));
+                if theirs.is_some_and(|t| t.from != side.from) {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
 }

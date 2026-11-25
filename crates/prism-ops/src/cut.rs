@@ -390,6 +390,45 @@ fn split_meetings(model: &mut Model, id: FaceId) {
     }
 }
 
+/// Where an edge lying on curved face `id` ends partway along one of the
+/// face's own sides (a T: a wall's arc ending on another wall's bottom
+/// edge), split that side there, as the plane's rule does
+/// (`settle::split_at`), so the cut joins the face's outline.
+fn split_touches(model: &mut Model, id: FaceId) {
+    let Some(face) = model.face(id).cloned() else {
+        return;
+    };
+    let tol = model.tol();
+    let own: BTreeSet<VertexId> = face.loops().flatten().copied().collect();
+    let ends: BTreeSet<VertexId> = inner_edges(model, &face, tol.dist)
+        .iter()
+        .filter_map(|e| model.edge(*e))
+        .flat_map(|e| [e.a, e.b])
+        .filter(|v| !own.contains(v))
+        .collect();
+    for v in ends {
+        let p = model.vertex(v);
+        let Some(face) = model.face(id).cloned() else {
+            return;
+        };
+        let side = face.edge_ids().find(|e| {
+            model.edge(*e).is_some_and(|x| {
+                !x.has(v)
+                    && crate::sticky::on_curve_inside(
+                        &x.curve,
+                        model.vertex(x.a),
+                        model.vertex(x.b),
+                        p,
+                        &tol,
+                    )
+            })
+        });
+        if let Some(e) = side {
+            model.split_edge(e, v);
+        }
+    }
+}
+
 /// One round of [`split_meetings`]: whether anything was split.
 fn split_some_meetings(model: &mut Model, id: FaceId) -> bool {
     let Some(face) = model.face(id).cloned() else {
@@ -520,6 +559,7 @@ fn split_some_meetings(model: &mut Model, id: FaceId) -> bool {
 /// be laid out in (θ, s)).
 pub fn split_face(model: &mut Model, id: FaceId) -> Vec<FaceId> {
     split_meetings(model, id);
+    split_touches(model, id);
     let Some(face) = model.face(id).cloned() else {
         return Vec::new();
     };

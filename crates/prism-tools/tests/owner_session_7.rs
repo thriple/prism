@@ -39,3 +39,14 @@ fn the_side_pushed_onto_a_pulled_wheel_well_leaves_one_face_per_place() {
         }
     }
 }
+
+#[test]
+fn the_pushed_side_merges_with_the_wheel_well_it_lands_on() {
+    let s = replay_to(736);
+    let r = prism_ops::health::check(s.work_model());
+    assert!(
+        r.crossing.faces.is_empty(),
+        "crossing: {:?}",
+        r.crossing.faces
+    );
+}

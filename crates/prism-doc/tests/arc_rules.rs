@@ -266,3 +266,72 @@ fn a_half_circle_on_a_boxs_side_pulls_in_and_the_side_pushes_onto_it() {
     }));
     clean(d.model());
 }
+
+/// Curved faces get the plane's rule (owner, 2026-11-25): where two lie
+/// on one surface and overlap, they become one set of faces.
+#[test]
+fn a_cylinder_copied_half_onto_itself_shares_one_wall_where_they_overlap() {
+    let mut d = Document::new();
+    circle(&mut d, 0.0, 0.0, 0.0, 1.0);
+    let f = face(&d, DVec3::ZERO);
+    let up = d.model().face(f).unwrap().plane().unwrap().normal.z;
+    assert!(d.run(Command::PushPull {
+        face: f,
+        distance: 2.0 * up,
+        new_loop: false
+    }));
+    let m = d.model();
+    let all = Selection {
+        vertices: m.vertices().map(|(i, _)| i).collect(),
+        edges: m.edges().map(|(i, _)| i).collect(),
+        faces: m.faces().map(|(i, _)| i).collect(),
+        ..Default::default()
+    };
+    assert!(d.run(Command::Copy {
+        selection: all,
+        step: Motion::Translate {
+            by: DVec3::new(0.0, 0.0, 1.0)
+        },
+        count: 1
+    }));
+    let m = d.model();
+    clean(m);
+    let walls_in = |lo: f64, hi: f64| {
+        m.faces()
+            .filter(|(_, f)| f.is_curved())
+            .filter(|(_, f)| {
+                let z: Vec<f64> = m.loop_points(f, 0).iter().map(|p| p.z).collect();
+                let (a, b) = z
+                    .iter()
+                    .fold((f64::MAX, f64::MIN), |(a, b), z| (a.min(*z), b.max(*z)));
+                (a - lo).abs() < 1e-6 && (b - hi).abs() < 1e-6
+            })
+            .count()
+    };
+    let (low, mid, top) = (walls_in(0.0, 1.0), walls_in(1.0, 2.0), walls_in(2.0, 3.0));
+    assert!(
+        low > 0 && low == mid && mid == top,
+        "one wall per band: {low} {mid} {top}"
+    );
+    let r = prism_ops::health::check(m);
+    assert!(r.crossing.faces.is_empty(), "nothing crosses");
+}
+
+/// A circle drawn round a cylinder's wall cuts it, as a line cuts a face.
+#[test]
+fn a_circle_round_a_cylinders_wall_cuts_it_in_two() {
+    let mut d = Document::new();
+    circle(&mut d, 0.0, 0.0, 0.0, 1.0);
+    let f = face(&d, DVec3::ZERO);
+    let up = d.model().face(f).unwrap().plane().unwrap().normal.z;
+    assert!(d.run(Command::PushPull {
+        face: f,
+        distance: 2.0 * up,
+        new_loop: false
+    }));
+    let walls = |d: &Document| d.model().faces().filter(|(_, f)| f.is_curved()).count();
+    let before = walls(&d);
+    circle(&mut d, 0.0, 0.0, 1.0, 1.0);
+    assert_eq!(walls(&d), 2 * before, "each wall cut round its middle");
+    clean(d.model());
+}
