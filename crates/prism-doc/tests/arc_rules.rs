@@ -335,3 +335,54 @@ fn a_circle_round_a_cylinders_wall_cuts_it_in_two() {
     assert_eq!(walls(&d), 2 * before, "each wall cut round its middle");
     clean(d.model());
 }
+
+/// A line drawn down a cylinder's wall (owner, 2026-11-25). Over the
+/// hidden seam between the wall's halves (from the point in line with
+/// the circle's centre), the seam shows; anywhere else the line splits
+/// the wall and shows.
+#[test]
+fn a_line_drawn_down_a_cylinder_wall_shows() {
+    use prism_doc::Command;
+    use prism_math::DVec3;
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    let disc = prism_ops::face_at(&m, DVec3::ZERO).expect("disc");
+    let up = m
+        .face(disc)
+        .and_then(|f| f.plane())
+        .map(|p| p.normal.z)
+        .unwrap();
+    prism_ops::pushpull::push_pull(&mut m, disc, 2.0 * up.signum(), false);
+    let seam = m
+        .edges()
+        .find(|(_, e)| e.soft)
+        .map(|(_, e)| (m.vertex(e.a), m.vertex(e.b)))
+        .expect("a hidden seam");
+    let (top, bottom) = if seam.0.z > seam.1.z {
+        seam
+    } else {
+        (seam.1, seam.0)
+    };
+    let faces = m.face_count();
+    Command::Segment { p: top, q: bottom }.apply(&mut m);
+    assert_eq!(m.face_count(), faces);
+    let shown = m.edges().any(|(_, e)| {
+        !e.soft && e.curve == prism_geom::Curve::Line && {
+            let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+            (a.distance(top) < 1e-9 && b.distance(bottom) < 1e-9)
+                || (b.distance(top) < 1e-9 && a.distance(bottom) < 1e-9)
+        }
+    });
+    assert!(shown, "the seam drawn over shows");
+    // Elsewhere: at 45 degrees round, top to bottom.
+    let r = std::f64::consts::FRAC_1_SQRT_2;
+    let (p, q) = (DVec3::new(r, r, 2.0), DVec3::new(r, r, 0.0));
+    let faces = m.face_count();
+    Command::Segment { p, q }.apply(&mut m);
+    assert_eq!(m.face_count(), faces + 1, "the wall is split");
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+    assert!(m.edges().any(|(_, e)| {
+        !e.soft && (m.vertex(e.a) - p).length() + (m.vertex(e.b) - q).length() < 1e-6
+            || (m.vertex(e.b) - p).length() + (m.vertex(e.a) - q).length() < 1e-6
+    }));
+}

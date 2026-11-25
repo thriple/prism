@@ -22,4 +22,5 @@ serde_json.workspace = true
 prism-geom.workspace = true
 prism-doc.workspace = true
 prism-tools.workspace = true
+prism-file.workspace = true
 prism-text.workspace = true

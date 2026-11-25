@@ -261,6 +261,43 @@ pub fn turned_with(
     Some(out)
 }
 
+/// `tris` over `pts` with each triangle spanning more than `step` along x
+/// cut into columns `step` wide (from the points' least x), as the turned
+/// faces' grid does: on a curved face unrolled flat, no triangle then
+/// spans enough of the curve for its chord to cut through the surface.
+/// The pieces' new corners are added to `pts`.
+pub fn in_columns(pts: &mut Vec<DVec2>, tris: Vec<[usize; 3]>, step: f64) -> Vec<[usize; 3]> {
+    if step.is_nan() || step <= 0.0 {
+        return tris;
+    }
+    let lo = pts.iter().map(|q| q.x).fold(f64::INFINITY, f64::min);
+    let mut out = Vec::with_capacity(tris.len());
+    for t in tris {
+        let tri = t.map(|i| pts[i]);
+        let x_lo = tri.iter().map(|q| q.x).fold(f64::INFINITY, f64::min);
+        let x_hi = tri.iter().map(|q| q.x).fold(f64::NEG_INFINITY, f64::max);
+        if x_hi - x_lo <= step {
+            out.push(t);
+            continue;
+        }
+        let first = ((x_lo - lo) / step).floor() as i64;
+        let last = ((x_hi - lo) / step).ceil() as i64;
+        for k in first..last {
+            let (x0, x1) = (lo + k as f64 * step, lo + (k + 1) as f64 * step);
+            let piece = clip_box(&tri, x0, x1, f64::NEG_INFINITY, f64::INFINITY);
+            if piece.len() < 3 || signed_area2(&piece) <= 0.0 {
+                continue;
+            }
+            let base = pts.len();
+            pts.extend_from_slice(&piece);
+            for j in 1..piece.len() - 1 {
+                out.push([base, base + j, base + j + 1]);
+            }
+        }
+    }
+    out
+}
+
 /// A convex polygon clipped to the box `x0..x1`, `y0..y1` (Sutherland and
 /// Hodgman).
 fn clip_box(poly: &[DVec2], x0: f64, x1: f64, y0: f64, y1: f64) -> Vec<DVec2> {

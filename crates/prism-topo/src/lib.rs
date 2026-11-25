@@ -1007,7 +1007,32 @@ impl Model {
         };
         let ids = f.loop_edge_ids(k);
         let height = |p: DVec3| (p - c.origin).dot(c.axis);
+        // The outer loop starts at 0; a hole starts at its own angle from
+        // the outer loop's first point, the way round that falls within
+        // the face (owner, 2026-11-25: a box intersected through a
+        // cylinder left a hole in its wall that every hole started at 0,
+        // so the wall was drawn across it in a fan of wrong triangles).
         let mut turned = 0.0;
+        if k > 0
+            && let (Some(&o0), Some(&h0)) = (f.outer.first(), l.first())
+        {
+            let outer = self.unrolled(f, 0);
+            let flat = |x: DVec3| {
+                let w = x - c.origin;
+                w - c.axis * w.dot(c.axis)
+            };
+            let (u, w) = (flat(self.vertex(o0)), flat(self.vertex(h0)));
+            let a = u.cross(w).dot(c.axis).atan2(u.dot(w));
+            let (lo, hi) = outer.iter().fold((f64::MAX, f64::MIN), |(lo, hi), (_, q)| {
+                (lo.min(q.x / c.radius), hi.max(q.x / c.radius))
+            });
+            let off = |t: f64| (lo - t).max(t - hi).max(0.0);
+            let tau = std::f64::consts::TAU;
+            turned = [a, a + tau, a - tau]
+                .into_iter()
+                .min_by(|x, y| off(*x).total_cmp(&off(*y)))
+                .unwrap_or(a);
+        }
         let mut out = Vec::with_capacity(l.len());
         for (i, v) in l.iter().enumerate() {
             let p = self.vertex(*v);

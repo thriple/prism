@@ -1,5 +1,7 @@
 **New in this build: a selected group or component lights up all its lines,** not just the box round it, so you can see the whole thing is selected (a locked one in the locked colour).
 
+**Fixed: a cylinder wall with a hole in it** (after Intersect Faces with a box through it) drew as a fan of wrong triangles across the cylinder. It draws properly now. **A line drawn over a hidden line shows:** a line drawn straight down a cylinder's wall at its seam used to vanish into the hidden seam line.
+
 **Also new: the top of a cylinder can be scaled, moved and turned.** Select the top (or bottom) face and use Scale, Move or Rotate: the side follows. Scaled evenly about its centre it becomes a cone; slid sideways the side leans; scaled one way the top becomes an exact ellipse; turned, the side twists. All exact, not facets. The Scale tool's box now fits circles and curves properly, so a circle has grips.
 
 **Also new: Fillet / Chamfer shows what is waiting.** Edges you click are rounded only when you press Enter; until then the round shows selected (blue), so it no longer looks finished before it is.

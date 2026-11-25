@@ -247,6 +247,29 @@ pub fn add_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
     }
 }
 
+/// [`add_segment`] for a line the user draws: where it runs over a hidden
+/// (soft) line already there, that line shows (owner, 2026-11-25: a line
+/// drawn down a cylinder's wall from the point in line with its centre
+/// landed on the hidden seam between the wall's halves and stayed hidden).
+pub fn add_drawn_segment(model: &mut Model, p: DVec3, q: DVec3) -> Added {
+    let added = add_segment(model, p, q);
+    let tol = tol_with(model, &[p, q]);
+    let along = |x: DVec3| {
+        tol.same_point(x, p) || tol.same_point(x, q) || on_segment_inside(x, p, q, &tol).is_some()
+    };
+    let hidden: Vec<EdgeId> = model
+        .edges()
+        .filter(|(_, e)| {
+            e.soft && e.curve == Curve::Line && along(model.vertex(e.a)) && along(model.vertex(e.b))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    for e in hidden {
+        model.set_soft(e, false, false);
+    }
+    added
+}
+
 /// A closed polygon through `points`, its sides sharing one curve id (a
 /// click on one side selects them all). Sides are added as lines are, so
 /// they cut and are cut by what they cross; every straight piece along a

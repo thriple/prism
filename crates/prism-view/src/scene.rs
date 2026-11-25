@@ -668,31 +668,56 @@ impl Scene {
         };
         let start = self.mesh.indices.len() as u32;
         let base = self.mesh.positions.len() as u32;
-        self.mesh.positions.extend_from_slice(&pts);
+        // The unrolled points, and the triangles over them. A face with a
+        // hole is not zipped band by band, so a triangle can join points
+        // far round the cylinder, whose flat chord cuts through it (owner,
+        // 2026-11-25: a wall with a box intersected through it drew as a
+        // fan across its inside): such triangles are split until no side
+        // turns more than a step, each new point put on the surface.
+        let mut flat_pts: Vec<DVec2> = loops.iter().flatten().map(|x| x.1).collect();
+        let mut all_pts = pts.clone();
+
+        let r0 = (first - c.axis_point(first)).normalize_or_zero();
+        let w0 = c.axis.cross(r0);
+        let lift = |q: DVec2| {
+            let t = q.x / c.radius;
+            c.origin + c.axis * q.y + (r0 * t.cos() + w0 * t.sin()) * c.radius
+        };
+        let step = c.radius * std::f64::consts::TAU / 64.0;
+        let mut tris = crate::tess::triangulate_unrolled(&face.outer, &face.holes);
+        if !f.holes.is_empty() {
+            let had = flat_pts.len();
+            tris = crate::tess::in_columns(&mut flat_pts, tris, step);
+            for q in &flat_pts[had..] {
+                all_pts.push(lift(*q));
+                owners.push(VertexId(u32::MAX));
+            }
+        }
+        self.mesh.positions.extend_from_slice(&all_pts);
         self.mesh_vertex_ids.extend(owners);
         self.mesh
             .normals
-            .extend(pts.iter().map(|p| c.normal_at(*p)));
+            .extend(all_pts.iter().map(|p| c.normal_at(*p)));
         // Unrolled is θ·r from the first corner, with no jump at the seam;
         // texture coordinates count θ from the surface's own frame.
         if let Some(rev) = f.surface.revolution() {
             let k = loops[0][0].1;
             let theta0 = rev.param(first).0 - k.x / c.radius;
             self.mesh.uvs.extend(
-                loops
+                all_pts
                     .iter()
-                    .flatten()
+                    .zip(&flat_pts)
                     .map(|(p, q)| rev.texture_at(theta0 + q.x / c.radius, rev.param(*p).1)),
             );
         } else {
             self.mesh
                 .uvs
-                .extend(std::iter::repeat_n(DVec2::ZERO, pts.len()));
+                .extend(std::iter::repeat_n(DVec2::ZERO, all_pts.len()));
         }
         self.mesh
             .faces
-            .extend(std::iter::repeat_n(self.faces.len() as u32, pts.len()));
-        for mut t in crate::tess::triangulate_unrolled(&face.outer, &face.holes) {
+            .extend(std::iter::repeat_n(self.faces.len() as u32, all_pts.len()));
+        for mut t in tris {
             // Unrolled, counter-clockwise turns about the outward normal.
             if !c.outward {
                 t.swap(1, 2);

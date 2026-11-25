@@ -1637,14 +1637,18 @@ impl Command {
     pub fn apply(&self, m: &mut Model) {
         match self {
             Command::Segment { p, q } => {
-                prism_ops::add_segment(m, *p, *q);
+                prism_ops::sticky::add_drawn_segment(m, *p, *q);
             }
             Command::Rect { x0, y0, x1, y1, z } => {
                 prism_ops::add_rect(m, *x0, *y0, *x1, *y1, *z);
             }
             Command::Loop { points } => {
                 for i in 0..points.len() {
-                    prism_ops::add_segment(m, points[i], points[(i + 1) % points.len()]);
+                    prism_ops::sticky::add_drawn_segment(
+                        m,
+                        points[i],
+                        points[(i + 1) % points.len()],
+                    );
                 }
             }
             Command::Circle {
