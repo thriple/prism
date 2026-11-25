@@ -1,4 +1,12 @@
-**New in this build: where a shell's walls end.**
+**New in this build: curves follow the same rules as flat faces.**
+- **Curved faces cut and merge like flat ones.** An arc or circle lying on a cylinder, cone or sphere cuts it, as a line cuts a flat face. Where two curved faces overlap on one surface (a wall pushed over an existing wheel well), they become one set of faces instead of two on top of each other. It happens after every edit, not just Push/Pull.
+- **Circles no longer vanish.** Moving, copying or pushing anything onto existing geometry could delete every circle's face nearby. Fixed, along with arcs left twice in the same place after a Push/Pull, which made thin slivers and doubled walls.
+- **Intersect Faces > With Selection works with groups.** Select groups (and faces): each is cut where the others cross it, in one undo step. With nothing selected it says what to select instead of doing nothing.
+- **Reversed faces draw no false outlines.** A purple (reversed) face no longer gets thick profile lines along edges it shares with faces in its own plane.
+- **The camera can orbit under the ground** to look at a model from below.
+- **Bend / Twist / Taper (groundwork).** Taper on a group is now a live feature you can change in the Inspector afterwards; the Bend / Twist / Taper tool itself comes next.
+
+**Also recent: where a shell's walls end.**
 - **Shell / Thicken of joined freeform faces (the boat hull) can end its walls flush.** An open edge that lies in a flat plane, such as the hull's centre line, ends in that plane by itself, so two mirrored halves meet exactly. Select the shell with the Shell tool: a diamond sits on each open edge. Click it to switch between a square cut and a flush one; drag it along a straight edge to tilt the cut, and it snaps to nearby planes. One undo step each. The Inspector lists each edge too (Square or Flush, and the tilt in degrees for a straight one), so you can type it instead.
 - It works both ways now: where the cut leans over the surface the wall is trimmed back, and where it leans away the surface is carried on past its own edge to meet the plane (the hull thickened outward ends flush along its centre line too). A cut that would need the surface carried on a very long way says so and keeps the square cut. A single freeform surface takes a flush edge as well, and dragging an edge snaps to guide lines and to the faces of other parts beside it.
 - **Thin walls.** The boat hull now thickens from 0.1 mm to 5 cm either way (it used to refuse anything under 5 cm inward). Shell / Thicken now refuses a wall under 0.1 cm with a red message; drawing and Push/Pull stay exact to 0.01 cm.
