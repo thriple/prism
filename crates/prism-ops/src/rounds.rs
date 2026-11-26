@@ -342,16 +342,158 @@ fn round_any(
     size: f64,
     fillet: bool,
 ) -> Result<Vec<FaceId>, &'static str> {
-    match round_plain(model, edges, size, fillet) {
+    let first = round_plain(model, edges, size, fillet);
+    match first {
+        Err(why) if why == TWO_SOLIDS => round_capped(model, edges, size, fillet)
+            .or_else(|| round_apart(model, edges, size, fillet))
+            .ok_or(why),
         Err(why)
-            if why == prism_kernel::solid::TOO_LARGE
-                || why == prism_kernel::solid::NOT_ROUNDED
-                || why == TWO_SOLIDS =>
+            if why == prism_kernel::solid::TOO_LARGE || why == prism_kernel::solid::NOT_ROUNDED =>
         {
             round_apart(model, edges, size, fillet).ok_or(why)
         }
         done => done,
     }
+}
+
+/// Edges not on a closed solid rounded by the kernel all the same: each
+/// opening of the faces they are on (a loop of edges with a face on one
+/// side) that lies in one plane is closed by a flat face for the kernel,
+/// and the faces made of it taken away after (owner, 2026-11-26: "fillet /
+/// chamfer should work along that whole edge, no complaints"; the owner's
+/// session 29: a body closed but for a hole 0.24 mm across, where a short
+/// line and an arc met, so no edge on it could be rounded together with
+/// another, or beside a cylinder).
+fn round_capped(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    let tol = model.tol();
+    let edge_faces = model.edge_faces();
+    let seed = *edge_faces.get(edges.first()?)?.first()?;
+    let piece = piece_of(model, seed);
+    let open: Vec<EdgeId> = model
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| {
+            edge_faces
+                .get(id)
+                .is_some_and(|fs| fs.len() == 1 && piece.contains(&fs[0]))
+        })
+        .collect();
+    if open.is_empty() {
+        return None;
+    }
+    // The openings: loops of open edges, each point on two of them.
+    let mut at: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+    for e in &open {
+        let x = model.edge(*e)?;
+        at.entry(x.a).or_default().push(*e);
+        at.entry(x.b).or_default().push(*e);
+    }
+    if at.values().any(|es| es.len() != 2) {
+        return None;
+    }
+    let mut left: BTreeSet<EdgeId> = open.iter().copied().collect();
+    let mut work = model.clone();
+    let mut caps: Vec<prism_math::Plane> = Vec::new();
+    while let Some(first) = left.pop_first() {
+        let x = model.edge(first)?;
+        let (start, mut v) = (x.a, x.b);
+        let (mut loop_v, mut loop_e) = (vec![x.a], vec![first]);
+        while v != start {
+            loop_v.push(v);
+            let next = *at.get(&v)?.iter().find(|e| left.contains(e))?;
+            left.remove(&next);
+            loop_e.push(next);
+            v = model.edge(next)?.other(v);
+        }
+        // A sliver: two short edges between the same two points (a line
+        // and an arc 0.24 mm long, a notch in one face, in the owner's
+        // session 29): the two points become one (no further apart than
+        // a hundred times the precision), which closes it for good; the
+        // shape moves no further than the sliver is long.
+        if let [a, b] = loop_e[..] {
+            let _ = (a, b);
+            let [p, q] = loop_v[..] else { return None };
+            if work.vertex(p).distance(work.vertex(q)) > tol.dist * 100.0 {
+                return None;
+            }
+            crate::transform::apply_weld(&mut work, &BTreeMap::from([(p.max(q), p.min(q))]));
+            continue;
+        }
+        // The opening's points in the order it is walked.
+        let mut pts: Vec<DVec3> = Vec::new();
+        for (k, e) in loop_e.iter().enumerate() {
+            let mut along = model.edge_points(*e);
+            if model.edge(*e)?.a != loop_v[k] {
+                along.reverse();
+            }
+            pts.extend(along);
+        }
+        let n = prism_math::newell(&pts).normalize_or_zero();
+        if n == DVec3::ZERO {
+            return None;
+        }
+        let plane = prism_math::Plane::new(pts[0], n);
+        if !pts.iter().all(|p| plane.contains(*p, &tol)) {
+            return None;
+        }
+        work.add_face(prism_topo::Face::with_edges(
+            loop_v,
+            Vec::new(),
+            prism_geom::Surface::Plane(plane),
+            vec![loop_e],
+        ));
+        caps.push(plane);
+    }
+    crate::health::orient(&mut work, None);
+    let had: BTreeSet<FaceId> = model.faces().map(|(id, _)| id).collect();
+    let r = round_once(&mut work, edges, size, fillet);
+    r.ok()?;
+    // The caps go again, and whatever the round made of them.
+    let gone: Vec<FaceId> = work
+        .faces()
+        .filter(|(id, f)| {
+            !had.contains(id)
+                && f.plane().is_some_and(|p| {
+                    caps.iter().any(|c| {
+                        p.normal.dot(c.normal).abs() > 1.0 - 1e-9 && c.contains(p.origin, &tol)
+                    })
+                })
+                && f.loops()
+                    .flatten()
+                    .all(|v| caps.iter().any(|c| c.contains(work.vertex(*v), &tol)))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    if gone.is_empty() && !caps.is_empty() {
+        return None;
+    }
+    for f in &gone {
+        work.remove_face(*f);
+    }
+    let used = work.edge_faces();
+    let stray: Vec<EdgeId> = work
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| used.get(id).is_none_or(|f| f.is_empty()))
+        .collect();
+    for e in stray {
+        work.remove_edge(e);
+    }
+    if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
+        return None;
+    }
+    let new = work
+        .faces()
+        .map(|(id, _)| id)
+        .find(|id| !had.contains(id))?;
+    let out = piece_of(&work, new).into_iter().collect();
+    *model = work;
+    Some(out)
 }
 
 /// `edges` rounded one by one by [`crate::round::round`], if none of them

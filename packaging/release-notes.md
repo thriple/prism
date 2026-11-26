@@ -1,3 +1,5 @@
+**Fixed: fillet and chamfer on open shapes.** Edges that are not on a closed solid (an open box, a shell left open) now round like edges of a solid: edges that meet at a corner, edges beside a curved face, and long runs, instead of only one plain straight edge at a time. The opening stays open.
+
 **Fixed: more corners round.** Where an inside fillet meets outside ones (the inner corner of an L-shaped block), the rounds are made one after another and close the corner. Where four or more rounds meet at a point (a pyramid's tip), the tip is first trimmed by a small flat facet, so the rounds can end cleanly; a smooth patch there comes later. Tool previews now also show curves divided where shapes cross, as the finished edit will.
 
 **Fixed: overlapping shapes now divide each other's curves, not only their faces.** Where an arc, a polygon's side or a curve crosses another, however they came to cross (drawn, moved, copied, pasted or exploded), it is now separate pieces on each side of the crossing. Clicking one with Erase or Select takes just that piece. Before, one click could erase a whole polygon or arc, outline and all.

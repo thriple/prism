@@ -437,3 +437,32 @@ fn four_rounds_meet_at_an_apex() {
         assert!(vertex_at(&w, apex).is_none(), "the apex is cut off");
     }
 }
+
+/// Edges that meet, off a closed solid (an open box's two upright edges
+/// and the bottom edge between them): the opening is closed by a flat
+/// face for the kernel and taken away after, so the rounds meet at the
+/// corner as on a solid (owner, 2026-11-26: "fillet/chamfer should work
+/// along that whole edge, no complaints").
+#[test]
+fn edges_that_meet_round_off_a_closed_solid() {
+    let l = 2.0;
+    let mut m = cube(l);
+    let top = face_at(&m, v(1.0, 1.0, l)).expect("the top");
+    m.remove_face(top);
+    let edges = BTreeSet::from([
+        edge(&m, v(l, 0.0, 0.0), v(l, 0.0, l)),
+        edge(&m, v(0.0, 0.0, 0.0), v(0.0, 0.0, l)),
+        edge(&m, v(0.0, 0.0, 0.0), v(l, 0.0, 0.0)),
+    ]);
+    for fillet in [true, false] {
+        let mut w = m.clone();
+        round_edges(&mut w, &edges, 0.3, fillet).unwrap_or_else(|why| panic!("{fillet}: {why}"));
+        assert_eq!(check::problems(&w), Vec::<String>::new());
+        assert!(
+            face_at(&w, v(1.0, 1.0, l)).is_none(),
+            "{fillet}: still open at the top"
+        );
+        let h = health::check(&w);
+        assert!(h.reversed.is_empty(), "{fillet}: {h:?}");
+    }
+}
