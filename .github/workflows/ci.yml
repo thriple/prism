@@ -1,8 +1,27 @@
 name: CI
 
+# Pushes that change only documents skip CI (owner, 2026-11-26). The
+# documents tests read are kept: the golden files in docs/acceptance,
+# docs/feature-map.md and PLAN.md. Later patterns override earlier ones.
 on:
   push:
+    paths:
+      - "**"
+      - "!**.md"
+      - "!docs/**"
+      - "!LICENSE-*"
+      - "docs/acceptance/**"
+      - "docs/feature-map.md"
+      - "PLAN.md"
   pull_request:
+    paths:
+      - "**"
+      - "!**.md"
+      - "!docs/**"
+      - "!LICENSE-*"
+      - "docs/acceptance/**"
+      - "docs/feature-map.md"
+      - "PLAN.md"
 
 permissions:
   contents: read
@@ -52,7 +71,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --workspace
-      - run: cargo test --workspace
+      # The tests run on the release build just made, not on a second,
+      # debug build (owner, 2026-11-26): that tests the code that ships, and
+      # the Linux job above still runs them in debug with overflow checks.
+      - run: cargo test --release --workspace
 
   web:
     name: Web build
