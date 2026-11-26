@@ -404,7 +404,7 @@ Worked example: a group holding an icosahedron is duplicated and moved aside. Th
 
 **Precision.**
 - **Exact predicates first.** Planar and polyhedral work (sticky geometry, push/pull, planar booleans) uses exact predicates, which give exact answers about the numbers that are stored (which side of a plane a point is on, whether two segments cross). Points created by snapping reuse the existing vertex and are never compared by distance. After a rotation or a scale, points that should coincide can differ by rounding, so a weld step with the relative tolerance below still runs after transforms.
-- **Tolerance only where numbers are approximate:** curve and surface intersections, imported data, transforms and rotations. It is **relative**, not fixed: a small fraction of the model's size (the prototype uses 1e-6 of the extent, clamped), so a sub-millimetre part and a kilometre-scale site both behave.
+- **Tolerance only where numbers are approximate:** curve and surface intersections, imported data, transforms and rotations. It is **one fixed distance per document** (DECISIONS #42, owner 2026-11-26, replacing the relative rule): default 0.01 mm, with Fine, Coarse or a typed value for extreme scales, the same in every group and stored in the file; every other threshold is derived from it, and the clean-up steps after an edit follow DECISIONS #44.
 - **Local coordinates.** Each group or component keeps its own origin and transform and stores positions near that origin in f64. Geometry merges in a shared frame only when exploded.
 - **Degenerate geometry** below the tolerance (slivers, zero-length edges) is cleaned up instead of kept. The tolerance is shown in Preferences and can be changed.
 
@@ -498,7 +498,7 @@ Window > Preferences > Keyboard. Every binding comes from the action registry (s
 - **Units are asked or detected,** and a scale is offered, with the model size shown before it is accepted.
 - **Faces are rebuilt:** CAD edge data does not always include faces, so Prism rebuilds them.
 - **Meshes:** an option recovers planar faces by merging coplanar triangles, and another softens edges below an angle. Otherwise the mesh is kept as triangles.
-- **Merging:** imported geometry goes through the duplicate and overlap rules (section 1.9) using the relative tolerance, or is placed in its own group.
+- **Merging:** imported geometry goes through the duplicate and overlap rules (section 1.9) using the document's tolerance, or is placed in its own group.
 - **Far-from-origin models** are moved near the origin and keep their original offset, so nothing jitters (section 4).
 - **A Model Health report** (section 1.10) appears after every import.
 - **Large imports** run in the background, with progress and a cancel button.
