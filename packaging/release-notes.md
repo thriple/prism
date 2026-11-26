@@ -1,3 +1,5 @@
+**Fixed: the line where a box's top meets a cylinder wall** (after Intersect Faces) drew dashed. It draws whole now.
+
 **New in this build: a selected group or component lights up all its lines,** not just the box round it, so you can see the whole thing is selected (a locked one in the locked colour).
 
 **Fixed: a cylinder wall with a hole in it** (after Intersect Faces with a box through it) drew as a fan of wrong triangles across the cylinder. It draws properly now. **A line drawn over a hidden line shows:** a line drawn straight down a cylinder's wall at its seam used to vanish into the hidden seam line.

@@ -57,6 +57,7 @@ fn ghost(mut s: Scene) -> Scene {
         e.ghost = true;
         e.normals = [None, None];
         e.faces = [None, None];
+        e.curved = [None, None];
     }
     s
 }

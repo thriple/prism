@@ -1515,13 +1515,8 @@ impl Renderer {
                             l.n2 = n.as_vec3().to_array();
                             l.flags |= HAS_N2;
                         }
-                        l.faces = face_numbers(scene, e.faces);
-                        if e.faces.iter().flatten().any(|f| {
-                            scene
-                                .face_index
-                                .get(f)
-                                .is_some_and(|i| scene.faces[*i].curved.is_some())
-                        }) {
+                        l.faces = face_numbers(scene, e.own_faces());
+                        if e.curved[0].is_some() {
                             l.flags |= CURVED_OWN;
                         }
                         l
@@ -1590,7 +1585,7 @@ impl Renderer {
                 e.segments()
                     .map(|(a, b)| {
                         let mut l = LineInstance::new(a, b, color, style.highlight_width);
-                        l.faces = face_numbers(scene, e.faces);
+                        l.faces = face_numbers(scene, e.own_faces());
                         l
                     })
                     .collect()

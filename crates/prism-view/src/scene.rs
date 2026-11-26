@@ -258,6 +258,10 @@ pub struct SceneEdge {
     pub normals: [Option<DVec3>; 2],
     /// The first two faces that use it.
     pub faces: [Option<FaceId>; 2],
+    /// The first two of its faces that are curved. Where more than two
+    /// faces meet (a box top cut into a cylinder wall), `faces` may hold
+    /// flat ones only, but the curved ones are its own as well.
+    pub curved: [Option<FaceId>; 2],
     /// Drawn faded: outside the open group.
     pub faded: bool,
     /// A hidden object shown by View > Hidden Geometry: drawn dashed.
@@ -268,6 +272,22 @@ pub struct SceneEdge {
 }
 
 impl SceneEdge {
+    /// The two faces it is drawn against as its own (which never hide
+    /// it): its curved faces first, then the rest of `faces`. A flat face
+    /// never hides a line lying in its plane anyway, but a curved one,
+    /// drawn as flat facets, strays in front of its own edge.
+    pub fn own_faces(&self) -> [Option<FaceId>; 2] {
+        let mut out = [None; 2];
+        let mut k = 0;
+        for f in self.curved.iter().chain(&self.faces).flatten() {
+            if k < 2 && !out.contains(&Some(*f)) {
+                out[k] = Some(*f);
+                k += 1;
+            }
+        }
+        out
+    }
+
     /// The straight pieces it is drawn and picked with, from `a` to `b`.
     pub fn segments(&self) -> impl Iterator<Item = (DVec3, DVec3)> + '_ {
         let pts = std::iter::once(self.a)
@@ -515,6 +535,10 @@ impl Scene {
             }
             let fid = |k: usize| fs.get(k).copied();
             let n = |k: usize| fid(k).and_then(normal);
+            let mut bent = fs
+                .iter()
+                .copied()
+                .filter(|f| model.face(*f).is_some_and(|x| x.is_curved()));
             s.edge_index.insert(id, s.edges.len());
             s.edges.push(SceneEdge {
                 id,
@@ -526,6 +550,7 @@ impl Scene {
                 curve: e.curve.clone(),
                 normals: [n(0), n(1)],
                 faces: [fid(0), fid(1)],
+                curved: [bent.next(), bent.next()],
                 faded: false,
                 ghost: e.soft,
                 soft: e.soft,
@@ -980,10 +1005,13 @@ impl Scene {
             }
             let (fx, nx) = (x.faces[0], x.normals[0]);
             let (fy, ny) = (y.faces[0], y.normals[0]);
+            let (cx, cy) = (x.curved[0], y.curved[0]);
             self.edges[*i].faces[1] = fy;
             self.edges[*i].normals[1] = ny;
             self.edges[*j].faces[1] = fx;
             self.edges[*j].normals[1] = nx;
+            self.edges[*i].curved = if cx.is_some() { [cx, cy] } else { [cy, None] };
+            self.edges[*j].curved = if cy.is_some() { [cy, cx] } else { [cx, None] };
         }
     }
 
@@ -1034,6 +1062,7 @@ impl Scene {
             e.va = vmap.get(&e.va).copied().unwrap_or(e.va);
             e.vb = vmap.get(&e.vb).copied().unwrap_or(e.vb);
             e.faces = e.faces.map(|f| f.and_then(|f| fmap.get(&f).copied()));
+            e.curved = e.curved.map(|f| f.and_then(|f| fmap.get(&f).copied()));
             e.faded = faded;
             self.edge_owner.insert(e.id, owner);
             self.edge_index.insert(e.id, self.edges.len());

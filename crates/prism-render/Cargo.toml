@@ -23,3 +23,4 @@ prism-geom.workspace = true
 prism-doc.workspace = true
 prism-tools.workspace = true
 prism-text.workspace = true
+prism-file.workspace = true
