@@ -956,6 +956,10 @@ pub const UNJOINED: &str = "Some pieces of this face-by-face shell would not joi
 pub const THIN: &str =
     "Very thin: under 0.1 cm (1 mm). Built anyway: check it is the size you meant.";
 
+/// The most pieces a face-by-face build joins into one solid; more are
+/// kept side by side (flagged [`UNJOINED`]).
+const JOIN_MAX: usize = 12;
+
 /// The warning for building face by face because of `why`.
 fn apart_note(why: &str) -> &'static str {
     match why {
@@ -989,6 +993,10 @@ fn apart(
         return None;
     }
     let body = body(model, faces);
+    // Joining is a boolean per piece: on a body of many (curved) faces
+    // that takes minutes, so past a few pieces they are kept side by side.
+    let kept_faces = body.iter().filter(|f| !open.contains(f)).count();
+    let join = join && kept_faces <= JOIN_MAX;
     // The pieces joined so far: each a solid; a piece that will not join
     // any of them into a solid is kept as one of its own.
     let mut solids: Vec<Model> = Vec::new();
@@ -1028,7 +1036,7 @@ fn apart(
             solids.push(slab);
         }
     }
-    let unjoined = join && solids.len() > 1;
+    let unjoined = solids.len() > 1 && (join || kept_faces > JOIN_MAX);
     let mut solids = solids.into_iter();
     let mut whole = solids.next()?;
     for w in solids {
