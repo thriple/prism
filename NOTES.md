@@ -5413,3 +5413,8 @@ None of these were built. The owner did not want to pursue any of them further t
   - The replay test now covers the third click (33 s in debug, as two clicks took before).
 - **CI:** testing the native jobs on the release build (76e291d) made the test step 50-57 minutes, not 5.5-7 (thin LTO for every test program), and the Windows screenshot tests crashed in the driver (access violation) in release. Reverted to `cargo test --workspace`. Stage 5 (7664209) failed `cargo fmt --check` on `tests/thresholds.rs`; formatted here.
 - **Left over, owner's call:** the overlaps themselves. Options: (a) join every piece (now ~34 s for click 2, and 6 pieces still fail); (b) keep each piece that will not join as its own group (clean solids, no overlaps, a later click shells only the one clicked); (c) for "too thick", build at the thickest that works and say so (fast and clean, but changes DECISIONS #41's "build as asked, face by face"). Model Health on very crossed freeform models is still about a minute.
+
+## Owner to-do, queued (2026-11-26)
+
+- **Coarse-then-exact previews** (timer set for 19:31 Guam, 09:31 UTC): live shell handles (thickness, rims) are slow to respond. Each tool gets a cheap preview mode while dragging (no joins, coarser curves), exact on release or click. Start with an audit timing each tool's preview and handle drag.
+- **Real handles on fillets and chamfers:** dragging on the highlighted round (brief 48 part 2) "is not working out" (owner). Give a selected live fillet or chamfer a visible grip to drag, as the shell's thickness and rim handles have. Not started.
