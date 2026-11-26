@@ -1,13 +1,24 @@
 //! The tolerance: how close two things must be to count as the same.
 //!
-//! It is relative: a small fraction of the model's size (PLAN 1.9), so a
-//! millimetre part and a kilometre site behave the same. Every operation
-//! asks this value; no other distance epsilons are allowed in operations.
+//! One fixed distance per document (DECISIONS #42, owner 2026-11-26),
+//! the same in every group and stored in the file; not worked out from
+//! the model's size. Default [`STANDARD`] (0.01 mm); the document setting
+//! offers [`FINE`] and [`COARSE`] for extreme scales. Every operation asks
+//! the model for it ([`Tol`] through `Model::tol()`); no other distance
+//! epsilons are allowed in operations.
 
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
-/// The fraction of the model's extent that counts as "the same point".
+/// The default tolerance (Standard): 0.01 mm.
+pub const STANDARD: f64 = 1e-5;
+/// Fine: 0.001 mm (small parts, jewellery).
+pub const FINE: f64 = 1e-6;
+/// Coarse: 0.1 mm (sites, terrain).
+pub const COARSE: f64 = 1e-4;
+/// A fraction of a size that counts as "the same point" there: used only
+/// to pick a document's precision for an older file from its geometry
+/// ([`Tol::for_extent`]), never for an edit.
 pub const RELATIVE: f64 = 1e-6;
 /// The tolerance never goes below or above these (model units).
 pub const MIN: f64 = 1e-12;
@@ -28,8 +39,29 @@ pub struct Tol {
     pub dist: f64,
 }
 
+impl Default for Tol {
+    /// The default document tolerance, [`STANDARD`].
+    fn default() -> Self {
+        Self { dist: STANDARD }
+    }
+}
+
 impl Tol {
-    /// The tolerance for a model whose bounding box is `extent` across.
+    /// A document tolerance of `dist`, kept within [`MIN`] and [`MAX`].
+    pub fn new(dist: f64) -> Self {
+        let d = if dist.is_finite() && dist > 0.0 {
+            dist
+        } else {
+            STANDARD
+        };
+        Self {
+            dist: d.clamp(MIN, MAX),
+        }
+    }
+
+    /// The relative tolerance for something `extent` across: only for
+    /// choosing a document's precision from geometry (an older file, an
+    /// import), not for an edit.
     pub fn for_extent(extent: f64) -> Self {
         let e = if extent.is_finite() && extent > 0.0 {
             extent

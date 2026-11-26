@@ -1995,6 +1995,8 @@ impl Document {
         let before = self.asm.clone();
         command.apply_in(&mut self.asm, ROOT);
         self.asm.follow_dimensions();
+        // A model the command built afresh takes the document's tolerance.
+        self.asm.keep_tol();
         if self.asm == before {
             // Put it back exactly: a command can change a value without
             // changing it (0.0 to -0.0 compare equal), and the geometry must

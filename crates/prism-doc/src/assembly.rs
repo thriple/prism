@@ -316,6 +316,10 @@ pub struct Assembly {
     joints: BTreeMap<JointId, Joint>,
     #[serde(default)]
     next_joint: u32,
+    /// The document's tolerance (DECISIONS #42): one fixed distance, given
+    /// to every definition's model.
+    #[serde(default)]
+    tol: prism_math::Tol,
 }
 
 /// An instance's name, tag and whether it is hidden (for files).
@@ -336,6 +340,7 @@ impl Default for Assembly {
 impl Assembly {
     /// Only a root, holding `model`.
     pub fn with_model(model: Model) -> Self {
+        let tol = model.tol();
         Self {
             defs: [(
                 ROOT,
@@ -371,6 +376,36 @@ impl Assembly {
             dim_anchors: BTreeMap::new(),
             joints: BTreeMap::new(),
             next_joint: 0,
+            tol,
+        }
+    }
+
+    /// The document's tolerance (DECISIONS #42).
+    pub fn tol(&self) -> prism_math::Tol {
+        self.tol
+    }
+
+    /// Set the document's tolerance, on every definition's model (and its
+    /// live features' base).
+    pub fn set_tol(&mut self, tol: prism_math::Tol) {
+        self.tol = tol;
+        self.keep_tol();
+    }
+
+    /// Give the document's tolerance to any model that does not have it
+    /// (one an edit built afresh): cheap when all already do.
+    pub fn keep_tol(&mut self) {
+        let tol = self.tol;
+        for d in self.defs.values_mut() {
+            let stale =
+                d.model.tol() != tol || d.stack.as_ref().is_some_and(|s| s.base.tol() != tol);
+            if stale {
+                let d = Arc::make_mut(d);
+                d.model.set_tol(tol);
+                if let Some(st) = &mut d.stack {
+                    st.base.set_tol(tol);
+                }
+            }
         }
     }
 
@@ -429,6 +464,9 @@ impl Assembly {
         if let Some(id) = defs.keys().find(|id| reaches(&defs, **id, **id, 0)) {
             return Err(format!("definition {} contains itself", id.0));
         }
+        let tol = defs
+            .get(&ROOT)
+            .map_or_else(prism_math::Tol::default, |d| d.model.tol());
         Ok(Assembly {
             defs: defs.into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
             next_def,
@@ -454,6 +492,7 @@ impl Assembly {
             dim_anchors: BTreeMap::new(),
             joints: BTreeMap::new(),
             next_joint: 0,
+            tol,
         })
     }
 
@@ -1558,9 +1597,13 @@ impl Assembly {
         !self.root().instances.is_empty()
     }
 
-    fn new_def(&mut self, def: Definition) -> DefId {
+    fn new_def(&mut self, mut def: Definition) -> DefId {
         let id = DefId(self.next_def);
         self.next_def += 1;
+        def.model.set_tol(self.tol);
+        if let Some(st) = &mut def.stack {
+            st.base.set_tol(self.tol);
+        }
         self.defs.insert(id, Arc::new(def));
         id
     }

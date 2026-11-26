@@ -1379,7 +1379,7 @@ fn built(
     }
     let plan = plan(model, faces, open, d)?;
     let tol = model.tol();
-    let mut s = Model::new();
+    let mut s = Model::with_tol(tol);
     let mut base: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     let mut up: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     for (v, q) in &plan.moved {
@@ -1862,7 +1862,7 @@ fn freeform_slab(
             }
         }
     }
-    let mut s = Model::new();
+    let mut s = Model::with_tol(tol);
     let eps = tol.dist * 0.1;
     // Each kept face's own offset surface: a freeform one fitted (its
     // own edge still bounds it), a flat or other analytic one exact and

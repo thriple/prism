@@ -55,7 +55,7 @@ pub fn slab(model: &Model, face: FaceId, d: f64) -> Result<Slab, &'static str> {
     let off = |p: DVec3| p + patch.normal_at(p) * d;
     let top = offset_surface(&patch, &laid.polys[0], d, eps).ok_or(NO_OFFSET)?;
 
-    let mut s = Model::new();
+    let mut s = Model::with_tol(model.tol());
     let mut vmap: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     let mut up: BTreeMap<VertexId, VertexId> = BTreeMap::new();
     for v in f.loops().flatten() {

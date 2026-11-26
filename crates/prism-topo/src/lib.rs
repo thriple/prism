@@ -382,6 +382,11 @@ pub struct Model {
     next_guide: u32,
     #[serde(default, skip_serializing_if = "is_zero")]
     next_curve: u32,
+    /// The document's tolerance (DECISIONS #42): set by the document, not
+    /// saved with the model (the file keeps it in the document's settings),
+    /// and kept by copies.
+    #[serde(skip)]
+    tol: Tol,
 }
 
 /// The model as saved in JSON (undo journals, schema 0 files). Faces saved
@@ -416,6 +421,7 @@ impl TryFrom<ModelData> for Model {
             next_face: d.next_face,
             next_guide: d.next_guide,
             next_curve: d.next_curve,
+            tol: Tol::default(),
         };
         m.link_unlinked()?;
         Ok(m)
@@ -1276,8 +1282,23 @@ impl Model {
     // ---- whole model ----
 
     /// The tolerance for this model, from its size.
+    /// The document's tolerance (DECISIONS #42): one fixed distance, the
+    /// same in every group, not worked out from the model's size.
     pub fn tol(&self) -> Tol {
-        Tol::for_points(self.vertices.values())
+        self.tol
+    }
+
+    /// Set the tolerance (the document does, for each of its models).
+    pub fn set_tol(&mut self, tol: Tol) {
+        self.tol = tol;
+    }
+
+    /// An empty model with `tol` (a scratch model built for another one
+    /// takes its tolerance).
+    pub fn with_tol(tol: Tol) -> Self {
+        let mut m = Self::new();
+        m.tol = tol;
+        m
     }
 
     /// The bounding box of the geometry: every vertex, and the true extent
@@ -1438,6 +1459,7 @@ impl Model {
             next_face: c.face,
             next_guide: c.guide,
             next_curve: c.curve,
+            tol: Tol::default(),
         };
         m.link_unlinked()?;
         let problems = m.bookkeeping_problems();

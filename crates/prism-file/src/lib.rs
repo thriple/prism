@@ -205,6 +205,11 @@ pub struct Settings {
     pub units: DisplayUnits,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camera: Option<CameraData>,
+    /// The document's tolerance in metres (DECISIONS #42). Written from the
+    /// document on save; a file without it (older ones) has one chosen
+    /// from its geometry when read ([`precision_for`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precision: Option<f64>,
     /// Fields written by a newer version of Prism, kept as they were.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -364,8 +369,13 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         ],
     };
     let mut manifest = manifest;
+    // The document's tolerance goes with its settings.
+    let settings = Settings {
+        precision: Some(c.assembly.tol().dist),
+        ..c.settings.clone()
+    };
     let mut files: Vec<(String, Vec<u8>)> = vec![
-        (DOCUMENT.to_owned(), pretty(&c.settings)),
+        (DOCUMENT.to_owned(), pretty(&settings)),
         (MODEL.to_owned(), geometry::encode(c.model())),
     ];
     let asm = &c.assembly;
@@ -741,7 +751,42 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
             m.next,
         );
     }
+    // The document's tolerance: the file's own, or for an older file one
+    // its smallest details survive (DECISIONS #42).
+    let mut settings = settings;
+    let tol = match settings.precision {
+        Some(d) => prism_math::Tol::new(d),
+        None => precision_for(&assembly),
+    };
+    settings.precision = Some(tol.dist);
+    assembly.set_tol(tol);
     Ok(Contents { assembly, settings })
+}
+
+/// The tolerance for a document saved before it had one (DECISIONS #42):
+/// Standard (0.01 mm), unless its shortest edge is under ten of that, in
+/// which case the largest of Fine (0.001 mm) and finer powers of ten that
+/// leaves every edge at least ten tolerances long, so nothing in it merges.
+pub fn precision_for(assembly: &Assembly) -> prism_math::Tol {
+    use prism_math::tol::{FINE, MIN, STANDARD};
+    let shortest = assembly
+        .defs()
+        .flat_map(|(_, d)| {
+            d.model
+                .edges()
+                .map(|(_, e)| d.model.vertex(e.a).distance(d.model.vertex(e.b)))
+                .collect::<Vec<_>>()
+        })
+        .filter(|l| *l > 0.0)
+        .fold(f64::INFINITY, f64::min);
+    if shortest >= 10.0 * STANDARD {
+        return prism_math::Tol::new(STANDARD);
+    }
+    let mut t = FINE;
+    while t > MIN && shortest < 10.0 * t {
+        t /= 10.0;
+    }
+    prism_math::Tol::new(t)
 }
 
 /// The groups: `groups.json` and each definition's model.

@@ -1094,9 +1094,6 @@ impl Scene {
             (Some(a), Some(b)) => Some((a.0.min(b.0), a.1.max(b.1))),
             (a, b) => a.or(b),
         };
-        if let Some((lo, hi)) = self.bounds {
-            self.tol = Tol::for_points(&[lo, hi]);
-        }
     }
 
     /// This scene placed by `m` (a group's instance), without rebuilding:
@@ -1216,9 +1213,6 @@ impl Scene {
         s.bounds = it
             .next()
             .map(|first| it.fold((first, first), |(lo, hi), q| (lo.min(q), hi.max(q))));
-        if let Some((lo, hi)) = s.bounds {
-            s.tol = Tol::for_points(&[lo, hi]);
-        }
         s.guides.clear();
         Some(s)
     }

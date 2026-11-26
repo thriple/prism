@@ -344,7 +344,7 @@ pub fn take(model: &mut Model, sel: &Selection) -> Model {
         }
     }
 
-    let mut out = Model::new();
+    let mut out = Model::with_tol(model.tol());
     let vmap: BTreeMap<VertexId, VertexId> = verts
         .iter()
         .map(|v| (*v, out.add_vertex(model.vertex(*v))))

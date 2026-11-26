@@ -21,14 +21,13 @@ pub struct Added {
     pub faces: Vec<FaceId>,
 }
 
-/// The tolerance for the model once `extra` points are added.
+/// The tolerance for adding `extra` points to the model: the document's
+/// (DECISIONS #42). It used to be worked out from the model's size with
+/// the new points, so drawing one far away loosened welding for the very
+/// line being drawn.
 pub fn tol_with(model: &Model, extra: &[DVec3]) -> Tol {
-    let pts: Vec<DVec3> = model
-        .vertices()
-        .map(|(_, p)| p)
-        .chain(extra.iter().copied())
-        .collect();
-    Tol::for_points(&pts)
+    let _ = extra;
+    model.tol()
 }
 
 /// Where `p` falls along the segment `a`–`b`, if it is on it and clear of
