@@ -136,6 +136,79 @@ Tests: a pyramid tip; a cube corner with three different sizes (once rounds can 
 - **Message:** the cursor label and Fillet window say which step was taken where it matters. For example: "the end is closed by a flat cap", or "a notch 0.24 mm long was welded".
 - **Session 29 replay:** the owner's recording goes into the tests once step 1 is in: the hovered edge's run rounds at 0.093 m.
 
+## Research: how other tools do it (2026-11-26)
+
+### Where rounds meet at a corner
+
+**Three corner types, as Fusion and Inventor offer them:**
+- **Rolling ball:** the ball runs on round the corner. Three equal outside rounds meet in a piece of a sphere, which is exact. This is what the kernel already does for a box corner.
+- **Setback:** each round stops a set distance back from the corner (the setback, a length per edge, as SolidWorks offers). The hole left is filled with an n-sided patch that meets each round smoothly.
+- **Mitre:** the rounds are cut where they meet by the plane that halves the angle. Exact on planes, cylinders and cones, which is why Inventor makes it the default.
+
+**The setback patch, as Várady and Rockwood build it:**
+- an n-sided corner becomes a 2n-sided patch (one side per round's end, one per setback line);
+- it is built from ordinary four-sided patches meeting at a "setback split";
+- its control frame is made by chamfering again and again.
+
+Other ways to fill an n-sided hole smoothly: Gregory patches, Coons–Gregory and transfinite patches. Commercial kernels (Parasolid, ACIS, Open CASCADE) are said to use setback corners with n-sided patches that meet their neighbours smoothly (G1).
+
+**Mixed corners** (inside and outside rounds at one point) are the hard case everywhere:
+- ViaCAD's vertex blend only works where all the rounds turn the same way.
+- Open kernels refuse mixed corners, or get kinks in them.
+- Vendors advise rounding in this order:
+  - inside (concave) rounds before outside ones;
+  - larger before smaller;
+  - all the edges at a corner in one go where possible, else in a set order.
+
+  Prism's "round in turn" (built today) follows this already.
+
+### Where a round runs past its faces (overflow)
+
+**SolidWorks offers two ways to finish a round that runs into another face:**
+- **Keep edge:** the neighbouring face's edge stays where it is. The round is broken up to fit it, and can dip.
+- **Keep surface:** the round stays smooth and whole. The neighbour's edge is moved to meet it.
+
+Parasolid names more cases: a smooth extension; a "cliff", where the round touches only one face and runs along an edge of the other; a cliff end; and a notch. For a round that runs off a cliff, kernels have moved from "build it as if the faces went on, then cut the extra away" to "trim it at the creases where it is built".
+
+**For Prism:** the owner's end cap is the cliff-end case done the "trim where built" way. The cap closes the round's end against the face it runs into, and that face is cut back to it. Keep edge and keep surface are the two choices at such an end. The owner's Curviloft example shows what goes wrong with neither: the round overshot, and its edge left the plane of the face.
+
+### Chains
+
+- **Fusion collects tangent chains**: edges that run on into each other without a corner. Its tangency tolerance is fixed, and a near-tangent kink stops the chain.
+- **Prism's chain rules:**
+  - judge tangency by the document's precision, as everything else is (DECISIONS #42);
+  - run on across corners when the user asks (a click on the chain, or a modifier);
+  - close the corners in the chain with the corner types above.
+- **Reconciling where edges meet** (what Curviloft does by extending the setback lines) is the setback idea at a chain's joints: each joint's setback lines run on until they meet the next round's, and the joint is closed by a mitre or a small patch, not left short.
+
+### Rounds along curved and freeform faces
+
+- **A rolling-ball round is the trace of a ball touching both faces.** Its centre runs along the curve where the two faces, each moved out by the radius, cross (the spine; Choi and Ju, 1989). The round is the arc between the ball's two contact curves, swept along it.
+- **How the spine is found:** marched step by step along the crossing of the two offset surfaces. Later work marches without making the offsets at all.
+- **How the round is stored:** the exact sweep is not a NURBS surface, so CAD systems fit it with NURBS (least squares). For Prism that means fitted within the document's precision, as DECISIONS #40 allows for deforms. This is how rounds beside freeform (lofted) faces can be built where the kernel only takes flat, cylindrical and conical faces.
+- **Variable radius** (a round that changes size along the edge) uses the same marching with the radius changing. It is a later step, not part of this brief.
+
+### What this changes in the plan
+
+1. **Step 2 (end caps):** offer keep edge (the end cap, the neighbour's edge untouched) and keep surface (the neighbour's edge moved to meet the round). Keep edge is the default, as it is what the owner asked for.
+2. **Step 4 (3D chains):** joints between rounds are closed by a mitre by default. A setback patch is offered where a mitre would leave a kink. Rounds beside freeform faces are built by marching the spine and fitting the round within the precision.
+3. **Step 5 (corners):** three corner types: rolling ball (exact sphere for three equal outside rounds, the kernel's), setback (n-sided patch, Várady–Rockwood style, filled with a Gregory-type patch), and mitre. Mixed corners in turn, inside rounds first, larger first. A corner type in the Fillet window, defaulting to rolling ball where it works and setback where it does not.
+4. **Ordering:** when rounding many edges in turn, take the inside rounds first and the larger first (the vendors' rule), before trying other orders.
+5. **Preview:** the setback lines drawn on the faces (step 4a) are also where a setback corner's patch starts, so the preview shows the corner patch's outline too.
+
+### Sources
+
+- Várady and Rockwood, "Geometric construction for setback vertex blending", Computer-Aided Design, 1997: https://sciencedirect.com/science/article/pii/S001044859600070X and https://eprints.sztaki.hu/1451 ; "Vertex blending based on the setback split": https://eprints.sztaki.hu/909/ ; "Vertex blending: problems and solutions": https://cs.purdue.edu/cgvlab/www/publications/varady1998vertex
+- Malraison, survey of n-sided surfaces (Gregory patches, setback blends): https://apps.dtic.mil/sti/pdfs/ADP012035.pdf
+- Hwang and Chuang, N-sided hole filling and vertex blending: https://ir.lib.nycu.edu.tw/bitstream/11536/27575/1/000186572400008.pdf
+- SolidWorks fillets (setback, keep edge / keep surface, overflow type): https://help.solidworks.com/2019/english/SolidWorks/sldworks/r_constant_size_fillets.htm , https://help.solidworks.com/2022/english/SolidWorks/sldworks/c_example_overflow_type.htm
+- Fusion fillet reference (corner type, rolling ball, setback, tangent chain): https://help.autodesk.com/cloudhelp/ENU/Fusion-Model/files/SLD-REF-FILLET.htm , https://help.autodesk.com/cloudhelp/ENU/Fusion-Model/files/SLD-REF-TANGENT-CHAIN.htm
+- Fusion fillet best practices (concave before convex, larger first): https://www.autodesk.com/products/fusion-360/blog/get-smart-with-fusion-360-fillet-best-practices/
+- ViaCAD vertex blend (same convexity only): https://help.imsidesign.com/docs/viacad-v14-user-guide/solid-modeling/feature-based-solids/
+- Fillet failures by kernel (Parasolid overflow modes, secondhand): https://cadshift.com/blog/fillet-kernel-comparison-solidworks-inventor-freecad/
+- Choi and Ju, constant-radius blending (offset intersection, spine): https://koreascience.kr/article/JAKO199711920641317.pdf ; variable radius: https://ir.lib.nycu.edu.tw/handle/11536/2146 ; rolling-ball fillet patent with Gregory patches along a spine: https://patents.google.com/patent/US5345546
+- Open kernels' issue trackers on setback and mixed corners and overflow (secondhand, for what others ran into): https://github.com/barocss/barocss/issues/2259 , https://github.com/tangency-labs/solidcore/issues/960
+
 ## Order of work
 
 1. Step 1 (slits, notches, non-flat openings), with session 29 as the test. **This is what makes the owner's body work.**
