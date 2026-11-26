@@ -224,7 +224,13 @@ Each step:
 - release notes;
 - a release.
 
-## Questions for the owner
+## Owner's answers (2026-11-26)
+
+1. **The notch weld: kept in the model** (as proposed).
+2. **End caps:** to decide after seeing both in Prism: screenshots of a flat cap square to the edge, and of a cap lying in the face the round runs into (keep edge / keep surface), on a block whose end is slanted. Not taken yet: the screenshot run was stopped before a compact. Plan: build both by hand in a render test (`crates/prism-render/tests/common` can draw off screen and `Image::save` writes a PNG), and send them.
+3. **A drawn line across a round's path:** also to decide after screenshots: the line stopping at the round (as now), and the line running on across it as a curve on the round.
+
+## Questions for the owner (as asked)
 
 1. **The notch weld.** Keep it in the model (proposed: it is a defect, and moves the shape no more than 0.24 mm)? Or weld only on the copy, and leave the notch for Heal?
 2. **End caps.** A flat cap square to the edge (proposed)? Or a cap in the plane of the face the round runs into, which looks like the round "dies into" that face, as some CAD programs do?

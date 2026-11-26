@@ -5499,3 +5499,9 @@ Release build, one drag frame:
 - **The owner's session-29 body is not done yet.** It is a closed body but for a notch in one face 0.24 mm long (a short line and an arc between the same two points; some earlier edit left it): every edge of it fell back to the one-edge round. Tried: capping it (the cap overlaps the face round it), merging the two edges (the face then walks one edge twice), welding the two points (`transform::apply_weld`, now `pub(crate)`): the kernel's solid builder (`bridge::solid_of`) still refuses the body after the weld. **Next:** find what `solid_of` stops at there, and which edit made the notch (a repair for the notch itself belongs in Model Health's Heal). The recording is `crates/prism-tools/tests/data/owner-session-29-open-fillet.json`; at event 118 the hovered edge's run is refused.
 - Not checked in the app.
 
+## HANDOFF (2026-11-26, before a compact)
+
+- **Brief 56** (`docs/briefs/56-fillet-anywhere.md`) is the plan for Fillet / Chamfer anywhere, with research and the owner's answers. Decided: the notch weld stays in the model. **Waiting:** screenshots of the two end-cap options and of a drawn line across a round (stopping at it, or running on across it), made by hand in a render test; then the owner chooses. Then step 1 (the kernel-ready copy: slits, notches, non-flat openings) with the session-29 body as the test.
+- Session 29: why it fails is in brief 56 (a slit and a 0.24 mm notch in face 329).
+- Releases up to `fafe12f` are green (build 398). Later commits are docs only.
+
