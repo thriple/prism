@@ -255,7 +255,7 @@ impl Session {
         // the view as it can be.
         let n = line.cross(d).cross(line).try_normalize()?;
         let den = n.dot(d);
-        if den.abs() < 1e-9 {
+        if den.abs() < prism_math::tol::UNIT_GUARD {
             return None;
         }
         Some(o + d * ((a - o).dot(n) / den))

@@ -149,7 +149,9 @@ fn profile_and_path<'a>(a: &'a Section, b: &'a Section) -> (&'a Section, Nurbs) 
     };
     let (ga, flip_b) = gap(&a.curve, &b.curve);
     let (gb, flip_a) = gap(&b.curve, &a.curve);
-    let scale = size(&a.curve).max(size(&b.curve)).max(1e-300);
+    let scale = size(&a.curve)
+        .max(size(&b.curve))
+        .max(prism_math::tol::NONZERO);
     // How squarely `other` leaves `profile`'s plane where it starts.
     let square = |profile: &Nurbs, other: &Nurbs| {
         let Some(plane) = profile.plane(scale * 1e-9) else {

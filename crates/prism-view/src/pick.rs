@@ -118,8 +118,8 @@ pub fn fallback_distance(scene: &Scene, view: &View, target: DVec3) -> f64 {
             (c - view.eye)
                 .dot(view.f)
                 .max(lo.distance(hi) * 0.5)
-                .max(1e-300)
+                .max(prism_math::tol::NONZERO)
         }
-        None => view.eye.distance(target).max(1e-300),
+        None => view.eye.distance(target).max(prism_math::tol::NONZERO),
     }
 }

@@ -2234,7 +2234,7 @@ fn freeform_slab(
                 point_for(e.a, *id) - naive(pa),
                 point_for(e.b, *id) - naive(pb),
             );
-            let span = (pb - pa).length_squared().max(1e-300);
+            let span = (pb - pa).length_squared().max(prism_math::tol::NONZERO);
             // A flush rim (part 3): where the face's own offset meets the
             // plane (it must meet it within its own edge: a surface
             // cannot be extended to reach it).
@@ -2287,7 +2287,7 @@ fn freeform_slab(
             model.face(*fb).ok_or(NOTHING)?,
         );
         let (off_a, off_b) = (&offsets[fa], &offsets[fb]);
-        let span = (pb - pa).length_squared().max(1e-300);
+        let span = (pb - pa).length_squared().max(prism_math::tol::NONZERO);
         let mut breaks = match face_a.surface.patch() {
             Some(patch) => crate::thicken::kinks(&edge_data.curve, &along, patch),
             None => vec![0.0, 1.0],
@@ -2295,7 +2295,7 @@ fn freeform_slab(
         if let Some(patch) = face_b.surface.patch() {
             breaks.extend(crate::thicken::kinks(&edge_data.curve, &along, patch));
             breaks.sort_by(f64::total_cmp);
-            breaks.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+            breaks.dedup_by(|x, y| (*x - *y).abs() < prism_math::tol::PARAM);
         }
         if outside[e] {
             // An outside corner (part 2b): each face keeps its own
@@ -3637,7 +3637,7 @@ fn flush_end(
     let mut t = t0;
     for _ in 0..60 {
         let (g, x) = at(t);
-        if g.abs() < 1e-12 {
+        if g.abs() < prism_math::tol::GUARD {
             // Along the edge, or carried on past `v` as far as the offset
             // surface was grown (it is `truly_on` only where it was).
             let (lo, hi) = (-1.0, 2.0);

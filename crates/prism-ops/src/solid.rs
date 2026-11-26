@@ -359,7 +359,7 @@ pub(crate) fn winding(faces: &[Flat], p: DVec3, tol: &Tol) -> Option<i32> {
             }
             let den = f.normal.dot(d);
             let t = (f.origin - p).dot(f.normal);
-            if den.abs() < 1e-9 {
+            if den.abs() < prism_math::tol::UNIT_GUARD {
                 if t.abs() <= tol.dist {
                     continue 'ray;
                 }
@@ -415,7 +415,7 @@ fn ray_box(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3, pad: f64) -> bool {
     let (lo, hi) = (lo - DVec3::splat(pad), hi + DVec3::splat(pad));
     let (mut t0, mut t1) = (0.0f64, f64::INFINITY);
     for k in 0..3 {
-        if d[k].abs() < 1e-300 {
+        if d[k].abs() < prism_math::tol::NONZERO {
             if o[k] < lo[k] || o[k] > hi[k] {
                 return false;
             }

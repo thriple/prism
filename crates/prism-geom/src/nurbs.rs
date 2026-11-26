@@ -896,7 +896,7 @@ impl Nurbs {
                 .windows(2)
                 .map(|w| w[0].distance(w[1]))
                 .sum::<f64>()
-                .max(1e-300)
+                .max(prism_math::tol::NONZERO)
         };
         let total: f64 = parts.iter().map(size).sum();
         let scale = parts

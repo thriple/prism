@@ -38,6 +38,21 @@ pub const SLIVER_RATIO: f64 = 100.0;
 /// when no length is at hand ([`Tol::parallel`]): about 0.0026°. Where a
 /// length is known, [`Tol::parallel_over`] is the rule (DECISIONS #42).
 pub const ANGLE: f64 = 1e-9;
+/// Below this a raw divisor (a determinant, a squared length, the
+/// denominator of a solve) counts as zero, only so nothing is divided by
+/// it. A guard, not a judgement about the geometry: that is the
+/// tolerance's (DECISIONS #42, tolerance stage 5).
+pub const GUARD: f64 = 1e-12;
+/// Below this the dot or cross product of unit directions counts as zero
+/// for dividing by it (a ray running along a plane): the case is then
+/// settled by the tolerance on the next line, never by this.
+pub const UNIT_GUARD: f64 = 1e-9;
+/// The smallest a divisor is raised to where it is clamped, not tested.
+pub const NONZERO: f64 = 1e-300;
+/// Two curve or surface parameters this close (or one this close to an
+/// end of 0 to 1) are the same place: parameter space, not distance.
+pub const PARAM: f64 = 1e-9;
+
 /// However short the length, two directions further apart than this (as
 /// the sine of the angle, about 0.057°) are never parallel.
 pub const PARALLEL_MAX: f64 = 1e-3;

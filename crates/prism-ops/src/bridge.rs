@@ -328,7 +328,7 @@ fn same_surface(a: &prism_geom::Surface, b: &prism_geom::Surface, tol: f64) -> b
         (S::Cylinder(p), S::Cylinder(q)) => {
             p.outward == q.outward
                 && (p.radius - q.radius).abs() <= tol
-                && p.axis.dot(q.axis).abs() >= 1.0 - 1e-9
+                && p.axis.dot(q.axis).abs() >= 1.0 - prism_math::tol::ANGLE
                 && near(p.axis_point(q.origin), q.origin)
         }
         _ => false,

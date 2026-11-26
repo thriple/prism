@@ -238,7 +238,7 @@ impl Session {
         let u = (b - a).normalize_or_zero();
         let mid = (a + b) * 0.5;
         let den = u.dot(d);
-        if den.abs() < 1e-9 {
+        if den.abs() < prism_math::tol::UNIT_GUARD {
             return None;
         }
         let q = o + d * (u.dot(mid - o) / den);

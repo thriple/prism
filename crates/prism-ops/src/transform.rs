@@ -718,7 +718,7 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
                 let (ea, eb) = (model.vertex(edge.a), model.vertex(edge.b));
                 let mid = edge.curve.point(ea, eb, 0.5);
                 matches!(fs.as_slice(), [x, y]
-                    if x.surface.normal_at(mid).dot(y.surface.normal_at(mid)) > 1.0 - 1e-9)
+                    if x.surface.normal_at(mid).dot(y.surface.normal_at(mid)) > 1.0 - prism_math::tol::ANGLE)
             });
             if !smooth {
                 model.set_soft(e, false, false);

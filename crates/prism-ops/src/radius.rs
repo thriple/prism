@@ -39,7 +39,7 @@ fn same(a: &Surface, b: &Surface, tol: &Tol) -> bool {
         (Surface::Cone(x), Surface::Cone(c)) => {
             x.outward == c.outward
                 && near(x.apex, c.apex)
-                && x.axis.dot(c.axis) > 1.0 - 1e-9
+                && x.axis.dot(c.axis) > 1.0 - prism_math::tol::ANGLE
                 && (x.half_angle - c.half_angle).abs() < 1e-9
         }
         (Surface::Sphere(x), Surface::Sphere(c)) => {
@@ -190,7 +190,7 @@ fn follow_planes(
             break;
         }
         let d = (f(r + h) - f(r - h)) / (2.0 * h);
-        if d.abs() < 1e-12 {
+        if d.abs() < prism_math::tol::GUARD {
             return Err(RADIUS_GONE);
         }
         r -= fr / d;

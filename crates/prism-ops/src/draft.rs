@@ -37,7 +37,7 @@ fn leaned(face: &Plane, neutral: &Plane, angle: f64, centre: DVec3) -> Result<Pl
     ];
     // centre + x n + y pull, with n.(x n + y pull) = rhs0 and pull.(...) = rhs1.
     let det = b - a * a;
-    if det.abs() < 1e-12 {
+    if det.abs() < prism_math::tol::GUARD {
         return Err(PARALLEL);
     }
     let x = (rhs[0] - a * rhs[1]) / det;
@@ -49,7 +49,8 @@ fn leaned(face: &Plane, neutral: &Plane, angle: f64, centre: DVec3) -> Result<Pl
 }
 
 fn same(a: &Plane, b: &Plane, tol: f64) -> bool {
-    a.normal.dot(b.normal) > 1.0 - 1e-9 && (a.normal.dot(b.origin - a.origin)).abs() <= tol
+    a.normal.dot(b.normal) > 1.0 - prism_math::tol::ANGLE
+        && (a.normal.dot(b.origin - a.origin)).abs() <= tol
 }
 
 /// The point where three planes meet, if they do at one point.

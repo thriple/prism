@@ -51,7 +51,7 @@ pub fn taper(
     if axis == DVec3::ZERO {
         return Err(AXIS);
     }
-    if (high - low).abs() < 1e-9 {
+    if (high - low).abs() <= model.tol().dist {
         return Err(SPAN);
     }
     if top_scale.is_nan() || top_scale <= 1e-6 {

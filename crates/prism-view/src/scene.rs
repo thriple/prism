@@ -125,7 +125,7 @@ fn ray_triangle(o: DVec3, d: DVec3, t: &[DVec3; 3]) -> Option<f64> {
     let (e1, e2) = (t[1] - t[0], t[2] - t[0]);
     let p = d.cross(e2);
     let det = e1.dot(p);
-    if det.abs() <= 1e-300 {
+    if det.abs() <= prism_math::tol::NONZERO {
         return None;
     }
     let inv = 1.0 / det;
@@ -198,7 +198,7 @@ impl SceneFace {
                 .find(|t| c.unrolled(&cyl, o + d * *t).iter().any(|q| self.inside(*q)));
         }
         let den = self.normal.dot(d);
-        if den.abs() < 1e-12 || !ray_box(o, d, self.lo, self.hi) {
+        if den.abs() < prism_math::tol::GUARD || !ray_box(o, d, self.lo, self.hi) {
             return None;
         }
         let t = (self.origin - o).dot(self.normal) / den;
@@ -225,7 +225,7 @@ fn ray_box(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> bool {
     let mut t0 = 0.0f64;
     let mut t1 = f64::INFINITY;
     for k in 0..3 {
-        if d[k].abs() < 1e-300 {
+        if d[k].abs() < prism_math::tol::NONZERO {
             if o[k] < lo[k] || o[k] > hi[k] {
                 return false;
             }

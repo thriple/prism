@@ -169,6 +169,11 @@ pub fn deform(model: &mut Model, d: &Deform) -> Result<(), &'static str> {
     if let Some(why) = d.check() {
         return Err(why);
     }
+    // A span along the axis shorter than the document's precision is no
+    // span (`check` only catches zero, having no model to ask).
+    if d.high - d.low <= model.tol().dist {
+        return Err(SPAN);
+    }
     if d.is_identity() {
         return Ok(());
     }
@@ -260,7 +265,7 @@ fn refit_edge(
                 .knots()
                 .iter()
                 .map(|k| (k - t0) / (t1 - t0))
-                .filter(|x| *x > 1e-9 && *x < 1.0 - 1e-9),
+                .filter(|x| *x > prism_math::tol::PARAM && *x < 1.0 - prism_math::tol::PARAM),
         );
     }
     if d.kind == DeformKind::Bend {
@@ -274,7 +279,7 @@ fn refit_edge(
                 // On or across it (a sample can land exactly on an end).
                 if (h0 - end) * (h1 - end) <= 0.0 && h0 != h1 {
                     let t = t0 + (t1 - t0) * (end - h0) / (h1 - h0);
-                    if t > 1e-9 && t < 1.0 - 1e-9 {
+                    if t > prism_math::tol::PARAM && t < 1.0 - prism_math::tol::PARAM {
                         nodes.push(t);
                         corners.push(t);
                     }
@@ -283,7 +288,7 @@ fn refit_edge(
         }
     }
     nodes.sort_by(f64::total_cmp);
-    nodes.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+    nodes.dedup_by(|x, y| (*x - *y).abs() < prism_math::tol::PARAM);
     corners.retain(|c| nodes.contains(c));
     let (mut fit, _) =
         crate::thicken::twin_fit_corners(&along, &along, &nodes, &corners, eps).ok_or(FAILED)?;
@@ -369,7 +374,9 @@ fn refit_face(model: &Model, f: &Face, d: &Deform, eps: f64) -> Result<Surface, 
                     corner = [d.low, d.high]
                         .iter()
                         .map(|end| (end - h0) / (h1 - h0))
-                        .filter(|x| *x > 1e-9 && *x < 1.0 - 1e-9)
+                        .filter(|x| {
+                            *x > prism_math::tol::PARAM && *x < 1.0 - prism_math::tol::PARAM
+                        })
                         .collect();
                     across.extend(corner.iter().copied());
                     across.sort_by(f64::total_cmp);
@@ -401,10 +408,12 @@ fn refit_face(model: &Model, f: &Face, d: &Deform, eps: f64) -> Result<Surface, 
                     s.knots()[k]
                         .iter()
                         .map(|x| (x - lo) / (hi - lo))
-                        .filter(|x| *x > 1e-9 && *x < 1.0 - 1e-9),
+                        .filter(|x| {
+                            *x > prism_math::tol::PARAM && *x < 1.0 - prism_math::tol::PARAM
+                        }),
                 );
                 out.sort_by(f64::total_cmp);
-                out.dedup_by(|x, y| (*x - *y).abs() < 1e-12);
+                out.dedup_by(|x, y| (*x - *y).abs() < prism_math::tol::PARAM);
                 out
             };
             let creases = [crease(0, u0, u1), crease(1, v0, v1)];

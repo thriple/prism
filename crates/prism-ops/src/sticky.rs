@@ -512,7 +512,7 @@ fn add_arc_from(
                         },
                     ) => {
                         tol.same_point(*c1, *c2)
-                            && a1.dot(*a2) > 1.0 - 1e-9
+                            && a1.dot(*a2) > 1.0 - prism_math::tol::ANGLE
                             && (r1 - r2).abs() < tol.dist
                     }
                     _ => false,

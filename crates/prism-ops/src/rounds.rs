@@ -132,7 +132,8 @@ pub fn straight_run(model: &Model, edge: EdgeId) -> BTreeSet<EdgeId> {
     };
     let tol = model.tol();
     let same_plane = |p: &prism_math::Plane, q: &prism_math::Plane| {
-        p.normal.distance(q.normal) <= 1e-9 && tol.is_zero((q.origin - p.origin).dot(p.normal))
+        p.normal.dot(q.normal) > 1.0 - prism_math::tol::ANGLE
+            && tol.is_zero((q.origin - p.origin).dot(p.normal))
     };
     let same_pair = |a: &[prism_math::Plane; 2], b: &[prism_math::Plane; 2]| {
         (same_plane(&a[0], &b[0]) && same_plane(&a[1], &b[1]))

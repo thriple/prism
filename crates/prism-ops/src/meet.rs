@@ -154,7 +154,7 @@ impl Target {
         match self {
             Target::Flat(f) => {
                 let den = f.normal.dot(d);
-                if den.abs() < 1e-9 {
+                if den.abs() < prism_math::tol::UNIT_GUARD {
                     return None;
                 }
                 let t = (f.origin - o).dot(f.normal) / den;

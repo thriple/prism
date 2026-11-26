@@ -511,7 +511,7 @@ fn split_some_meetings(model: &mut Model, id: FaceId) -> bool {
                     let (p, r) = (u[0], u[1] - u[0]);
                     let (q, t) = (w[0], w[1] - w[0]);
                     let den = r.perp_dot(t);
-                    if den.abs() <= 1e-300 {
+                    if den.abs() <= prism_math::tol::NONZERO {
                         continue;
                     }
                     let x = (q - p).perp_dot(t) / den;

@@ -2325,7 +2325,11 @@ impl Assembly {
     /// every copy of a component included. False if nothing changed.
     pub fn change_axes(&mut self, def: DefId, axes: &DAffine3) -> bool {
         let det = axes.matrix3.determinant();
-        if def == ROOT || !det.is_finite() || det.abs() < 1e-12 || !self.defs.contains_key(&def) {
+        if def == ROOT
+            || !det.is_finite()
+            || det.abs() < prism_math::tol::GUARD
+            || !self.defs.contains_key(&def)
+        {
             return false;
         }
         if *axes == DAffine3::IDENTITY {

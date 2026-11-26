@@ -399,7 +399,7 @@ impl Session {
             .max_by(|x, y| x.0.dot(d).abs().total_cmp(&y.0.dot(d).abs()))?;
         let (n, origin) = face;
         let den = n.dot(d);
-        if den.abs() < 1e-9 {
+        if den.abs() < prism_math::tol::UNIT_GUARD {
             return None;
         }
         let p = o + d * (n.dot(origin - o) / den);

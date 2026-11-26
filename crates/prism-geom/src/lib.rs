@@ -306,7 +306,7 @@ pub fn segments(sweep: f64) -> usize {
 pub fn even_scale(m: &DAffine3) -> Option<f64> {
     let c = [m.matrix3.x_axis, m.matrix3.y_axis, m.matrix3.z_axis];
     let s = c[0].length();
-    let close = |x: f64, y: f64| (x - y).abs() <= 1e-9 * s.max(1e-300);
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-9 * s.max(prism_math::tol::NONZERO);
     let even = close(c[1].length(), s)
         && close(c[2].length(), s)
         && close(c[0].dot(c[1]) / s, 0.0)
@@ -534,7 +534,7 @@ impl Cylinder {
         let flat = |v: DVec3| v - self.axis * v.dot(self.axis);
         let (w, e) = (flat(o - self.origin), flat(d));
         let a = e.length_squared();
-        if a <= 1e-300 {
+        if a <= prism_math::tol::NONZERO {
             return Vec::new();
         }
         let b = 2.0 * w.dot(e);

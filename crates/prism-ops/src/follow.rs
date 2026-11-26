@@ -333,7 +333,7 @@ fn plan(
     // Carry a point along `d` to the plane through `p` with normal `m`.
     let carry = |x: DVec3, d: DVec3, (p, m): (DVec3, DVec3)| -> Option<(DVec3, f64)> {
         let den = d.dot(m);
-        if den.abs() < 1e-12 {
+        if den.abs() < prism_math::tol::GUARD {
             return None;
         }
         let t = (p - x).dot(m) / den;
@@ -1296,7 +1296,7 @@ fn smooth_at(model: &Model, es: &[EdgeId], prev: usize, i: usize, vs: &[VertexId
     let arcs = [prev, i]
         .iter()
         .any(|s| model.edge(es[*s]).is_some_and(|e| e.curve.is_curved()));
-    arcs && a.dot(b) > 1.0 - 1e-9
+    arcs && a.dot(b) > 1.0 - prism_math::tol::ANGLE
 }
 
 /// Take away a closed path's profile face, and its edges and points that

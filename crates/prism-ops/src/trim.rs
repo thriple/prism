@@ -88,7 +88,7 @@ pub fn extension(
                 radius,
             } => {
                 let den = d.dot(*axis);
-                if den.abs() < 1e-9 {
+                if den.abs() < prism_math::tol::UNIT_GUARD {
                     continue;
                 }
                 let t = (*centre - p).dot(*axis) / den;
@@ -112,7 +112,7 @@ pub fn extension(
     for (id, f) in model.faces() {
         let Some(pl) = f.plane() else { continue };
         let den = d.dot(pl.normal);
-        if den.abs() < 1e-9 {
+        if den.abs() < prism_math::tol::UNIT_GUARD {
             continue;
         }
         let t = (pl.origin - p).dot(pl.normal) / den;
@@ -211,7 +211,7 @@ pub fn project(
                 centre,
                 axis,
                 radius,
-            } if axis.dot(n).abs() > 1.0 - 1e-9 => {
+            } if axis.dot(n).abs() > 1.0 - prism_math::tol::ANGLE => {
                 let c = down(*centre);
                 if e.a == e.b || a.distance(b) <= tol {
                     jobs.push(Job::Circle(c, *axis, *radius));

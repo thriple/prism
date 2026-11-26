@@ -181,7 +181,9 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
         let at = model.vertex(v);
         model.edges().filter(|(_, e)| e.has(v)).any(|(_, e)| {
             let d = model.vertex(e.other(v)) - at;
-            d.length() > tol.dist && tol.parallel(d.normalize(), n) && d.dot(n) < 0.0
+            d.length() > tol.dist
+                && tol.parallel_over(d.normalize(), n, d.length())
+                && d.dot(n) < 0.0
         })
     };
 
@@ -272,7 +274,7 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
                 return true;
             }
             let d = model.vertex(w) - at;
-            d.length() > tol.dist && tol.parallel(d.normalize(), n)
+            d.length() > tol.dist && tol.parallel_over(d.normalize(), n, d.length())
         });
         faces_ok && edges_ok
     };
@@ -686,7 +688,7 @@ fn join_left_behind(model: &mut Model, edges: &[EdgeId]) {
         let (ea, eb) = (model.vertex(edge.a), model.vertex(edge.b));
         let smooth = [0.25, 0.5, 0.75].iter().all(|t| {
             let p = edge.curve.point(ea, eb, *t);
-            fa.surface.normal_at(p).dot(fb.surface.normal_at(p)) > 1.0 - 1e-9
+            fa.surface.normal_at(p).dot(fb.surface.normal_at(p)) > 1.0 - prism_math::tol::ANGLE
         });
         if smooth {
             model.set_soft(*e, true, true);
@@ -710,7 +712,7 @@ fn soften_seams(model: &mut Model, seams: &[EdgeId]) {
             .map(|f| f.surface.normal_at(mid))
             .collect();
         if let [a, b] = normals.as_slice()
-            && a.dot(*b) > 1.0 - 1e-9
+            && a.dot(*b) > 1.0 - prism_math::tol::ANGLE
         {
             model.set_soft(*e, true, true);
         }

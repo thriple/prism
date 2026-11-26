@@ -108,9 +108,11 @@ pub(crate) fn rebuild_plane(
         .filter(|(_, e)| on.contains_key(&e.a) && on.contains_key(&e.b))
         .filter(|(_, e)| match e.curve {
             Curve::Line => true,
-            Curve::Arc { centre, axis, .. } => {
-                plane.contains(centre, tol) && tol.parallel(axis, plane.normal)
-            }
+            Curve::Arc {
+                centre,
+                axis,
+                radius,
+            } => plane.contains(centre, tol) && tol.parallel_over(axis, plane.normal, radius),
             Curve::Spline(ref s) => s.curve.points().iter().all(|p| plane.contains(*p, tol)),
         })
         .map(|(id, e)| (id, e.a, e.b))

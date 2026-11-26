@@ -618,7 +618,7 @@ fn inside_every_way(faces: &[&Flat], p: DVec3, normal: DVec3, tol: &Tol) -> bool
         let mut w = 0i32;
         for f in faces {
             let den = f.normal.dot(d);
-            if den.abs() < 1e-9 {
+            if den.abs() < prism_math::tol::UNIT_GUARD {
                 continue;
             }
             let t = (f.origin - p).dot(f.normal) / den;

@@ -495,7 +495,7 @@ fn fill_flat_holes(model: &mut Model, only: Option<&BTreeSet<FaceId>>) -> usize 
         let flat = pts.iter().all(|p| plane.contains(*p, &tol))
             && ring.iter().all(|e| match model.edge(*e).map(|x| &x.curve) {
                 Some(Curve::Line) => true,
-                Some(Curve::Arc { axis, .. }) => tol.parallel(*axis, n),
+                Some(Curve::Arc { axis, radius, .. }) => tol.parallel_over(*axis, n, *radius),
                 _ => false,
             });
         if !flat {

@@ -352,7 +352,7 @@ impl WorkPlane {
     /// Where the ray `o + d·t` meets the drawn square, as `t`.
     pub fn hit(&self, o: DVec3, d: DVec3) -> Option<f64> {
         let den = self.normal.dot(d);
-        if den.abs() < 1e-9 {
+        if den.abs() < prism_math::tol::UNIT_GUARD {
             return None;
         }
         let t = self.normal.dot(self.origin - o) / den;

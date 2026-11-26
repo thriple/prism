@@ -426,7 +426,7 @@ fn pieces_of(curve: &Nurbs, p: f64, q: f64, tol: &Tol) -> Vec<Piece> {
             },
         ) = (out.last(), &piece)
             && tol.same_point(*centre, *c2)
-            && x2.dot(*axis) > 1.0 - 1e-9
+            && x2.dot(*axis) > 1.0 - prism_math::tol::ANGLE
             && tol.is_zero(radius - r2)
             && sweep_of(*centre, *axis, *a, *b2) + 1e-9 < TAU
             && !tol.same_point(*a, *b2)

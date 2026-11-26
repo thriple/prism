@@ -207,10 +207,10 @@ pub(crate) fn offset_surface(
                 // surface it trims) can leave the two a few ULPs apart,
                 // which would otherwise read as a crease a hair inside
                 // the edge and shorten the fit to just short of it.
-                .filter(|f| *f > 1e-9 && *f < 1.0 - 1e-9),
+                .filter(|f| *f > prism_math::tol::PARAM && *f < 1.0 - prism_math::tol::PARAM),
         );
         out.sort_by(f64::total_cmp);
-        out.dedup_by(|x, y| (*x - *y).abs() < 1e-12);
+        out.dedup_by(|x, y| (*x - *y).abs() < prism_math::tol::PARAM);
         out
     };
     let creases = [breaks(0), breaks(1)];
@@ -369,10 +369,10 @@ pub(crate) fn kinks(curve: &Curve, along: &dyn Fn(f64) -> DVec3, patch: &Patch) 
             }
         }
     }
-    out.retain(|s| *s > 1e-9 && *s < 1.0 - 1e-9);
+    out.retain(|s| *s > prism_math::tol::PARAM && *s < 1.0 - prism_math::tol::PARAM);
     out.extend([0.0, 1.0]);
     out.sort_by(f64::total_cmp);
-    out.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+    out.dedup_by(|x, y| (*x - *y).abs() < prism_math::tol::PARAM);
     out
 }
 

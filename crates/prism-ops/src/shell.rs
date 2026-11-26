@@ -202,7 +202,7 @@ impl ShellFace {
             ShellFace::Flat(f) => {
                 let den = f.normal.dot(d);
                 let t = (f.origin - o).dot(f.normal);
-                if den.abs() < 1e-9 {
+                if den.abs() < prism_math::tol::UNIT_GUARD {
                     // Along the plane: unsure if in it.
                     return if t.abs() <= tol.dist { None } else { Some(0) };
                 }
@@ -233,7 +233,7 @@ impl ShellFace {
                     .laid
                     .scale
                     .x
-                    .min(b.laid.scale.y.max(1e-300))
+                    .min(b.laid.scale.y.max(prism_math::tol::NONZERO))
                     .max(tol.dist * 10.0);
                 let n = (((t1 - t0) / (size / 20.0)).ceil() as usize).clamp(8, 4000);
                 let mut w = 0;
@@ -287,7 +287,7 @@ pub(crate) fn ray_span(o: DVec3, d: DVec3, lo: DVec3, hi: DVec3) -> Option<(f64,
     let (lo, hi) = (lo - pad, hi + pad);
     let (mut t0, mut t1) = (0.0f64, f64::INFINITY);
     for k in 0..3 {
-        if d[k].abs() < 1e-300 {
+        if d[k].abs() < prism_math::tol::NONZERO {
             if o[k] < lo[k] || o[k] > hi[k] {
                 return None;
             }

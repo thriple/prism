@@ -282,7 +282,7 @@ impl Session {
             self.smart_clear();
             let n = DVec3::ONE - m;
             let den = d.dot(n);
-            if den.abs() < 1e-12 {
+            if den.abs() < prism_math::tol::GUARD {
                 return;
             }
             let p = o + d * ((g - o).dot(n) / den);
