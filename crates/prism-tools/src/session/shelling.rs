@@ -713,6 +713,7 @@ fn is_shell_warning(n: &'static str) -> bool {
         sh::APART_FREEFORM,
         sh::APART_BRANCHES,
         sh::SKIPPED,
+        sh::UNJOINED,
         sh::BRANCHED,
         sh::BRIDGED,
         sh::TURNED,
@@ -735,7 +736,7 @@ fn shell_warning(
 ) -> (Option<&'static str>, Vec<[DVec3; 2]>) {
     use prism_ops::shelling as sh;
     let rank = |w: &str| {
-        if w == sh::SKIPPED {
+        if w == sh::SKIPPED || w == sh::UNJOINED {
             0
         } else if w.starts_with("Built face by face") {
             1

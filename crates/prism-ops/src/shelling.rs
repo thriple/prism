@@ -482,8 +482,9 @@ pub fn default_rims_from(
     let mut styles = start;
     // Each style is tried as it is: one that would be cut square instead
     // is no pick at all.
-    let builds =
-        |styles: &RimStyles| slab_marked(model, faces, open, d, styles, false, Fallback::Off).is_ok();
+    let builds = |styles: &RimStyles| {
+        slab_marked(model, faces, open, d, styles, false, Fallback::Off).is_ok()
+    };
     if !builds(&styles) {
         return styles;
     }
@@ -947,7 +948,10 @@ pub const APART_BRANCHES: &str = "Built face by face: more than two faces meet a
 pub const APART: &str = "Built face by face: this shape could not be shelled as one piece. Each face was thickened on its own and the pieces joined: check the corners and edges.";
 /// Faces the face-by-face build could not thicken (or join) at all: left
 /// as they were.
-pub const SKIPPED: &str = "Some faces could not be thickened even on their own at this thickness (or their pieces could not be joined), so they were left as they were: the shell has gaps there.";
+pub const SKIPPED: &str = "Some faces could not be thickened even on their own at this thickness, so they were left as they were: the shell has gaps there.";
+/// Pieces of a face-by-face build that would not join into one solid,
+/// kept side by side.
+pub const UNJOINED: &str = "Some pieces of this face-by-face shell would not join into one solid, so they were kept side by side: they may overlap (Model Health shows where).";
 /// A wall thinner than the least the tool makes without a word.
 pub const THIN: &str =
     "Very thin: under 0.1 cm (1 mm). Built anyway: check it is the size you meant.";
@@ -968,8 +972,8 @@ fn apart_note(why: &str) -> &'static str {
 /// as one piece (`why`): each kept face thickened on its own (rims
 /// square), the pieces joined by a union. Overlaps merge; gaps (an outside
 /// corner, where the faces' slabs do not reach each other) stay. A face
-/// that cannot be thickened even on its own, or whose piece cannot be
-/// joined, is left as it was. Every face made is flagged with why; None if
+/// that cannot be thickened even on its own is left as it was; a piece
+/// that will not join into a solid is kept beside the rest (flagged). Every face made is flagged with why; None if
 /// no face could be thickened. Without `join` (a preview) the pieces are
 /// put side by side instead of joined.
 fn apart(
@@ -985,7 +989,9 @@ fn apart(
         return None;
     }
     let body = body(model, faces);
-    let mut whole: Option<Model> = None;
+    // The pieces joined so far: each a solid; a piece that will not join
+    // any of them into a solid is kept as one of its own.
+    let mut solids: Vec<Model> = Vec::new();
     let mut skipped: BTreeSet<FaceId> = BTreeSet::new();
     for f in body.iter().filter(|f| !open.contains(f)) {
         // The face on its own, so nothing else is near.
@@ -1007,24 +1013,31 @@ fn apart(
             skipped.insert(*f);
             continue;
         };
-        whole = Some(match whole {
-            None => slab,
-            // Unjoined, for a preview: the pieces side by side.
-            Some(mut w) if !join => {
-                crate::boolean::join_mapped(&mut w, &slab, &tol);
-                w
-            }
-            Some(w) => match crate::boolean::boolean(&w, &slab, crate::boolean::Op::Union) {
-                Ok(j) => j,
-                Err(_) => {
-                    skipped.insert(*f);
-                    w
+        // Unjoined, for a preview: the pieces side by side.
+        let joined = join
+            && solids.iter_mut().any(|w| {
+                match crate::boolean::boolean(w, &slab, crate::boolean::Op::Union) {
+                    Ok(j) if crate::boolean::is_solid(&j) => {
+                        *w = j;
+                        true
+                    }
+                    _ => false,
                 }
-            },
-        });
+            });
+        if !joined {
+            solids.push(slab);
+        }
     }
-    let whole = whole?;
+    let unjoined = join && solids.len() > 1;
+    let mut solids = solids.into_iter();
+    let mut whole = solids.next()?;
+    for w in solids {
+        crate::boolean::join_mapped(&mut whole, &w, &tol);
+    }
     let mut flags = Flags::new();
+    if unjoined {
+        flags.entry(UNJOINED).or_default();
+    }
     let at = flags.entry(apart_note(why)).or_default();
     at.faces.extend(whole.faces().map(|(id, _)| id));
     at.edges.extend(whole.edges().map(|(id, _)| id));
