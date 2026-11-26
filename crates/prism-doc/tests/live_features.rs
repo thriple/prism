@@ -103,6 +103,44 @@ fn a_round_in_a_group_stays_live() {
     assert!(d.assembly().def(def).unwrap().stack.is_some());
 }
 
+/// A feature added on top runs on the model as it is, not every feature
+/// from the base again (each shell of the owner's session 17 rebuilt all
+/// the shells before it); the model is still the one the whole stack makes.
+#[test]
+fn a_feature_added_on_top_gives_the_model_the_whole_stack_makes() {
+    let (mut d, inst, def) = grouped_cube();
+    round(&mut d, inst, def, 0.25);
+    // The upright edge at the far corner.
+    let m = model(&d, def);
+    let far = m
+        .edges()
+        .filter(|(_, e)| (m.vertex(e.a).z - m.vertex(e.b).z).abs() > 1.0)
+        .max_by(|(_, a), (_, b)| {
+            let s = |e: &prism_topo::Edge| m.vertex(e.a).x + m.vertex(e.a).y;
+            s(a).total_cmp(&s(b))
+        })
+        .unwrap()
+        .0;
+    assert!(d.run_in(
+        &[inst],
+        Command::RoundEdges {
+            edges: [far].into(),
+            size: 0.4,
+            fillet: true,
+        }
+    ));
+    let body = d.assembly().def(def).unwrap();
+    let mut stack = body.stack.clone().unwrap();
+    assert_eq!(stack.features.len(), 2);
+    assert!(stack.features.iter().all(|f| !f.is_broken()));
+    assert_eq!(
+        stack.evaluate().geometry_json(),
+        body.model.geometry_json(),
+        "the same model as running the stack from its base"
+    );
+    assert_eq!(body.model.face_count(), 8, "the cube and two rounds");
+}
+
 #[test]
 fn loose_geometry_stays_live_too() {
     let mut d = Document::new();

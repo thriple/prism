@@ -123,8 +123,10 @@ fn patch_closes_the_lofts_end_in_the_recorded_session() {
 /// owner's next click (the window's 1 m outside) lands on the shelled wall
 /// itself, shelling a shell: it used to be refused as "too thick"; since
 /// 2026-11-26 (DECISIONS #41) it is built anyway, face by face, with a
-/// warning. Only the first two clicks are replayed: each later one shells
-/// the overlapping pieces again, which is slow and only more of the same.
+/// warning. The third (1 m inside) shells that again. Each click used to
+/// run every shell before it again, and every search for the closest
+/// point on a freeform face worked out its grid afresh: the three clicks
+/// took about two minutes in a release build, now about fifteen seconds.
 #[test]
 fn shell_is_made_at_the_first_click_of_the_recorded_session() {
     let r: prism_tools::Recording =
@@ -150,4 +152,14 @@ fn shell_is_made_at_the_first_click_of_the_recorded_session() {
     let panel = second.shell_panel().expect("the Shell tool");
     assert_eq!(panel.refused, None);
     assert!(panel.warning.is_some(), "and says what to check");
+    // And the third shells that again, inside: built, warned.
+    let third = upto(670);
+    assert_eq!(third.version(), before.version() + 3, "built, not refused");
+    assert!(
+        third
+            .shell_panel()
+            .expect("the Shell tool")
+            .warning
+            .is_some()
+    );
 }

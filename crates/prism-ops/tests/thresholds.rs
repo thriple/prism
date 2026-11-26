@@ -36,7 +36,13 @@ fn a_deform_span_is_judged_by_the_precision() {
         amount: 0.3,
     };
     let m = plate(Tol::default());
-    assert_eq!(prism_ops::deform::refusal(&m, &d), Some(prism_ops::deform::SPAN));
+    assert_eq!(
+        prism_ops::deform::refusal(&m, &d),
+        Some(prism_ops::deform::SPAN)
+    );
     let m = plate(Tol::new(prism_math::tol::FINE));
-    assert_ne!(prism_ops::deform::refusal(&m, &d), Some(prism_ops::deform::SPAN));
+    assert_ne!(
+        prism_ops::deform::refusal(&m, &d),
+        Some(prism_ops::deform::SPAN)
+    );
 }

@@ -165,6 +165,7 @@ impl Planar {
 }
 
 /// A curved face: its surface and its outline in (θ, s).
+#[derive(Clone)]
 pub(crate) struct Bent {
     laid: Laid,
     lo: DVec3,
@@ -172,6 +173,7 @@ pub(crate) struct Bent {
 }
 
 /// A face of a solid, for the inside test.
+#[derive(Clone)]
 pub(crate) enum ShellFace {
     Flat(Planar),
     Curved(Bent),

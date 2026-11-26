@@ -335,6 +335,12 @@ pub(crate) fn reversed(model: &Model) -> BTreeSet<FaceId> {
     let mut out = BTreeSet::new();
     let tol = model.tol();
     let solid_faces: BTreeSet<FaceId> = closed_faces(model).into_iter().collect();
+    // Each closed face ready for inside tests, made once when first
+    // needed: a freeform face takes long to prepare, and every closed
+    // piece tests against all the others (made per piece, a model of many
+    // separate pieces took minutes).
+    let ready: std::cell::OnceCell<BTreeMap<FaceId, crate::shell::ShellFace>> =
+        std::cell::OnceCell::new();
     for (start, _) in model.faces() {
         if flip.contains_key(&start) {
             continue;
@@ -383,7 +389,13 @@ pub(crate) fn reversed(model: &Model) -> BTreeSet<FaceId> {
             // A shell inside another solid is a hollow in it (Solids & CAD
             // part 2, a box less a box inside it): it rightly faces into
             // the hollow, away from the solid around it.
-            let hollow = hollow_in_another(model, &piece, &solid_faces, &tol);
+            let ready = ready.get_or_init(|| {
+                solid_faces
+                    .iter()
+                    .filter_map(|f| Some((*f, crate::shell::ShellFace::of(model, *f)?)))
+                    .collect()
+            });
+            let hollow = hollow_in_another(model, &piece, ready, &tol);
             if inward.is_some() && inward != Some(hollow) {
                 wrong = piece
                     .iter()
@@ -402,14 +414,14 @@ pub(crate) fn reversed(model: &Model) -> BTreeSet<FaceId> {
 fn hollow_in_another(
     model: &Model,
     piece: &[FaceId],
-    solid_faces: &BTreeSet<FaceId>,
+    solid_faces: &BTreeMap<FaceId, crate::shell::ShellFace>,
     tol: &Tol,
 ) -> bool {
     let mine: BTreeSet<FaceId> = piece.iter().copied().collect();
     let others: Vec<crate::shell::ShellFace> = solid_faces
         .iter()
-        .filter(|f| !mine.contains(f))
-        .filter_map(|f| crate::shell::ShellFace::of(model, *f))
+        .filter(|(f, _)| !mine.contains(f))
+        .map(|(_, s)| s.clone())
         .collect();
     if others.is_empty() {
         return false;

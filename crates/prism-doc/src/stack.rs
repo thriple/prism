@@ -465,6 +465,19 @@ impl Stack {
     }
 
     /// The base with every feature applied in order.
+    /// Add `f` on top and run it on `current`, the model the features so
+    /// far make (a definition keeps its model so: an edit the features do
+    /// not know about bakes them in first). The same model `evaluate` would
+    /// give, without running every feature before it again: each shell
+    /// or round added re-ran all the earlier ones, so the third face-by-face
+    /// shell of the owner's session 17 rebuilt the first two first.
+    pub fn push_on(&mut self, current: &Model, mut f: Feature) -> Model {
+        let mut m = current.clone();
+        f.run(&mut m, self.features.is_empty());
+        self.features.push(f);
+        m
+    }
+
     pub fn evaluate(&mut self) -> Model {
         let mut m = self.base.clone();
         for (i, f) in self.features.iter_mut().enumerate() {

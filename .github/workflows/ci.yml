@@ -71,10 +71,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --workspace
-      # The tests run on the release build just made, not on a second,
-      # debug build (owner, 2026-11-26): that tests the code that ships, and
-      # the Linux job above still runs them in debug with overflow checks.
-      - run: cargo test --release --workspace
+      # Tests in debug. Running them on the release build (tried 2026-11-26)
+      # took 50 minutes, not 7: every test program is built with the
+      # release profile's whole-program optimisation; and on Windows the
+      # screenshot tests crashed in the graphics driver.
+      - run: cargo test --workspace
 
   web:
     name: Web build

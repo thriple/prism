@@ -2,7 +2,7 @@
 //! the shared surface, the rectangle of it the face covers, and the side
 //! it faces.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use prism_math::{DAffine3, DVec2, DVec3};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,39 @@ pub struct NurbsSurface {
     /// columns) repeat the first.
     #[serde(default)]
     periodic: [bool; 2],
+    /// The grids of points [`NurbsSurface::closest`] searches, kept
+    /// between calls (not saved, not compared).
+    #[serde(skip)]
+    samples: Samples,
+}
+
+/// The grids of surface points [`NurbsSurface::closest`] starts from, by
+/// the range searched: a booleans or a model check asks for the closest
+/// point on the same faces thousands of times, and working out the grid
+/// each time was most of their time. Copies of a surface share them;
+/// anything that changes the surface starts afresh. The points are
+/// exactly the ones worked out each time before, so results do not
+/// change.
+#[derive(Clone, Default)]
+struct Samples(Arc<Mutex<Vec<Grid>>>);
+
+/// A range searched (its ends' bits) and the grid of points over it.
+type Grid = ([u64; 4], Arc<Vec<DVec3>>);
+
+/// How many ranges' grids one surface keeps (a face's own range, and a
+/// few more): the oldest goes first.
+const SAMPLES_KEPT: usize = 16;
+
+impl PartialEq for Samples {
+    fn eq(&self, _: &Samples) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for Samples {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Samples")
+    }
 }
 
 impl NurbsSurface {
@@ -48,6 +81,7 @@ impl NurbsSurface {
             points,
             weights,
             periodic,
+            samples: Samples::default(),
         };
         (ok && s.repeats_hold()).then_some(s)
     }
@@ -134,6 +168,7 @@ impl NurbsSurface {
         if i >= cu || j >= cv {
             return;
         }
+        self.samples = Samples::default();
         let nv = self.count[1];
         let mut is = vec![i];
         if self.periodic[0] && i < self.degree[0] {
@@ -296,6 +331,7 @@ impl NurbsSurface {
     /// The surface after `m`. Any affine map keeps a NURBS surface exact.
     pub fn transformed(&self, m: &DAffine3) -> NurbsSurface {
         let mut s = self.clone();
+        s.samples = Samples::default();
         for p in &mut s.points {
             *p = m.transform_point3(*p);
         }
@@ -305,6 +341,7 @@ impl NurbsSurface {
     /// The surface with every point sent through `f`.
     pub fn mapped(&self, f: impl Fn(DVec3) -> DVec3) -> NurbsSurface {
         let mut s = self.clone();
+        s.samples = Samples::default();
         for p in &mut s.points {
             *p = f(*p);
         }
@@ -393,24 +430,8 @@ impl NurbsSurface {
         });
         let at =
             |d: usize, i: usize| range[d].0 + (range[d].1 - range[d].0) * i as f64 / n[d] as f64;
-        // The grid a line across v at a time: each column of control
-        // points collapsed along v once, as `eval` does, then each point
-        // along u from those (the same sums as `eval`, a few times fewer).
-        let [du, dv] = self.degree;
-        let mut dist = vec![0.0; (n[0] + 1) * (n[1] + 1)];
-        for j in 0..=n[1] {
-            let v = self.wrap(1, at(1, j));
-            let kv = span(dv, &self.knots[1], self.count[1], v);
-            let column: Vec<H> = (0..self.count[0])
-                .map(|i| de_boor(dv, &self.knots[1], kv, v, |c| self.at(i, c)).0)
-                .collect();
-            for i in 0..=n[0] {
-                let u = self.wrap(0, at(0, i));
-                let ku = span(du, &self.knots[0], self.count[0], u);
-                let (s, _) = de_boor(du, &self.knots[0], ku, u, |r| column[r]);
-                dist[i * (n[1] + 1) + j] = (s.p / s.w).distance_squared(p);
-            }
-        }
+        let grid = self.sampled(range, n);
+        let dist: Vec<f64> = grid.iter().map(|q| q.distance_squared(p)).collect();
         let mut best = (f64::INFINITY, 0, 0);
         for i in 0..=n[0] {
             for j in 0..=n[1] {
@@ -448,6 +469,50 @@ impl NurbsSurface {
             }
         }
         (u, v)
+    }
+
+    /// The points of the grid [`NurbsSurface::closest`] searches over
+    /// `range`, `n` steps each way (`[i * (n[1] + 1) + j]`): kept from an
+    /// earlier call over the same range, or worked out and kept.
+    fn sampled(&self, range: [(f64, f64); 2], n: [usize; 2]) -> Arc<Vec<DVec3>> {
+        let key = [
+            range[0].0.to_bits(),
+            range[0].1.to_bits(),
+            range[1].0.to_bits(),
+            range[1].1.to_bits(),
+        ];
+        let kept = |c: &Vec<Grid>| c.iter().find(|(k, _)| *k == key).map(|(_, g)| g.clone());
+        if let Some(g) = self.samples.0.lock().ok().and_then(|c| kept(&c)) {
+            return g;
+        }
+        let at =
+            |d: usize, i: usize| range[d].0 + (range[d].1 - range[d].0) * i as f64 / n[d] as f64;
+        // The grid a line across v at a time: each column of control
+        // points collapsed along v once, as `eval` does, then each point
+        // along u from those (the same sums as `eval`, a few times fewer).
+        let [du, dv] = self.degree;
+        let mut grid = vec![DVec3::ZERO; (n[0] + 1) * (n[1] + 1)];
+        for j in 0..=n[1] {
+            let v = self.wrap(1, at(1, j));
+            let kv = span(dv, &self.knots[1], self.count[1], v);
+            let column: Vec<H> = (0..self.count[0])
+                .map(|i| de_boor(dv, &self.knots[1], kv, v, |c| self.at(i, c)).0)
+                .collect();
+            for i in 0..=n[0] {
+                let u = self.wrap(0, at(0, i));
+                let ku = span(du, &self.knots[0], self.count[0], u);
+                let (s, _) = de_boor(du, &self.knots[0], ku, u, |r| column[r]);
+                grid[i * (n[1] + 1) + j] = s.p / s.w;
+            }
+        }
+        let grid = Arc::new(grid);
+        if let Ok(mut c) = self.samples.0.lock() {
+            if c.len() >= SAMPLES_KEPT {
+                c.remove(0);
+            }
+            c.push((key, grid.clone()));
+        }
+        grid
     }
 
     /// The parameters along direction `d` to draw the surface with, between
@@ -821,6 +886,43 @@ mod tests {
             [false, false],
         )
         .unwrap()
+    }
+
+    /// The closest-point grid is kept between calls: the same answers as
+    /// working it out afresh, and a surface that changes (a cage point
+    /// moved, moved as a whole, mapped) does not answer from the old one.
+    #[test]
+    fn closest_points_come_from_a_kept_grid_that_follows_the_surface() {
+        let s = folded_surface();
+        let range = [(0.0, 1.0), (0.0, 1.0)];
+        let p = DVec3::new(0.3, 0.8, 0.4);
+        let first = s.closest(p, range);
+        // A copy made before any search shares nothing stale.
+        let fresh = folded_surface();
+        assert_eq!(s.closest(p, range), first, "kept: the same answer");
+        assert_eq!(fresh.closest(p, range), first, "as worked out afresh");
+        assert_eq!(
+            s.closest(p, [(0.0, 1.0), (0.0, 0.5)]),
+            fresh.closest(p, [(0.0, 1.0), (0.0, 0.5)])
+        );
+        // Moved as a whole: the answer moves with it.
+        let up = DVec3::new(0.0, 0.0, 5.0);
+        let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() + (a.1 - b.1).abs() < 1e-9;
+        let moved = s.transformed(&DAffine3::from_translation(up));
+        assert!(near(moved.closest(p + up, range), first));
+        let mapped = s.mapped(|q| q + up);
+        assert!(near(mapped.closest(p + up, range), first));
+        // Off by the 5 the old grid would answer from: far.
+        assert!(!near(moved.closest(p, range), first));
+        // A cage point moved: answered from the new shape.
+        let mut bent = s.clone();
+        bent.set_control(1, 2, DVec3::new(1.0, 3.0, 4.0));
+        let mut fresh_bent = folded_surface();
+        fresh_bent.set_control(1, 2, DVec3::new(1.0, 3.0, 4.0));
+        assert_eq!(bent.closest(p, range), fresh_bent.closest(p, range));
+        assert_ne!(bent.closest(p, range), first);
+        // Kept grids are not saved and do not make surfaces differ.
+        assert_eq!(s, fresh);
     }
 
     #[test]

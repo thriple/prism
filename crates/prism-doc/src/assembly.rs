@@ -1258,13 +1258,15 @@ impl Assembly {
             .stack
             .clone()
             .unwrap_or_else(|| Stack::new(d.model.clone()));
-        stack.features.push(Feature::Round {
-            edges: refs,
-            size,
-            fillet,
-            broken: false,
-        });
-        let model = stack.evaluate();
+        let model = stack.push_on(
+            &d.model,
+            Feature::Round {
+                edges: refs,
+                size,
+                fillet,
+                broken: false,
+            },
+        );
         if stack.features.last().is_some_and(Feature::is_broken) {
             return false;
         }
@@ -1296,14 +1298,16 @@ impl Assembly {
             .stack
             .clone()
             .unwrap_or_else(|| Stack::new(d.model.clone()));
-        stack.features.push(Feature::Shell {
-            faces,
-            open,
-            thickness,
-            rims: Vec::new(),
-            broken: false,
-        });
-        let model = stack.evaluate();
+        let model = stack.push_on(
+            &d.model,
+            Feature::Shell {
+                faces,
+                open,
+                thickness,
+                rims: Vec::new(),
+                broken: false,
+            },
+        );
         if stack.features.last().is_some_and(Feature::is_broken) {
             return false;
         }
@@ -2015,11 +2019,13 @@ impl Assembly {
             .stack
             .clone()
             .unwrap_or_else(|| Stack::new(d.model.clone()));
-        stack.features.push(Feature::Deform {
-            spec,
-            broken: false,
-        });
-        let model = stack.evaluate();
+        let model = stack.push_on(
+            &d.model,
+            Feature::Deform {
+                spec,
+                broken: false,
+            },
+        );
         if stack.features.last().is_some_and(Feature::is_broken) {
             return Err(
                 prism_ops::deform::refusal(&d.model, &spec).unwrap_or(prism_ops::deform::FAILED)
@@ -2633,12 +2639,14 @@ impl Assembly {
             .stack
             .clone()
             .unwrap_or_else(|| Stack::new(body.model.clone()));
-        stack.features.push(Feature::Boolean {
-            op: kind,
-            tool,
-            broken: false,
-        });
-        let model = stack.evaluate();
+        let model = stack.push_on(
+            &body.model,
+            Feature::Boolean {
+                op: kind,
+                tool,
+                broken: false,
+            },
+        );
         let ok = stack.features.last().is_some_and(|f| !f.is_broken())
             && model.face_count() == plain.face_count()
             && model.vertices().count() == plain.vertices().count();
