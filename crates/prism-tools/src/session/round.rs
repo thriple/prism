@@ -212,8 +212,18 @@ impl Session {
         }
         self.round_shown = key;
         let collected = !self.round_selected().is_empty();
+        // While a size is being dragged, a size that cannot be made keeps
+        // the last one that could on screen, and the reason shows at the
+        // cursor (owner, 2026-11-26: the preview blanked mid-drag with
+        // only small text in the window to say why).
+        let dragging = self.round_down.as_ref().is_some_and(|d| d.dragging);
         let (why, preview) = match target.map(|t| self.round_command(&t, fillet)) {
             None => (None, None),
+            Some(Err(why)) if dragging && self.preview.is_some() => {
+                self.round_refused = Some(why);
+                self.overlay_dirty = true;
+                return;
+            }
             Some(Err(why)) => (Some(why), None),
             Some(Ok(c)) => {
                 let mut m = self.work_model().clone();
@@ -456,6 +466,7 @@ impl Session {
     /// (the selection shows as selected already).
     pub(super) fn round_overlay(&self, o: &mut Overlay) {
         self.handle_overlay(o);
+        self.round_refusal_label(o);
         if self.tool != FILLET || !self.selection.is_empty() || self.round_refused.is_some() {
             return;
         }
@@ -480,6 +491,25 @@ impl Session {
                 });
             }
         }
+    }
+
+    /// While a size is dragged past what can be made: why, at the cursor,
+    /// in the warning colour, and that the last size that could is shown.
+    fn round_refusal_label(&self, o: &mut Overlay) {
+        let dragging =
+            self.round_down.as_ref().is_some_and(|d| d.dragging) || self.round_handle.is_some();
+        let (Some(why), Some(s), true) = (self.round_refused, self.cursor, dragging) else {
+            return;
+        };
+        let view = self.view();
+        let (eye, dir) = view.ray(s);
+        let c = self.camera();
+        o.labels.push(prism_view::overlay::Label {
+            at: eye + dir * c.eye.distance(c.target),
+            offset: [14.0, -16.0],
+            text: refusal_text(why),
+            color: self.style.health_many,
+        });
     }
 
     /// The window's kind or size. Right after a round, it changes that
@@ -638,4 +668,16 @@ impl Session {
                 .map_or(String::new(), |r| self.number.show(r)),
         )
     }
+}
+
+/// A refusal said at the cursor while dragging: without "Refused:", and
+/// that the size shown is the last one that worked.
+pub(super) fn refusal_text(why: &str) -> String {
+    let why = why.strip_prefix("Refused: ").unwrap_or(why);
+    let mut c = why.chars();
+    let why = match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect::<String>(),
+        None => String::new(),
+    };
+    format!("{} Showing the last size that worked.", why.trim_end())
 }

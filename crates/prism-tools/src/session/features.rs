@@ -23,6 +23,10 @@ pub type FeatureCache = RefCell<Option<(u64, DefId, Vec<BTreeSet<FaceId>>)>>;
 /// feature it was worked out for.
 pub type GuideCache = RefCell<Option<(u64, DefId, usize, Option<SizeGuide>)>>;
 
+/// Said at the cursor while the handle is dragged to a size the round
+/// cannot be made at.
+const CANNOT_SIZE: &str = "Refused: the round cannot be made this size here (too large for a face beside it, or for a round next to it).";
+
 /// A drag of the size handle in progress.
 #[derive(Clone, Debug)]
 pub(super) struct Handle {
@@ -213,14 +217,19 @@ impl Session {
         if den.abs() > 1e-9 {
             let p = o + d * (side.normal.dot(side.origin - o) / den);
             let size = (p - h.guide.a).dot(side.across);
-            if size > self.scene.tol.dist
-                && size != h.size
-                && let Some(m) = self.feature_at_size(h.def, h.index, size)
-            {
-                if let Some(h) = &mut self.round_handle {
-                    h.size = size;
+            if size > self.scene.tol.dist && size != h.size {
+                match self.feature_at_size(h.def, h.index, size) {
+                    Some(m) => {
+                        if let Some(h) = &mut self.round_handle {
+                            h.size = size;
+                        }
+                        self.round_refused = None;
+                        self.set_preview(Some(m));
+                    }
+                    // The handle stays at the last size that worked, and
+                    // says why at the cursor.
+                    None => self.round_refused = Some(CANNOT_SIZE),
                 }
-                self.set_preview(Some(m));
             }
         }
         self.overlay_dirty = true;
@@ -246,6 +255,7 @@ impl Session {
         let Some(h) = self.round_handle.take() else {
             return false;
         };
+        self.round_refused = None;
         self.set_preview(None);
         if h.size != h.start {
             self.run(Command::SetFeatureSize {
@@ -266,6 +276,7 @@ impl Session {
         if self.round_handle.take().is_none() {
             return false;
         }
+        self.round_refused = None;
         self.set_preview(None);
         self.overlay_dirty = true;
         self.refresh();

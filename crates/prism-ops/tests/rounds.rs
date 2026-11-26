@@ -204,3 +204,46 @@ fn rounds_are_refused_with_a_reason_and_change_nothing() {
         Some(TWO_SOLIDS)
     );
 }
+
+/// A line drawn on an end face, and a point where a side edge was split,
+/// are not corners of the solid's shape: a round runs past them (owner's
+/// session 22: a round stopped at the first of them). The line is drawn
+/// back on afterwards, as far as it still lies on the solid.
+#[test]
+fn a_round_runs_past_lines_drawn_on_the_faces_at_its_ends() {
+    let (l, r) = (2.0, 0.3);
+    let mut m = cube(l);
+    // A line up the end face y = 0, 0.05 from the edge to round.
+    prism_ops::add_segment(&mut m, v(1.95, 0.0, 0.0), v(1.95, 0.0, 2.0));
+    // The upright edge at that end split 0.03 below the top.
+    let tol = m.tol();
+    prism_ops::insert_point(&mut m, v(2.0, 0.0, 1.97), &tol);
+    let faces = m.face_count();
+    let e = edge(&m, v(2.0, 0.0, 2.0), v(2.0, 2.0, 2.0));
+    round_edges(&mut m, &BTreeSet::from([e]), r, true).unwrap();
+    clean(&m);
+    let want = l * l * l - r * r * (1.0 - PI / 4.0) * l;
+    assert!((volume(&m) - want).abs() < 1e-7, "{} {want}", volume(&m));
+    // The line is back, from the ground up to the round, and nothing of
+    // it is left in the air.
+    let up: Vec<(DVec3, DVec3)> = m
+        .edges()
+        .map(|(_, e)| (m.vertex(e.a), m.vertex(e.b)))
+        .filter(|(a, b)| {
+            (a.x - 1.95).abs() < 1e-9
+                && (b.x - 1.95).abs() < 1e-9
+                && a.y.abs() < 1e-9
+                && b.y.abs() < 1e-9
+        })
+        .collect();
+    assert!(!up.is_empty(), "the line is back");
+    let top = up.iter().map(|(a, b)| a.z.max(b.z)).fold(0.0, f64::max);
+    let on_round = 1.7 + (r * r - 0.25f64 * 0.25).sqrt();
+    assert!(
+        (top - on_round).abs() < 1e-6,
+        "ends on the round: {top} {on_round}"
+    );
+    assert_eq!(health::check(&m).stray.edges.len(), 0);
+    // The cube's six, the end face still in two by the line, and the round.
+    assert_eq!((faces, m.face_count()), (7, 8));
+}
