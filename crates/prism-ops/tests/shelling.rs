@@ -1703,7 +1703,11 @@ fn what_cannot_be_shelled_as_one_piece_is_built_face_by_face_with_a_warning() {
     let m = cube();
     let built = shelling::slab_flagged(&m, &any_face(&m), &none, -0.6, &Default::default())
         .expect("built anyway");
-    assert!(built.flags.contains_key(shelling::APART_THICK), "{:?}", built.flags.keys());
+    assert!(
+        built.flags.contains_key(shelling::APART_THICK),
+        "{:?}",
+        built.flags.keys()
+    );
     assert!(prism_ops::boolean::is_solid(&built.model));
     // Four faces at a rim corner (once refused, `CORNER`).
     let p = DVec3::new;
@@ -1729,7 +1733,11 @@ fn what_cannot_be_shelled_as_one_piece_is_built_face_by_face_with_a_warning() {
         &Default::default(),
     )
     .expect("built anyway");
-    assert!(flags.contains_key(shelling::APART_CORNER), "{:?}", flags.keys());
+    assert!(
+        flags.contains_key(shelling::APART_CORNER),
+        "{:?}",
+        flags.keys()
+    );
     assert!(!flags[shelling::APART_CORNER].faces.is_empty(), "marked");
     // Nothing to build is still refused.
     let (m, f) = square();
