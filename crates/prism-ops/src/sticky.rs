@@ -596,8 +596,11 @@ fn candidate_planes(
 ) -> Vec<Plane> {
     let dir = (pb - pa).normalize();
     let mut planes: Vec<Plane> = Vec::new();
-    let mut push = |p: Plane| {
-        if !planes.iter().any(|q| q.same_surface(&p, tol)) {
+    let seg = pa.distance(pb);
+    // Each plane with the size of what made it (its face, or the segment
+    // and the edge it was made with): two count as one over that size.
+    let mut push = |p: Plane, size: f64| {
+        if !planes.iter().any(|q| q.same_surface(&p, tol, size)) {
             planes.push(p);
         }
     };
@@ -606,21 +609,27 @@ fn candidate_planes(
             && pl.contains(pa, tol)
             && pl.contains(pb, tol)
         {
-            push(*pl);
+            push(*pl, model.face_extent(f));
         }
     }
     for v in chain {
         let at = model.vertex(*v);
         for (_, e) in model.edges().filter(|(_, e)| e.has(*v)) {
+            let side = model.vertex(e.other(*v)) - at;
+            let size = seg.max(side.length());
             if let Some(pl) = e.curve.plane() {
                 if pl.contains(pa, tol) && pl.contains(pb, tol) {
-                    push(pl);
+                    let r = match e.curve {
+                        Curve::Arc { radius, .. } => 2.0 * radius,
+                        _ => 0.0,
+                    };
+                    push(pl, size.max(r));
                 }
                 continue;
             }
-            let side = model.vertex(e.other(*v)) - at;
-            if side.length() > tol.dist && !tol.parallel(dir, side.normalize()) {
-                push(Plane::new(at, dir.cross(side)));
+            if side.length() > tol.dist && !tol.parallel_over(dir, side.normalize(), side.length())
+            {
+                push(Plane::new(at, dir.cross(side)), size);
             }
         }
     }

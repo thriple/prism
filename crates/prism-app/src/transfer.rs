@@ -582,7 +582,8 @@ impl Transfer {
             let scale = i.stated.unwrap_or(i.unit.metres());
             // A GLB's objects as groups and components (brief 35).
             if let Some(sc) = i.scene.as_ref().filter(|_| i.keep) {
-                let asm = mesh::assembly_of(sc, scale, i.y_up, i.merge);
+                let tol = s.document().assembly().tol();
+                let asm = mesh::assembly_of_with(sc, scale, i.y_up, i.merge, tol);
                 let n = asm.placed().len();
                 if s.import_assembly(asm) {
                     chrome.status_note(format!("Imported {} ({n} groups and components)", i.name));
@@ -592,7 +593,18 @@ impl Transfer {
                 return;
             }
             // The file's materials come in too (Basic Materials part 3).
-            let (model, sizes) = mesh::build_painted(&i.mesh, scale, i.y_up, i.merge);
+            let tol = s.document().assembly().tol();
+            let (model, sizes) = mesh::build_painted_with(&i.mesh, scale, i.y_up, i.merge, tol);
+            // A file too large to hold its corners as finely as this
+            // document's tolerance welds them at its own precision.
+            let welded = mesh::weld_tolerance(&i.mesh, scale, i.y_up, tol);
+            let coarse = (welded.dist > tol.dist * 1.0001).then(|| {
+                format!(
+                    "; corners within {:.3} mm joined (the file's own precision, coarser than this document's {:.3} mm)",
+                    welded.dist * 1e3,
+                    tol.dist * 1e3
+                )
+            });
             let materials: Vec<_> = i
                 .mesh
                 .materials
@@ -602,14 +614,15 @@ impl Transfer {
                 .collect();
             let (faces, n_mat) = (model.face_count(), materials.len());
             if s.import_painted(model, materials) {
-                chrome.status_note(match n_mat {
+                let note = match n_mat {
                     0 => format!("Imported {} ({faces} faces)", i.name),
                     n => format!(
                         "Imported {} ({faces} faces, {n} material{})",
                         i.name,
                         if n == 1 { "" } else { "s" }
                     ),
-                });
+                };
+                chrome.status_note(note + coarse.as_deref().unwrap_or(""));
             } else {
                 chrome.status_note(format!("{} had nothing to import", i.name));
             }

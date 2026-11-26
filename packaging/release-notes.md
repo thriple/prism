@@ -1,3 +1,9 @@
+**Changed: "parallel" and "the same plane" now follow the document's precision.** Two faces count as one plane when their far edges are within the precision (0.01 mm by default), not when they are within a fixed angle. Large faces that are very slightly tilted no longer merge with their far edges well apart, and small faces at a hair's angle that are within the precision now merge as they should. Imported meshes join corners at the document's precision too; a mesh too large to hold its numbers that finely joins them at the file's own precision, and the import says so.
+
+**Fixed: offsetting a curved face as far as it goes** (an arch offset past where its sides meet) could leave a chain of tiny holes touching at points. It now stops just short, with one clean face, at every precision.
+
+**Fixed: thickening a fold that turns right back on itself, into the fold,** was sometimes bridged at the default precision instead of being built face by face with a warning. It is recognised at every precision now.
+
 **Changed: one precision for the whole document.** How close two points must be to count as the same is now one fixed distance per document (0.01 mm for new documents), the same in every group, instead of a millionth of each group's own size. Drawing something far away no longer loosens it. Files saved before keep the precision they were made with (a millionth of their size, finer if their smallest details need it). A setting to change it comes later.
 
 **Faster: Shell / Thicken, booleans and Push/Pull into solids.** Joining two solids no longer runs the whole Model Health check three times or searches every line of the model for each new one, and finds crossings once instead of twice. A shell built face by face that took minutes now takes seconds.

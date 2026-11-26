@@ -475,3 +475,38 @@ fn three_mf_carries_colours() {
         assert!((got - want).abs() < 0.01);
     }
 }
+
+/// Two triangles of a 1 m square whose shared corners are 5 µm apart
+/// (as a file's rounding leaves them): they weld at the document's
+/// tolerance (0.01 mm at Standard), not at a millionth of the mesh's size
+/// as imports used to; a Fine document (0.001 mm) keeps them apart
+/// (DECISIONS #42).
+#[test]
+fn a_mesh_welds_at_the_documents_tolerance() {
+    let off = DVec3::new(5e-6, 0.0, 0.0);
+    let m = Mesh {
+        positions: vec![
+            DVec3::ZERO,
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(1.0, 1.0, 0.0),
+            DVec3::ZERO + off,
+            DVec3::new(1.0, 1.0, 0.0) + off,
+            DVec3::new(0.0, 1.0, 0.0),
+        ],
+        polygons: vec![vec![0, 1, 2], vec![3, 4, 5]],
+        ..Mesh::default()
+    };
+    let std = prism_math::Tol::default();
+    let (welded, _) = mesh::build_painted_with(&m, 1.0, false, true, std);
+    assert_eq!(welded.vertex_count(), 4, "welded at 0.01 mm");
+    assert_eq!(welded.face_count(), 1, "and merged into one square");
+    assert_eq!(welded.tol(), std);
+    let fine = prism_math::Tol::new(prism_math::tol::FINE);
+    let (apart, _) = mesh::build_painted_with(&m, 1.0, false, true, fine);
+    assert_eq!(apart.vertex_count(), 6, "kept apart at 0.001 mm");
+    // A mesh 100 km across cannot hold 0.01 mm: it welds at its own
+    // precision, and says so.
+    let big = mesh::weld_tolerance(&m, 1e5, false, std);
+    assert!(big.dist > std.dist, "{big:?}");
+    assert_eq!(mesh::weld_tolerance(&m, 1.0, false, std), std);
+}

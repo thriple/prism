@@ -483,9 +483,80 @@ pub fn offset_arc_loops(
             .iter()
             .map(|l| offset_pieces(l, n, d, gap))
             .collect::<Option<_>>()?;
-        Some(out)
+        (!out.iter().any(|l| grazes(l, gap))).then_some(out)
     };
     largest_valid(distance, gap, tol.dist, at)
+}
+
+/// How many points along each spline piece [`grazes`] looks at.
+const GRAZE_SAMPLES: usize = 64;
+/// Two pieces running within `gap` of each other at less than this angle
+/// (as a sine, about 6°) graze rather than cross.
+const GRAZE_SINE: f64 = 0.1;
+/// Whether an offset loop grazes itself: a spline piece runs alongside
+/// another piece within `gap`, without crossing it at an angle. Near a
+/// joint the two share, a point whose nearest place on the other piece is
+/// that joint is only the corner itself, and does not count; a loop that
+/// is nothing but a sliver thinner than `gap` (two joints, sides alongside)
+/// does. A fitted spline wobbles within its fit, so
+/// along a near-miss it crosses the other piece several times within the
+/// tolerance, and those crossings weld into points where holes touch
+/// (owner's arch, tolerance stage 2). A clean crossing is still allowed:
+/// an offset may go past where its sides meet.
+fn grazes(l: &[Piece], gap: f64) -> bool {
+    let samples = |p: &Piece| -> Vec<DVec3> {
+        (0..=GRAZE_SAMPLES)
+            .map(|k| p.curve.point(p.a, p.b, k as f64 / GRAZE_SAMPLES as f64))
+            .collect()
+    };
+    let boxed = |pts: &[DVec3]| {
+        let first = pts[0];
+        pts.iter()
+            .fold((first, first), |(lo, hi), p| (lo.min(*p), hi.max(*p)))
+    };
+    let all: Vec<Vec<DVec3>> = l.iter().map(samples).collect();
+    let boxes: Vec<(DVec3, DVec3)> = all.iter().map(|s| boxed(s)).collect();
+    let pad = DVec3::splat(gap);
+    for (i, a) in l.iter().enumerate() {
+        if !matches!(a.curve, Curve::Spline(_)) {
+            continue;
+        }
+        for (j, b) in l.iter().enumerate() {
+            if i == j
+                || (boxes[i].0 - pad).cmpgt(boxes[j].1).any()
+                || (boxes[i].1 + pad).cmplt(boxes[j].0).any()
+            {
+                continue;
+            }
+            let joints: Vec<DVec3> = [a.a, a.b]
+                .into_iter()
+                .filter(|p| p.distance(b.a) <= gap || p.distance(b.b) <= gap)
+                .collect();
+            let pts = &all[i];
+            for k in 1..GRAZE_SAMPLES {
+                let p = pts[k];
+                let q = b.curve.closest_point(b.a, b.b, p);
+                if q.distance(p) >= gap || joints.iter().any(|j| j.distance(q) <= gap) {
+                    continue;
+                }
+                // Alongside, or across: the two directions there.
+                let ta = (pts[k + 1] - pts[k - 1]).normalize_or_zero();
+                let near = all[j]
+                    .windows(2)
+                    .min_by(|x, y| {
+                        let d =
+                            |w: &[DVec3]| w[0].distance(q) + w[1].distance(q) - w[0].distance(w[1]);
+                        d(x).total_cmp(&d(y))
+                    })
+                    .map(|w| (w[1] - w[0]).normalize_or_zero())
+                    .unwrap_or(DVec3::ZERO);
+                if ta.cross(near).length() < GRAZE_SINE {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The signed distance from `p` (on or near the face's plane) to the face's

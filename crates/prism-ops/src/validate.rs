@@ -501,9 +501,13 @@ fn fill_flat_holes(model: &mut Model, only: Option<&BTreeSet<FaceId>>) -> usize 
         if !flat {
             continue;
         }
+        let size = pts
+            .iter()
+            .fold((centre, centre), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+        let size = (size.1 - size.0).length();
         match planes
             .iter_mut()
-            .find(|(p, _)| p.same_surface(&plane, &tol))
+            .find(|(p, _)| p.same_surface(&plane, &tol, size))
         {
             Some((_, es)) => es.extend(ring),
             None => planes.push((plane, ring.into_iter().collect())),

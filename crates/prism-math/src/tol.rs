@@ -29,9 +29,16 @@ pub const MAX: f64 = 1e-2;
 pub const SLIVER: f64 = 100.0;
 /// A sliver is at least this many times longer than it is wide.
 pub const SLIVER_RATIO: f64 = 100.0;
-/// Two directions within this of each other (as 1 - |cos|) count as parallel.
-/// It is an angle, so it does not scale with the model.
+/// Two directions within this of each other (as 1 - |cos|) count as parallel
+/// when no length is at hand ([`Tol::parallel`]): about 0.0026°. Where a
+/// length is known, [`Tol::parallel_over`] is the rule (DECISIONS #42).
 pub const ANGLE: f64 = 1e-9;
+/// However short the length, two directions further apart than this (as
+/// the sine of the angle, about 0.057°) are never parallel.
+pub const PARALLEL_MAX: f64 = 1e-3;
+/// However long the length, directions this close (as a sine) always are:
+/// below the precision of a computed unit vector.
+pub const PARALLEL_MIN: f64 = 1e-12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tol {
@@ -102,6 +109,32 @@ impl Tol {
         1.0 - a.dot(b).abs() < ANGLE
     }
 
+    /// Whether two unit directions are parallel (same or opposite) over
+    /// `len`: something `len` long along one ends less than the tolerance
+    /// from where it would along the other. A fixed angle would let the far
+    /// end of a long face drift well past the tolerance, and hold a short
+    /// one tighter than the tolerance needs (DECISIONS #42).
+    pub fn parallel_over(&self, a: DVec3, b: DVec3, len: f64) -> bool {
+        let len = if len.is_finite() {
+            len.max(self.dist)
+        } else {
+            self.dist
+        };
+        let allowed = (self.dist / len).clamp(PARALLEL_MIN, PARALLEL_MAX);
+        a.cross(b).length() < allowed
+    }
+
+    /// Whether two unit directions are perpendicular over `len`: something
+    /// `len` long along `b` rises less than the tolerance along `a`.
+    pub fn perpendicular_over(&self, a: DVec3, b: DVec3, len: f64) -> bool {
+        let len = if len.is_finite() {
+            len.max(self.dist)
+        } else {
+            self.dist
+        };
+        a.dot(b).abs() < (self.dist / len).clamp(PARALLEL_MIN, PARALLEL_MAX)
+    }
+
     /// Whether two unit directions are perpendicular.
     pub fn perpendicular(&self, a: DVec3, b: DVec3) -> bool {
         a.dot(b).abs() < ANGLE.sqrt()
@@ -133,6 +166,26 @@ mod tests {
             1e-6,
             "an empty model acts as 1 unit"
         );
+    }
+
+    #[test]
+    fn parallel_allows_the_tolerance_over_the_length() {
+        let t = Tol::new(STANDARD);
+        let tilt = |s: f64| DVec3::new(s, 0.0, (1.0 - s * s).sqrt());
+        // 1.1e-6 over 10 m drifts past 0.01 mm; 0.9e-6 stays within it.
+        assert!(!t.parallel_over(DVec3::Z, tilt(1.1e-6), 10.0));
+        assert!(t.parallel_over(DVec3::Z, tilt(0.9e-6), 10.0));
+        // Over 5 cm the same document allows 2e-4.
+        assert!(t.parallel_over(DVec3::Z, tilt(1.9e-4), 0.05));
+        assert!(!t.parallel_over(DVec3::Z, tilt(2.1e-4), 0.05));
+        // Opposite directions are parallel too.
+        assert!(t.parallel_over(DVec3::Z, -tilt(1e-7), 10.0));
+        // Never further apart than PARALLEL_MAX, however short.
+        assert!(!t.parallel_over(DVec3::Z, tilt(2e-3), 1e-9));
+        assert!(t.parallel_over(DVec3::Z, tilt(0.5e-3), 0.0));
+        // Square: a 10 m wall leaning 2e-6 rises 0.02 mm, past the tolerance.
+        assert!(!t.perpendicular_over(DVec3::Z, DVec3::new(1.0, 0.0, 2e-6).normalize(), 10.0));
+        assert!(t.perpendicular_over(DVec3::Z, DVec3::new(1.0, 0.0, 2e-6).normalize(), 1.0));
     }
 
     #[test]

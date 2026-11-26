@@ -54,7 +54,8 @@ fn no_seams(m: &Model) {
             && let (Some(p), Some(q)) = (m.face(*f).unwrap().plane(), m.face(*g).unwrap().plane())
         {
             assert!(
-                !(p.same_surface(q, &tol) && p.normal.dot(q.normal) > 0.0),
+                !(p.same_surface(q, &tol, m.face_extent(m.face(*g).unwrap()))
+                    && p.normal.dot(q.normal) > 0.0),
                 "a seam at {e:?}"
             );
         }

@@ -284,11 +284,13 @@ fn merge_seams(m: &mut Model) {
         .into_iter()
         .filter(|(_, fs)| {
             let [f, g] = fs.as_slice() else { return false };
-            match (
-                m.face(*f).and_then(|x| x.plane()),
-                m.face(*g).and_then(|x| x.plane()),
-            ) {
-                (Some(p), Some(q)) => p.same_surface(q, &tol) && p.normal.dot(q.normal) > 0.0,
+            let (Some(ff), Some(gf)) = (m.face(*f), m.face(*g)) else {
+                return false;
+            };
+            match (ff.plane(), gf.plane()) {
+                (Some(p), Some(q)) => {
+                    p.same_surface(q, &tol, m.face_extent(gf)) && p.normal.dot(q.normal) > 0.0
+                }
                 _ => false,
             }
         })

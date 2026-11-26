@@ -910,6 +910,38 @@ impl Model {
         l.iter().map(|v| self.vertex(*v)).collect()
     }
 
+    /// How far across a face is: the diagonal of the box round its vertices
+    /// and arcs (a spline's control points). The length over which two
+    /// faces must agree to count as the same plane (DECISIONS #42).
+    pub fn face_extent(&self, f: &Face) -> f64 {
+        let mut lo = DVec3::splat(f64::INFINITY);
+        let mut hi = DVec3::splat(f64::NEG_INFINITY);
+        let mut add = |p: DVec3| {
+            lo = lo.min(p);
+            hi = hi.max(p);
+        };
+        for v in f.loops().flatten() {
+            add(self.vertex(*v));
+        }
+        for x in f.edge_ids().filter_map(|e| self.edge(e)) {
+            match &x.curve {
+                Curve::Arc {
+                    centre,
+                    axis,
+                    radius,
+                } => {
+                    let (a, b) = (self.vertex(x.a), self.vertex(x.b));
+                    for p in arc_extremes(*centre, *axis, *radius, a, b, &x.curve) {
+                        add(p);
+                    }
+                }
+                Curve::Spline(s) => s.curve.points().iter().for_each(|p| add(*p)),
+                Curve::Line => {}
+            }
+        }
+        if lo.x > hi.x { 0.0 } else { (hi - lo).length() }
+    }
+
     /// A face's area: its outer loop minus its holes, exact for arcs.
     pub fn face_area(&self, id: FaceId) -> f64 {
         let Some(f) = self.face(id) else { return 0.0 };

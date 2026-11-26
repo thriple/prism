@@ -14,10 +14,14 @@ use super::{Mesh, into_model};
 
 /// Two neighbouring triangles are one face when their normals are this
 /// close (1 − cos), and the neighbour's corners are on the face's plane.
+/// Tighter than the document's tolerance on purpose: a finely faceted
+/// curve (a scanned or exported smooth surface) keeps its facets rather
+/// than merging into flat patches that bend within the tolerance.
 const MERGE_ANGLE: f64 = 1e-10;
 
 /// Build a model from a mesh in file units: `metres_per_unit` scales it,
 /// `y_up` turns a Y-up file into Prism's Z up. Materials are left out.
+/// At the default tolerance; see [`build_painted_with`].
 pub fn build(mesh: &Mesh, metres_per_unit: f64, y_up: bool, merge: bool) -> Model {
     let plain = Mesh {
         materials: Vec::new(),
@@ -70,12 +74,27 @@ pub fn build_painted(
     y_up: bool,
     merge: bool,
 ) -> (Model, Vec<[f64; 2]>) {
+    build_painted_with(mesh, metres_per_unit, y_up, merge, Tol::default())
+}
+
+/// [`build_painted`] for a document whose tolerance is `doc`: corners
+/// closer than it weld and the model carries it (DECISIONS #42). A file
+/// holds its numbers only so finely (a millionth of its size, as Prism
+/// has always welded imports), so a huge mesh in a fine document welds at
+/// that instead: [`weld_tolerance`] says which.
+pub fn build_painted_with(
+    mesh: &Mesh,
+    metres_per_unit: f64,
+    y_up: bool,
+    merge: bool,
+    doc: Tol,
+) -> (Model, Vec<[f64; 2]>) {
     let pts: Vec<DVec3> = mesh
         .positions
         .iter()
         .map(|p| into_model(*p, metres_per_unit, y_up))
         .collect();
-    let tol = Tol::for_points(&pts);
+    let tol = weld_tol(&pts, doc);
     let (welded, map) = weld(&pts, &tol);
     let mat_of = |k: usize| mesh.polygon_materials.get(k).copied().flatten();
     let has_uv = mesh.uvs.len() == mesh.positions.len();
@@ -154,7 +173,7 @@ pub fn build_painted(
             .map(|k| ((polys[k].clone(), Vec::new()), k))
             .collect()
     };
-    let mut m = Model::new();
+    let mut m = Model::with_tol(doc);
     let ids: Vec<VertexId> = welded.iter().map(|p| m.add_vertex(*p)).collect();
     let mut used = vec![false; welded.len()];
     let mut edges: BTreeMap<(usize, usize), EdgeId> = BTreeMap::new();
@@ -195,6 +214,24 @@ pub fn build_painted(
         }
     }
     (m, sizes)
+}
+
+/// The distance a mesh's corners weld at in a document whose tolerance is
+/// `doc`: the document's, or the file's own precision if that is coarser.
+fn weld_tol(pts: &[DVec3], doc: Tol) -> Tol {
+    Tol::new(doc.dist.max(Tol::for_points(pts).dist))
+}
+
+/// The distance [`build_painted_with`] welds a mesh's corners at, in model
+/// units: more than `doc` when the file is too large to hold its numbers
+/// that finely (the import says so).
+pub fn weld_tolerance(mesh: &Mesh, metres_per_unit: f64, y_up: bool, doc: Tol) -> Tol {
+    let pts: Vec<DVec3> = mesh
+        .positions
+        .iter()
+        .map(|p| into_model(*p, metres_per_unit, y_up))
+        .collect();
+    weld_tol(&pts, doc)
 }
 
 /// Points within the tolerance become one. Returns the points kept and,

@@ -185,6 +185,15 @@ impl Places<'_> {
 /// of its holes.
 type Region = (Vec<usize>, Vec<DVec2>, Vec<Vec<usize>>);
 
+/// Two places of one vertex in a curved face's layout this close are the
+/// same node. The layout is in surface parameters (θ, and s or a second
+/// angle), not distance, and a pole's vertex has several places at
+/// different θ that are the same point in space, so this is a parameter
+/// rule, not the document's tolerance (DECISIONS #42: parameter nudges are
+/// named constants). It was 1e-9 for new nodes and 1e-6 for matching ends;
+/// one rule now.
+const SAME_NODE: f64 = 1e-6;
+
 /// The node for vertex `v` at `p`: one it has there already, or a new one.
 fn node(
     nodes: &mut Vec<DVec2>,
@@ -193,7 +202,7 @@ fn node(
     p: DVec2,
 ) -> usize {
     let list = at.entry(v).or_default();
-    if let Some(i) = list.iter().find(|i| nodes[**i].distance(p) < 1e-9) {
+    if let Some(i) = list.iter().find(|i| nodes[**i].distance(p) < SAME_NODE) {
         return *i;
     }
     nodes.push(p);
@@ -646,7 +655,7 @@ pub fn split_face(model: &mut Model, id: FaceId) -> Vec<FaceId> {
                    v: VertexId,
                    p: DVec2| {
             let list = at.get(&v).cloned().unwrap_or_default();
-            if let Some(i) = list.iter().find(|i| nodes[**i].distance(p) < 1e-6) {
+            if let Some(i) = list.iter().find(|i| nodes[**i].distance(p) < SAME_NODE) {
                 return Some(*i);
             }
             if !pl.on_axis(pl.model.vertex(v)) {
@@ -799,7 +808,7 @@ fn split_patch(model: &mut Model, id: FaceId, face: &Face) -> Vec<FaceId> {
         let pts: Vec<DVec2> = raw.iter().map(|p| *p + d).collect();
         let mut end = |v: VertexId, p: DVec2| {
             let list = at.get(&v).cloned().unwrap_or_default();
-            if let Some(i) = list.iter().find(|i| nodes[**i].distance(p) < 1e-6) {
+            if let Some(i) = list.iter().find(|i| nodes[**i].distance(p) < SAME_NODE) {
                 return Some(*i);
             }
             (!boundary_vs.contains(&v) && list.is_empty()).then(|| node(&mut nodes, &mut at, v, p))

@@ -2935,7 +2935,12 @@ fn into_fold(
         let into_b = nb.cross(-ahead);
         let qa = face_a.surface.project(p + into_a * d.abs());
         let qb = face_b.surface.project(p + into_b * d.abs());
-        if (qb - p).dot(na) * d > tol.dist || (qa - p).dot(nb) * d > tol.dist {
+        // How far each rises towards the way the other thickens: a
+        // distance, judged by the tolerance (it was multiplied by `d`, an
+        // area against a distance, so a fold seen at 0.001 mm was missed
+        // at 0.01 mm: tolerance stage 2).
+        let s = d.signum();
+        if (qb - p).dot(na) * s > tol.dist || (qa - p).dot(nb) * s > tol.dist {
             return Ok(true);
         }
     }

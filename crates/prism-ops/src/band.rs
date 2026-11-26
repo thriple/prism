@@ -136,6 +136,9 @@ pub(crate) fn of_face(model: &Model, face: FaceId, vs: &BTreeSet<VertexId>) -> O
     })
 }
 
+/// Knots this close are the same: a curve parameter, not a distance.
+const SAME_KNOT: f64 = 1e-9;
+
 /// `b` with `a`'s knots, if the two are built alike (the same degree,
 /// count and, to rounding, knots): a ruled surface joins them point for
 /// point.
@@ -146,7 +149,7 @@ fn matched(a: &Nurbs, b: &Nurbs) -> Option<Nurbs> {
         && a.knots()
             .iter()
             .zip(b.knots())
-            .all(|(x, y)| (x - y).abs() <= 1e-9);
+            .all(|(x, y)| (x - y).abs() <= SAME_KNOT);
     if !same {
         return None;
     }
@@ -223,15 +226,22 @@ pub(crate) fn exact_ends(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine
 
 /// A cylinder or cone through the fixed circle and the moved one, when
 /// they share an axis (the top slid along it, or scaled evenly about it).
-fn turned(fixed: (DVec3, DVec3, f64), moved: (DVec3, DVec3, f64)) -> Option<Surface> {
+///
+/// Same place, same size and same axis are judged by the document's
+/// tolerance (the axes over the larger of the two radii and the height).
+fn turned(
+    fixed: (DVec3, DVec3, f64),
+    moved: (DVec3, DVec3, f64),
+    tol: &prism_math::Tol,
+) -> Option<Surface> {
     let ((c1, a1, r1), (c2, a2, r2)) = (fixed, moved);
     let d = c2 - c1;
     let h = d.length();
     let scale = r1.max(r2).max(h);
-    let eps = 1e-9 * scale;
-    if h <= eps || a1.cross(a2).length() > 1e-9 || d.cross(a1).length() > eps {
+    if h <= tol.dist || !tol.parallel_over(a1, a2, scale) || d.cross(a1).length() > tol.dist {
         return None;
     }
+    let eps = tol.dist;
     let u = d / h;
     if (r1 - r2).abs() <= eps {
         return Some(Surface::Cylinder(Cylinder {
@@ -297,7 +307,9 @@ pub(crate) fn rebuild(model: &mut Model, bands: &[Band], m: &DAffine3) -> bool {
             _ => None,
         });
         let turned = match (b.fixed_arc, moved_arc) {
-            (Some(x), Some(y)) => turned(x, y).map(|s| facing(s, p, n)).filter(|s| on(s)),
+            (Some(x), Some(y)) => turned(x, y, &tol)
+                .map(|s| facing(s, p, n))
+                .filter(|s| on(s)),
             _ => None,
         };
         let surface = turned.or_else(|| {

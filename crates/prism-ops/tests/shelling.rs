@@ -1574,10 +1574,7 @@ fn hairpin() -> (Model, FaceId, FaceId) {
             patch
         }
     };
-    // Fine precision (0.001 mm), the precision the fold cases were written
-    // at: at Standard, thickening 0.02 into the fold is not recognised as
-    // one and is bridged instead (tolerance stage 2, NOTES 2026-11-26).
-    let mut m = Model::with_tol(prism_math::Tol::new(prism_math::tol::FINE));
+    let mut m = Model::new();
     let (p0, p1) = (
         m.add_vertex(p(0.0, 0.0, 0.0)),
         m.add_vertex(p(0.0, 1.0, 0.0)),
@@ -1685,13 +1682,22 @@ fn a_sheet_folded_right_back_is_bridged_round_the_fold() {
     }
     // Into the fold, the offsets cross well away from it, where there is no
     // straight line up from the fold inside the solid to part the two
-    // faces' end walls at: still refused, by name.
-    for d in [0.1, 0.02] {
-        assert_eq!(
-            shelling::refusal(&m, &body, &none, d),
-            Some(shelling::SHARP),
-            "by {d}"
-        );
+    // faces' end walls at: still refused, by name, at every precision (at
+    // 0.01 mm the 0.02 fold was once missed and bridged).
+    for t in [
+        prism_math::tol::FINE,
+        prism_math::tol::STANDARD,
+        prism_math::tol::COARSE,
+    ] {
+        let mut m = m.clone();
+        m.set_tol(prism_math::Tol::new(t));
+        for d in [0.1, 0.02] {
+            assert_eq!(
+                shelling::refusal(&m, &body, &none, d),
+                Some(shelling::SHARP),
+                "by {d} at {t}"
+            );
+        }
     }
 }
 

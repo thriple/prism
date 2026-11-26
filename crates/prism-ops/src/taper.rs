@@ -21,14 +21,8 @@ pub const SPAN: &str = "The two ends of a taper must be different places along t
 pub const SCALE: &str = "A taper's far end must be a positive size, not zero or less";
 pub const CANNOT: &str = "This cannot be tapered exactly: a slanted face, a diagonal edge, or a curved face not on the axis";
 
-/// Two directions at right angles, or close enough.
-fn parallel(a: DVec3, b: DVec3) -> bool {
-    a.cross(b).length() < 1e-9
-}
-
-fn perpendicular(a: DVec3, b: DVec3) -> bool {
-    a.dot(b).abs() < 1e-9
-}
+// Directions are compared by the document's tolerance over the size of
+// what they belong to (an arc's radius, a face's extent): DECISIONS #42.
 
 /// The scale at height `h` along the axis: 1.0 at `low`, `top_scale` at
 /// `high`, linear in between (and beyond).
@@ -78,7 +72,7 @@ pub fn taper(
                 axis: a,
                 radius,
             } => {
-                if !parallel(a, axis) {
+                if !tol.parallel_over(a, axis, radius) {
                     return Err(CANNOT);
                 }
                 let h = (centre - origin).dot(axis);
@@ -111,11 +105,12 @@ pub fn taper(
     for (id, f) in model.faces() {
         match &f.surface {
             Surface::Plane(p) => {
-                let plane = if parallel(p.normal, axis) {
+                let size = model.face_extent(f);
+                let plane = if tol.parallel_over(p.normal, axis, size) {
                     // A cap: every point on it is at the same height, so
                     // the whole face is one uniform scale.
                     Plane::new(moved(p.origin), p.normal)
-                } else if perpendicular(p.normal, axis) {
+                } else if tol.perpendicular_over(p.normal, axis, size) {
                     // A wall: only exact if every edge is straight (an
                     // arc here would mean a circle crossing the axis,
                     // which the edge pass above already ruled out, but
@@ -139,7 +134,9 @@ pub fn taper(
                 new_surface.insert(id, Surface::Plane(plane));
             }
             Surface::Cylinder(c) => {
-                if !parallel(c.axis, axis) || (c.axis_point(origin) - origin).length() > tol.dist {
+                if !tol.parallel_over(c.axis, axis, model.face_extent(f))
+                    || (c.axis_point(origin) - origin).length() > tol.dist
+                {
                     return Err(CANNOT);
                 }
                 let h0 = (c.origin - origin).dot(axis);

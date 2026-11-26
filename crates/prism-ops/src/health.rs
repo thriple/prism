@@ -708,8 +708,9 @@ pub fn sliver_merge(model: &Model) -> (BTreeSet<FaceId>, BTreeSet<EdgeId>) {
             .find_map(|s| {
                 let fs = edge_faces.get(&s.edge)?;
                 let g = *fs.iter().find(|g| **g != f)?;
-                let q = model.face(g)?.plane()?;
-                (fs.len() == 2 && plane.same_surface(q, &tol))
+                let gf = model.face(g)?;
+                let q = gf.plane()?;
+                (fs.len() == 2 && plane.same_surface(q, &tol, model.face_extent(gf)))
                     .then_some((s.edge, q.normal.dot(plane.normal) < 0.0))
             });
         if let Some((e, opposite)) = beside {

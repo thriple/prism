@@ -69,9 +69,12 @@ impl Plane {
         }
     }
 
-    /// Whether two planes are the same surface (either facing).
-    pub fn same_surface(&self, other: &Plane, tol: &Tol) -> bool {
-        tol.parallel(self.normal, other.normal) && self.contains(other.origin, tol)
+    /// Whether two planes are the same surface (either facing) over a
+    /// region `size` across (the faces' extent): parallel within the
+    /// tolerance over that size ([`Tol::parallel_over`]), and `other`'s
+    /// origin on this plane.
+    pub fn same_surface(&self, other: &Plane, tol: &Tol, size: f64) -> bool {
+        tol.parallel_over(self.normal, other.normal, size) && self.contains(other.origin, tol)
     }
 
     /// A deterministic key for the unoriented plane: the normal flipped so its
@@ -167,6 +170,21 @@ mod tests {
         let a = Plane::new(DVec3::new(0.0, 0.0, 2.0), DVec3::Z);
         assert_eq!(a.canonical(), a.flipped().canonical());
         let tol = Tol::for_extent(4.0);
-        assert!(a.same_surface(&a.flipped(), &tol));
+        assert!(a.same_surface(&a.flipped(), &tol, 1.0));
+    }
+
+    #[test]
+    fn same_surface_holds_the_tolerance_over_the_faces_size() {
+        // Tilted 4e-5 rad: the old fixed angle (about 4.5e-5) called these
+        // one plane however large. Over 10 m the far edge is 0.4 mm off,
+        // forty times the 0.01 mm tolerance; over 10 cm it is 0.004 mm.
+        let tol = Tol::default();
+        let a = Plane::new(DVec3::ZERO, DVec3::Z);
+        let b = Plane::new(DVec3::ZERO, DVec3::new(4e-5, 0.0, 1.0).normalize());
+        assert!(!a.same_surface(&b, &tol, 10.0));
+        assert!(a.same_surface(&b, &tol, 0.1));
+        // And an origin off the plane is never the same surface.
+        let c = Plane::new(DVec3::new(0.0, 0.0, 2e-5), DVec3::Z);
+        assert!(!a.same_surface(&c, &tol, 0.1));
     }
 }

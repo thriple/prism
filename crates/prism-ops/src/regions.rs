@@ -118,7 +118,8 @@ pub(crate) fn rebuild_plane(
     let old: Vec<FaceId> = model
         .faces()
         .filter(|(_, f)| {
-            f.plane().is_some_and(|p| p.same_surface(plane, tol))
+            f.plane()
+                .is_some_and(|p| plane.same_surface(p, tol, model.face_extent(f)))
                 && f.loops().flatten().all(|v| on.contains_key(v))
         })
         .map(|(id, _)| id)
@@ -397,9 +398,11 @@ fn wall_facing(model: &Model, r: &Region, frame: &Frame) -> Option<bool> {
             .collect();
         let [g] = users.as_slice() else { continue };
         // Its plane: a face in the same plane is not a wall.
-        if g.plane()
-            .is_some_and(|p| p.normal.cross(frame.normal).length() < 1e-9)
-        {
+        if g.plane().is_some_and(|p| {
+            model
+                .tol()
+                .parallel_over(p.normal, frame.normal, model.face_extent(g))
+        }) {
             continue;
         }
         for s in g.sides().filter(|s| s.edge == side.edge) {

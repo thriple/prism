@@ -116,7 +116,7 @@ pub(crate) fn same_curve(model: &Model, a: EdgeId, b: EdgeId) -> bool {
         ) => {
             tol.same_point(*c1, *c2)
                 && (r1 - r2).abs() <= tol.dist
-                && n1.cross(*n2).length() <= 1e-9
+                && tol.parallel_over(*n1, *n2, r1.max(*r2))
         }
         _ => false,
     }

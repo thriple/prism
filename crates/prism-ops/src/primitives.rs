@@ -15,9 +15,10 @@ pub fn cylinder(r: f64, h: f64) -> Model {
     let mut m = Model::new();
     crate::add_circle(&mut m, DVec3::ZERO, DVec3::Z, r);
     crate::add_circle(&mut m, DVec3::Z * h, DVec3::Z, r);
+    let tol = m.tol();
     let at = |m: &Model, z: f64| -> Vec<VertexId> {
         m.vertices()
-            .filter(|(_, p)| (p.z - z).abs() < 1e-9)
+            .filter(|(_, p)| tol.is_zero(p.z - z))
             .map(|(id, _)| id)
             .collect()
     };
@@ -25,7 +26,7 @@ pub fn cylinder(r: f64, h: f64) -> Model {
     let above = |m: &Model, b: VertexId| -> VertexId {
         let p = m.vertex(b);
         *top.iter()
-            .find(|t| m.vertex(**t).truncate().distance(p.truncate()) < 1e-9)
+            .find(|t| m.vertex(**t).truncate().distance(p.truncate()) < tol.dist)
             .expect("a seam")
     };
     let (b0, b1) = (bottom[0], bottom[1]);

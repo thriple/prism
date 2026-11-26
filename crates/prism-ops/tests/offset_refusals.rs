@@ -10,12 +10,7 @@ use prism_topo::Model;
 /// A face under an arch: a spline from (0,0) over (1,0.6) to (2,0) and the
 /// line back along the ground.
 fn arch() -> (Model, prism_topo::FaceId, Nurbs) {
-    // The tolerance these cases were written at (a millionth of the arch's
-    // 2 m). Offsetting past where the sides meet is fragile: it is valid at
-    // 0.002 mm but leaves holes touching at a point at 0.001 mm and at
-    // 0.01 mm (two crossings weld into one). A bug in how Offset tidies
-    // crossing holes, to fix in tolerance stage 2 (NOTES, 2026-11-26).
-    let mut m = Model::with_tol(prism_math::Tol::for_extent(2.0));
+    let mut m = Model::new();
     let curve = Nurbs::through(
         &[
             DVec3::new(0.0, 0.0, 0.0),
@@ -69,6 +64,28 @@ fn a_spline_offset_goes_the_whole_way_and_stays_valid() {
     let _ = offset(&mut m, face, 0.35);
     let p = prism_ops::check::problems(&m);
     assert!(p.is_empty(), "{p:?}");
+}
+
+/// Offset as far as it goes, the arch's top and its ground line meet:
+/// the fitted offset spline wobbles across the offset ground line within
+/// its fit, and stopping where they graze left a chain of tiny holes
+/// touching at points (at 0.001 and 0.01 mm, not at 0.002 mm). Offset now
+/// stops where the two sides are still apart, at every precision.
+#[test]
+fn an_offset_stopped_short_of_vanishing_is_clean_at_every_precision() {
+    use prism_math::tol::{COARSE, FINE, STANDARD};
+    for t in [FINE, 2e-6, STANDARD, COARSE] {
+        let (mut m, face, _) = arch();
+        m.set_tol(prism_math::Tol::new(t));
+        let used = offset(&mut m, face, 0.35).expect("offsets as far as it can");
+        assert!(used > 0.29 && used < 0.3, "{t}: {used}");
+        let p = prism_ops::check::problems(&m);
+        assert!(p.is_empty(), "{t}: {p:?}");
+        // The old face with one hole, and the sliver of a lens in it.
+        assert_eq!(m.face_count(), 2, "{t}");
+        let holes: usize = m.faces().map(|(_, f)| f.holes.len()).sum();
+        assert_eq!(holes, 1, "{t}");
+    }
 }
 
 #[test]

@@ -84,11 +84,41 @@ fn worth_checking(a: Tag, b: Tag) -> bool {
 /// planes within the tolerance of a cell border are still found.
 type Cell = [i64; 4];
 
-fn cell(p: &Plane, tol: &Tol) -> Cell {
-    let (n, d) = p.canonical();
-    let q = |x: f64, s: f64| (x / s).floor() as i64;
-    let ds = (tol.dist * 64.0).max(f64::MIN_POSITIVE);
-    [q(n.x, 1e-4), q(n.y, 1e-4), q(n.z, 1e-4), q(d, ds)]
+/// The grid's cell sizes. Normals step by the widest angle two planes may
+/// differ by and still be the same ([`prism_math::tol::PARALLEL_MAX`]);
+/// offsets by enough to hold that angle times the model's reach from the
+/// origin, so two planes the same-surface test would join are always in
+/// neighbouring cells.
+#[derive(Clone, Copy)]
+struct Grid {
+    normal: f64,
+    offset: f64,
+}
+
+impl Grid {
+    fn new(model: &Model, tol: &Tol) -> Self {
+        let reach = model
+            .bbox()
+            .map_or(0.0, |(lo, hi)| lo.abs().max(hi.abs()).max_element());
+        let normal = prism_math::tol::PARALLEL_MAX;
+        Self {
+            normal,
+            offset: (tol.dist * 64.0)
+                .max(normal * reach * 2.0)
+                .max(f64::MIN_POSITIVE),
+        }
+    }
+
+    fn cell(&self, p: &Plane) -> Cell {
+        let (n, d) = p.canonical();
+        let q = |x: f64, s: f64| (x / s).floor() as i64;
+        [
+            q(n.x, self.normal),
+            q(n.y, self.normal),
+            q(n.z, self.normal),
+            q(d, self.offset),
+        ]
+    }
 }
 
 fn around(c: Cell) -> impl Iterator<Item = Cell> {
@@ -130,23 +160,27 @@ fn run(
     // own it yet (a pasted or appended sketch) landed on its plane without
     // touching any of its vertices.
     let touched_points: Vec<DVec3> = tags.keys().map(|v| model.vertex(*v)).collect();
+    let grid = Grid::new(model, &tol);
+    // Planes with no face of their own are judged over the whole model.
+    let whole = model.bbox().map_or(0.0, |(lo, hi)| (hi - lo).length());
     let mut cells: BTreeMap<Cell, Vec<FaceId>> = BTreeMap::new();
     let mut planes: Vec<Plane> = Vec::new();
     let mut plane_cells: BTreeMap<Cell, Vec<usize>> = BTreeMap::new();
     for (id, f) in model.faces() {
         // The coplanar rule is for flat faces.
         let Some(&p) = f.plane() else { continue };
-        let c = cell(&p, &tol);
+        let c = grid.cell(&p);
         cells.entry(c).or_default().push(id);
         let landed_on =
             face_tag(f) != Tag::Still || touched_points.iter().any(|q| p.contains(*q, &tol));
         if !landed_on {
             continue;
         }
+        let size = model.face_extent(f);
         let known = around(c).any(|k| {
             plane_cells
                 .get(&k)
-                .is_some_and(|ix| ix.iter().any(|i| planes[*i].same_surface(&p, &tol)))
+                .is_some_and(|ix| ix.iter().any(|i| planes[*i].same_surface(&p, &tol, size)))
         });
         if !known {
             plane_cells.entry(c).or_default().push(planes.len());
@@ -155,11 +189,11 @@ fn run(
     }
 
     for p in extra {
-        let c = cell(p, &tol);
+        let c = grid.cell(p);
         let known = around(c).any(|k| {
             plane_cells
                 .get(&k)
-                .is_some_and(|ix| ix.iter().any(|i| planes[*i].same_surface(p, &tol)))
+                .is_some_and(|ix| ix.iter().any(|i| planes[*i].same_surface(p, &tol, whole)))
         });
         if !known {
             plane_cells.entry(c).or_default().push(planes.len());
@@ -182,13 +216,14 @@ fn run(
     // Find the planes with something to do, before changing anything.
     let mut work: Vec<(Plane, Vec<DVec3>)> = Vec::new();
     for plane in &planes {
-        let faces: Vec<FaceId> = around(cell(plane, &tol))
+        let faces: Vec<FaceId> = around(grid.cell(plane))
             .filter_map(|k| cells.get(&k))
             .flatten()
             .copied()
             .filter(|f| {
                 model.face(*f).is_some_and(|face| {
-                    face.plane().is_some_and(|p| p.same_surface(plane, &tol))
+                    face.plane()
+                        .is_some_and(|p| plane.same_surface(p, &tol, model.face_extent(face)))
                         && face
                             .loops()
                             .flatten()

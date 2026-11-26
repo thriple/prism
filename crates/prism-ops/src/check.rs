@@ -109,7 +109,7 @@ pub fn no_overlaps(model: &Model, tol: &Tol) -> Vec<String> {
             if g.id == f.id
                 || p3.cmplt(g.lo).any()
                 || p3.cmpgt(g.hi).any()
-                || !g.plane.same_surface(&f.plane, tol)
+                || !g.plane.same_surface(&f.plane, tol, (f.hi - f.lo).length())
             {
                 continue;
             }

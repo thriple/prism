@@ -112,7 +112,7 @@ pub(crate) fn sections(model: &Model, edges: &BTreeSet<EdgeId>) -> Vec<Section> 
                     };
                     if !tol.same_point(*c, *centre)
                         || (r - radius).abs() > tol.dist
-                        || n.cross(*axis).length() > 1e-9
+                        || !tol.parallel_over(*n, *axis, *radius)
                     {
                         continue;
                     }

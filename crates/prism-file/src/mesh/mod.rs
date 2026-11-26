@@ -20,8 +20,10 @@ mod scene;
 mod stl;
 mod threemf;
 
-pub use build::{build, build_painted};
-pub use scene::{assembly_of, export_structured, has_structure, read_structured, structured};
+pub use build::{build, build_painted, build_painted_with, weld_tolerance};
+pub use scene::{
+    assembly_of, assembly_of_with, export_structured, has_structure, read_structured, structured,
+};
 
 /// Triangles or polygons, as indices into `positions`.
 #[derive(Clone, Debug, Default, PartialEq)]

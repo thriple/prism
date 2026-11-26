@@ -13,7 +13,7 @@ use prism_topo::{MaterialId, Model};
 use serde_json::json;
 
 use super::gltf::{Node, Scene};
-use super::{ExportOptions, Mesh, MeshMaterial, build_painted, to_painted_mesh};
+use super::{ExportOptions, Mesh, MeshMaterial, build_painted_with, to_painted_mesh};
 use prism_doc::Definition;
 
 /// The document as a GLB with its groups and components kept. `name`
@@ -272,6 +272,18 @@ fn placement(m: &[f64; 16], metres_per_unit: f64, y_up: bool) -> DAffine3 {
 /// Prism's own loose geometry comes back loose. Materials come in as the
 /// file has them.
 pub fn assembly_of(sc: &Scene, metres_per_unit: f64, y_up: bool, merge: bool) -> Assembly {
+    assembly_of_with(sc, metres_per_unit, y_up, merge, prism_math::Tol::default())
+}
+
+/// [`assembly_of`] for a document whose tolerance is `doc`: each mesh
+/// welds as [`super::build_painted_with`] says, and the assembly carries it.
+pub fn assembly_of_with(
+    sc: &Scene,
+    metres_per_unit: f64,
+    y_up: bool,
+    merge: bool,
+    doc: prism_math::Tol,
+) -> Assembly {
     // Each mesh as faces in its own coordinates, and each material's
     // texture size from the first mesh that uses it.
     let mut models = Vec::with_capacity(sc.meshes.len());
@@ -281,7 +293,7 @@ pub fn assembly_of(sc: &Scene, metres_per_unit: f64, y_up: bool, merge: bool) ->
             materials: sc.materials.clone(),
             ..m.clone()
         };
-        let (model, s) = build_painted(&mesh, metres_per_unit, y_up, merge);
+        let (model, s) = build_painted_with(&mesh, metres_per_unit, y_up, merge, doc);
         for (k, size) in s.into_iter().enumerate() {
             if sizes[k].is_none() && m.polygon_materials.contains(&Some(k as u32)) {
                 sizes[k] = Some(size);
@@ -331,6 +343,7 @@ pub fn assembly_of(sc: &Scene, metres_per_unit: f64, y_up: bool, merge: bool) ->
     let next_def = b.defs.keys().map(|k| k.0 + 1).max().unwrap_or(1);
     let mut asm = Assembly::from_parts(b.defs, next_def, b.next_instance)
         .unwrap_or_else(|_| Assembly::with_model(Model::new()));
+    asm.set_tol(doc);
     for (id, name) in b.names {
         asm.set_name(id, &name);
     }
