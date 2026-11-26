@@ -120,9 +120,11 @@ fn patch_closes_the_lofts_end_in_the_recorded_session() {
 /// "Shell/Thicken research, and a correction: refusal is the wrong answer
 /// to a crossing"): the corner's gap is closed by a flat face instead, so
 /// the first click (0.25 m by the pointer) now makes the shell. The
-/// owner's later clicks were retries after that refusal, so they now land
-/// on the shelled wall itself, which the window refuses as "too thick"
-/// (shelling a shell again; not the corner).
+/// owner's next click (the window's 1 m outside) lands on the shelled wall
+/// itself, shelling a shell: it used to be refused as "too thick"; since
+/// 2026-11-26 (DECISIONS #41) it is built anyway, face by face, with a
+/// warning. Only the first two clicks are replayed: each later one shells
+/// the overlapping pieces again, which is slow and only more of the same.
 #[test]
 fn shell_is_made_at_the_first_click_of_the_recorded_session() {
     let r: prism_tools::Recording =
@@ -135,22 +137,17 @@ fn shell_is_made_at_the_first_click_of_the_recorded_session() {
     // Just before the first press, the ghost of the shell builds.
     let before = upto(367);
     assert_eq!(before.shell_panel().expect("the Shell tool").refused, None);
-    // Each press of the owner's clicks on the body: 0.25 m by the pointer,
-    // then the window's 1 m outside, 1 m inside and 0.025 m inside.
-    for press in [367, 590, 669, 1050, 1136] {
-        let s = upto(press + 1);
-        let panel = s.shell_panel().expect("the Shell tool");
-        // The first press made the shell, and nothing after it did.
-        assert_eq!(s.version(), before.version() + 1, "{press}");
-        assert_eq!(
-            prism_ops::check::problems(s.work_model()),
-            Vec::<String>::new(),
-            "{press}"
-        );
-        assert_eq!(
-            panel.refused,
-            Some(prism_ops::shelling::TOO_THICK),
-            "{press}"
-        );
-    }
+    // The first press makes the shell, cleanly.
+    let first = upto(368);
+    assert_eq!(first.version(), before.version() + 1);
+    assert_eq!(
+        prism_ops::check::problems(first.work_model()),
+        Vec::<String>::new()
+    );
+    // The next shells the shell: built anyway, with a warning to check it.
+    let second = upto(591);
+    assert_eq!(second.version(), before.version() + 2, "built, not refused");
+    let panel = second.shell_panel().expect("the Shell tool");
+    assert_eq!(panel.refused, None);
+    assert!(panel.warning.is_some(), "and says what to check");
 }
