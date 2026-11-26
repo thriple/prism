@@ -151,6 +151,19 @@ impl Session {
                 {
                     return;
                 }
+                // Another face of the same body makes the same shell: the
+                // ghost stays (building it again can be slow).
+                if let Some(op) = &self.shell_op
+                    && op.fixed
+                    && op.d == d
+                    && op.shown.is_some()
+                    && prism_ops::shelling::body(self.work_model(), &[op.face].into()).contains(&f)
+                {
+                    if let Some(op) = &mut self.shell_op {
+                        op.face = f;
+                    }
+                    return;
+                }
                 self.shell_op = Some(ShellOp {
                     fixed: true,
                     face: f,
@@ -340,13 +353,13 @@ impl Session {
         let mut styles = kept
             .clone()
             .unwrap_or_else(|| prism_ops::shelling::default_rims(m, &faces, &open, d));
-        let mut built = prism_ops::shelling::slab_flagged(m, &faces, &open, d, &styles);
+        let mut built = prism_ops::shelling::slab_preview(m, &faces, &open, d, &styles);
         let flagged_any = |b: &Result<prism_ops::shelling::Flagged, _>| {
             b.as_ref().is_ok_and(|x| !x.flags.is_empty())
         };
         if (built.is_err() || flagged_any(&built)) && kept.is_some() {
             styles = prism_ops::shelling::default_rims(m, &faces, &open, d);
-            built = prism_ops::shelling::slab_flagged(m, &faces, &open, d, &styles);
+            built = prism_ops::shelling::slab_preview(m, &faces, &open, d, &styles);
         }
         let (ghost, refused) = match &built {
             Ok(b) => (

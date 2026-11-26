@@ -483,7 +483,7 @@ pub fn default_rims_from(
     // Each style is tried as it is: one that would be cut square instead
     // is no pick at all.
     let builds =
-        |styles: &RimStyles| slab_marked(model, faces, open, d, styles, false, false).is_ok();
+        |styles: &RimStyles| slab_marked(model, faces, open, d, styles, false, Fallback::Off).is_ok();
     if !builds(&styles) {
         return styles;
     }
@@ -582,7 +582,7 @@ pub fn refusal_with(
     thickness: f64,
     styles: &RimStyles,
 ) -> Option<&'static str> {
-    slab_marked(model, faces, open, thickness, styles, true, false).err()
+    slab_marked(model, faces, open, thickness, styles, true, Fallback::Off).err()
 }
 
 /// Shell or thicken the bodies of `faces` by `thickness`, leaving `open`
@@ -672,7 +672,20 @@ pub fn slab_flagged(
     d: f64,
     styles: &RimStyles,
 ) -> Result<Flagged, &'static str> {
-    slab_marked(model, faces, open, d, styles, true, true)
+    slab_marked(model, faces, open, d, styles, true, Fallback::Full)
+}
+
+/// [`slab_flagged`] for a preview: where it is built face by face, the
+/// pieces are left unjoined (joining them is the slow part), which is
+/// enough to show it and what to check. Make it with [`shell_flagged`].
+pub fn slab_preview(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    d: f64,
+    styles: &RimStyles,
+) -> Result<Flagged, &'static str> {
+    slab_marked(model, faces, open, d, styles, true, Fallback::Preview)
 }
 
 /// Where a slab is built some other way than asked, rather than
@@ -820,6 +833,18 @@ fn flush_fits(
 /// built as it is or refused. A plane that leans too far to reach
 /// (`FLUSH_REACH`) is still refused: the tool drags the plane, and says so
 /// while it is dragged.
+/// Whether [`slab_marked`] builds what it cannot build as asked anyway.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fallback {
+    /// No: refused, with why.
+    Off,
+    /// Yes, its pieces only (not joined): enough to see it, quickly (the
+    /// tool's ghost, redrawn as the pointer moves).
+    Preview,
+    /// Yes, the pieces joined into one solid.
+    Full,
+}
+
 /// With `fallback`, what cannot be built as asked is built anyway (owner,
 /// 2026-11-26: "just give everything a warning"): a rim style that cannot
 /// be reached is cut square, and a shape that still cannot be built as one
@@ -832,12 +857,14 @@ fn slab_marked(
     d: f64,
     styles: &RimStyles,
     squaring: bool,
-    fallback: bool,
+    fallback: Fallback,
 ) -> Result<Flagged, &'static str> {
-    match as_asked(model, faces, open, d, styles, squaring, fallback) {
-        Err(why) if fallback && ![NOTHING, ZERO, ALL_OPEN].contains(&why) => {
+    let anyway = fallback != Fallback::Off;
+    match as_asked(model, faces, open, d, styles, squaring, anyway) {
+        Err(why) if anyway && ![NOTHING, ZERO, ALL_OPEN].contains(&why) => {
             let work = turned(model, faces, open, &mut Marks::default());
-            apart(work.as_ref(), faces, open, d, why).ok_or(why)
+            let join = fallback == Fallback::Full;
+            apart(work.as_ref(), faces, open, d, why, join).ok_or(why)
         }
         r => r,
     }
@@ -943,13 +970,15 @@ fn apart_note(why: &str) -> &'static str {
 /// corner, where the faces' slabs do not reach each other) stay. A face
 /// that cannot be thickened even on its own, or whose piece cannot be
 /// joined, is left as it was. Every face made is flagged with why; None if
-/// no face could be thickened.
+/// no face could be thickened. Without `join` (a preview) the pieces are
+/// put side by side instead of joined.
 fn apart(
     model: &Model,
     faces: &BTreeSet<FaceId>,
     open: &BTreeSet<FaceId>,
     d: f64,
     why: &'static str,
+    join: bool,
 ) -> Option<Flagged> {
     let tol = model.tol();
     if !d.is_finite() || tol.is_zero(d) {
@@ -980,6 +1009,11 @@ fn apart(
         };
         whole = Some(match whole {
             None => slab,
+            // Unjoined, for a preview: the pieces side by side.
+            Some(mut w) if !join => {
+                crate::boolean::join_mapped(&mut w, &slab, &tol);
+                w
+            }
             Some(w) => match crate::boolean::boolean(&w, &slab, crate::boolean::Op::Union) {
                 Ok(j) => j,
                 Err(_) => {
