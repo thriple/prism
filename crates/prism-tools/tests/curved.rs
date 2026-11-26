@@ -163,3 +163,46 @@ fn shell_is_made_at_the_first_click_of_the_recorded_session() {
             .is_some()
     );
 }
+
+/// A drag of a live shell's thickness keeps the rim styles picked where it
+/// started (picking them builds the shell many times: on the owner's
+/// session-17 shell about four fifths of each frame), and letting go picks
+/// afresh. Across the sizes a drag of that shell reaches, the kept pick is
+/// the fresh one, so each frame shows exactly what letting go makes.
+#[test]
+fn a_thickness_drag_keeps_the_rim_pick_and_shows_what_is_made() {
+    let r: prism_tools::Recording =
+        serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+    let mut r = r.clone();
+    r.events.truncate(368);
+    let s = prism_tools::Session::replay(&r);
+    let a = s.document().assembly();
+    let (_, def) = a
+        .defs()
+        .find(|(_, d)| d.model.faces().count() > 20 && d.stack.is_some())
+        .expect("the shelled body");
+    let stack = def.stack.clone().expect("live");
+    let before = stack.before(0);
+    let kept = stack.shell_rims(&before, 0).expect("a shell");
+    assert!(
+        kept.values()
+            .any(|st| matches!(st, prism_ops::shelling::RimStyle::Flush(_))),
+        "the program ends some rims flush"
+    );
+    for t in [0.2, 0.3, 0.4] {
+        let mut st = stack.clone();
+        let Some(prism_doc::Feature::Shell { thickness, .. }) = st.features.get_mut(0) else {
+            unreachable!()
+        };
+        *thickness = t;
+        let mut drag = st.clone();
+        let shown = drag.evaluate_from_kept(&before, 0, &kept);
+        let made = st.evaluate();
+        assert!(!drag.features[0].is_broken() && !st.features[0].is_broken());
+        assert_eq!(st.shell_rims(&before, 0).as_ref(), Some(&kept), "at {t}");
+        assert_eq!(shown.faces().count(), made.faces().count());
+        let points =
+            |m: &prism_topo::Model| -> Vec<DVec3> { m.vertices().map(|(_, p)| p).collect() };
+        assert_eq!(points(&shown), points(&made), "at {t}");
+    }
+}

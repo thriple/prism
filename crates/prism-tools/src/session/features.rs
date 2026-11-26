@@ -265,18 +265,33 @@ impl Session {
         index: usize,
         stack: &mut prism_doc::Stack,
     ) -> prism_topo::Model {
+        let before = self.before(def, index, stack);
+        stack.evaluate_from(&before, index)
+    }
+
+    /// The model the features of `def` before `index` make, kept while
+    /// the document does not change.
+    pub(super) fn before(
+        &self,
+        def: DefId,
+        index: usize,
+        stack: &prism_doc::Stack,
+    ) -> std::cell::Ref<'_, prism_topo::Model> {
         // The document's own count of changes (the session's version also
         // moves with every preview, which a drag makes each frame).
         let version = self.doc.revision();
-        let mut cache = self.before_cache.borrow_mut();
-        let fresh = cache
-            .as_ref()
-            .is_some_and(|(v, d, i, _)| *v == version && *d == def && *i == index);
-        if !fresh {
-            *cache = Some((version, def, index, stack.before(index)));
+        {
+            let mut cache = self.before_cache.borrow_mut();
+            let fresh = cache
+                .as_ref()
+                .is_some_and(|(v, d, i, _)| *v == version && *d == def && *i == index);
+            if !fresh {
+                *cache = Some((version, def, index, stack.before(index)));
+            }
         }
-        let before = &cache.as_ref().expect("just made").3;
-        stack.evaluate_from(before, index)
+        std::cell::Ref::map(self.before_cache.borrow(), |c| {
+            &c.as_ref().expect("just made").3
+        })
     }
 
     /// The button let go on the handle: the size it was dragged to is

@@ -39,6 +39,10 @@ pub(super) struct ShellHandle {
     normal: DVec3,
     start: f64,
     size: f64,
+    /// The rim styles picked for the drag's side (outside or in), kept
+    /// while it lasts: picking them builds the shell many times, so each
+    /// frame would take ten times as long. The size let go of picks again.
+    rims: Option<(bool, prism_ops::shelling::RimStyles)>,
 }
 
 /// A change from the Shell / Thicken window (recorded as `Input::Shell`).
@@ -521,6 +525,7 @@ impl Session {
                 normal,
                 start: t,
                 size: t,
+                rims: None,
             });
         }
         near
@@ -536,12 +541,13 @@ impl Session {
         if let Some(t) = along_line(o, d, h.centre, h.normal)
             && t.abs() > self.scene.tol.dist
             && t != h.size
-            && let Some(m) = self.shell_at_thickness(h.def, h.index, t)
+            && let Some((m, rims)) = self.shell_at_thickness(h.def, h.index, t, h.rims.as_ref())
         {
             // A very thin wall is made, with a warning.
             self.notice = prism_ops::shelling::thin_warning(t);
             if let Some(h) = &mut self.shell_handle {
                 h.size = t;
+                h.rims = Some(rims);
             }
             self.set_preview(Some(m));
         }
@@ -550,16 +556,35 @@ impl Session {
         true
     }
 
-    /// The body with shell `index` at thickness `t`, or None if the kernel
-    /// refuses it.
-    fn shell_at_thickness(&self, def: DefId, index: usize, t: f64) -> Option<prism_topo::Model> {
+    /// The body with shell `index` at thickness `t`, and the rim styles it
+    /// ends with (for `t`'s side), or None if the kernel refuses it.
+    /// `kept`: the styles picked earlier in the drag, used again while `t`
+    /// is on the same side and they still build (exact on release, which
+    /// picks afresh).
+    fn shell_at_thickness(
+        &self,
+        def: DefId,
+        index: usize,
+        t: f64,
+        kept: Option<&(bool, prism_ops::shelling::RimStyles)>,
+    ) -> Option<(prism_topo::Model, (bool, prism_ops::shelling::RimStyles))> {
         let mut stack = self.doc.assembly().def(def)?.stack.clone()?;
         match stack.features.get_mut(index)? {
             Feature::Shell { thickness, .. } => *thickness = t,
             _ => return None,
         }
-        let m = self.evaluate_from(def, index, &mut stack);
-        (!stack.features[index].is_broken()).then_some(m)
+        let before = self.before(def, index, &stack);
+        let side = t > 0.0;
+        if let Some((_, styles)) = kept.filter(|(s, _)| *s == side) {
+            let mut trial = stack.clone();
+            let m = trial.evaluate_from_kept(&before, index, styles);
+            if !trial.features[index].is_broken() {
+                return Some((m, (side, styles.clone())));
+            }
+        }
+        let styles = stack.shell_rims(&before, index)?;
+        let m = stack.evaluate_from_kept(&before, index, &styles);
+        (!stack.features[index].is_broken()).then_some((m, (side, styles)))
     }
 
     /// The button let go on the handle: the thickness it was dragged to is

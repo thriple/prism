@@ -186,6 +186,17 @@ impl Feature {
     /// are the ones the feature was made with; later features find their
     /// edges by place first, because the ids a feature makes can shift.
     fn run(&mut self, m: &mut Model, on_base: bool) {
+        self.run_kept(m, on_base, None);
+    }
+
+    /// [`Feature::run`]; a shell given `kept` ends its rims that way
+    /// instead of picking them again.
+    fn run_kept(
+        &mut self,
+        m: &mut Model,
+        on_base: bool,
+        kept: Option<&prism_ops::shelling::RimStyles>,
+    ) {
         match self {
             Feature::Round {
                 edges,
@@ -219,7 +230,10 @@ impl Feature {
                     *broken = true;
                     return;
                 };
-                let styles = rim_styles(m, rims, &found, &open, *thickness, on_base);
+                let styles = match kept {
+                    Some(k) => k.clone(),
+                    None => rim_styles(m, rims, &found, &open, *thickness, on_base),
+                };
                 let mut t = m.clone();
                 match prism_ops::shelling::shell_with(&mut t, &found, &open, *thickness, &styles) {
                     Ok(()) => {
@@ -497,6 +511,68 @@ impl Stack {
         let mut m = before.clone();
         for (i, f) in self.features.iter_mut().enumerate().skip(index) {
             f.run(&mut m, i == 0);
+        }
+        m
+    }
+
+    /// The rim styles the live shell at `index` ends its rims with, run
+    /// on `before` (the model the features before it make): those chosen
+    /// and the program's pick for the rest, in `before`'s ids. None if it
+    /// is not a shell or its faces are gone. The pick builds the shell
+    /// many times (175 ms of the owner's session-17 shell's 200).
+    pub fn shell_rims(
+        &self,
+        before: &Model,
+        index: usize,
+    ) -> Option<prism_ops::shelling::RimStyles> {
+        let Some(Feature::Shell {
+            thickness, rims, ..
+        }) = self.features.get(index)
+        else {
+            return None;
+        };
+        let (found, open) = self.shell_faces(before, index)?;
+        let mut rims = rims.clone();
+        Some(rim_styles(
+            before,
+            &mut rims,
+            &found,
+            &open,
+            *thickness,
+            index == 0,
+        ))
+    }
+
+    /// The faces the live shell at `index` shells and leaves open, found in
+    /// `before` (the model the features before it make).
+    pub fn shell_faces(
+        &self,
+        before: &Model,
+        index: usize,
+    ) -> Option<(BTreeSet<FaceId>, BTreeSet<FaceId>)> {
+        let Some(Feature::Shell { faces, open, .. }) = self.features.get(index) else {
+            return None;
+        };
+        let (mut faces, mut open) = (faces.clone(), open.clone());
+        let on_base = index == 0;
+        let found = resolve_faces(before, &mut faces, on_base).filter(|s| !s.is_empty())?;
+        let open = resolve_faces(before, &mut open, on_base)?;
+        Some((found, open))
+    }
+
+    /// [`Stack::evaluate_from`], with the shell at `index` ending its rims
+    /// as `kept` (from [`Stack::shell_rims`] on the same `before`) instead
+    /// of picking them again: a drag of its thickness keeps the pick from
+    /// where it started, and the size let go of picks afresh.
+    pub fn evaluate_from_kept(
+        &mut self,
+        before: &Model,
+        index: usize,
+        kept: &prism_ops::shelling::RimStyles,
+    ) -> Model {
+        let mut m = before.clone();
+        for (i, f) in self.features.iter_mut().enumerate().skip(index) {
+            f.run_kept(&mut m, i == 0, (i == index).then_some(kept));
         }
         m
     }

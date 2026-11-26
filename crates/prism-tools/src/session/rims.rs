@@ -320,18 +320,22 @@ impl Session {
             .def(def)
             .and_then(|d| d.stack.clone())
             .ok_or("Refused: this is no live shell.")?;
+        // The shell is built anyway (a rim it cannot reach is cut square,
+        // DECISIONS #41), but the handle offers only a style it builds as
+        // asked, and says why not: the tilt stays where it last worked.
+        // Asked first: it builds the shell once, where making it picks the
+        // other rims afresh, building it many times.
+        if let Some(why) = self.rim_refusal(def, index, edge, style) {
+            return Err(why);
+        }
         let mut next = stack;
         if !next.set_rim(index, edge, Some(style)) {
             return Err("Refused: that is not a rim of this shell.");
         }
         let m = self.evaluate_from(def, index, &mut next);
-        // The shell is built anyway (a rim it cannot reach is cut square,
-        // DECISIONS #41), but the handle offers only a style it builds as
-        // asked, and says why not: the tilt stays where it last worked.
-        let strict = self.rim_refusal(def, index, edge, style);
         match next.features.get(index) {
-            Some(f) if !f.is_broken() && strict.is_none() => Ok(m),
-            _ => Err(strict.unwrap_or("Refused: the shell cannot end that way.")),
+            Some(f) if !f.is_broken() => Ok(m),
+            _ => Err("Refused: the shell cannot end that way."),
         }
     }
 
