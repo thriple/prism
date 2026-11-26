@@ -63,6 +63,7 @@ impl Driver {
             selected: Vec::new(),
             result_assembly: None,
             start: None,
+            jobs: true,
         };
         let old = std::mem::replace(&mut self.s, Session::replay(&r));
         self.s.ease = false;
@@ -10945,4 +10946,85 @@ fn a_size_too_large_makes_the_largest_that_works() {
     assert!(r > 1.5 && r < 2.0, "{r}");
     let want = 8.0 - r * r * (1.0 - std::f64::consts::FRAC_PI_4) * 2.0;
     assert!((model_volume(d.s.model()) - want).abs() < 1e-3);
+}
+
+/// A shell built face by face from more than a few faces is made a face
+/// at a time, a step each frame, shown as it goes, with how far it is in
+/// the box; anything but moving the view waits, and Esc stops it, making
+/// nothing (owner, 2026-11-26: no limit on the pieces joined; ripple the
+/// changes, set the expectation, let Esc cancel). Every piece is joined.
+#[test]
+fn a_shell_of_many_faces_is_made_a_face_at_a_time() {
+    use prism_tools::session::{JOB_RUNNING, JOB_STOPPED, ShellSet};
+    let mut m = prism_topo::Model::new();
+    let n = 14;
+    let ring: Vec<DVec3> = (0..n)
+        .map(|k| {
+            let a = std::f64::consts::TAU * f64::from(k) / f64::from(n);
+            DVec3::new(3.0 + a.cos(), 2.0 + a.sin(), 0.0)
+        })
+        .collect();
+    prism_ops::add_polygon(&mut m, &ring);
+    let base = prism_ops::face_at(&m, DVec3::new(3.0, 2.0, 0.0)).expect("the base");
+    let up = m.face(base).unwrap().plane().unwrap().normal.z;
+    prism_ops::push_pull(&mut m, base, up, false);
+    let mut d = Driver::new(Document::with_model(m));
+    d.look(Camera {
+        eye: DVec3::new(3.0, -6.0, 6.0),
+        target: DVec3::new(3.0, 2.0, 0.5),
+    });
+    let faces = d.faces();
+    assert_eq!(faces, n as usize + 2);
+    d.tool(SHELL);
+    // Deeper than the body is wide: every wall turns inside out, so it is
+    // built face by face.
+    d.s.shell_input(ShellSet::Outside(false));
+    d.s.shell_input(ShellSet::Thickness(Some(1.5)));
+    let front = DVec3::new(3.0, 2.0 - (std::f64::consts::PI / 14.0).cos(), 0.5);
+    d.click(front);
+    let log = d.s.document().log().count();
+    assert_eq!(d.s.hint(), JOB_RUNNING, "it is being made");
+    let (label, value, _) = d.s.measurement();
+    assert_eq!(label, "Shelling");
+    assert!(value.starts_with("0 of 16"), "{value}");
+    assert!(d.s.animating(), "frames keep coming while it runs");
+    // A click while it runs waits.
+    d.click(DVec3::new(3.0, 2.0, 1.0));
+    assert_eq!(d.s.document().log().count(), log);
+    // Three frames: three faces, shown.
+    for _ in 0..3 {
+        d.send(Input::Time);
+    }
+    assert!(
+        d.s.measurement().1.starts_with("3 of 16"),
+        "{}",
+        d.s.measurement().1
+    );
+    assert!(
+        !std::ptr::eq(d.s.display_scene(), d.s.scene()),
+        "shown as it goes"
+    );
+    // Esc stops it: nothing made.
+    d.send(Input::Key { key: Key::Escape });
+    assert_eq!(d.s.hint(), JOB_STOPPED);
+    assert!(!d.s.animating());
+    assert_eq!(d.s.document().log().count(), log);
+    assert_eq!(d.faces(), faces);
+    // Again, to the end: one undo step, every piece joined.
+    d.click(front);
+    let mut frames = 0;
+    while d.s.document().log().count() == log && frames < 100 {
+        d.send(Input::Time);
+        frames += 1;
+    }
+    assert_eq!(frames, 16, "a face a frame");
+    assert_eq!(d.s.document().log().count(), log + 1, "made, in one step");
+    assert_eq!(
+        prism_ops::check::problems(d.s.model()),
+        Vec::<String>::new()
+    );
+    let h = prism_ops::health::check(d.s.model());
+    assert_eq!(h.leaky, 0, "{h:?}");
+    undo(&mut d);
+    assert_eq!(d.faces(), faces);
 }

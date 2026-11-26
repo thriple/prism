@@ -956,9 +956,10 @@ pub const UNJOINED: &str = "Some pieces of this face-by-face shell would not joi
 pub const THIN: &str =
     "Very thin: under 0.1 cm (1 mm). Built anyway: check it is the size you meant.";
 
-/// The most pieces a face-by-face build joins into one solid; more are
-/// kept side by side (flagged [`UNJOINED`]).
-const JOIN_MAX: usize = 12;
+/// Face-by-face builds of more kept faces than this are made a piece at a
+/// time ([`ShellJob`]), shown as they go, and can be stopped (owner,
+/// 2026-11-26: no limit on the pieces joined; a long job ripples).
+pub const JOB_FACES: usize = 12;
 
 /// The warning for building face by face because of `why`.
 fn apart_note(why: &str) -> &'static str {
@@ -972,14 +973,232 @@ fn apart_note(why: &str) -> &'static str {
     }
 }
 
+/// What a face-by-face build made, kept so the same build is not made
+/// twice (a job made a piece at a time, then the Shell command that makes
+/// it part of the model; a live shell run again with the same inputs).
+/// The result is exactly what building it again would give.
+type Built = (Model, BTreeSet<FaceId>, bool);
+
+/// The inputs of a face-by-face build: the model (faces turned to match),
+/// the faces, those left open, the thickness and whether it joins.
+type BuildKey = (Model, BTreeSet<FaceId>, BTreeSet<FaceId>, u64, bool);
+
+/// How many face-by-face builds are kept.
+const KEPT_BUILDS: usize = 4;
+
+thread_local! {
+    static BUILDS: std::cell::RefCell<Vec<(BuildKey, Built)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn kept_build(key: &BuildKey) -> Option<Built> {
+    BUILDS.with(|b| {
+        b.borrow()
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    })
+}
+
+fn keep_build(key: BuildKey, built: Built) {
+    BUILDS.with(|b| {
+        let mut b = b.borrow_mut();
+        b.retain(|(k, _)| *k != key);
+        b.push((key, built));
+        if b.len() > KEPT_BUILDS {
+            b.remove(0);
+        }
+    });
+}
+
+/// A face-by-face shell built a piece at a time: each kept face thickened
+/// on its own (rims square), then joined by a union into the pieces made
+/// so far. Overlaps merge; gaps (an outside corner, where the faces' slabs
+/// do not reach each other) stay. A face that cannot be thickened even on
+/// its own is left as it was; a piece that will not join any other is
+/// kept beside them (flagged).
+pub struct ShellJob {
+    model: Model,
+    faces: BTreeSet<FaceId>,
+    open: BTreeSet<FaceId>,
+    d: f64,
+    why: &'static str,
+    join: bool,
+    body: BTreeSet<FaceId>,
+    todo: Vec<FaceId>,
+    next: usize,
+    solids: Vec<Model>,
+    skipped: BTreeSet<FaceId>,
+}
+
+impl ShellJob {
+    fn new(
+        model: &Model,
+        faces: &BTreeSet<FaceId>,
+        open: &BTreeSet<FaceId>,
+        d: f64,
+        why: &'static str,
+        join: bool,
+    ) -> ShellJob {
+        let body = body(model, faces);
+        let todo = body.iter().filter(|f| !open.contains(f)).copied().collect();
+        ShellJob {
+            model: model.clone(),
+            faces: faces.clone(),
+            open: open.clone(),
+            d,
+            why,
+            join,
+            body,
+            todo,
+            next: 0,
+            solids: Vec::new(),
+            skipped: BTreeSet::new(),
+        }
+    }
+
+    fn key(&self) -> BuildKey {
+        (
+            self.model.clone(),
+            self.faces.clone(),
+            self.open.clone(),
+            self.d.to_bits(),
+            self.join,
+        )
+    }
+
+    /// Pieces made so far, and how many there are in all.
+    pub fn progress(&self) -> (usize, usize) {
+        (self.next, self.todo.len())
+    }
+
+    /// Why it is built face by face.
+    pub fn why(&self) -> &'static str {
+        self.why
+    }
+
+    /// Make the next piece and join it in. False when there are no more.
+    pub fn step(&mut self) -> bool {
+        let Some(f) = self.todo.get(self.next).copied() else {
+            return false;
+        };
+        self.next += 1;
+        // The face on its own, so nothing else is near.
+        let mut m = self.model.clone();
+        let others: Vec<FaceId> = m.faces().map(|(id, _)| id).filter(|id| *id != f).collect();
+        for id in others {
+            m.remove_face(id);
+        }
+        let one: BTreeSet<FaceId> = [f].into();
+        let piece = built(
+            &m,
+            &one,
+            &BTreeSet::new(),
+            self.d,
+            &RimStyles::new(),
+            &mut Marks::default(),
+        );
+        let Ok((slab, _)) = piece else {
+            self.skipped.insert(f);
+            return self.next < self.todo.len();
+        };
+        // Unjoined, for a preview: the pieces side by side.
+        let joined = self.join
+            && self.solids.iter_mut().any(|w| {
+                match crate::boolean::boolean(w, &slab, crate::boolean::Op::Union) {
+                    Ok(j) if crate::boolean::is_solid(&j) => {
+                        *w = j;
+                        true
+                    }
+                    _ => false,
+                }
+            });
+        if !joined {
+            self.solids.push(slab);
+        }
+        self.next < self.todo.len()
+    }
+
+    /// What it looks like so far: the model with the faces done so far
+    /// replaced by the pieces made from them.
+    pub fn shown(&self) -> Model {
+        let tol = self.model.tol();
+        let mut m = self.model.clone();
+        for f in &self.todo[..self.next] {
+            if !self.skipped.contains(f) {
+                m.remove_face(*f);
+            }
+        }
+        for w in &self.solids {
+            crate::boolean::join_mapped(&mut m, w, &tol);
+        }
+        m
+    }
+
+    /// Every piece made and joined (what is left is made now), kept so the
+    /// same build is not made again. None if no face could be thickened.
+    pub fn finish(mut self) -> Option<Flagged> {
+        while self.step() {}
+        let tol = self.model.tol();
+        let unjoined = self.solids.len() > 1 && self.join;
+        let mut solids = std::mem::take(&mut self.solids).into_iter();
+        let mut whole = solids.next()?;
+        for w in solids {
+            crate::boolean::join_mapped(&mut whole, &w, &tol);
+        }
+        let built: Built = (whole, self.skipped.clone(), unjoined);
+        keep_build(self.key(), built.clone());
+        Some(self.flagged(built))
+    }
+
+    fn flagged(&self, (whole, skipped, unjoined): Built) -> Flagged {
+        let mut flags = Flags::new();
+        if unjoined {
+            flags.entry(UNJOINED).or_default();
+        }
+        let at = flags.entry(apart_note(self.why)).or_default();
+        at.faces.extend(whole.faces().map(|(id, _)| id));
+        at.edges.extend(whole.edges().map(|(id, _)| id));
+        if !skipped.is_empty() {
+            // In the model's own ids: these faces stay in it.
+            flags.entry(SKIPPED).or_default().faces.extend(&skipped);
+        }
+        Flagged {
+            model: whole,
+            replaced: self.body.difference(&skipped).copied().collect(),
+            flags,
+        }
+    }
+}
+
+/// The shell of `faces` as a job made a piece at a time, if it is built
+/// face by face from more than [`JOB_FACES`] kept faces and has not been
+/// built already; None if it is built at once (as one piece, or face by
+/// face from few faces, or made before).
+pub fn shell_job(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    d: f64,
+    styles: &RimStyles,
+) -> Option<ShellJob> {
+    let why = match as_asked(model, faces, open, d, styles, true, true) {
+        Err(why) if ![NOTHING, ZERO, ALL_OPEN].contains(&why) => why,
+        _ => return None,
+    };
+    let tol = model.tol();
+    if !d.is_finite() || tol.is_zero(d) {
+        return None;
+    }
+    let work = turned(model, faces, open, &mut Marks::default());
+    let job = ShellJob::new(work.as_ref(), faces, open, d, why, true);
+    (job.todo.len() > JOB_FACES && kept_build(&job.key()).is_none()).then_some(job)
+}
+
 /// The body of `faces` shelled face by face, where it could not be shelled
-/// as one piece (`why`): each kept face thickened on its own (rims
-/// square), the pieces joined by a union. Overlaps merge; gaps (an outside
-/// corner, where the faces' slabs do not reach each other) stay. A face
-/// that cannot be thickened even on its own is left as it was; a piece
-/// that will not join into a solid is kept beside the rest (flagged). Every face made is flagged with why; None if
-/// no face could be thickened. Without `join` (a preview) the pieces are
-/// put side by side instead of joined.
+/// as one piece (`why`): [`ShellJob`] made all at once (or as made
+/// before). None if no face could be thickened. Without `join` (a
+/// preview) the pieces are put side by side instead of joined.
 fn apart(
     model: &Model,
     faces: &BTreeSet<FaceId>,
@@ -992,72 +1211,11 @@ fn apart(
     if !d.is_finite() || tol.is_zero(d) {
         return None;
     }
-    let body = body(model, faces);
-    // Joining is a boolean per piece: on a body of many (curved) faces
-    // that takes minutes, so past a few pieces they are kept side by side.
-    let kept_faces = body.iter().filter(|f| !open.contains(f)).count();
-    let join = join && kept_faces <= JOIN_MAX;
-    // The pieces joined so far: each a solid; a piece that will not join
-    // any of them into a solid is kept as one of its own.
-    let mut solids: Vec<Model> = Vec::new();
-    let mut skipped: BTreeSet<FaceId> = BTreeSet::new();
-    for f in body.iter().filter(|f| !open.contains(f)) {
-        // The face on its own, so nothing else is near.
-        let mut m = model.clone();
-        let others: Vec<FaceId> = m.faces().map(|(id, _)| id).filter(|id| id != f).collect();
-        for id in others {
-            m.remove_face(id);
-        }
-        let one: BTreeSet<FaceId> = [*f].into();
-        let piece = built(
-            &m,
-            &one,
-            &BTreeSet::new(),
-            d,
-            &RimStyles::new(),
-            &mut Marks::default(),
-        );
-        let Ok((slab, _)) = piece else {
-            skipped.insert(*f);
-            continue;
-        };
-        // Unjoined, for a preview: the pieces side by side.
-        let joined = join
-            && solids.iter_mut().any(|w| {
-                match crate::boolean::boolean(w, &slab, crate::boolean::Op::Union) {
-                    Ok(j) if crate::boolean::is_solid(&j) => {
-                        *w = j;
-                        true
-                    }
-                    _ => false,
-                }
-            });
-        if !joined {
-            solids.push(slab);
-        }
+    let job = ShellJob::new(model, faces, open, d, why, join);
+    match kept_build(&job.key()) {
+        Some(built) => Some(job.flagged(built)),
+        None => job.finish(),
     }
-    let unjoined = solids.len() > 1 && (join || kept_faces > JOIN_MAX);
-    let mut solids = solids.into_iter();
-    let mut whole = solids.next()?;
-    for w in solids {
-        crate::boolean::join_mapped(&mut whole, &w, &tol);
-    }
-    let mut flags = Flags::new();
-    if unjoined {
-        flags.entry(UNJOINED).or_default();
-    }
-    let at = flags.entry(apart_note(why)).or_default();
-    at.faces.extend(whole.faces().map(|(id, _)| id));
-    at.edges.extend(whole.edges().map(|(id, _)| id));
-    if !skipped.is_empty() {
-        // In the model's own ids: these faces stay in it.
-        flags.entry(SKIPPED).or_default().faces.extend(&skipped);
-    }
-    Some(Flagged {
-        model: whole,
-        replaced: body.difference(&skipped).copied().collect(),
-        flags,
-    })
 }
 
 /// More than two kept faces at one edge (a T, a fin, a box with a wall

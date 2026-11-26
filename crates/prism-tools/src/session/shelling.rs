@@ -30,6 +30,20 @@ const HANDLE: &str = "Drag the handle to change the shell's thickness (through t
 const FIXED: &str = "Click a face to shell or thicken it by the window's thickness · Shift+click faces of a closed body to leave them open · clear the thickness to size by the pointer";
 const SIZING: &str = "Move to set the thickness (out of the face grows outside, into it inside) · click or type a thickness + Enter · Shift+click leaves a face open · Esc steps back";
 
+/// Said while a shell is made a piece at a time.
+pub const JOB_RUNNING: &str = "Shelling face by face, a face at a time: it shows as it goes, the box says how far (a body of many faces takes a while). Esc stops it.";
+/// Said when Esc stops it.
+pub const JOB_STOPPED: &str = "Stopped: the shell was not made.";
+
+/// A shell being made a piece at a time, and the command that makes it
+/// part of the model once every piece is made (the pieces are kept, so it
+/// does not make them again).
+pub(super) struct JobRun {
+    job: prism_ops::shelling::ShellJob,
+    command: Command,
+    warning: Option<&'static str>,
+}
+
 /// A drag of a live shell's thickness handle in progress.
 #[derive(Clone, Debug)]
 pub(super) struct ShellHandle {
@@ -110,6 +124,9 @@ impl Session {
     }
 
     pub(super) fn shell_hover(&mut self, s: DVec2, view: &View) {
+        if self.job.is_some() {
+            return;
+        }
         if self.shell_handle_drag(s, view) || self.rim_hover(s, view) {
             return;
         }
@@ -424,10 +441,110 @@ impl Session {
         }
         self.shell_op = None;
         self.shell_open.clear();
+        // Face by face from many faces: made a piece at a time, a step
+        // each frame, shown as it goes (owner, 2026-11-26).
+        if let Command::Shell {
+            faces,
+            open,
+            thickness,
+        } = &c
+            && let Some(job) = prism_ops::shelling::shell_job(
+                self.work_model(),
+                faces,
+                open,
+                *thickness,
+                &prism_ops::shelling::RimStyles::new(),
+            )
+        {
+            if self.sync_jobs {
+                let _ = job.finish();
+            } else {
+                self.job = Some(JobRun {
+                    job,
+                    command: c,
+                    warning,
+                });
+                self.notice = Some(JOB_RUNNING);
+                self.overlay_dirty = true;
+                self.dirty = true;
+                return;
+            }
+        }
         self.run(c);
         // Made: what to check stays in the status bar.
         self.notice = warning;
         self.overlay_dirty = true;
+    }
+
+    /// While a long edit is being made: a frame's time makes the next
+    /// piece, Esc stops it, the view can still be moved, and anything else
+    /// waits. True if the input was taken.
+    pub(super) fn job_input(&mut self, input: &super::Input, resp: &mut super::Response) -> bool {
+        use super::{Button, Input, Key};
+        if self.job.is_none() {
+            return false;
+        }
+        match input {
+            Input::Time => {
+                self.job_step();
+                true
+            }
+            Input::Key { key: Key::Escape } => {
+                self.job = None;
+                self.set_preview(None);
+                self.notice = Some(JOB_STOPPED);
+                resp.used_escape = true;
+                self.overlay_dirty = true;
+                self.refresh();
+                true
+            }
+            Input::Move { .. }
+            | Input::Wheel { .. }
+            | Input::Resize { .. }
+            | Input::Held { .. }
+            | Input::Press {
+                button: Button::Middle,
+                ..
+            }
+            | Input::Release {
+                button: Button::Middle,
+            } => false,
+            _ => {
+                self.notice = Some(JOB_RUNNING);
+                true
+            }
+        }
+    }
+
+    /// The next piece of the edit being made, and what it looks like so
+    /// far; the last makes it, in one undo step.
+    fn job_step(&mut self) {
+        let Some(run) = &mut self.job else {
+            return;
+        };
+        if run.job.step() {
+            let shown = run.job.shown();
+            self.set_preview(Some(shown));
+            self.dirty = true;
+            self.overlay_dirty = true;
+            return;
+        }
+        let Some(run) = self.job.take() else {
+            return;
+        };
+        let _ = run.job.finish();
+        self.set_preview(None);
+        self.run(run.command);
+        self.notice = run.warning;
+        self.overlay_dirty = true;
+        self.refresh();
+    }
+
+    /// The measurement box while an edit is being made: how far it is.
+    pub(super) fn job_measurement(&self) -> Option<(&'static str, String)> {
+        let run = self.job.as_ref()?;
+        let (done, all) = run.job.progress();
+        Some(("Shelling", format!("{done} of {all} faces")))
     }
 
     /// Enter with a typed thickness (or none: the one sized).

@@ -101,7 +101,7 @@ pub use primitives::{PRIM_TOOL, PrimPanel, PrimSet};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use sections::{SECTION_TOOL, line_param};
 pub use shapes::{CIRCLE, DEFAULT_SIDES, POLYGON, polygon_points};
-pub use shelling::{SHELL, ShellPanel, ShellSet};
+pub use shelling::{JOB_RUNNING, JOB_STOPPED, SHELL, ShellPanel, ShellSet};
 pub use smart::BUDGET_MS as SMART_BUDGET_MS;
 pub use solids::{SolidOf, SolidRow};
 pub use texpos::{NOT_TEXTURED, TEXTURE};
@@ -388,6 +388,11 @@ pub struct Recording {
     /// typed numbers the same way (units, lens, view settings...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start: Option<StartState>,
+    /// Recorded since long edits are made a piece at a time, a step each
+    /// frame (`Time`): a replay steps them the same way. Older recordings
+    /// make them at once.
+    #[serde(default)]
+    pub jobs: bool,
 }
 
 /// What a session holds besides the model that changes how inputs are
@@ -590,6 +595,12 @@ pub struct Session {
     round_handle: Option<features::Handle>,
     /// A drag of a live shell's thickness handle.
     shell_handle: Option<shelling::ShellHandle>,
+    /// A long edit made a piece at a time, a step each frame, shown as it
+    /// goes; Esc stops it (owner, 2026-11-26).
+    job: Option<shelling::JobRun>,
+    /// Make a long edit all at once (replaying a recording made before
+    /// edits could be made a piece at a time).
+    sync_jobs: bool,
     rim_cache: rims::RimCell,
     rim_drag: Option<rims::RimDrag>,
     /// A component just made, waiting for its name (brief 50 part 1).
@@ -894,6 +905,8 @@ impl Session {
             round_down: None,
             round_handle: None,
             shell_handle: None,
+            job: None,
+            sync_jobs: false,
             rim_cache: std::cell::RefCell::new(None),
             rim_drag: None,
             naming: None,
@@ -1079,7 +1092,7 @@ impl Session {
     }
     /// Whether the camera is still easing (keep drawing frames).
     pub fn animating(&self) -> bool {
-        self.motion.is_some() || !self.effects.is_empty()
+        self.motion.is_some() || !self.effects.is_empty() || self.job.is_some()
     }
     /// When a hovered point will wake, so the app can wake the session then.
     pub fn next_wake(&self) -> Option<f64> {
@@ -1119,6 +1132,9 @@ impl Session {
 
     /// The measurement box: its label, value, and whether it shows typing.
     pub fn measurement(&self) -> (String, String, bool) {
+        if let Some((l, v)) = self.job_measurement() {
+            return (l.to_owned(), v, false);
+        }
         let nf = &self.number;
         let (label, value) = if let Some((l, v)) = self.fov_measurement() {
             (l, v)
@@ -1314,6 +1330,7 @@ impl Session {
                 last_tape: self.last_tape,
                 clipboard: self.clipboard.as_deref().cloned(),
             }),
+            jobs: true,
         });
         self.rec_seen = (self.doc.revision(), self.doc.log().count());
         self.rec_view = Some(self.view_state());
@@ -1368,6 +1385,7 @@ impl Session {
         s.round_chamfer = r.round_chamfer;
         s.shell_size = r.shell_size;
         s.shell_outside = r.shell_outside;
+        s.sync_jobs = !r.jobs;
         if let Some(st) = &r.start {
             s.number = NumberFormat {
                 decimal: st.decimal,
@@ -1491,6 +1509,9 @@ impl Session {
         {
             self.notice = None;
             self.overlay_dirty = true;
+        }
+        if self.job_input(&e.input, &mut resp) {
+            return resp;
         }
         match &e.input {
             Input::Resize { w, h } => {
