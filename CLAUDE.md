@@ -15,7 +15,7 @@ Read these first, in this order:
 2. **Say what you did in plain English.** Keep commit messages, docs and comments short and clear.
 3. **Ask before anything destructive:** deleting existing files, force pushes, rewriting history.
 4. **When a decision is open,** use the default in `docs/DECISIONS.md`, note that you did, and keep going. Do not invent a new decision silently.
-5. **Finish a chunk properly:** tests pass, CI is green, the "Where we are" column in `PLAN.md` section 6.0 is updated, and `NOTES.md` lists anything left over.
+5. **Finish a chunk properly:** tests pass, CI is green, the "Where we are" column in `PLAN.md` section 6.0 is updated, and `NOTES.md` lists anything left over. A chunk that adds a tool that edits geometry, or changes one in a major way, also updates the written order of geometry rules (`docs/DECISIONS.md` #42 and #43).
 
 ## Rules that apply everywhere
 
