@@ -59,6 +59,9 @@ pub struct Report {
     pub crossing: Found,
     /// Geometry far from the origin compared with its size.
     pub far_from_origin: bool,
+    /// Geometry further from the origin than the document's precision can
+    /// hold ([`prism_math::tol::REACH`] tolerances).
+    pub beyond_precision: bool,
     /// Pieces smaller than ten tolerances.
     pub tiny: Found,
     /// Arcs with an end off their circle, and curved faces with a point
@@ -112,6 +115,7 @@ pub fn check(model: &Model) -> Report {
     if let Some((lo, hi)) = model.bbox() {
         let size = (hi - lo).length().max(tol.dist);
         r.far_from_origin = ((lo + hi) * 0.5).length() > 1e4 * size;
+        r.beyond_precision = beyond_precision(lo, hi, &tol);
     }
     r.tiny = tiny(model, &tol);
     r.off_circle.edges = off_circle(model, &tol).into_keys().collect();
@@ -942,4 +946,70 @@ pub fn export_note(model: &Model, printing: bool) -> Option<String> {
         parts.push(n(r.crossing.count(), "crossing face", "crossing faces"));
     }
     (!parts.is_empty()).then(|| format!("{}; see Model Health", parts.join(", ")))
+}
+
+/// Whether geometry in the box `lo`..`hi` reaches further from the origin
+/// than precision `tol` can hold ([`prism_math::tol::REACH`] tolerances).
+pub fn beyond_precision(lo: DVec3, hi: DVec3, tol: &Tol) -> bool {
+    lo.abs().max(hi.abs()).max_element() > tol.dist * prism_math::tol::REACH
+}
+
+/// What a document precision of `tol` would merge in `model`: points that
+/// are not one point but closer than it, and edges shorter than it. A
+/// coarser setting shows this before it is applied (DECISIONS #42); the
+/// points merge when an edit next touches them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WouldMerge {
+    pub points: usize,
+    pub edges: usize,
+}
+
+impl WouldMerge {
+    pub fn is_empty(&self) -> bool {
+        self.points == 0 && self.edges == 0
+    }
+}
+
+impl std::ops::AddAssign for WouldMerge {
+    fn add_assign(&mut self, o: Self) {
+        self.points += o.points;
+        self.edges += o.edges;
+    }
+}
+
+/// [`WouldMerge`] for `model` at `tol`. Points are found through a grid of
+/// cells twice the tolerance across.
+pub fn would_merge(model: &Model, tol: &Tol) -> WouldMerge {
+    let cell = (tol.dist * 2.0).max(f64::MIN_POSITIVE);
+    let key = |p: DVec3| {
+        (
+            (p.x / cell).floor() as i64,
+            (p.y / cell).floor() as i64,
+            (p.z / cell).floor() as i64,
+        )
+    };
+    let mut grid: BTreeMap<(i64, i64, i64), Vec<DVec3>> = BTreeMap::new();
+    let mut points = 0;
+    for (_, p) in model.vertices() {
+        let (x, y, z) = key(p);
+        let near = (-1..=1).any(|dx| {
+            (-1..=1).any(|dy| {
+                (-1..=1).any(|dz| {
+                    grid.get(&(x + dx, y + dy, z + dz))
+                        .is_some_and(|qs| qs.iter().any(|q| tol.same_point(p, *q)))
+                })
+            })
+        });
+        if near {
+            points += 1;
+        }
+        grid.entry((x, y, z)).or_default().push(p);
+    }
+    // Straight edges only: an arc's ends can be close on a long arc.
+    let edges = model
+        .edges()
+        .filter(|(_, e)| e.curve == Curve::Line)
+        .filter(|(_, e)| model.vertex(e.a).distance(model.vertex(e.b)) < tol.dist)
+        .count();
+    WouldMerge { points, edges }
 }

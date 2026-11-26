@@ -53,6 +53,7 @@ mod materials;
 mod mirror;
 mod paint;
 mod placement;
+mod precision;
 mod primitives;
 mod rims;
 mod round;
@@ -87,7 +88,7 @@ pub use edit::{ERASE, MOVE, PUSH, ROTATE, SCALE};
 use edit::{EditOp, is_edit};
 pub use follow::FOLLOW;
 pub use groups::{BEVERLY_TAGS, EntityInfo, FeatureItem, OutlineRow, Owner, TagOp};
-pub use health::HealthRow;
+pub use health::{HealthRow, precision_text};
 pub use holing::{HOLE_TOOL, HolePanel, HoleSet, HoleSettings};
 pub use inspector::{Field, FieldKind, Inspector, Section};
 pub use joints::{HINGE_TOOL, JointIsland, JointIslandSet, SLIDE_TOOL};
@@ -95,6 +96,7 @@ pub use lofting::{LOFT, LoftOp, LoftPanel};
 pub use materials::{MaterialOp, MaterialRow, NOT_A_SIZE, PaintWith, TextureRow};
 pub use mirror::{MIRROR_NOTHING, MIRROR_TOOL};
 pub use paint::{Brush, PAINT};
+pub use precision::{BELOW_PRECISION, PRESETS, PrecisionChange};
 pub use primitives::{PRIM_TOOL, PrimPanel, PrimSet};
 pub use round::{FILLET, RoundOp, RoundPanel};
 pub use sections::{SECTION_TOOL, line_param};
@@ -2794,6 +2796,7 @@ impl Session {
     fn commit_line(&mut self, start: DVec3, end: DVec3) {
         let faces = self.work_model().face_count();
         let made = self.run(Command::Segment { p: start, q: end });
+        self.warn_below_precision(start.distance(end));
         self.typed.clear();
         self.lock = Lock::None;
         self.shift_locked = false;
@@ -3001,6 +3004,7 @@ impl Session {
                 }
                 let end = from + dir * v;
                 self.run(Command::Segment { p: from, q: end });
+                self.warn_below_precision(v.abs());
                 self.last_op = Some(LastOp::Line {
                     from,
                     dir,

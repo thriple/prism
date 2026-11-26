@@ -10769,3 +10769,85 @@ fn the_scale_tool_resizes_a_cylinders_top() {
         "the ellipse, exactly"
     );
 }
+
+/// Tolerance stage 4 (DECISIONS #42): a line typed shorter than the
+/// document's precision cannot be drawn (it would be one point), and the
+/// hint says so and how to draw smaller; at Fine the same line is drawn.
+#[test]
+fn a_line_shorter_than_the_precision_warns_and_fine_draws_it() {
+    let mut d = Driver::empty();
+    d.tool(LINE);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(3.0, 1.3, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.typed("0.005mm");
+    assert_eq!(d.s.model().edge_count(), 0);
+    assert!(d.s.hint_is_notice());
+    assert_eq!(d.s.hint(), prism_tools::BELOW_PRECISION);
+    // At Fine (0.001 mm) it is drawn.
+    let mut d = Driver::empty();
+    assert!(d.s.set_precision(prism_math::tol::FINE));
+    d.tool(LINE);
+    d.click(DVec3::new(1.0, 1.0, 0.0));
+    d.hover(DVec3::new(3.0, 1.3, 0.0));
+    d.send(Input::Key { key: Key::Right });
+    d.typed("0.005mm");
+    assert_eq!(d.s.model().edge_count(), 1);
+    assert!(!d.s.hint_is_notice());
+}
+
+/// The precision is an undoable edit, and a coarser one says beforehand
+/// what it would merge; a finer one merges nothing.
+#[test]
+fn setting_the_precision_shows_what_merges_and_undoes() {
+    // Two lines end to end with a 0.05 mm gap, at Fine (0.001 mm): two
+    // points closer than Coarse (0.1 mm). Clicking would snap them shut.
+    let fine = prism_math::Tol::new(prism_math::tol::FINE);
+    let mut m = prism_topo::Model::with_tol(fine);
+    prism_ops::add_segment(&mut m, DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0));
+    prism_ops::add_segment(
+        &mut m,
+        DVec3::new(1.00005, 0.0, 0.0),
+        DVec3::new(2.0, 0.0, 0.0),
+    );
+    let mut asm = prism_doc::Assembly::with_model(m);
+    asm.set_tol(fine);
+    let mut d = Driver::new(Document::with_assembly(asm));
+    let finer = d.s.precision_change(1e-7);
+    assert!(finer.merges.is_empty(), "{finer:?}");
+    let coarse = d.s.precision_change(prism_math::tol::COARSE);
+    assert_eq!(coarse.merges.points, 1, "{coarse:?}");
+    assert!(
+        coarse.describe().contains("1 point is"),
+        "{}",
+        coarse.describe()
+    );
+    assert!(d.s.set_precision(prism_math::tol::COARSE));
+    assert_eq!(d.s.precision().dist, prism_math::tol::COARSE);
+    d.send(Input::Action {
+        id: "edit.undo".into(),
+    });
+    assert_eq!(d.s.precision().dist, prism_math::tol::FINE);
+}
+
+/// Geometry 20 km out cannot keep 0.01 mm through edits: Model Health's
+/// Scale row says so and offers Coarse; at Coarse (0.1 mm, good to 100 km)
+/// it is only "far for its size", not beyond the precision.
+#[test]
+fn geometry_beyond_the_precision_is_flagged_by_model_health() {
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_rect(&mut m, 20_000.0, 0.0, 20_010.0, 10.0, 0.0);
+    let mut d = Driver::new(Document::with_model(m));
+    let scale = |d: &Driver| {
+        d.s.health_rows()
+            .into_iter()
+            .find(|r| r.key == "scale")
+            .expect("the Scale row")
+    };
+    let r = scale(&d);
+    assert_eq!(r.count, 1);
+    assert!(r.detail.contains("precision (0.01 mm)"), "{}", r.detail);
+    assert!(d.s.set_precision(prism_math::tol::COARSE));
+    let r = scale(&d);
+    assert!(!r.detail.contains("precision"), "{}", r.detail);
+}

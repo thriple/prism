@@ -65,6 +65,11 @@ pub struct Files {
     /// A web save is running; this comes after it.
     after_save: Option<Option<Next>>,
     settings_open: bool,
+    /// The precision chosen in Document Settings and not yet applied: a
+    /// preset's index (or the last, Custom) and the typed millimetres.
+    precision_pick: Option<(usize, String)>,
+    /// What applying it would merge, worked out once per choice.
+    precision_preview: Option<(u64, prism_tools::PrecisionChange)>,
     /// The app should close now.
     quit: bool,
     /// Recovery.
@@ -142,6 +147,8 @@ impl Files {
             asking: None,
             after_save: None,
             settings_open: false,
+            precision_pick: None,
+            precision_preview: None,
             quit: false,
             base: Base {
                 bytes: base,
@@ -335,7 +342,18 @@ impl Files {
         }
         self.mark_saved(s, Some(o.bytes));
         recovery::clear(self.slot);
-        chrome.status_note(format!("Opened {}", o.name));
+        // A precision other than Standard (an older file keeps the one it
+        // was made with, DECISIONS #42): say so, once, on opening.
+        let tol = s.precision();
+        if tol != prism_math::Tol::default() {
+            chrome.status_note(format!(
+                "Opened {} (precision {}: File > Document Settings)",
+                o.name,
+                prism_tools::precision_text(tol.dist)
+            ));
+        } else {
+            chrome.status_note(format!("Opened {}", o.name));
+        }
     }
 
     fn remember(&mut self, path: &str) {
@@ -564,12 +582,19 @@ impl Files {
                     nf.units = units;
                     nf.show(1.2345)
                 }));
+                ui.add_space(10.0);
+                precision_ui(ui, s, &mut self.precision_pick, &mut self.precision_preview);
+                ui.add_space(6.0);
                 if ui.add(SoftButton::new("Done")).clicked() {
                     self.settings_open = false;
                 }
             });
         if r.close {
             self.settings_open = false;
+        }
+        if !self.settings_open {
+            self.precision_pick = None;
+            self.precision_preview = None;
         }
         if units != s.number.units {
             s.set_units(units);
@@ -612,6 +637,73 @@ impl Files {
         };
         chrome.status_note("Restored your unsaved work".into());
     }
+}
+
+/// The precision part of Document Settings (DECISIONS #42, tolerance stage
+/// 4): Fine, Standard, Coarse or a typed value; what a new one would merge
+/// is shown before it is applied, and applying it is an undoable edit.
+fn precision_ui(
+    ui: &mut egui::Ui,
+    s: &mut Session,
+    pick: &mut Option<(usize, String)>,
+    preview: &mut Option<(u64, prism_tools::PrecisionChange)>,
+) {
+    use prism_tools::{PRESETS, precision_text};
+    let now = s.precision().dist;
+    let custom = PRESETS.len();
+    let (mut i, mut text) = pick.clone().unwrap_or_else(|| {
+        let i = PRESETS
+            .iter()
+            .position(|(_, d)| (d - now).abs() <= now * 1e-9)
+            .unwrap_or(custom);
+        (i, format!("{}", now * 1e3))
+    });
+    let mut names: Vec<&str> = PRESETS.iter().map(|(n, _)| *n).collect();
+    names.push("Custom");
+    ui.label("Precision: how close two points must be to count as the same.");
+    ui.add(SoftSelect::new(&mut i, &names, "Precision"));
+    let want = if i < custom {
+        Some(PRESETS[i].1)
+    } else {
+        ui.add(
+            egui::TextEdit::singleline(&mut text)
+                .desired_width(120.0)
+                .hint_text("millimetres"),
+        );
+        text.trim()
+            .trim_end_matches("mm")
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .map(|mm| mm * 1e-3)
+    };
+    ui.label(format!("This document: {}", precision_text(now)));
+    match want {
+        None => {
+            ui.label("Type a size in millimetres (0.000001 to 10).");
+        }
+        Some(w) => {
+            let to = prism_math::Tol::new(w);
+            if to.dist != now {
+                let key = to.dist.to_bits();
+                if preview.as_ref().is_none_or(|(k, _)| *k != key) {
+                    *preview = Some((key, s.precision_change(w)));
+                }
+                if let Some((_, ch)) = preview.as_ref() {
+                    ui.label(ch.describe());
+                }
+                if ui
+                    .add(SoftButton::new(format!("Use {}", precision_text(to.dist))))
+                    .clicked()
+                {
+                    s.set_precision(to.dist);
+                    *preview = None;
+                }
+            }
+        }
+    }
+    *pick = Some((i, text));
 }
 
 /// "Prism - Build 120", or "Prism - Local build" for one made by hand.

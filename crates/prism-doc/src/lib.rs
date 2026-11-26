@@ -639,6 +639,14 @@ pub enum Command {
     OuterShell {
         instances: BTreeSet<InstanceId>,
     },
+    /// The document's precision (DECISIONS #42): how close two points must
+    /// be to count as the same, in metres, for every group. A command so it
+    /// undoes and replays like any edit; it moves no geometry itself (points
+    /// closer than a coarser precision merge when an edit next touches
+    /// them). Kept last: saved journals name commands by position.
+    SetPrecision {
+        dist: f64,
+    },
 }
 
 /// How groups are moved, turned or scaled.
@@ -917,6 +925,7 @@ impl Command {
             Command::EditMaterial { .. } => "Edit Material",
             Command::RemoveMaterial { .. } => "Delete Material",
             Command::PurgeMaterials => "Purge Materials",
+            Command::SetPrecision { .. } => "Set Precision",
             Command::AddImage { .. } => "Add Image",
             Command::Paint { .. } | Command::PaintInstances { .. } => "Paint",
             Command::ReplaceMaterial { .. } => "Replace Material",
@@ -1424,6 +1433,7 @@ impl Command {
             Command::EditMaterial { id, material } => asm.edit_material(*id, material.clone()),
             Command::RemoveMaterial { id } => asm.remove_material(*id),
             Command::PurgeMaterials => asm.purge_materials(),
+            Command::SetPrecision { dist } => asm.set_tol(prism_math::Tol::new(*dist)),
             Command::AddImage { image } => asm.add_image(image.clone()),
             Command::Paint { sides, material } => {
                 // Only a material the document has.
@@ -1925,6 +1935,7 @@ impl Command {
             | Command::EditMaterial { .. }
             | Command::RemoveMaterial { .. }
             | Command::PurgeMaterials
+            | Command::SetPrecision { .. }
             | Command::AddImage { .. }
             | Command::PaintInstances { .. }
             | Command::ReplaceMaterial { .. } => {}

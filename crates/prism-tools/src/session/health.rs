@@ -142,8 +142,13 @@ impl Session {
         rows.push(HealthRow {
             key: "scale",
             label: "Scale",
-            count: usize::from(r.far_from_origin),
-            detail: if r.far_from_origin {
+            count: usize::from(r.far_from_origin || r.beyond_precision),
+            detail: if r.beyond_precision {
+                format!(
+                    "too far from the origin for this document's precision ({}): move it nearer, or choose Coarse in File > Document Settings",
+                    precision_text(self.precision().dist)
+                )
+            } else if r.far_from_origin {
                 "far from the origin for its size: move it nearer".into()
             } else {
                 "near the origin".into()
@@ -305,4 +310,12 @@ impl Session {
             }
         }
     }
+}
+
+/// A precision in millimetres, as the dialog and Model Health show it.
+pub fn precision_text(dist: f64) -> String {
+    let mm = dist * 1e3;
+    let s = format!("{mm:.6}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    format!("{s} mm")
 }

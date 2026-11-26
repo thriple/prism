@@ -23,6 +23,11 @@ pub const RELATIVE: f64 = 1e-6;
 /// The tolerance never goes below or above these (model units).
 pub const MIN: f64 = 1e-12;
 pub const MAX: f64 = 1e-2;
+/// Geometry further than this many tolerances from the origin cannot keep
+/// the tolerance through edits (each turn, scale and intersection rounds
+/// in proportion to the distance): 10 km at Standard. Model Health warns
+/// (DECISIONS #42's fallbacks).
+pub const REACH: f64 = 1e9;
 /// A face thinner than this many tolerances on average, and far longer
 /// than wide, is a sliver (Model Health): almost always a slip, such as a
 /// straight edge drawn beside a curve between the same two points.
