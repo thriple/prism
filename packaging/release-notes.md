@@ -1,3 +1,5 @@
+**New: loose lines show as profiles.** A line drawn on a group's surface from outside it (not part of the group, and with no face of its own) is drawn thick, like the edges of a loose face already are, so you can tell it from the group's own lines.
+
 **Fixed: the line where a box's top meets a cylinder wall** (after Intersect Faces) drew dashed. It draws whole now.
 
 **New in this build: a selected group or component lights up all its lines,** not just the box round it, so you can see the whole thing is selected (a locked one in the locked colour).

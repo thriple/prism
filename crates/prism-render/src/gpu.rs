@@ -1499,11 +1499,19 @@ impl Renderer {
                         .edge
                         .with_alpha(crate::style::alpha(style.hidden_alpha));
                 }
+                // A line with no face (drawn loose, say on a group's
+                // surface from outside it) is drawn as a profile, as the
+                // edges of a face on its own are: it stands out from the
+                // group's own lines (owner, 2026-11-26).
+                let width = if e.faces == [None, None] && !e.ghost {
+                    style.edge_width.max(style.profile_width)
+                } else {
+                    style.edge_width
+                };
                 // An arc is drawn as its pieces.
                 e.segments()
                     .map(|(a, b)| {
-                        let mut l =
-                            LineInstance::new(a, b, color, style.edge_width).flags(MODEL_EDGE);
+                        let mut l = LineInstance::new(a, b, color, width).flags(MODEL_EDGE);
                         if e.ghost && style.hidden_lines != HiddenLines::Faint {
                             l = l.dashed(style.hidden_dash);
                         }

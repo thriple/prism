@@ -1429,3 +1429,66 @@ fn a_selected_groups_lines_are_all_drawn_selected() {
     );
     assert_eq!(locked.count_near(blue, 30), 0);
 }
+
+/// A line with no face, drawn on a group's surface from outside the group,
+/// is drawn as a profile, as the edges of a face drawn there are: it
+/// stands out from the group's own lines (owner, 2026-11-26).
+#[test]
+fn a_loose_line_on_a_groups_surface_is_drawn_as_a_profile() {
+    let mut group = Model::new();
+    prism_ops::add_rect(&mut group, 0.0, 0.0, 2.0, 2.0, 0.0);
+    let base = prism_ops::face_at(&group, DVec3::new(1.0, 1.0, 0.0)).expect("base");
+    let up = if group.face(base).unwrap().plane().unwrap().normal.z > 0.0 {
+        2.0
+    } else {
+        -2.0
+    };
+    prism_ops::push_pull(&mut group, base, up, false);
+    let mut top = Model::new();
+    prism_ops::add_segment(
+        &mut top,
+        DVec3::new(2.0, 0.5, 0.5),
+        DVec3::new(2.0, 1.5, 1.5),
+    );
+    let mut scene = prism_view::Scene::build(&top);
+    scene.merge(prism_view::Scene::build(&group), 0, false);
+    let Some(mut g) = Gpu::new() else {
+        return;
+    };
+    let cam = Camera {
+        eye: DVec3::new(6.0, -4.0, 5.0),
+        target: DVec3::new(1.0, 1.0, 1.0),
+    };
+    let (w, h) = (600, 450);
+    // Dark pixels in a box round the middle of the loose line.
+    let view = prism_render::View::new(&cam, f64::from(w), f64::from(h));
+    let (q, _) = view.to_screen(DVec3::new(2.0, 1.0, 1.0)).expect("in view");
+    let mut dark = |profile: f32| {
+        let style = Style {
+            profile_width: profile,
+            ..Style::default()
+        };
+        g.renderer.resize(&g.device, w, h);
+        g.renderer.set_scene(&g.device, &g.queue, &scene, &style);
+        g.renderer
+            .set_highlight(&g.device, &scene, &Highlight::default(), &style);
+        let img = g.draw(cam, w, h, 1.0, &style, scene.bounds);
+        img.save(&format!("loose-line-{profile}"));
+        let mut n = 0;
+        for y in q.y as u32 - 10..q.y as u32 + 10 {
+            for x in q.x as u32 - 10..q.x as u32 + 10 {
+                if img.at(x, y)[..3].iter().map(|c| u32::from(*c)).sum::<u32>() < 3 * 110 {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    let thin = dark(0.0);
+    let thick = dark(4.0);
+    assert!(thin > 0, "the line shows");
+    assert!(
+        thick as f64 > 1.8 * thin as f64,
+        "drawn as a profile: {thick} dark pixels, {thin} without profiles"
+    );
+}
