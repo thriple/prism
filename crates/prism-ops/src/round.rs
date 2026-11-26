@@ -47,7 +47,7 @@ struct Plan {
 
 /// The two faces on `edge`, with each one's direction into the face,
 /// square to the edge (from `a` to `b`).
-fn sides(model: &Model, edge: EdgeId) -> Option<[(FaceId, DVec3, DVec3); 2]> {
+pub(crate) fn sides(model: &Model, edge: EdgeId) -> Option<[(FaceId, DVec3, DVec3); 2]> {
     let e = model.edge(edge)?;
     let dir = (model.vertex(e.b) - model.vertex(e.a)).normalize_or_zero();
     let mut out = Vec::new();

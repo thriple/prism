@@ -355,3 +355,85 @@ fn an_open_box_and_two_loose_faces_round() {
     assert_eq!(check::problems(&m), Vec::<String>::new());
     assert_eq!(m.faces().count(), 3);
 }
+
+/// An L-shaped block 1 high: its outline (0,0) (3,0) (3,1) (1,1) (1,3)
+/// (0,3) pulled up.
+fn l_block() -> Model {
+    let mut m = Model::new();
+    add_polygon(
+        &mut m,
+        &[
+            v(0.0, 0.0, 0.0),
+            v(3.0, 0.0, 0.0),
+            v(3.0, 1.0, 0.0),
+            v(1.0, 1.0, 0.0),
+            v(1.0, 3.0, 0.0),
+            v(0.0, 3.0, 0.0),
+        ],
+    );
+    pull(&mut m, v(0.5, 0.5, 0.0), 1.0);
+    m
+}
+
+/// Where an inside round (the L's inner vertical edge) meets outside ones
+/// (its top edges) the kernel cannot close the corner with all of them at
+/// once; rounded in turn, each later round runs onto the faces the
+/// earlier made (DECISIONS #46).
+#[test]
+fn an_inside_round_meets_outside_ones_at_a_corner() {
+    let m = l_block();
+    let edges: BTreeSet<EdgeId> = m
+        .edges()
+        .filter(|(_, e)| {
+            let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+            (a.z == 1.0 && b.z == 1.0) || (a.x == 1.0 && b.x == 1.0 && a.y == 1.0 && b.y == 1.0)
+        })
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(edges.len(), 7);
+    let whole = volume(&m);
+    for (fillet, r) in [(true, 0.1), (true, 0.2), (false, 0.1)] {
+        let mut w = m.clone();
+        round_edges(&mut w, &edges, r, fillet).unwrap_or_else(|why| panic!("{fillet} {r}: {why}"));
+        clean(&w);
+        // Less than the block, more than the block less its rounds' edges
+        // at full size (the inside one adds, the outside ones take away).
+        let after = volume(&w);
+        assert!(
+            after < whole + 1.0 && (whole - after).abs() < 12.0 * r * r,
+            "{after} {whole}"
+        );
+    }
+}
+
+/// Four rounds meeting at a pyramid's apex: the kernel cannot close that
+/// corner at all. It is cut off by a small flat face past the rounds'
+/// reach first, so each round ends at a plain corner (a step toward a
+/// smooth corner patch, DECISIONS #46).
+#[test]
+fn four_rounds_meet_at_an_apex() {
+    let mut py = Model::new();
+    let base = [
+        v(0.0, 0.0, 0.0),
+        v(2.0, 0.0, 0.0),
+        v(2.0, 2.0, 0.0),
+        v(0.0, 2.0, 0.0),
+    ];
+    let apex = v(1.0, 1.0, 1.5);
+    for i in 0..4 {
+        add_polygon(&mut py, &[base[(i + 1) % 4], base[i], apex]);
+    }
+    add_polygon(&mut py, &[base[3], base[2], base[1], base[0]]);
+    health::orient(&mut py, None);
+    let slants: BTreeSet<EdgeId> = py
+        .edges()
+        .filter(|(_, e)| py.vertex(e.a) == apex || py.vertex(e.b) == apex)
+        .map(|(id, _)| id)
+        .collect();
+    for r in [0.05, 0.2] {
+        let mut w = py.clone();
+        round_edges(&mut w, &slants, r, true).unwrap_or_else(|why| panic!("{r}: {why}"));
+        clean(&w);
+        assert!(vertex_at(&w, apex).is_none(), "the apex is cut off");
+    }
+}

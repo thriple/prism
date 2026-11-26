@@ -5480,3 +5480,10 @@ Release build, one drag frame:
 - Session 17, third click, every piece joined (release, measured by hand): at piece 174 of 305 after about an hour, some pieces 15 s each. The job shows progress and can be stopped; joining that many pieces is genuinely slow.
 - Not checked in the app.
 
+## Fillet corners, first step (timer task, 2026-11-26)
+
+- **Corners tried against the kernel:** a box corner with two or three rounds, a hexagonal prism (all edges), an L-block's top edges: all fine. Two fail: an L-block's inner vertical edge with its top edges (an inside round meeting outside ones: the kernel cannot close that corner at once), and a pyramid's apex (four rounds meeting).
+- **Rounded in turn** (`rounds::round_in_turn`): inside edges then outside, or the reverse, or one at a time; edges a round shortened are followed along their line or arc (`follow`). The L-block's corner rounds (fillet and chamfer). Test: `an_inside_round_meets_outside_ones_at_a_corner`.
+- **Apexes** (`round_with_caps`): the corner is cut off by a small flat face square to its average direction, past the rounds' reach, then rounded: a pyramid's four slant edges fillet, with a small flat facet at the tip. Test: `four_rounds_meet_at_an_apex`. **Not yet:** the smooth n-sided patch to replace that facet (the Loft ring fill makes a flat patch there, since every round's end lies in the facet's plane: a tangent-matched patch is needed); a chamfer at an apex; an apex's rounds with its base's. A face test helper: `health::orient` after `add_polygon` (it picks the facing itself).
+- Not checked in the app.
+

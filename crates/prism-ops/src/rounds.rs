@@ -5,11 +5,11 @@
 //! corners keeping their ids and paint; new faces are Default. The lines
 //! where a round meets a face it is tangent to are soft and smooth.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use prism_kernel::solid::Solid;
 use prism_math::DVec3;
-use prism_topo::{EdgeId, FaceId, Model};
+use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 use crate::bridge::{put_back, region, solid_of};
 
@@ -50,6 +50,23 @@ pub fn round_edges(
     if edges.iter().any(|e| drawn_on_flat(model, *e)) {
         return Err(FLAT_LINE);
     }
+    match round_once(model, edges, size, fillet) {
+        Err(why) if why == prism_kernel::solid::NOT_ROUNDED || why == OPEN => {
+            round_in_turn(model, edges, size, fillet)
+                .or_else(|| round_with_caps(model, edges, size, fillet))
+                .ok_or(why)
+        }
+        done => done,
+    }
+}
+
+/// [`round_any`], then past lines drawn on the faces where it cannot.
+fn round_once(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Result<Vec<FaceId>, &'static str> {
     match round_any(model, edges, size, fillet) {
         Err(why)
             if why == prism_kernel::solid::TOO_LARGE
@@ -61,6 +78,232 @@ pub fn round_edges(
         }
         done => done,
     }
+}
+
+/// Where the kernel cannot round `edges` together (a corner it cannot
+/// close: an inside round meeting outside ones, as at the inner corner of
+/// an L-shaped block), round them in turn: the inside (concave) edges,
+/// then the outside ones, or the other way round, or else one at a time.
+/// Each later round runs onto the faces the earlier ones made, so the
+/// corner is closed by the rounds themselves (DECISIONS #46).
+fn round_in_turn(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    if edges.len() < 2 {
+        return None;
+    }
+    let (inside, outside): (BTreeSet<EdgeId>, BTreeSet<EdgeId>) =
+        edges.iter().partition(|e| concave(model, **e));
+    let mut orders: Vec<Vec<BTreeSet<EdgeId>>> = Vec::new();
+    if !inside.is_empty() && !outside.is_empty() {
+        orders.push(vec![inside.clone(), outside.clone()]);
+        orders.push(vec![outside, inside]);
+    }
+    orders.push(edges.iter().map(|e| BTreeSet::from([*e])).collect());
+    for groups in orders {
+        let mut work = model.clone();
+        let mut last = None;
+        let mut ok = true;
+        for g in &groups {
+            let now = follow(model, &work, g);
+            if now.is_empty() {
+                ok = false;
+                break;
+            }
+            match round_once(&mut work, &now, size, fillet) {
+                Ok(f) => last = Some(f),
+                Err(_) => {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if ok && crate::check::problems(&work).is_empty() && !worse_health(model, &work) {
+            *model = work;
+            return last;
+        }
+    }
+    None
+}
+
+/// Where rounded edges meet at a corner of four or more edges that the
+/// kernel cannot close (a pyramid's apex), even in turn: the corner is cut
+/// off first by a small flat face, past where the rounds reach, square to
+/// the corner's average direction (each edge is cut where it meets that
+/// plane, so the face is flat); every round then ends at a plain corner
+/// of three edges, which the kernel closes. A step toward DECISIONS #46's
+/// smooth corner patch, which would replace that small face.
+fn round_with_caps(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    let mut at: BTreeMap<VertexId, usize> = BTreeMap::new();
+    for e in edges {
+        let x = model.edge(*e)?;
+        *at.entry(x.a).or_default() += 1;
+        *at.entry(x.b).or_default() += 1;
+    }
+    let degree = |m: &Model, v: VertexId| m.edges().filter(|(_, x)| x.has(v)).count();
+    let corners: Vec<VertexId> = at
+        .iter()
+        .filter(|(v, n)| **n >= 2 && degree(model, **v) >= 4)
+        .map(|(v, _)| *v)
+        .collect();
+    if corners.is_empty() {
+        return None;
+    }
+    let tol = model.tol();
+    let back = reach(model, edges, size, fillet) * 1.2;
+    let mut work = model.clone();
+    for v in corners {
+        let p = work.vertex(v);
+        let spokes: Vec<(EdgeId, DVec3, f64)> = work
+            .edges()
+            .filter(|(_, x)| x.has(v))
+            .map(|(id, x)| {
+                let q = work.vertex(x.other(v));
+                (id, (q - p).normalize_or_zero(), q.distance(p))
+            })
+            .collect();
+        if spokes
+            .iter()
+            .any(|(id, ..)| work.edge(*id).is_some_and(|x| x.curve.is_curved()))
+        {
+            return None;
+        }
+        let n = -spokes
+            .iter()
+            .map(|(_, d, _)| *d)
+            .sum::<DVec3>()
+            .normalize_or_zero();
+        if n == DVec3::ZERO || spokes.iter().any(|(_, d, _)| n.dot(*d) >= -1e-6) {
+            return None;
+        }
+        let h = back
+            * spokes
+                .iter()
+                .map(|(_, d, _)| -n.dot(*d))
+                .fold(0.0, f64::max);
+        let cuts: Vec<DVec3> = spokes
+            .iter()
+            .map(|(_, d, len)| {
+                let t = h / -n.dot(*d);
+                (t < len * 0.5).then_some(p + *d * t)
+            })
+            .collect::<Option<_>>()?;
+        for c in &cuts {
+            crate::sticky::insert_point(&mut work, *c, &tol);
+        }
+        // Each face round the corner gets a line between its two cuts.
+        let around: Vec<FaceId> = work
+            .faces()
+            .filter(|(_, f)| f.loops().flatten().any(|x| *x == v))
+            .map(|(id, _)| id)
+            .collect();
+        for f in around {
+            let on: Vec<DVec3> = cuts
+                .iter()
+                .copied()
+                .filter(|c| {
+                    work.face(f).is_some_and(|face| {
+                        face.loops()
+                            .flatten()
+                            .any(|x| tol.same_point(work.vertex(*x), *c))
+                    })
+                })
+                .collect();
+            let [a, b] = on[..] else { return None };
+            crate::sticky::add_segment(&mut work, a, b);
+        }
+        // Off with the corner: the small faces at it, its edges, itself.
+        let small: Vec<FaceId> = work
+            .faces()
+            .filter(|(_, f)| f.loops().flatten().any(|x| *x == v))
+            .map(|(id, _)| id)
+            .collect();
+        for f in small {
+            work.remove_face(f);
+        }
+        let spokes: Vec<EdgeId> = work
+            .edges()
+            .filter(|(_, x)| x.has(v))
+            .map(|(id, _)| id)
+            .collect();
+        for e in spokes {
+            work.remove_edge(e);
+        }
+        work.remove_vertex(v);
+        // The flat face across it, its points in turn round the corner.
+        let (u, w) = (
+            n.any_orthonormal_vector(),
+            n.cross(n.any_orthonormal_vector()),
+        );
+        let mut ring = cuts.clone();
+        ring.sort_by(|a, b| {
+            let ang = |q: &DVec3| (*q - p).dot(w).atan2((*q - p).dot(u));
+            ang(a).total_cmp(&ang(b))
+        });
+        crate::sticky::add_polygon(&mut work, &ring);
+    }
+    crate::health::orient(&mut work, None);
+    if !crate::check::problems(&work).is_empty() {
+        return None;
+    }
+    let now = follow(model, &work, edges);
+    let capped = work.clone();
+    let out = match round_once(&mut work, &now, size, fillet) {
+        Ok(out) => out,
+        Err(_) => {
+            work = capped;
+            round_in_turn(&mut work, &now, size, fillet)?
+        }
+    };
+    if worse_health(model, &work) {
+        return None;
+    }
+    *model = work;
+    Some(out)
+}
+
+/// Whether the solid turns inward at `e` (between two flat faces).
+fn concave(model: &Model, e: EdgeId) -> bool {
+    crate::round::sides(model, e).is_some_and(|[(_, _, u1), (_, n2, _)]| n2.dot(u1) > 0.0)
+}
+
+/// The edges of `now` that are what is left of `edges` of `before` (an
+/// edge an earlier round shortened at its end is found along its line or
+/// arc).
+fn follow(before: &Model, now: &Model, edges: &BTreeSet<EdgeId>) -> BTreeSet<EdgeId> {
+    let tol = before.tol();
+    let mut out = BTreeSet::new();
+    for e in edges {
+        let Some(x) = before.edge(*e) else { continue };
+        let (a, b) = (before.vertex(x.a), before.vertex(x.b));
+        if let Some(y) = now.edge(*e)
+            && tol.same_point(now.vertex(y.a), a)
+            && tol.same_point(now.vertex(y.b), b)
+        {
+            out.insert(*e);
+            continue;
+        }
+        let on = |p: DVec3| {
+            tol.same_point(p, a)
+                || tol.same_point(p, b)
+                || crate::sticky::on_curve_inside(&x.curve, a, b, p, &tol)
+        };
+        out.extend(
+            now.edges()
+                .filter(|(_, y)| y.curve.is_curved() == x.curve.is_curved())
+                .filter(|(_, y)| on(now.vertex(y.a)) && on(now.vertex(y.b)))
+                .map(|(id, _)| id),
+        );
+    }
+    out
 }
 
 /// Whether `e` is a straight line between two flat faces of one plane
