@@ -6,7 +6,7 @@ use std::f64::consts::PI;
 
 use prism_geom::Surface;
 use prism_math::DVec3;
-use prism_ops::rounds::{NO_SIZE, TWO_SOLIDS, refusal, round_edges};
+use prism_ops::rounds::{NO_SIZE, refusal, round_edges};
 use prism_ops::{add_circle, add_polygon, add_rect, check, face_at, health, push_pull, vertex_at};
 use prism_topo::{EdgeId, Model};
 
@@ -197,11 +197,11 @@ fn rounds_are_refused_with_a_reason_and_change_nothing() {
     let loose = edge(&m, v(5.0, 0.0, 0.0), v(6.0, 0.0, 0.0));
     assert_eq!(
         refusal(&m, &BTreeSet::from([loose]), 0.1, true),
-        Some(TWO_SOLIDS)
+        Some(prism_ops::rounds::ONE_FACE)
     );
     assert_eq!(
         refusal(&m, &BTreeSet::from([e, loose]), 0.1, true),
-        Some(TWO_SOLIDS)
+        Some(prism_ops::rounds::ONE_FACE)
     );
 }
 
@@ -246,4 +246,112 @@ fn a_round_runs_past_lines_drawn_on_the_faces_at_its_ends() {
     assert_eq!(health::check(&m).stray.edges.len(), 0);
     // The cube's six, the end face still in two by the line, and the round.
     assert_eq!((faces, m.face_count()), (7, 8));
+}
+
+/// A box 2 long whose top edge is bevelled by a face at `deg` degrees
+/// to the top (the profile in y, z pulled along x), and the edge between
+/// the top and the bevel.
+fn bevelled(deg: f64) -> (Model, EdgeId) {
+    let mut m = Model::new();
+    let drop = deg.to_radians().tan();
+    add_polygon(
+        &mut m,
+        &[
+            v(0.0, 0.0, 0.0),
+            v(0.0, 2.0, 0.0),
+            v(0.0, 2.0, 1.0),
+            v(0.0, 1.0, 1.0),
+            v(0.0, 0.0, 1.0 - drop),
+        ],
+    );
+    let f = face_at(&m, v(0.0, 1.0, 0.5)).expect("the profile");
+    let out = m.face(f).unwrap().plane().unwrap().normal.x;
+    push_pull(&mut m, f, 2.0 * out, false);
+    let e = edge(&m, v(0.0, 1.0, 1.0), v(2.0, 1.0, 1.0));
+    (m, e)
+}
+
+/// The kernel refuses a small round on a shallow edge as too large (at
+/// 12 degrees every size; at 45 degrees, 5 mm): Prism's own round makes
+/// it, a cylinder tangent to both faces (owner's Xby4, 2026-11-26).
+#[test]
+fn a_shallow_edge_takes_a_small_round() {
+    for (deg, r) in [
+        (12.0_f64, 0.005),
+        (12.0, 0.02),
+        (12.0, 0.2),
+        (45.0, 0.005),
+        (27.0, 0.05),
+    ] {
+        let (mut m, e) = bevelled(deg);
+        let whole = volume(&m);
+        round_edges(&mut m, &[e].into(), r, true).unwrap_or_else(|w| panic!("{deg} {r}: {w}"));
+        clean(&m);
+        // What a fillet takes off: between the two tangent lines and the
+        // arc, r²(tan(φ/2) − φ/2) for a turn of φ, along the 2 m edge.
+        let phi = deg.to_radians();
+        let cut = r * r * ((phi / 2.0).tan() - phi / 2.0) * 2.0;
+        assert!(
+            (whole - volume(&m) - cut).abs() < 1e-9 + 1e-6 * cut,
+            "{deg} {r}: {} {cut}",
+            whole - volume(&m)
+        );
+    }
+}
+
+/// A line drawn on a flat face has no corner to round, and says so.
+#[test]
+fn a_line_on_a_flat_face_is_not_rounded() {
+    let mut m = cube(2.0);
+    prism_ops::add_segment(&mut m, v(1.0, 0.0, 0.0), v(1.0, 0.0, 2.0));
+    let e = edge(&m, v(1.0, 0.0, 0.0), v(1.0, 0.0, 2.0));
+    assert_eq!(
+        refusal(&m, &[e].into(), 0.1, true),
+        Some(prism_ops::rounds::FLAT_LINE)
+    );
+}
+
+/// A fillet or chamfer needs only the two faces beside the edge, not a
+/// closed solid (owner, 2026-11-26): an open box's corner rounds, and so
+/// does an edge where two loose faces meet.
+#[test]
+fn an_open_box_and_two_loose_faces_round() {
+    let l = 2.0;
+    let mut m = cube(l);
+    let top = face_at(&m, v(1.0, 1.0, l)).expect("the top");
+    m.remove_face(top);
+    let e = edge(&m, v(l, 0.0, 0.0), v(l, 0.0, l));
+    for (fillet, r) in [(true, 0.3), (false, 0.3)] {
+        let mut w = m.clone();
+        round_edges(&mut w, &BTreeSet::from([e]), r, fillet)
+            .unwrap_or_else(|why| panic!("{fillet}: {why}"));
+        assert_eq!(check::problems(&w), Vec::<String>::new());
+        // The bottom keeps its corner cut to match, the top rim is open.
+        assert!(face_at(&w, v(l - 0.01, 0.01, 0.0)).is_none(), "{fillet}");
+        assert_eq!(w.faces().count(), m.faces().count() + 1);
+    }
+    // Two loose faces meeting at an edge: an L of two rectangles.
+    let mut m = Model::new();
+    add_polygon(
+        &mut m,
+        &[
+            v(0.0, 0.0, 0.0),
+            v(2.0, 0.0, 0.0),
+            v(2.0, 1.0, 0.0),
+            v(0.0, 1.0, 0.0),
+        ],
+    );
+    add_polygon(
+        &mut m,
+        &[
+            v(0.0, 0.0, 0.0),
+            v(2.0, 0.0, 0.0),
+            v(2.0, 0.0, 1.0),
+            v(0.0, 0.0, 1.0),
+        ],
+    );
+    let e = edge(&m, v(0.0, 0.0, 0.0), v(2.0, 0.0, 0.0));
+    round_edges(&mut m, &BTreeSet::from([e]), 0.2, true).expect("rounded");
+    assert_eq!(check::problems(&m), Vec::<String>::new());
+    assert_eq!(m.faces().count(), 3);
 }

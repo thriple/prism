@@ -105,3 +105,64 @@ fn a_drag_too_far_keeps_the_last_round_and_says_why_at_the_cursor() {
         o.labels
     );
 }
+
+/// The owner's session 24 (2026-11-26): seven edges of a top section
+/// collected (six straight, one arc onto a cylinder) and filleted were
+/// refused at every size. The straight ones were each in pieces, split
+/// where lines drawn across their side faces met them: to the kernel, a
+/// corner at each. Those lines are taken off, the pieces joined, the
+/// edges rounded together and the lines drawn back.
+#[test]
+fn the_seven_edges_of_session_24_fillet_together() {
+    let mut r: Recording =
+        serde_json::from_str(include_str!("data/owner-session-24.json")).expect("recording");
+    r.events.truncate(1100);
+    let s = Session::replay(&r);
+    let edges = s.selection().edges.clone();
+    assert_eq!(edges.len(), 7);
+    let mut m = s.work_model().clone();
+    prism_ops::rounds::round_edges(&mut m, &edges, 0.05, true).expect("filleted");
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+    let h = prism_ops::health::check(&m);
+    assert!(h.reversed.is_empty() && h.leaky == 0, "{h:?}");
+}
+
+/// The owner's Xby4 (2026-11-26): the long top edge between the top and
+/// a face bevelled 12 degrees off it would not fillet at any size (the
+/// kernel refuses shallow edges; lines drawn on the end faces met its
+/// ends). It does now, and the lines on the end faces stay.
+#[test]
+fn the_xby4_top_edge_fillets() {
+    let c = prism_file::read(include_bytes!("data/owner-xby4.prism")).expect("the file");
+    let m = &c.assembly.root().model;
+    let a = prism_ops::vertex_at(m, prism_math::DVec3::new(-0.5450, 1.2791, 2.5338));
+    let e = m
+        .edges()
+        .find(|(_, x)| {
+            let (p, q) = (m.vertex(x.a), m.vertex(x.b));
+            (p.y - 1.27908).abs() < 1e-4
+                && (q.y - 1.27908).abs() < 1e-4
+                && (p.z - 2.53384).abs() < 1e-4
+                && (q.z - 2.53384).abs() < 1e-4
+                && (p.x - q.x).abs() > 1.0
+        })
+        .map(|(id, _)| id)
+        .expect("the top edge");
+    let _ = a;
+    let lines = |m: &prism_topo::Model| {
+        m.edges()
+            .filter(|(_, x)| {
+                (m.vertex(x.a).x + 0.545).abs() < 1e-3 && (m.vertex(x.b).x + 0.545).abs() < 1e-3
+            })
+            .count()
+    };
+    for r in [0.005, 0.02, 0.05] {
+        let mut w = m.clone();
+        prism_ops::rounds::round_edges(&mut w, &[e].into(), r, true)
+            .unwrap_or_else(|why| panic!("{r}: {why}"));
+        assert_eq!(prism_ops::check::problems(&w), Vec::<String>::new());
+        let h = prism_ops::health::check(&w);
+        assert!(h.reversed.is_empty() && h.leaky == 0, "{r}: {h:?}");
+        assert!(lines(&w) >= lines(m), "{r}: the end face keeps its lines");
+    }
+}

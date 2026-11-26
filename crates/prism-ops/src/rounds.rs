@@ -19,6 +19,15 @@ pub const NOTHING: &str = "Refused: pick the edges of a solid to round.";
 pub const NO_SIZE: &str = "Refused: the size must be more than zero.";
 /// Said when the edges are not all on one closed solid.
 pub const TWO_SOLIDS: &str = "Refused: the edges are not all on one closed solid.";
+/// Said for an edge without a face on each side.
+pub const ONE_FACE: &str = "Refused: an edge needs one face on each side to round.";
+/// Said when edges that are not on a closed solid cannot be rounded by
+/// Prism's own round either.
+pub const OPEN: &str = "Refused: off a closed solid, only straight edges between flat faces round so far, and not two that meet.";
+/// Said for a line between two faces of one plane: drawn on a flat face,
+/// with no corner to round.
+pub const FLAT_LINE: &str =
+    "Refused: this line is drawn on a flat face, so there is no corner to round.";
 
 /// Round `edges` (all of one closed solid) by `size`: fillets, or chamfers
 /// when `fillet` is false. Returns the solid's faces afterwards. A refusal
@@ -29,12 +38,151 @@ pub fn round_edges(
     size: f64,
     fillet: bool,
 ) -> Result<Vec<FaceId>, &'static str> {
-    match round_plain(model, edges, size, fillet) {
-        Err(why) if why == prism_kernel::solid::TOO_LARGE => {
+    let edge_faces = model.edge_faces();
+    if edges
+        .iter()
+        .any(|e| edge_faces.get(e).is_none_or(|f| f.len() != 2))
+    {
+        return Err(ONE_FACE);
+    }
+    if edges.iter().any(|e| drawn_on_flat(model, *e)) {
+        return Err(FLAT_LINE);
+    }
+    match round_any(model, edges, size, fillet) {
+        Err(why)
+            if why == prism_kernel::solid::TOO_LARGE
+                || why == prism_kernel::solid::NOT_ROUNDED
+                || why == TWO_SOLIDS =>
+        {
+            let why = if why == TWO_SOLIDS { OPEN } else { why };
             round_through_lines(model, edges, size, fillet).ok_or(why)
         }
         done => done,
     }
+}
+
+/// Whether `e` is a straight line between two flat faces of one plane
+/// that face the same way.
+fn drawn_on_flat(model: &Model, e: EdgeId) -> bool {
+    let Some(x) = model.edge(e) else { return false };
+    if x.curve.is_curved() {
+        return false;
+    }
+    let edge_faces = model.edge_faces();
+    let Some([f, g]) = edge_faces.get(&e).map(Vec::as_slice) else {
+        return false;
+    };
+    let tol = model.tol();
+    match (
+        model.face(*f).and_then(|x| x.plane()),
+        model.face(*g).and_then(|x| x.plane()),
+    ) {
+        (Some(p), Some(q)) => {
+            p.normal.dot(q.normal) > 0.0
+                && p.same_surface(q, &tol, model.face_extent(model.face(*g).expect("a face")))
+        }
+        _ => false,
+    }
+}
+
+/// [`round_plain`], and where the kernel will not, the edges one by one
+/// by Prism's own round ([`crate::round`]), when they are straight edges
+/// between flat faces that do not touch: the kernel refuses a small round
+/// on a shallow edge as too large (a plain box with its top edge bevelled
+/// at 12 degrees: every size; at 45 degrees, 5 mm), which a cylinder
+/// tangent to both faces makes exactly (owner's Xby4, 2026-11-26).
+fn round_any(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Result<Vec<FaceId>, &'static str> {
+    match round_plain(model, edges, size, fillet) {
+        Err(why)
+            if why == prism_kernel::solid::TOO_LARGE
+                || why == prism_kernel::solid::NOT_ROUNDED
+                || why == TWO_SOLIDS =>
+        {
+            round_apart(model, edges, size, fillet).ok_or(why)
+        }
+        done => done,
+    }
+}
+
+/// `edges` rounded one by one by [`crate::round::round`], if none of them
+/// share a point and each can be. The solid's faces afterwards.
+fn round_apart(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    let mut ends = BTreeSet::new();
+    for e in edges {
+        let x = model.edge(*e)?;
+        if !ends.insert(x.a) || !ends.insert(x.b) {
+            return None;
+        }
+    }
+    let mut work = model.clone();
+    let before: BTreeSet<EdgeId> = work.edges().map(|(id, _)| id).collect();
+    for e in edges {
+        if !crate::round::round(&mut work, *e, size, fillet) {
+            return None;
+        }
+    }
+    soften_tangent(&mut work, &before);
+    if !crate::check::problems(&work).is_empty() {
+        return None;
+    }
+    let new = work
+        .faces()
+        .map(|(id, _)| id)
+        .find(|id| model.face(*id).is_none())?;
+    let out = piece_of(&work, new).into_iter().collect();
+    *model = work;
+    Some(out)
+}
+
+/// The faces joined to `seed` through edges: its closed solid, or the
+/// sheet it is part of.
+fn piece_of(model: &Model, seed: FaceId) -> BTreeSet<FaceId> {
+    if let Ok(s) = solid_of(model, seed) {
+        return s;
+    }
+    let edge_faces = model.edge_faces();
+    let mut out = BTreeSet::from([seed]);
+    let mut todo = vec![seed];
+    while let Some(f) = todo.pop() {
+        let Some(face) = model.face(f) else { continue };
+        for e in face.edge_ids() {
+            for g in edge_faces.get(&e).into_iter().flatten() {
+                if out.insert(*g) {
+                    todo.push(*g);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The faces of the closed solid all of `edges` are on, or else the
+/// faces joined to theirs.
+fn piece_faces(model: &Model, edges: &BTreeSet<EdgeId>) -> Option<BTreeSet<FaceId>> {
+    if let Ok(f) = solid_faces(model, edges) {
+        return Some(f);
+    }
+    let edge_faces = model.edge_faces();
+    let seed = *edge_faces.get(edges.first()?)?.first()?;
+    let piece = piece_of(model, seed);
+    edges
+        .iter()
+        .all(|e| {
+            edge_faces
+                .get(e)
+                .is_some_and(|fs| fs.iter().all(|f| piece.contains(f)))
+        })
+        .then_some(piece)
 }
 
 /// [`round_edges`] again where the kernel found the size too large, past
@@ -53,8 +201,9 @@ fn round_through_lines(
     fillet: bool,
 ) -> Option<Vec<FaceId>> {
     let mut work = model.clone();
-    let faces = solid_faces(&work, edges).ok()?;
-    let seams = drawn_lines(&work, &faces, edges);
+    let faces = piece_faces(&work, edges)?;
+    let reach = reach(&work, edges, size, fillet);
+    let seams = drawn_lines(&work, &faces, edges, reach);
     let lines: Vec<(DVec3, DVec3)> = seams
         .iter()
         .filter_map(|e| work.edge(*e))
@@ -69,12 +218,13 @@ fn round_through_lines(
             },
         );
     }
-    let faces = solid_faces(&work, edges).ok()?;
-    let joined = join_straight(&mut work, &faces, edges);
+    let faces = piece_faces(&work, edges)?;
+    let mut edges = edges.clone();
+    let joined = join_straight(&mut work, &faces, &mut edges);
     if lines.is_empty() && joined == 0 {
         return None;
     }
-    round_plain(&mut work, edges, size, fillet).ok()?;
+    round_any(&mut work, &edges, size, fillet).ok()?;
     // The lines go back as far as they still lie on the solid: a round
     // that cut into the face one was on leaves its end in the air.
     let had: BTreeSet<EdgeId> = work.edges().map(|(id, _)| id).collect();
@@ -98,14 +248,14 @@ fn round_through_lines(
             }
         }
     }
-    if !crate::check::problems(&work).is_empty() {
+    if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
         return None;
     }
     let seed = edges
         .iter()
         .find_map(|e| work.edge_faces().get(e).and_then(|f| f.first().copied()));
     let out = match seed {
-        Some(f) => solid_of(&work, f).ok()?.into_iter().collect(),
+        Some(f) => piece_of(&work, f).into_iter().collect(),
         None => {
             // The rounded edges are gone: the solid is the faces that were
             // not there before, with the rest it joins.
@@ -113,11 +263,21 @@ fn round_through_lines(
                 .faces()
                 .map(|(id, _)| id)
                 .find(|id| model.face(*id).is_none())?;
-            solid_of(&work, new).ok()?.into_iter().collect()
+            piece_of(&work, new).into_iter().collect()
         }
     };
     *model = work;
     Some(out)
+}
+
+/// Whether `after` has faults Model Health finds that `before` did not:
+/// edges with more than two faces, faces inside a solid or turned round.
+fn worse_health(before: &Model, after: &Model) -> bool {
+    let (a, b) = (crate::health::check(before), crate::health::check(after));
+    b.non_manifold.edges.len() > a.non_manifold.edges.len()
+        || b.interior.faces.len() > a.interior.faces.len()
+        || b.reversed.faces.len() > a.reversed.faces.len()
+        || b.leaky > a.leaky
 }
 
 /// The faces of the one closed solid all of `edges` are on.
@@ -170,9 +330,27 @@ fn drawn_lines(
     model: &Model,
     faces: &BTreeSet<FaceId>,
     edges: &BTreeSet<EdgeId>,
+    reach: f64,
 ) -> BTreeSet<EdgeId> {
     let near = end_faces(model, faces, edges);
     let tol = model.tol();
+    // The rounded edges as segments: a line within `reach` of one is in
+    // the round's way.
+    let spans: Vec<(DVec3, DVec3)> = edges
+        .iter()
+        .flat_map(|e| {
+            let pts = model.edge_points(*e);
+            pts.windows(2).map(|w| (w[0], w[1])).collect::<Vec<_>>()
+        })
+        .collect();
+    let in_way = |a: DVec3, b: DVec3| {
+        (0..=16).any(|k| {
+            let p = a.lerp(b, f64::from(k) / 16.0);
+            spans
+                .iter()
+                .any(|(c, d)| distance_to_segment(p, *c, *d) <= reach + tol.dist)
+        })
+    };
     model
         .edge_faces()
         .into_iter()
@@ -181,7 +359,9 @@ fn drawn_lines(
             if edges.contains(e) || !(near.contains(f) || near.contains(g)) {
                 return false;
             }
-            let straight = model.edge(*e).is_some_and(|x| !x.curve.is_curved());
+            let straight = model.edge(*e).is_some_and(|x| {
+                !x.curve.is_curved() && in_way(model.vertex(x.a), model.vertex(x.b))
+            });
             match (
                 model.face(*f).and_then(|x| x.plane()),
                 model.face(*g).and_then(|x| x.plane()),
@@ -198,6 +378,43 @@ fn drawn_lines(
         })
         .map(|(e, _)| e)
         .collect()
+}
+
+/// How far from the rounded edges a round reaches into the faces beside
+/// them, with room to spare: a fillet's setback is its radius over the
+/// tangent of half the turn between the faces, a chamfer's its size.
+fn reach(model: &Model, edges: &BTreeSet<EdgeId>, size: f64, fillet: bool) -> f64 {
+    let edge_faces = model.edge_faces();
+    let mut most = size;
+    for e in edges {
+        let Some(x) = model.edge(*e) else { continue };
+        let mid = middle(model, x);
+        let Some([f, g]) = edge_faces.get(e).map(Vec::as_slice) else {
+            continue;
+        };
+        let (Some(a), Some(b)) = (model.face(*f), model.face(*g)) else {
+            continue;
+        };
+        let turn = a
+            .surface
+            .normal_at(mid)
+            .dot(b.surface.normal_at(mid))
+            .clamp(-1.0, 1.0)
+            .acos();
+        let back = if fillet && turn > 1e-6 {
+            size / (turn / 2.0).tan().max(1e-6)
+        } else {
+            size
+        };
+        most = most.max(back);
+    }
+    most * 1.5
+}
+
+fn distance_to_segment(p: DVec3, a: DVec3, b: DVec3) -> f64 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_squared().max(f64::MIN_POSITIVE)).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
 }
 
 /// [`round_edges`] as the kernel takes it, with nothing done first.
@@ -249,7 +466,11 @@ fn round_plain(
 /// past a corner (owner's session 22: a round stopped at 0.028 m, the
 /// height of such a point below the edge, where 0.2 m fits). Edges being
 /// rounded are left. Returns how many points went.
-fn join_straight(model: &mut Model, faces: &BTreeSet<FaceId>, edges: &BTreeSet<EdgeId>) -> usize {
+fn join_straight(
+    model: &mut Model,
+    faces: &BTreeSet<FaceId>,
+    edges: &mut BTreeSet<EdgeId>,
+) -> usize {
     let ends: BTreeSet<_> = edges
         .iter()
         .filter_map(|e| model.edge(*e))
@@ -265,16 +486,17 @@ fn join_straight(model: &mut Model, faces: &BTreeSet<FaceId>, edges: &BTreeSet<E
     let tol = model.tol();
     let mut done = 0;
     for v in points {
-        if ends.contains(&v) {
-            continue;
-        }
         let at: Vec<EdgeId> = model
             .edges()
             .filter(|(_, e)| e.a == v || e.b == v)
             .map(|(id, _)| id)
             .collect();
         let [e1, e2] = at[..] else { continue };
-        if edges.contains(&e1) || edges.contains(&e2) {
+        // Two pieces of one rounded line join into one rounded edge; a
+        // rounded edge and one that is not stay apart (the round ends
+        // there).
+        let rounded = (edges.contains(&e1), edges.contains(&e2));
+        if rounded.0 != rounded.1 || (!rounded.0 && ends.contains(&v)) {
             continue;
         }
         let ef = model.edge_faces();
@@ -317,6 +539,11 @@ fn join_straight(model: &mut Model, faces: &BTreeSet<FaceId>, edges: &BTreeSet<E
         model.remove_edge(e1);
         model.remove_edge(e2);
         model.remove_vertex(v);
+        if rounded.0 {
+            edges.remove(&e1);
+            edges.remove(&e2);
+            edges.insert(joined);
+        }
         done += 1;
     }
     done
