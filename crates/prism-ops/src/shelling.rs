@@ -76,15 +76,16 @@ pub const FLUSH_PARALLEL: &str = "Refused: that plane lies along the face at its
 /// a stray tiny size from making a skin nobody asked for.
 pub const MIN_THICKNESS: f64 = 1e-3;
 
-pub const TOO_THIN: &str =
-    "Too thin: a wall must be at least 0.1 cm (1 mm). Type a larger thickness, or drag further.";
+/// The old refusal for a wall under [`MIN_THICKNESS`]; such a wall is now
+/// built with the [`THIN`] warning (owner, 2026-11-26).
+pub const TOO_THIN: &str = THIN;
 
-/// `TOO_THIN` for a thickness (signed) that is not zero and under the
-/// least; zero is left to the kernel's own message (nothing sized yet).
-pub fn thin_refusal(thickness: f64) -> Option<&'static str> {
+/// [`THIN`] for a thickness (signed) that is not zero and under the least;
+/// zero is left to the kernel's own message (nothing sized yet).
+pub fn thin_warning(thickness: f64) -> Option<&'static str> {
     // A size under a nanometre is nothing sized yet (the pointer just
     // pressed), not a thin wall.
-    (thickness.abs() > 1e-9 && thickness.abs() < MIN_THICKNESS * (1.0 - 1e-9)).then_some(TOO_THIN)
+    (thickness.abs() > 1e-9 && thickness.abs() < MIN_THICKNESS * (1.0 - 1e-9)).then_some(THIN)
 }
 
 pub const FLUSH_REACH: &str = "Refused: to end flush in that plane the surface would have to be carried on a long way past its own edge. Use a plane closer to square, or Square.";
@@ -481,7 +482,8 @@ pub fn default_rims_from(
     let mut styles = start;
     // Each style is tried as it is: one that would be cut square instead
     // is no pick at all.
-    let builds = |styles: &RimStyles| slab_marked(model, faces, open, d, styles, false).is_ok();
+    let builds =
+        |styles: &RimStyles| slab_marked(model, faces, open, d, styles, false, false).is_ok();
     if !builds(&styles) {
         return styles;
     }
@@ -550,6 +552,9 @@ struct Plan {
     /// (part 3d): where each edge there ends, round the corner in order. A
     /// small flat face fills the gap between them.
     splits: BTreeMap<VertexId, Vec<(EdgeId, DVec3)>>,
+    /// Of `splits`, the points on a rim ([`rim_ends`]): a small triangle
+    /// closes the gap between the two rims' walls there.
+    rim_splits: BTreeSet<VertexId>,
     /// Each kept face's edges moved with it.
     curves: BTreeMap<EdgeId, Curve>,
     /// Edges with a kept face on one side only: the edge, the way that face
@@ -557,14 +562,16 @@ struct Plan {
     rims: Vec<(EdgeId, VertexId, VertexId, FaceId)>,
 }
 
-/// Why `shell` would refuse, if it would.
+/// Why the shell cannot be built as asked, if it cannot. [`slab`] and
+/// [`shell`] build it anyway, face by face, and flag it (owner,
+/// 2026-11-26: warn, never refuse); this says why they had to.
 pub fn refusal(
     model: &Model,
     faces: &BTreeSet<FaceId>,
     open: &BTreeSet<FaceId>,
     thickness: f64,
 ) -> Option<&'static str> {
-    slab(model, faces, open, thickness).err()
+    refusal_with(model, faces, open, thickness, &RimStyles::new())
 }
 
 /// [`refusal`] with rim styles.
@@ -575,7 +582,7 @@ pub fn refusal_with(
     thickness: f64,
     styles: &RimStyles,
 ) -> Option<&'static str> {
-    slab_with(model, faces, open, thickness, styles).err()
+    slab_marked(model, faces, open, thickness, styles, true, false).err()
 }
 
 /// Shell or thicken the bodies of `faces` by `thickness`, leaving `open`
@@ -616,6 +623,11 @@ pub fn shell_flagged(
     let mut flags = Flags::new();
     for (why, found) in built.flags {
         let at = flags.entry(why).or_default();
+        // Faces left as they were are the model's own already.
+        if why == SKIPPED {
+            at.faces.extend(found.faces);
+            continue;
+        }
         at.vertices
             .extend(found.vertices.iter().filter_map(|v| vmap.get(v)));
         at.edges
@@ -660,7 +672,7 @@ pub fn slab_flagged(
     d: f64,
     styles: &RimStyles,
 ) -> Result<Flagged, &'static str> {
-    slab_marked(model, faces, open, d, styles, true)
+    slab_marked(model, faces, open, d, styles, true, true)
 }
 
 /// Where a slab is built some other way than asked, rather than
@@ -808,6 +820,11 @@ fn flush_fits(
 /// built as it is or refused. A plane that leans too far to reach
 /// (`FLUSH_REACH`) is still refused: the tool drags the plane, and says so
 /// while it is dragged.
+/// With `fallback`, what cannot be built as asked is built anyway (owner,
+/// 2026-11-26: "just give everything a warning"): a rim style that cannot
+/// be reached is cut square, and a shape that still cannot be built as one
+/// piece is built face by face ([`apart`]), each flagged with why. Only
+/// nothing to build (no face, no thickness, every face open) is refused.
 fn slab_marked(
     model: &Model,
     faces: &BTreeSet<FaceId>,
@@ -815,6 +832,26 @@ fn slab_marked(
     d: f64,
     styles: &RimStyles,
     squaring: bool,
+    fallback: bool,
+) -> Result<Flagged, &'static str> {
+    match as_asked(model, faces, open, d, styles, squaring, fallback) {
+        Err(why) if fallback && ![NOTHING, ZERO, ALL_OPEN].contains(&why) => {
+            let work = turned(model, faces, open, &mut Marks::default());
+            apart(work.as_ref(), faces, open, d, why).ok_or(why)
+        }
+        r => r,
+    }
+}
+
+/// [`slab_marked`] short of building face by face.
+fn as_asked(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    d: f64,
+    styles: &RimStyles,
+    squaring: bool,
+    fallback: bool,
 ) -> Result<Flagged, &'static str> {
     let mut marks = Marks::default();
     let work = turned(model, faces, open, &mut marks);
@@ -835,7 +872,9 @@ fn slab_marked(
     let first = attempt(&styles, &marks);
     let styled = |s: &RimStyles| s.values().any(|x| *x != RimStyle::Square);
     match first {
-        Err(why) if squaring && styled(&styles) && why != FLUSH_REACH => {}
+        // A flush plane out of reach is refused as such for the tool's
+        // rim handle to say so; built anyway, that rim is cut square.
+        Err(why) if squaring && styled(&styles) && (fallback || why != FLUSH_REACH) => {}
         r => return r,
     }
     // Some style cannot be built here: every rim square first (if even
@@ -869,6 +908,101 @@ fn slab_marked(
         }
     }
     attempt(&keep, &marks)
+}
+
+/// Built face by face ([`apart`]) because the shape could not be built
+/// as one piece, by the reason it could not.
+pub const APART_CORNER: &str = "Built face by face: more than three faces meet at a corner here and their moved copies do not meet at one point. Each face was thickened on its own and the pieces joined: check the corners for gaps or overlaps.";
+pub const APART_SHARP: &str = "Built face by face: these faces fold right back onto each other, and thickening into the fold does not make one piece. Each face was thickened on its own and the pieces joined: check the fold.";
+pub const APART_THICK: &str = "Built face by face: at this thickness a face turns inside out or the walls cannot close. Each face was thickened on its own and the pieces joined: check for overlaps, or try a smaller thickness.";
+pub const APART_FREEFORM: &str = "Built face by face: an arc's moved copy is not round the same axis, so the wall between them could not be made as one piece. Each face was thickened on its own and the pieces joined: check the walls.";
+pub const APART_BRANCHES: &str = "Built face by face: more than two faces meet at an edge and the sheets could not be parted and joined. Each face was thickened on its own and the pieces joined: check the edges where they meet.";
+pub const APART: &str = "Built face by face: this shape could not be shelled as one piece. Each face was thickened on its own and the pieces joined: check the corners and edges.";
+/// Faces the face-by-face build could not thicken (or join) at all: left
+/// as they were.
+pub const SKIPPED: &str = "Some faces could not be thickened even on their own at this thickness (or their pieces could not be joined), so they were left as they were: the shell has gaps there.";
+/// A wall thinner than the least the tool makes without a word.
+pub const THIN: &str =
+    "Very thin: under 0.1 cm (1 mm). Built anyway: check it is the size you meant.";
+
+/// The warning for building face by face because of `why`.
+fn apart_note(why: &str) -> &'static str {
+    match why {
+        x if x == CORNER => APART_CORNER,
+        x if x == SHARP => APART_SHARP,
+        x if x == TOO_THICK => APART_THICK,
+        x if x == FREEFORM => APART_FREEFORM,
+        x if x == BRANCHES => APART_BRANCHES,
+        _ => APART,
+    }
+}
+
+/// The body of `faces` shelled face by face, where it could not be shelled
+/// as one piece (`why`): each kept face thickened on its own (rims
+/// square), the pieces joined by a union. Overlaps merge; gaps (an outside
+/// corner, where the faces' slabs do not reach each other) stay. A face
+/// that cannot be thickened even on its own, or whose piece cannot be
+/// joined, is left as it was. Every face made is flagged with why; None if
+/// no face could be thickened.
+fn apart(
+    model: &Model,
+    faces: &BTreeSet<FaceId>,
+    open: &BTreeSet<FaceId>,
+    d: f64,
+    why: &'static str,
+) -> Option<Flagged> {
+    let tol = model.tol();
+    if !d.is_finite() || tol.is_zero(d) {
+        return None;
+    }
+    let body = body(model, faces);
+    let mut whole: Option<Model> = None;
+    let mut skipped: BTreeSet<FaceId> = BTreeSet::new();
+    for f in body.iter().filter(|f| !open.contains(f)) {
+        // The face on its own, so nothing else is near.
+        let mut m = model.clone();
+        let others: Vec<FaceId> = m.faces().map(|(id, _)| id).filter(|id| id != f).collect();
+        for id in others {
+            m.remove_face(id);
+        }
+        let one: BTreeSet<FaceId> = [*f].into();
+        let piece = built(
+            &m,
+            &one,
+            &BTreeSet::new(),
+            d,
+            &RimStyles::new(),
+            &mut Marks::default(),
+        );
+        let Ok((slab, _)) = piece else {
+            skipped.insert(*f);
+            continue;
+        };
+        whole = Some(match whole {
+            None => slab,
+            Some(w) => match crate::boolean::boolean(&w, &slab, crate::boolean::Op::Union) {
+                Ok(j) => j,
+                Err(_) => {
+                    skipped.insert(*f);
+                    w
+                }
+            },
+        });
+    }
+    let whole = whole?;
+    let mut flags = Flags::new();
+    let at = flags.entry(apart_note(why)).or_default();
+    at.faces.extend(whole.faces().map(|(id, _)| id));
+    at.edges.extend(whole.edges().map(|(id, _)| id));
+    if !skipped.is_empty() {
+        // In the model's own ids: these faces stay in it.
+        flags.entry(SKIPPED).or_default().faces.extend(&skipped);
+    }
+    Some(Flagged {
+        model: whole,
+        replaced: body.difference(&skipped).copied().collect(),
+        flags,
+    })
 }
 
 /// More than two kept faces at one edge (a T, a fin, a box with a wall
@@ -1303,7 +1437,11 @@ fn built(
     }
     // The small face at each split corner, walked against the faces round
     // it (as a moved copy is, so it turns round with them).
-    for (v, fan) in &plan.splits {
+    for (v, fan) in plan
+        .splits
+        .iter()
+        .filter(|(v, _)| !plan.rim_splits.contains(v))
+    {
         let mut l: Vec<VertexId> = Vec::new();
         let mut es: Vec<EdgeId> = Vec::new();
         for j in (0..fan.len()).rev() {
@@ -1334,12 +1472,14 @@ fn built(
             s.add_face(cap);
         }
     }
-    // A line up from each point of a rim.
-    let mut rise: BTreeMap<VertexId, EdgeId> = BTreeMap::new();
-    for (_, a, b, _) in &plan.rims {
+    // A line up from each point of a rim (to where that rim ends there:
+    // at a rim's split point each rim has its own).
+    let mut rise: BTreeMap<(VertexId, VertexId), EdgeId> = BTreeMap::new();
+    for (id, a, b, _) in &plan.rims {
         for v in [a, b] {
-            if !rise.contains_key(v) {
-                rise.insert(*v, edge(&mut s, base[v], up[v], Curve::Line, None)?);
+            let top = end(*v, *id);
+            if !rise.contains_key(&(*v, top)) {
+                rise.insert((*v, top), edge(&mut s, base[v], top, Curve::Line, None)?);
             }
         }
     }
@@ -1357,23 +1497,25 @@ fn built(
         let (p, q) = if d > 0.0 { (*from, *to) } else { (*to, *from) };
         let lo = low_e[id];
         let hi = high_e[id];
+        let (up_p, up_q) = (end(p, *id), end(q, *id));
+        let (rise_p, rise_q) = (rise[&(p, up_p)], rise[&(q, up_q)]);
         match &e.curve {
             Curve::Line => {
-                let pts = [base[&p], base[&q], up[&q], up[&p]];
+                let pts = [base[&p], base[&q], up_q, up_p];
                 if flat_plane(&s, &pts, &tol).is_some() {
                     let plane = Plane::new(s.vertex(pts[0]), loop_normal(&s, &pts).normalize());
                     let wall = s.add_face(Face::with_edges(
                         pts.to_vec(),
                         vec![],
                         Surface::Plane(plane),
-                        vec![vec![lo, rise[&q], hi, rise[&p]]],
+                        vec![vec![lo, rise_q, hi, rise_p]],
                     ));
                     marks.walled(&s, *id, wall);
                 } else {
                     let diag = edge(&mut s, pts[0], pts[2], Curve::Line, None)?;
                     for (l, es) in [
-                        ([pts[0], pts[1], pts[2]], [lo, rise[&q], diag]),
-                        ([pts[0], pts[2], pts[3]], [diag, hi, rise[&p]]),
+                        ([pts[0], pts[1], pts[2]], [lo, rise_q, diag]),
+                        ([pts[0], pts[2], pts[3]], [diag, hi, rise_p]),
                     ] {
                         let plane = Plane::new(s.vertex(l[0]), loop_normal(&s, &l).normalize());
                         let wall = s.add_face(Face::with_edges(
@@ -1401,15 +1543,50 @@ fn built(
                 };
                 let wall = arc_wall(*centre, *axis, *radius, c2, r2, mid, out, &tol)?;
                 let wall = s.add_face(Face::with_edges(
-                    vec![base[&p], base[&q], up[&q], up[&p]],
+                    vec![base[&p], base[&q], up_q, up_p],
                     vec![],
                     wall,
-                    vec![vec![lo, rise[&q], hi, rise[&p]]],
+                    vec![vec![lo, rise_q, hi, rise_p]],
                 ));
                 marks.walled(&s, *id, wall);
             }
             Curve::Spline(_) => return Err(FREEFORM),
         }
+    }
+    // At a rim's split point, a small triangle between the two rims' walls
+    // and the short edge the faces' copies made there, walked against the
+    // wall beside it.
+    for v in &plan.rim_splits {
+        let shorts_here: Vec<EdgeId> = shorts
+            .iter()
+            .filter(|((u, _), x)| u == v && x.is_some())
+            .filter_map(|(_, x)| *x)
+            .collect();
+        let tops: Vec<(VertexId, EdgeId)> = rise
+            .iter()
+            .filter(|((u, _), _)| u == v)
+            .map(|((_, t), e)| (*t, *e))
+            .collect();
+        let ([short], [(ta, ra), (tb, rb)]) = (shorts_here.as_slice(), tops.as_slice()) else {
+            return Err(CORNER);
+        };
+        let pts = [s.vertex(base[v]), s.vertex(*ta), s.vertex(*tb)];
+        let n = newell(&pts).normalize_or_zero();
+        let mut cap = Face::with_edges(
+            vec![base[v], *ta, *tb],
+            vec![],
+            Surface::Plane(Plane::new(pts[0], n)),
+            vec![vec![*ra, *short, *rb]],
+        );
+        // The wall beside it walks its rise from the base up: the cap goes
+        // the other way.
+        let wall_up = s
+            .faces()
+            .any(|(_, f)| f.sides().any(|x| x.edge == *ra && x.from == base[v]));
+        if wall_up {
+            cap.reverse();
+        }
+        s.add_face(cap);
     }
     // A line up between walls that meet smoothly is soft.
     let ef = s.edge_faces();
@@ -3061,12 +3238,21 @@ fn plan(
     }
     let mut moved = BTreeMap::new();
     let mut splits = BTreeMap::new();
+    let mut rim_splits = BTreeSet::new();
     for (v, fs) in &at_vertex {
         match move_point(model, fs, model.vertex(*v), d, &tol) {
             Ok(p) => {
                 let curved = fs
                     .iter()
                     .any(|f| model.face(*f).is_some_and(|x| x.is_curved()));
+                if !curved
+                    && on_rim.contains(v)
+                    && let Some(fan) = rim_ends(model, &rims, *v, fs, d, &tol)
+                {
+                    splits.insert(*v, fan);
+                    rim_splits.insert(*v);
+                    continue;
+                }
                 let p = if curved {
                     polish_corner(&offsets, fs, p, &tol)
                 } else {
@@ -3169,9 +3355,75 @@ fn plan(
         kept,
         moved,
         splits,
+        rim_splits,
         curves,
         rims,
     })
+}
+
+/// Where each edge at a point `v` of a rim ends, when the rims there end
+/// apart. Two faces meet at `v` along a crease (their offsets meet on a
+/// line, so the point is free along it), each with its own rim: each rim's
+/// moved copy ends where its square wall (through the rim and its face's
+/// normal) crosses that line. Where the rims' walls agree (a box's open
+/// top: both upright) that is one point, the one [`move_point`] gives, and
+/// this is None. Where they do not (owner's truck cab, 2026-11-26: the top
+/// of a leaning windscreen beside an upright side, its wall leaning with
+/// it), each rim ends at its own point, the crease at the first rim's, and
+/// a small triangle closes the gap (`built`). None too where the point is
+/// not free along a line, or a rim there is not straight.
+fn rim_ends(
+    model: &Model,
+    rims: &[(EdgeId, VertexId, VertexId, FaceId)],
+    v: VertexId,
+    fs: &[FaceId],
+    d: f64,
+    tol: &Tol,
+) -> Option<Vec<(EdgeId, DVec3)>> {
+    let p = model.vertex(v);
+    let ns: Vec<DVec3> = fs
+        .iter()
+        .filter_map(|f| model.face(*f).map(|x| x.surface.normal_at(p)))
+        .collect();
+    let ns = unique_normals(&ns, tol);
+    if ns.len() != 2 {
+        return None;
+    }
+    let at_v: Vec<_> = rims.iter().filter(|r| r.1 == v || r.2 == v).collect();
+    if at_v.len() != 2 {
+        return None;
+    }
+    let mut out: Vec<(EdgeId, DVec3)> = Vec::new();
+    for (e, _, _, f) in at_v {
+        let x = model.edge(*e)?;
+        if x.curve != Curve::Line {
+            return None;
+        }
+        let other = if x.a == v { x.b } else { x.a };
+        let along = (model.vertex(other) - p).normalize_or_zero();
+        let n = model.face(*f)?.surface.normal_at(p);
+        let wall = along.cross(n).normalize_or_zero();
+        if wall == DVec3::ZERO {
+            return None;
+        }
+        let mut want: Vec<(DVec3, f64)> = ns.iter().map(|n| (*n, d)).collect();
+        want.push((wall, 0.0));
+        out.push((*e, p + corner_mixed(&want, tol)?));
+    }
+    if tol.same_point(out[0].1, out[1].1) {
+        return None;
+    }
+    // The crease (and any other edge of these faces at `v`) ends at the
+    // first rim's point: every rim end is on the line both offsets share.
+    let first = out[0].1;
+    for f in fs {
+        for side in model.face(*f)?.sides() {
+            if (side.from == v || side.to == v) && !out.iter().any(|(e, _)| *e == side.edge) {
+                out.push((side.edge, first));
+            }
+        }
+    }
+    Some(out)
 }
 
 /// A corner of four or more flat faces whose moved copies miss one point:

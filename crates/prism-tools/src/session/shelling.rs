@@ -62,6 +62,9 @@ pub struct ShellPanel {
     pub open: usize,
     /// Why the face under the pointer (or being sized) cannot be shelled.
     pub refused: Option<&'static str>,
+    /// What to check in the shell it would make (built anyway: owner,
+    /// 2026-11-26).
+    pub warning: Option<&'static str>,
     pub how: &'static str,
 }
 
@@ -87,6 +90,10 @@ pub(super) struct ShellOp {
     /// so they are kept while the thickness only grows or shrinks).
     rims: Option<(bool, BTreeSet<FaceId>, prism_ops::shelling::RimStyles)>,
     refused: Option<&'static str>,
+    /// What the kernel warns of in the shell it would make, and where:
+    /// the lines it flagged, drawn in the warning colour.
+    warning: Option<&'static str>,
+    flagged: Vec<[DVec3; 2]>,
 }
 
 impl Session {
@@ -155,6 +162,8 @@ impl Session {
                     flush: Vec::new(),
                     rims: None,
                     refused: None,
+                    warning: None,
+                    flagged: Vec::new(),
                 });
                 self.shell_update();
             }
@@ -185,12 +194,6 @@ impl Session {
         } else if let Some(size) = self.number.length(t).map(f64::abs)
             && size > 0.0
         {
-            if let Some(why) = prism_ops::shelling::thin_refusal(size) {
-                self.notice = Some(why);
-                self.overlay_dirty = true;
-                self.dirty = true;
-                return;
-            }
             self.shell_input(ShellSet::Thickness(Some(size)));
         }
     }
@@ -198,12 +201,8 @@ impl Session {
     pub(super) fn shell_set(&mut self, op: ShellSet) {
         match op {
             ShellSet::Thickness(t) => {
-                if let Some(why) = t.and_then(prism_ops::shelling::thin_refusal) {
-                    self.notice = Some(why);
-                    self.overlay_dirty = true;
-                    self.dirty = true;
-                    return;
-                }
+                // A very thin wall is made, with a warning.
+                self.notice = t.and_then(prism_ops::shelling::thin_warning);
                 self.shell_size = t;
                 // Typed while sizing by the pointer: as if typed in the
                 // measurement box.
@@ -253,6 +252,7 @@ impl Session {
                 .as_ref()
                 .and_then(|op| op.refused)
                 .filter(|r| *r != prism_ops::shelling::ZERO),
+            warning: self.shell_op.as_ref().and_then(|op| op.warning),
             how: self.shell_hint(),
         })
     }
@@ -308,6 +308,8 @@ impl Session {
             flush: Vec::new(),
             rims: None,
             refused: None,
+            warning: None,
+            flagged: Vec::new(),
         });
         self.overlay_dirty = true;
         self.dirty = true;
@@ -327,23 +329,6 @@ impl Session {
             return;
         }
         let (face, d) = (op.face, op.d);
-        // Under the least thickness: no ghost, and a red notice (cleared
-        // when the size is enough again).
-        if let Some(why) = prism_ops::shelling::thin_refusal(d) {
-            self.notice = Some(why);
-            if let Some(op) = &mut self.shell_op {
-                op.ghost = Vec::new();
-                op.flush = Vec::new();
-                op.refused = Some(why);
-                op.shown = Some((d, open));
-            }
-            self.overlay_dirty = true;
-            self.dirty = true;
-            return;
-        }
-        if self.notice == Some(prism_ops::shelling::TOO_THIN) {
-            self.notice = None;
-        }
         let faces: BTreeSet<FaceId> = [face].into();
         // The program's pick of rim styles, kept while it still builds.
         let kept = op
@@ -355,19 +340,27 @@ impl Session {
         let mut styles = kept
             .clone()
             .unwrap_or_else(|| prism_ops::shelling::default_rims(m, &faces, &open, d));
-        let mut built = prism_ops::shelling::slab_with(m, &faces, &open, d, &styles);
-        if built.is_err() && kept.is_some() {
+        let mut built = prism_ops::shelling::slab_flagged(m, &faces, &open, d, &styles);
+        let flagged_any = |b: &Result<prism_ops::shelling::Flagged, _>| {
+            b.as_ref().is_ok_and(|x| !x.flags.is_empty())
+        };
+        if (built.is_err() || flagged_any(&built)) && kept.is_some() {
             styles = prism_ops::shelling::default_rims(m, &faces, &open, d);
-            built = prism_ops::shelling::slab_with(m, &faces, &open, d, &styles);
+            built = prism_ops::shelling::slab_flagged(m, &faces, &open, d, &styles);
         }
         let (ghost, refused) = match &built {
-            Ok((s, _)) => (
-                s.edges()
-                    .map(|(_, e)| [s.vertex(e.a), s.vertex(e.b)])
+            Ok(b) => (
+                b.model
+                    .edges()
+                    .map(|(_, e)| [b.model.vertex(e.a), b.model.vertex(e.b)])
                     .collect(),
                 None,
             ),
             Err(why) => (Vec::new(), Some(*why)),
+        };
+        let (warning, flagged) = match &built {
+            Ok(b) => shell_warning(m, b, d),
+            Err(_) => (None, Vec::new()),
         };
         let flush: Vec<[DVec3; 2]> = styles
             .iter()
@@ -380,7 +373,13 @@ impl Session {
             op.flush = if refused.is_none() { flush } else { Vec::new() };
             op.rims = Some((d > 0.0, open.clone(), styles));
             op.refused = refused;
+            op.warning = warning;
+            op.flagged = flagged;
             op.shown = Some((d, open));
+        }
+        // The warning in the status bar too, while it holds.
+        if self.notice.is_none() || self.notice.is_some_and(is_shell_warning) {
+            self.notice = warning;
         }
         self.overlay_dirty = true;
         self.dirty = true;
@@ -388,15 +387,13 @@ impl Session {
 
     /// Make it at the thickness sized, or say why not.
     fn shell_go(&mut self) {
+        // The ghost and its warning for the thickness being made (a typed
+        // one may not have been shown yet).
+        self.shell_update();
         let Some(op) = &self.shell_op else {
             return;
         };
-        if let Some(why) = prism_ops::shelling::thin_refusal(op.d) {
-            self.notice = Some(why);
-            self.overlay_dirty = true;
-            self.dirty = true;
-            return;
-        }
+        let warning = op.warning;
         let c = Command::Shell {
             faces: [op.face].into(),
             open: self.shell_open.clone(),
@@ -410,8 +407,10 @@ impl Session {
         }
         self.shell_op = None;
         self.shell_open.clear();
-        self.notice = None;
         self.run(c);
+        // Made: what to check stays in the status bar.
+        self.notice = warning;
+        self.overlay_dirty = true;
     }
 
     /// Enter with a typed thickness (or none: the one sized).
@@ -427,12 +426,6 @@ impl Session {
             let Some(t) = self.number.length(text) else {
                 return true;
             };
-            if let Some(why) = prism_ops::shelling::thin_refusal(t) {
-                self.notice = Some(why);
-                self.overlay_dirty = true;
-                self.dirty = true;
-                return true;
-            }
             if let Some(op) = &mut self.shell_op {
                 // A typed thickness goes the way the pointer is (inside
                 // until it has moved out); a minus sign turns it round.
@@ -530,19 +523,10 @@ impl Session {
         if let Some(t) = along_line(o, d, h.centre, h.normal)
             && t.abs() > self.scene.tol.dist
             && t != h.size
-            && prism_ops::shelling::thin_refusal(t).is_some()
-        {
-            // Too thin: the wall stays as it was last (big enough) and a
-            // red notice says why.
-            self.notice = prism_ops::shelling::thin_refusal(t);
-        } else if let Some(t) = along_line(o, d, h.centre, h.normal)
-            && t.abs() > self.scene.tol.dist
-            && t != h.size
             && let Some(m) = self.shell_at_thickness(h.def, h.index, t)
         {
-            if self.notice == Some(prism_ops::shelling::TOO_THIN) {
-                self.notice = None;
-            }
+            // A very thin wall is made, with a warning.
+            self.notice = prism_ops::shelling::thin_warning(t);
             if let Some(h) = &mut self.shell_handle {
                 h.size = t;
             }
@@ -602,6 +586,7 @@ impl Session {
             Some(op) => op
                 .refused
                 .filter(|r| *r != prism_ops::shelling::ZERO)
+                .or(op.warning)
                 .unwrap_or(if op.fixed { FIXED } else { SIZING }),
             None if self.shell_size.is_some() => FIXED,
             None if self.shell_anchor().is_some() => HANDLE,
@@ -688,6 +673,87 @@ impl Session {
                     dash: [0.0, 0.0],
                 });
             }
+            // What the warning is about, over the ghost.
+            for [a, b] in &op.flagged {
+                o.lines.push(Line {
+                    a: *a,
+                    b: *b,
+                    color: self.style.health_many,
+                    width: fb.target_width * 1.5,
+                    dash: [0.0, 0.0],
+                });
+            }
         }
     }
+}
+
+/// The warnings Shell / Thicken can give (the kernel's flags and the thin
+/// wall), so the tool knows a notice is one of its own.
+fn is_shell_warning(n: &'static str) -> bool {
+    use prism_ops::shelling as sh;
+    [
+        sh::THIN,
+        sh::APART,
+        sh::APART_CORNER,
+        sh::APART_SHARP,
+        sh::APART_THICK,
+        sh::APART_FREEFORM,
+        sh::APART_BRANCHES,
+        sh::SKIPPED,
+        sh::BRANCHED,
+        sh::BRIDGED,
+        sh::TURNED,
+        sh::SQUARED,
+        sh::SQUARED_OFF,
+        sh::SQUARED_ALONG,
+    ]
+    .contains(&n)
+}
+
+/// What to warn of in a shell about to be made (`b`, of the body in `m`,
+/// `d` thick), and the lines to mark: the most serious flag first (faces
+/// left as they were, then a face-by-face build, then the rest), or the
+/// thin wall's warning. Lines are those the kernel flagged in the shell,
+/// and the outlines of faces it left as they were.
+fn shell_warning(
+    m: &prism_topo::Model,
+    b: &prism_ops::shelling::Flagged,
+    d: f64,
+) -> (Option<&'static str>, Vec<[DVec3; 2]>) {
+    use prism_ops::shelling as sh;
+    let rank = |w: &str| {
+        if w == sh::SKIPPED {
+            0
+        } else if w.starts_with("Built face by face") {
+            1
+        } else {
+            2
+        }
+    };
+    let warning = b
+        .flags
+        .keys()
+        .copied()
+        .min_by_key(|w| rank(w))
+        .or_else(|| sh::thin_warning(d));
+    let mut lines = Vec::new();
+    for (why, found) in &b.flags {
+        if *why == sh::SKIPPED {
+            for f in &found.faces {
+                let Some(face) = m.face(*f) else {
+                    continue;
+                };
+                for e in face.edge_ids() {
+                    lines.extend(m.edge_points(e).windows(2).map(|w| [w[0], w[1]]));
+                }
+            }
+            continue;
+        }
+        for e in &found.edges {
+            if b.model.edge(*e).is_some() {
+                lines.extend(b.model.edge_points(*e).windows(2).map(|w| [w[0], w[1]]));
+            }
+        }
+    }
+    (warning, lines)
 }

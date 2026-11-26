@@ -88,6 +88,10 @@ pub(super) fn card(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<
             if let Some(why) = r.refused {
                 ui.label(RichText::new(why).color(color::INK));
             }
+            // Built anyway: what to check, in the warning colour.
+            if let Some(w) = r.warning {
+                ui.label(RichText::new(w).color(color::WARN));
+            }
             for line in r.how.split(" · ") {
                 let mut c = line.chars();
                 let line: String = c

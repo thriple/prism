@@ -1691,3 +1691,49 @@ fn a_sheet_folded_right_back_is_bridged_round_the_fold() {
         );
     }
 }
+
+/// Owner, 2026-11-26: "just give everything a warning". What cannot be
+/// shelled as one piece is still built, face by face, and flagged with why;
+/// only nothing to build is refused.
+#[test]
+fn what_cannot_be_shelled_as_one_piece_is_built_face_by_face_with_a_warning() {
+    let none = BTreeSet::new();
+    // Walls thicker than half the cube: they cross (once refused, too
+    // thick). Face by face, the six slabs fill the cube.
+    let m = cube();
+    let built = shelling::slab_flagged(&m, &any_face(&m), &none, -0.6, &Default::default())
+        .expect("built anyway");
+    assert!(built.flags.contains_key(shelling::APART_THICK), "{:?}", built.flags.keys());
+    assert!(prism_ops::boolean::is_solid(&built.model));
+    // Four faces at a rim corner (once refused, `CORNER`).
+    let p = DVec3::new;
+    let base = [
+        p(0.0, 0.0, 0.0),
+        p(1.0, 0.0, 0.0),
+        p(1.4, 0.8, 0.0),
+        p(0.5, 1.3, 0.0),
+        p(-0.3, 0.7, 0.0),
+    ];
+    let m = pyramid(&base, p(0.3, 0.5, 1.0));
+    let side = m
+        .faces()
+        .find(|(_, f)| f.outer.len() == 3)
+        .map(|(id, _)| id)
+        .unwrap();
+    let mut joined = m.clone();
+    let flags = shelling::shell_flagged(
+        &mut joined,
+        &any_face(&m),
+        &[side].into(),
+        -0.05,
+        &Default::default(),
+    )
+    .expect("built anyway");
+    assert!(flags.contains_key(shelling::APART_CORNER), "{:?}", flags.keys());
+    assert!(!flags[shelling::APART_CORNER].faces.is_empty(), "marked");
+    // Nothing to build is still refused.
+    let (m, f) = square();
+    let one: BTreeSet<FaceId> = [f].into();
+    assert_eq!(shelling::slab(&m, &one, &none, 0.0).err(), Some(ZERO));
+    assert_eq!(shelling::slab(&m, &one, &one, 0.1).err(), Some(ALL_OPEN));
+}

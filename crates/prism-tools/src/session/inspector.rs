@@ -699,8 +699,21 @@ impl Session {
     /// `feature.N.remove`, for the one selected body.
     fn feature_set(&mut self, key: &str, text: &str) -> Result<(), String> {
         let command = self.feature_command(key, text)?;
+        // A shell's very thin wall is made, with a warning.
+        let thin = match &command {
+            Command::SetFeatureSize { def, index, size } => self
+                .doc
+                .assembly()
+                .def(*def)
+                .and_then(|d| d.stack.as_ref())
+                .and_then(|s| s.features.get(*index))
+                .filter(|f| matches!(f, prism_doc::Feature::Shell { .. }))
+                .and_then(|_| prism_ops::shelling::thin_warning(*size)),
+            _ => None,
+        };
         self.cancel();
         if self.run(command) {
+            self.notice = thin;
             Ok(())
         } else {
             Err("Nothing changed: the value is the same, or it would not fit".into())
@@ -805,9 +818,6 @@ impl Session {
                         });
                     if size == 0.0 || (size < 0.0 && !signed) {
                         return Err("A size must be more than zero".into());
-                    }
-                    if signed && let Some(why) = prism_ops::shelling::thin_refusal(size) {
-                        return Err(why.into());
                     }
                     Command::SetFeatureSize { def, index, size }
                 }

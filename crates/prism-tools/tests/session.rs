@@ -6510,43 +6510,38 @@ fn shell_takes_a_curved_face() {
 }
 
 #[test]
-fn a_wall_thinner_than_a_tenth_of_a_centimetre_is_refused_in_red() {
-    // The limiter on Shell / Thicken (owner, 2026-11-21): 0.1 cm at least.
-    // Drawing and the rest stay exact to 0.01 cm (below).
+fn a_wall_thinner_than_a_tenth_of_a_centimetre_is_made_with_a_warning() {
+    // The limiter on Shell / Thicken (owner, 2026-11-21: 0.1 cm) became a
+    // warning (owner, 2026-11-26: "just give everything a warning").
     let min = prism_ops::shelling::MIN_THICKNESS;
     assert!((min - 0.001).abs() < 1e-15, "0.1 cm is a millimetre");
     let mut d = Driver::empty();
     box_2m(&mut d);
     d.tool(SHELL);
-    // Sizing by the pointer: too thin shows no ghost and a red notice.
+    // Sizing by the pointer: the ghost shows, and the warning.
     let top = DVec3::new(1.0, 1.0, 2.0);
     d.click(top);
     d.hover(DVec3::new(1.0, 1.0, 2.0 - 0.0005));
-    assert!(d.s.hint_is_notice(), "red");
-    assert!(d.s.hint().starts_with("Too thin"), "{}", d.s.hint());
-    assert!(d.s.overlay().lines.len() < 12, "no ghost");
-    // Typing a thin wall refuses it and makes nothing.
-    d.typed("0.0005");
-    assert!(d.s.hint_is_notice() && d.s.hint().starts_with("Too thin"));
-    assert_eq!(d.faces(), 6, "nothing made");
-    // Far enough, the notice goes and the ghost shows again.
+    assert!(d.s.hint_is_notice(), "a notice");
+    assert!(d.s.hint().starts_with("Very thin"), "{}", d.s.hint());
+    assert!(d.s.overlay().lines.len() >= 12, "the ghost shows");
+    // Far enough, the warning goes.
     d.hover(DVec3::new(1.0, 1.0, 2.0 - 0.05));
     assert!(!d.s.hint_is_notice(), "{}", d.s.hint());
-    assert!(d.s.overlay().lines.len() >= 12);
-    // Exactly 0.1 cm is allowed.
-    d.typed("0.001");
-    assert_eq!(d.faces(), 12);
-    // The window's thickness refuses it too, and keeps what it had.
+    // Typing a thin wall makes it, and says so.
+    d.typed("0.0005");
+    assert_eq!(d.faces(), 12, "made");
+    assert!(d.s.hint_is_notice() && d.s.hint().starts_with("Very thin"));
+    valid(&d);
+    // The window's thickness takes it too, with the warning.
     act(&mut d, "edit.undo");
     d.s.shell_text("0.0004");
-    assert!(d.s.hint_is_notice() && d.s.hint().starts_with("Too thin"));
-    assert!(d.s.shell_panel().unwrap().size.is_empty(), "not taken");
-    d.s.shell_text("0.002");
-    assert!(!d.s.shell_panel().unwrap().size.is_empty());
+    assert!(d.s.hint_is_notice() && d.s.hint().starts_with("Very thin"));
+    assert!(!d.s.shell_panel().unwrap().size.is_empty(), "taken");
 }
 
 #[test]
-fn the_inspector_refuses_a_shell_thinner_than_a_tenth_of_a_centimetre() {
+fn the_inspector_makes_a_very_thin_shell_with_a_warning() {
     let mut d = Driver::empty();
     box_2m(&mut d);
     d.tool(SHELL);
@@ -6554,14 +6549,12 @@ fn the_inspector_refuses_a_shell_thinner_than_a_tenth_of_a_centimetre() {
     d.typed("0.1");
     d.tool(SELECT);
     d.s.select_feature(0);
-    let why = d.s.inspector_set("feature.0.size", "-0.0005").unwrap_err();
-    assert!(why.starts_with("Too thin"), "{why}");
-    let why = d.s.inspector_set("feature.0.size", "0.0009").unwrap_err();
-    assert!(why.starts_with("Too thin"), "{why}");
-    d.s.inspector_set("feature.0.size", "-0.001")
-        .expect("0.1 cm");
+    d.s.inspector_set("feature.0.size", "-0.0005")
+        .expect("made, with a warning");
+    assert!(d.s.hint().starts_with("Very thin"), "{}", d.s.hint());
     d.s.inspector_set("feature.0.size", "0.002")
         .expect("outside");
+    assert!(!d.s.hint().starts_with("Very thin"), "{}", d.s.hint());
 }
 
 #[test]

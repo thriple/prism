@@ -1589,7 +1589,11 @@ impl Command {
                 faces,
                 open,
                 thickness,
-            } => prism_ops::shelling::refusal(m, faces, open, *thickness),
+            } => {
+                // Built anyway where it can be, with a warning: refused
+                // only when there is nothing to build.
+                prism_ops::shelling::slab(m, faces, open, *thickness).err()
+            }
             Command::LoftSides { sides, preset } => {
                 prism_ops::sides::made_from(m, sides, *preset).err()
             }
