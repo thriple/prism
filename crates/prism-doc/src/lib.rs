@@ -1651,7 +1651,16 @@ impl Command {
         }
     }
 
+    /// Run it on `m`. Afterwards a curve another now passes through
+    /// partway parts there, as the document does after every command
+    /// ([`Assembly::part_crossed_curves`]), so a tool's preview shows the
+    /// pieces the edit will make.
     pub fn apply(&self, m: &mut Model) {
+        self.apply_plain(m);
+        prism_ops::sticky::part_crossed_curves(m);
+    }
+
+    fn apply_plain(&self, m: &mut Model) {
         match self {
             Command::Segment { p, q } => {
                 prism_ops::sticky::add_drawn_segment(m, *p, *q);

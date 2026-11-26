@@ -465,3 +465,59 @@ fn crossing_shapes_part_each_other_whatever_made_them_cross() {
         assert!((area - 7.0).abs() < 1e-9, "moved {moved}: {area}");
     }
 }
+
+/// A tool's preview runs the command on a copy of the model
+/// (`Command::apply`, not the document): it parts crossed curves too, so
+/// what a Move shows is the pieces the move will make.
+#[test]
+fn a_preview_parts_crossed_curves_as_the_edit_will() {
+    let square = |x: f64| -> Vec<DVec3> {
+        vec![
+            DVec3::new(x, 0.0, 0.0),
+            DVec3::new(x + 2.0, 0.0, 0.0),
+            DVec3::new(x + 2.0, 2.0, 0.0),
+            DVec3::new(x, 2.0, 0.0),
+        ]
+    };
+    let mut doc = Document::new();
+    doc.run(Command::Polygon {
+        points: square(0.0),
+    });
+    doc.run(Command::Polygon {
+        points: square(5.0),
+    });
+    let vs: BTreeSet<_> = doc
+        .model()
+        .vertices()
+        .filter(|(_, p)| p.x > 4.0)
+        .map(|(id, _)| id)
+        .collect();
+    let mv = Command::Translate {
+        vertices: vs,
+        by: DVec3::new(-4.0, 1.0, 0.0),
+    };
+    let mut shown = doc.model().clone();
+    mv.apply(&mut shown);
+    doc.run(mv);
+    let made = doc.model();
+    let pieces = |m: &Model| {
+        let mut runs: Vec<usize> = m.edges().map(|(id, _)| m.curve_edges(id).len()).collect();
+        runs.sort_unstable();
+        runs
+    };
+    assert_eq!(
+        pieces(&shown),
+        pieces(made),
+        "the preview parts as the edit does"
+    );
+    let curves = |m: &Model| {
+        m.edges()
+            .filter_map(|(_, e)| e.curve_id)
+            .collect::<BTreeSet<_>>()
+            .len()
+    };
+    assert!(
+        curves(&shown) >= 4,
+        "each square parted where the other crosses it"
+    );
+}
