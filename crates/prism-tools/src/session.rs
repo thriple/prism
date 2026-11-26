@@ -573,6 +573,13 @@ pub struct Session {
     round_at: Option<DVec2>,
     round_shown: Option<(round::Target, bool, Option<f64>)>,
     round_refused: Option<&'static str>,
+    /// A size past what the edges take (DECISIONS #45, kind 2): the size
+    /// asked and the largest that works, which the preview shows and Enter
+    /// makes, and why the size asked could not be.
+    round_clamped: Option<(f64, f64, &'static str)>,
+    /// The largest size that works for a target, kept while the size asked
+    /// stays past it: (document revision, target, fillet, size, model).
+    round_limit: round::LimitCache,
     /// The faces and lines the collected edges' round would make, shown
     /// selected until Enter makes it (owner, 2026-11-25: a click looked
     /// finished, so Space left the tool and the round was gone).
@@ -881,6 +888,8 @@ impl Session {
             round_at: None,
             round_shown: None,
             round_refused: None,
+            round_clamped: None,
+            round_limit: std::cell::RefCell::new(None),
             round_pending: Selection::default(),
             round_down: None,
             round_handle: None,

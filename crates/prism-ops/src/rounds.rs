@@ -13,6 +13,8 @@ use prism_topo::{EdgeId, FaceId, Model};
 
 use crate::bridge::{put_back, region, solid_of};
 
+pub use prism_kernel::solid::{NOT_ROUNDED, TOO_LARGE};
+
 /// Said when there is nothing to round.
 pub const NOTHING: &str = "Refused: pick the edges of a solid to round.";
 /// Said for a size that is not more than zero.

@@ -29,6 +29,10 @@ use super::{Event, Input, Session, pick};
 pub const FILLET: &str = "tool.fillet";
 
 const HOW: &str = "Click edges to collect them (a line in pieces as a whole) · double-click a face for all its edges · drag from an edge or type to set the size · Enter rounds them · Ctrl swaps fillet and chamfer";
+/// Said when a size past what the edges take is shown as the largest
+/// that works (DECISIONS #45, kind 2).
+const CLAMPED: &str =
+    "That size is more than these edges take: the largest that works is shown, and Enter makes it.";
 /// Said when no size fits the edges on its own (curved edges only).
 const NEED_SIZE: &str = "Type a size for these edges (curved edges have no size of their own)";
 const HOW_FEATURE: &str = "Drag the square handle or type a size + Enter to change the selected fillet or chamfer · click an edge to round more · Esc deselects";
@@ -69,6 +73,11 @@ pub(super) struct Down {
     /// measured on and which face of it.
     handle: Option<(prism_doc::SizeGuide, usize)>,
 }
+
+/// The largest size that works for a target: (document revision,
+/// target, fillet, size, model).
+pub(super) type LimitCache =
+    std::cell::RefCell<Option<(u64, Target, bool, f64, prism_topo::Model)>>;
 
 /// What a click would round.
 #[derive(Clone, Debug, PartialEq)]
@@ -220,19 +229,32 @@ impl Session {
         // cursor (owner, 2026-11-26: the preview blanked mid-drag with
         // only small text in the window to say why).
         let dragging = self.round_down.as_ref().is_some_and(|d| d.dragging);
-        let (why, preview) = match target.map(|t| self.round_command(&t, fillet)) {
+        self.round_clamped = None;
+        let built = target.clone().map(|t| self.round_command(&t, fillet));
+        // Past what the edges take: the largest size that works is built
+        // and shown, and says so (DECISIONS #45, kind 2).
+        let clamped = match (&built, &target, self.round_size) {
+            (Some(Err(why)), Some(t), Some(asked)) if clampable(why) => self
+                .round_largest(t, fillet, asked)
+                .map(|(made, m)| (*why, asked, made, m)),
+            _ => None,
+        };
+        let built = match clamped {
+            Some((why, asked, made, m)) => {
+                self.round_clamped = Some((asked, made, why));
+                Some(Ok((CLAMPED, m)))
+            }
+            None => built.map(|b| b.map(|c| ("", self.applied(&c)))),
+        };
+        let (why, preview) = match built {
             None => (None, None),
+            Some(Ok((why, m))) => ((!why.is_empty()).then_some(why), Some(m)),
             Some(Err(why)) if dragging && self.preview.is_some() => {
                 self.round_refused = Some(why);
                 self.overlay_dirty = true;
                 return;
             }
             Some(Err(why)) => (Some(why), None),
-            Some(Ok(c)) => {
-                let mut m = self.work_model().clone();
-                c.apply(&mut m);
-                (None, Some(m))
-            }
         };
         // The collected edges' round is not made yet: what it would make
         // (the faces the model does not have, and their lines) shows
@@ -264,6 +286,70 @@ impl Session {
         self.dirty = true;
     }
 
+    /// The work model with `c` applied.
+    fn applied(&self, c: &Command) -> prism_topo::Model {
+        let mut m = self.work_model().clone();
+        c.apply(&mut m);
+        m
+    }
+
+    /// The largest size up to `asked` that `t`'s edges take, and the model
+    /// rounded at it: halving from `asked` until one works, then halving
+    /// the gap. None if not even a small one works. Kept while the size
+    /// asked stays past it, so a drag past the limit stays quick.
+    fn round_largest(
+        &self,
+        t: &Target,
+        fillet: bool,
+        asked: f64,
+    ) -> Option<(f64, prism_topo::Model)> {
+        let edges = match t {
+            Target::Edge(e) => BTreeSet::from([*e]),
+            Target::Edges(set) => set.clone(),
+            Target::Corner(_) => return None,
+        };
+        let revision = self.doc.revision();
+        if let Some((r, kt, kf, made, m)) = &*self.round_limit.borrow()
+            && *r == revision
+            && kt == t
+            && *kf == fillet
+            && asked >= *made
+        {
+            return Some((*made, m.clone()));
+        }
+        let work = self.work_model();
+        let build = |size: f64| {
+            let mut m = work.clone();
+            prism_ops::rounds::round_edges(&mut m, &edges, size, fillet)
+                .ok()
+                .map(|_| m)
+        };
+        let floor = self.scene.tol.dist * 10.0;
+        let (mut hi, mut size) = (asked, asked / 2.0);
+        let mut good = None;
+        while size > floor {
+            if let Some(m) = build(size) {
+                good = Some((size, m));
+                break;
+            }
+            hi = size;
+            size /= 2.0;
+        }
+        let (mut made, mut model) = good?;
+        for _ in 0..7 {
+            let mid = (made + hi) / 2.0;
+            match build(mid) {
+                Some(m) => {
+                    made = mid;
+                    model = m;
+                }
+                None => hi = mid,
+            }
+        }
+        *self.round_limit.borrow_mut() = Some((revision, t.clone(), fillet, made, model.clone()));
+        Some((made, model))
+    }
+
     /// What to draw as selected: the round waiting for Enter while there
     /// is one (its faces and lines, in the preview), else the selection.
     pub fn shown_selection(&self) -> &prism_ops::Selection {
@@ -279,6 +365,7 @@ impl Session {
         self.round_pending = prism_ops::Selection::default();
         self.round_handle = None;
         self.round_refused = None;
+        self.round_clamped = None;
         self.round_at = None;
         if (self.round_shown.take().is_some() || self.tool == FILLET) && self.preview.is_some() {
             self.set_preview(None);
@@ -532,8 +619,12 @@ impl Session {
                 "Chamfer"
             };
             // While dragging, the reason is said at the cursor already.
-            let text = match self.round_refused {
-                Some(why) if !held => format!(
+            let text = match (self.round_refused, self.round_clamped) {
+                (Some(_), Some((_, made, why))) if !held => {
+                    format!("{kind} {}", clamp_text(why, &self.number.show(made)))
+                }
+                (_, Some(_)) => format!("{kind} {}", self.number.show(size)),
+                (Some(why), None) if !held => format!(
                     "{kind} {}: {}",
                     self.number.show(size),
                     why.strip_prefix("Refused: ").unwrap_or(why)
@@ -595,6 +686,12 @@ impl Session {
 
     /// Round `t` now (a click, or Enter on the selection).
     fn round_go(&mut self, t: Target, fillet: bool) {
+        // A size past what the edges take makes the largest that works.
+        if let Some((asked, made, _)) = self.round_clamped
+            && self.round_size == Some(asked)
+        {
+            self.round_size = Some(made);
+        }
         // The click's own result replaces the preview.
         self.round_clear();
         let from_selection = matches!(t, Target::Edges(_)) && !self.selection.is_empty();
@@ -664,10 +761,14 @@ impl Session {
         let view = self.view();
         let (eye, dir) = view.ray(s);
         let c = self.camera();
+        let text = match self.round_clamped {
+            Some((_, made, why)) => clamp_text(why, &self.number.show(made)),
+            None => refusal_text(why),
+        };
         o.labels.push(prism_view::overlay::Label {
             at: eye + dir * c.eye.distance(c.target),
             offset: [14.0, -16.0],
-            text: refusal_text(why),
+            text,
             color: self.style.health_many,
         });
     }
@@ -841,6 +942,23 @@ fn guide_size(guide: &prism_doc::SizeGuide, side: usize, s: DVec2, view: &View) 
     }
     let p = o + d * (face.normal.dot(face.origin - o) / den);
     Some((p - guide.a).dot(face.across))
+}
+
+/// Whether a refusal is of a size the edges cannot take, so a smaller
+/// one may be made instead.
+fn clampable(why: &str) -> bool {
+    why == prism_ops::rounds::TOO_LARGE
+        || why == prism_ops::rounds::NOT_ROUNDED
+        || why == prism_ops::round::TOO_WIDE
+}
+
+/// Said when the largest size that works is made instead of the one asked.
+pub(super) fn clamp_text(why: &str, made: &str) -> String {
+    let why = why.strip_prefix("Refused: ").unwrap_or(why);
+    format!(
+        "made at {made}, the most these edges take ({})",
+        why.trim_end_matches('.')
+    )
 }
 
 /// A refusal said at the cursor while dragging: without "Refused:", and

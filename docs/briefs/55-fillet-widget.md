@@ -16,8 +16,11 @@ Status: **in progress** (2026-11-26). Owner: "actual handles on the chamfer/fill
    - dragging it sizes the round shown (the last size that worked stays if one cannot be made, with the reason at the cursor); letting go makes nothing; Enter makes it. A press on the edge itself still drags from the edge (a small size puts the handle close to it).
    - After Enter, the round is a feature with its own square handle (as before).
 
+3. **As far as it goes (#45 kind 2):** a size past what the edges take (typed, dragged on the handle or from an edge) builds and shows the largest that works (halving from the size asked, then halving the gap: about 10 tries, kept while the size asked stays past it so a drag stays quick). The handle's label and the cursor say "made at 1.8 m, the most these edges take (why)" in orange; the window says it in the warning colour; Enter makes that size.
+
 ## Next
 
-3. **Kind 2 for rounds (#45):** a size past the limit builds the largest that works and draws what stopped it in orange, instead of keeping the last size reached.
+- Kind 2 also for a made round's own handle (it keeps the last size that worked).
+- Draw what stopped it (the face or line) in orange, and a faint ghost of the size asked (#45).
 4. **Partly (#45 kind 4):** of several edges, round those that can be and mark the rest.
 5. **Corner patches (#46):** where rounded edges meet at a corner the kernel cannot close, Prism's own n-sided patch, else a corner fitted within the precision. No corner in the owner's files fails after part 1, so this waits for a failing case (or is built against made-up corners: three rounds of different sizes, four edges at a corner).

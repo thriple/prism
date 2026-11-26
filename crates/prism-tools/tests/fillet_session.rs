@@ -72,10 +72,11 @@ fn the_round_the_owner_wanted_is_made_and_keeps_the_line_on_the_end_face() {
     }
 }
 
-/// Dragged past what can be made, the last size that could stays on
-/// screen, and the reason shows at the cursor in the warning colour.
+/// Dragged past what can be made, the largest size that works is shown
+/// (DECISIONS #45, kind 2), and the reason shows at the cursor in the
+/// warning colour.
 #[test]
-fn a_drag_too_far_keeps_the_last_round_and_says_why_at_the_cursor() {
+fn a_drag_too_far_shows_the_largest_round_and_says_why_at_the_cursor() {
     let mut r = recording();
     r.events.truncate(217);
     let t = r.events.last().expect("an event").t;
@@ -93,14 +94,14 @@ fn a_drag_too_far_keeps_the_last_round_and_says_why_at_the_cursor() {
     assert!(panel.refused.is_some(), "too large: {}", panel.size);
     assert!(
         !std::ptr::eq(s.display_scene(), s.scene()),
-        "the last round that could be made stays"
+        "the largest round that can be made shows"
     );
     let warn = prism_view::Style::default().health_many;
     let o = s.overlay();
     assert!(
         o.labels
             .iter()
-            .any(|l| l.color == warn && l.text.contains("Showing the last size that worked")),
+            .any(|l| l.color == warn && l.text.contains("the most these edges take")),
         "{:?}",
         o.labels
     );

@@ -2948,14 +2948,12 @@ fn the_fillet_window_previews_and_changes_the_last_round() {
     d.s.round_input(RoundOp::Fillet(false));
     assert_eq!(curved(&d), 0, "the window chose chamfer");
     d.s.round_input(RoundOp::Fillet(true));
-    // Too big a size: nothing previewed, and the reason shows first.
+    // Too big a size: the largest that works is previewed, and says so
+    // (DECISIONS #45, kind 2; it used to show nothing).
     d.s.round_text("5");
-    assert_eq!(shown(&d), real, "no preview");
-    assert_eq!(d.s.hint(), prism_ops::round::TOO_WIDE);
-    assert_eq!(
-        d.s.round_panel().unwrap().refused,
-        Some(prism_ops::round::TOO_WIDE)
-    );
+    assert_eq!(shown(&d), real + 1, "the largest round shows");
+    assert!(d.s.hint().contains("largest that works"), "{}", d.s.hint());
+    assert!(d.s.round_panel().unwrap().refused.is_some());
     // Back to fitting each edge, then click and Enter.
     d.s.round_text("");
     assert_eq!(shown(&d), real + 1);
@@ -10913,4 +10911,38 @@ fn collected_edges_have_a_size_handle_to_drag() {
     let want = 8.0 - r * r * (1.0 - std::f64::consts::FRAC_PI_4) * 2.0;
     let got = model_volume(d.s.model());
     assert!((got - want).abs() < 1e-3, "{got} {want}");
+}
+
+/// A size more than the edges take builds the largest that works, says
+/// so by the handle in orange, and Enter makes that (DECISIONS #45, kind
+/// 2: "as far as it goes"; owner: "the user needs choices more than
+/// limits").
+#[test]
+fn a_size_too_large_makes_the_largest_that_works() {
+    use prism_tools::session::RoundOp;
+    let mut d = box_for_rounding();
+    d.click(DVec3::new(1.0, 0.0, 2.0));
+    d.s.round_input(RoundOp::Size(Some(5.0)));
+    assert!(
+        !std::ptr::eq(d.s.display_scene(), d.s.scene()),
+        "a round is shown"
+    );
+    let warn = d.s.style.health_many;
+    assert!(
+        d.s.overlay()
+            .labels
+            .iter()
+            .any(|l| l.color == warn && l.text.contains("the most these edges take")),
+        "{:?}",
+        d.s.overlay().labels
+    );
+    let log = d.s.document().log().count();
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(d.s.document().log().count(), log + 1, "made");
+    let made = d.s.round_panel().expect("the tool").size;
+    let r: f64 = d.s.number.length(&made).expect("a size");
+    // The box is 2 m: the round can take nearly all of a face, not more.
+    assert!(r > 1.5 && r < 2.0, "{r}");
+    let want = 8.0 - r * r * (1.0 - std::f64::consts::FRAC_PI_4) * 2.0;
+    assert!((model_volume(d.s.model()) - want).abs() < 1e-3);
 }
