@@ -23,6 +23,13 @@ pub type FeatureCache = RefCell<Option<(u64, DefId, Vec<BTreeSet<FaceId>>)>>;
 /// feature it was worked out for.
 pub type GuideCache = RefCell<Option<(u64, DefId, usize, Option<SizeGuide>)>>;
 
+/// The model the features before one make, for the document revision, group
+/// and feature it was worked out for: a drag of a feature's handle runs
+/// only that feature and those after it on this, not the whole stack
+/// from its base (a shell's thickness handle took about 260 ms a frame on
+/// the owner's session-17 body, re-running everything each move).
+pub type BeforeCache = RefCell<Option<(u64, DefId, usize, prism_topo::Model)>>;
+
 /// Said at the cursor while the handle is dragged to a size the round
 /// cannot be made at.
 const CANNOT_SIZE: &str = "Refused: the round cannot be made this size here (too large for a face beside it, or for a round next to it).";
@@ -245,8 +252,31 @@ impl Session {
             prism_doc::Feature::Round { size: s, .. } => *s = size,
             _ => return None,
         }
-        let m = stack.evaluate();
+        let m = self.evaluate_from(def, index, &mut stack);
         (!stack.features[index].is_broken()).then_some(m)
+    }
+
+    /// `stack` (group `def`'s, changed at feature `index`) run from the
+    /// model before that feature, kept across a drag: the same model as
+    /// running it whole.
+    pub(super) fn evaluate_from(
+        &self,
+        def: DefId,
+        index: usize,
+        stack: &mut prism_doc::Stack,
+    ) -> prism_topo::Model {
+        // The document's own count of changes (the session's version also
+        // moves with every preview, which a drag makes each frame).
+        let version = self.doc.revision();
+        let mut cache = self.before_cache.borrow_mut();
+        let fresh = cache
+            .as_ref()
+            .is_some_and(|(v, d, i, _)| *v == version && *d == def && *i == index);
+        if !fresh {
+            *cache = Some((version, def, index, stack.before(index)));
+        }
+        let before = &cache.as_ref().expect("just made").3;
+        stack.evaluate_from(before, index)
     }
 
     /// The button let go on the handle: the size it was dragged to is

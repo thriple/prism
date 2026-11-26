@@ -643,6 +643,8 @@ pub struct Session {
     effects_length: f64,
     /// The Inspector's volume, for the selection it was worked out for.
     feature_cache: features::FeatureCache,
+    /// The model just before the feature being dragged or typed into.
+    before_cache: features::BeforeCache,
     inspector_volume: inspector::VolumeCache,
     effects: Vec<prism_view::effects::Effect>,
     dirty: bool,
@@ -923,6 +925,7 @@ impl Session {
             effects_on: true,
             effects_length: prism_view::effects::DURATION,
             feature_cache: Default::default(),
+            before_cache: Default::default(),
             inspector_volume: Default::default(),
             effects: Vec::new(),
             dirty: true,

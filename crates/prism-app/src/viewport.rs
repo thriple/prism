@@ -397,7 +397,17 @@ impl Viewport {
             draw_bucket(ctx, p, colour, self.session.paint_sampling() || m.alt);
         }
         let events = ctx.input(|i| i.events.clone());
-        for e in &events {
+        for (i, e) in events.iter().enumerate() {
+            // Of moves in a row, only the last is sent: each can rebuild a
+            // preview (a shell, a round), and a slow one used to leave the
+            // next frame a queue of places the pointer had already left
+            // (owner, 2026-11-26: handles slow to respond). Presses,
+            // releases and keys keep their order and the place they were
+            // made at.
+            let inside = |p: &Pos2| over || rect.contains(*p) && resp.hovered();
+            if superseded(&events, i, inside) {
+                continue;
+            }
             match e {
                 egui::Event::PointerMoved(p) if over || rect.contains(*p) && resp.hovered() => {
                     let (x, y) = self.local(*p);
@@ -722,5 +732,44 @@ mod tests {
             !is_mouse_wheel(3.0, 80.0),
             "a trackpad swipe with some sideways"
         );
+    }
+}
+
+/// Whether event `i` is a pointer move the next event, a move the
+/// viewport takes (`takes`), makes stale: only the last of moves in a row
+/// is sent.
+fn superseded(events: &[egui::Event], i: usize, takes: impl Fn(&Pos2) -> bool) -> bool {
+    matches!(events.get(i), Some(egui::Event::PointerMoved(_)))
+        && matches!(events.get(i + 1), Some(egui::Event::PointerMoved(q)) if takes(q))
+}
+
+#[cfg(test)]
+mod move_tests {
+    use super::superseded;
+    use egui::{Event, Modifiers, PointerButton, Pos2, pos2};
+
+    #[test]
+    fn only_the_last_of_moves_in_a_row_is_sent() {
+        let press = Event::PointerButton {
+            pos: pos2(3.0, 3.0),
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::default(),
+        };
+        let events = [
+            Event::PointerMoved(pos2(1.0, 1.0)),
+            Event::PointerMoved(pos2(2.0, 2.0)),
+            Event::PointerMoved(pos2(3.0, 3.0)),
+            press,
+            Event::PointerMoved(pos2(4.0, 4.0)),
+            Event::PointerMoved(pos2(500.0, 5.0)),
+        ];
+        let inside = |p: &Pos2| p.x < 100.0;
+        let sent: Vec<bool> = (0..events.len())
+            .map(|i| !superseded(&events, i, inside))
+            .collect();
+        // The press keeps the move before it; a move off the viewport does
+        // not make the last one inside stale.
+        assert_eq!(sent, [false, false, true, true, true, true]);
     }
 }

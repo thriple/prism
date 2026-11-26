@@ -324,7 +324,7 @@ impl Session {
         if !next.set_rim(index, edge, Some(style)) {
             return Err("Refused: that is not a rim of this shell.");
         }
-        let m = next.evaluate();
+        let m = self.evaluate_from(def, index, &mut next);
         // The shell is built anyway (a rim it cannot reach is cut square,
         // DECISIONS #41), but the handle offers only a style it builds as
         // asked, and says why not: the tilt stays where it last worked.

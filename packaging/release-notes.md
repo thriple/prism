@@ -1,3 +1,5 @@
+**Faster: dragging a live feature's handle** (Shell thickness and rims, a fillet's size handle, the Inspector's live fields). Only the feature being dragged, and those after it, are worked out again on each move, not every feature from the start; and when a preview is slow, the pointer's in-between positions are skipped, so the handle follows where the pointer is now instead of catching up. A single heavy shell still takes a moment per update.
+
 **Fixed: Fillet / Chamfer stopped far short of the size you dragged to** when a line was drawn on a face at the end of the edge, or the edge beside it had once been split (a round on the owner's ceiling edge stopped at 0.028 m where 0.2 m fits). It now rounds past those lines and keeps them, trimmed where the round cuts into their face.
 
 **Changed: dragging a fillet or chamfer too far no longer blanks the preview.** The last size that worked stays on screen, and the reason shows next to the cursor in orange, both when dragging from an edge and when dragging a selected round's square handle.

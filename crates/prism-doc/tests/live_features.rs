@@ -139,6 +139,16 @@ fn a_feature_added_on_top_gives_the_model_the_whole_stack_makes() {
         "the same model as running the stack from its base"
     );
     assert_eq!(body.model.face_count(), 8, "the cube and two rounds");
+    // Run from the model before a feature (as a handle drag does), the
+    // same model again, for each feature.
+    for i in 0..2 {
+        let before = stack.before(i);
+        assert_eq!(
+            stack.evaluate_from(&before, i).geometry_json(),
+            body.model.geometry_json(),
+            "from feature {i}"
+        );
+    }
 }
 
 #[test]

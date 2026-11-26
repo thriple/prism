@@ -478,6 +478,29 @@ impl Stack {
         m
     }
 
+    /// The model the features before `index` make: what feature `index`
+    /// runs on. Its result does not depend on later features, so a drag
+    /// of feature `index` can keep it and run only from there
+    /// ([`Stack::evaluate_from`]).
+    pub fn before(&self, index: usize) -> Model {
+        let mut s = Stack {
+            base: self.base.clone(),
+            features: self.features[..index.min(self.features.len())].to_vec(),
+        };
+        s.evaluate()
+    }
+
+    /// The same model as [`Stack::evaluate`], given `before`, the model
+    /// the features before `index` make ([`Stack::before`]): only feature
+    /// `index` and those after it run.
+    pub fn evaluate_from(&mut self, before: &Model, index: usize) -> Model {
+        let mut m = before.clone();
+        for (i, f) in self.features.iter_mut().enumerate().skip(index) {
+            f.run(&mut m, i == 0);
+        }
+        m
+    }
+
     pub fn evaluate(&mut self) -> Model {
         let mut m = self.base.clone();
         for (i, f) in self.features.iter_mut().enumerate() {

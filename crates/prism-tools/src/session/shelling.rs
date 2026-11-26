@@ -558,7 +558,7 @@ impl Session {
             Feature::Shell { thickness, .. } => *thickness = t,
             _ => return None,
         }
-        let m = stack.evaluate();
+        let m = self.evaluate_from(def, index, &mut stack);
         (!stack.features[index].is_broken()).then_some(m)
     }
 

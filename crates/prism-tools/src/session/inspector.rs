@@ -752,7 +752,7 @@ impl Session {
             if !stack.set_rim(index, edge, *style) {
                 return None;
             }
-            let m = stack.evaluate();
+            let m = self.evaluate_from(def, index, &mut stack);
             return (!stack.features.get(index)?.is_broken()).then_some(m);
         }
         let f = stack.features.get_mut(index)?;
@@ -775,7 +775,7 @@ impl Session {
             }
             _ => return None,
         }
-        let m = stack.evaluate();
+        let m = self.evaluate_from(def, index, &mut stack);
         (!stack.features[index].is_broken()).then_some(m)
     }
 
