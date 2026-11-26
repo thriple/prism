@@ -5417,4 +5417,4 @@ None of these were built. The owner did not want to pursue any of them further t
 ## Owner to-do, queued (2026-11-26)
 
 - **Coarse-then-exact previews** (timer set for 19:31 Guam, 09:31 UTC): live shell handles (thickness, rims) are slow to respond. Each tool gets a cheap preview mode while dragging (no joins, coarser curves), exact on release or click. Start with an audit timing each tool's preview and handle drag.
-- **Real handles on fillets and chamfers:** dragging on the highlighted round (brief 48 part 2) "is not working out" (owner). Give a selected live fillet or chamfer a visible grip to drag, as the shell's thickness and rim handles have. Not started.
+- **Redo the fillet / chamfer experience** (owner, 2026-11-26): "very un-intuitive"; dragging on the highlighted round does not work out, and the preview often disappears because the interaction is confusing. Wanted: a proper widget, with handles to drag and a clear highlight of what is being rounded. Needs a brief first: walk through the current interaction step by step (when the preview shows, when it is lost, what each click and drag does), then design the widget and its states. Not started.
