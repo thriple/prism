@@ -84,6 +84,31 @@ Tests:
 - a swept profile along a 3D curve;
 - a lofted shape's edge between a NURBS face and a flat one.
 
+### 4a. The owner's SketchUp example (2026-11-26)
+
+![before](56/sketchup-chain-before.png) ![after](56/sketchup-chain-after.png)
+
+**The body:** a block whose top runs over two curved faces, with a smaller block on top.
+
+**The chain:** one round follows a chain of edges (red in the first picture):
+- down the front of the top block;
+- through a kink (the red point), where the faces on one side change from the top block's curved face to the lower body's;
+- along the curved front;
+- down to the base, where it ends in a rounded corner.
+
+What it shows Prism should do:
+
+- **The preview** draws the two setback lines (green) on the faces beside the chain, along its whole length, before the round is made. This is the highlight the fillet redo asked for. On curved faces, those lines are curves on the face.
+- **A chain on curved faces through a kink:** the round runs on across the kink. Where the faces on one side change there, the two rounds meet and are joined, as at a corner (step 4's mitre, or a corner patch).
+- **An end cap where the round cuts into a step:** SketchUp needed the owner to patch the front face by hand (the small triangle at the step under the top block). That patch is step 2's end cap, which Prism makes itself.
+- **The round ends in a rounded corner at the base** (three rounds meeting): the corner rules.
+
+**Test:** this body, built in code, rounded along the whole chain in one go, as fillet and chamfer:
+- the chain is collected with one click;
+- Model Health is clean;
+- no face has to be patched by hand;
+- the setback lines in the preview lie on the faces.
+
 ### 5. The smooth corner patch (DECISIONS #46)
 
 Replaces the small flat facet at an apex: an n-sided patch that meets each round's slope at its edge.
@@ -101,7 +126,7 @@ Tests: a pyramid tip; a cube corner with three different sizes (once rounds can 
 1. Step 1 (slits, notches, non-flat openings), with session 29 as the test. **This is what makes the owner's body work.**
 2. Step 2 (end caps).
 3. Step 3 (local round).
-4. Step 4 (3D chains, freeform faces).
+4. Step 4 (3D chains, freeform faces), with the owner's SketchUp example (4a) as its test.
 5. Step 5 (corner patch).
 6. Step 6 (tool messages) as each lands.
 
