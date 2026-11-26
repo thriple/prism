@@ -284,7 +284,7 @@ fn apply_only(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) {
     }
     move_arcs(model, vs, m);
     let tol = model.tol();
-    weld(model, &tol);
+    weld_keeping(model, vs, &tol);
     follow_maps(model, &maps, m);
     let touched: Vec<FaceId> = model
         .faces()
@@ -449,16 +449,52 @@ fn fold(model: &Model, l: &[VertexId], tol: &Tol) -> Vec<Vec<VertexId>> {
 /// Merge vertices closer than the tolerance (the lower id stays), then drop
 /// edges and faces that became degenerate or repeated.
 pub fn weld(model: &mut Model, tol: &Tol) {
-    let verts: Vec<(VertexId, DVec3)> = model.vertices().collect();
+    weld_keeping(model, &BTreeSet::new(), tol);
+}
+
+/// [`weld`] after an edit that moved `moved`: a vertex that stayed put is
+/// kept over one that moved onto it, and of two faces that became the same
+/// the one the edit moved goes (DECISIONS #44, rule 4c: removing duplicates
+/// keeps the face the edit did not make). Otherwise the lower id stays.
+/// Points are found through a grid of cells twice the tolerance across, so
+/// a move does not compare every point with every other.
+pub fn weld_keeping(model: &mut Model, moved: &BTreeSet<VertexId>, tol: &Tol) {
+    let cell = (tol.dist * 2.0).max(f64::MIN_POSITIVE);
+    let key = |p: DVec3| {
+        (
+            (p.x / cell).floor() as i64,
+            (p.y / cell).floor() as i64,
+            (p.z / cell).floor() as i64,
+        )
+    };
+    type Points = Vec<(VertexId, DVec3)>;
+    let (still, went): (Points, Points) = model.vertices().partition(|(v, _)| !moved.contains(v));
+    let mut grid: BTreeMap<(i64, i64, i64), Vec<(VertexId, DVec3)>> = BTreeMap::new();
     let mut into: BTreeMap<VertexId, VertexId> = BTreeMap::new();
-    for (i, (a, pa)) in verts.iter().enumerate() {
-        if into.contains_key(a) {
-            continue;
-        }
-        for (b, pb) in &verts[i + 1..] {
-            if !into.contains_key(b) && tol.same_point(*pa, *pb) {
-                into.insert(*b, *a);
+    for (v, p) in still.into_iter().chain(went) {
+        let (x, y, z) = key(p);
+        let mut found: Option<VertexId> = None;
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let c = (
+                        x.saturating_add(dx),
+                        y.saturating_add(dy),
+                        z.saturating_add(dz),
+                    );
+                    for (k, q) in grid.get(&c).into_iter().flatten() {
+                        if tol.same_point(p, *q) && found.is_none_or(|f| *k < f) {
+                            found = Some(*k);
+                        }
+                    }
+                }
             }
+        }
+        match found {
+            Some(k) => {
+                into.insert(v, k);
+            }
+            None => grid.entry((x, y, z)).or_default().push((v, p)),
         }
     }
     apply_weld(model, &into);
@@ -533,9 +569,17 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
             }
         }
     }
+    // Faces the edit moved (a point of theirs welded onto another): of two
+    // that became the same, the moved one goes (rule 4c).
+    let moved: BTreeSet<FaceId> = model
+        .faces()
+        .filter(|(_, f)| f.loops().flatten().any(|v| into.contains_key(v)))
+        .map(|(id, _)| id)
+        .collect();
     let ids: Vec<FaceId> = model.faces().map(|(id, _)| id).collect();
-    // Faces that became the same: facing the same way, one stays; back to
-    // back (a box's top pushed down onto its bottom), both go.
+    // Faces that became the same: facing the same way, one stays (the one
+    // the edit did not move); back to back (a box's top pushed down onto
+    // its bottom), both go.
     let mut seen: BTreeMap<Vec<VertexId>, (FaceId, Vec<VertexId>)> = BTreeMap::new();
     let mut gone: Vec<FaceId> = Vec::new();
     for id in ids {
@@ -577,11 +621,16 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
             // A flat face down to two corners is judged below, by its
             // sides: a circle is two arcs between two points.
             if f.outer.len() < 3 && f.plane().is_some() || f.is_curved() {
-            } else if let Some((other, loop_)) = seen.get(&key) {
-                if !same_direction(loop_, &f.outer) {
-                    gone.push(*other);
+            } else if let Some((other, loop_)) = seen.get(&key).cloned() {
+                if !same_direction(&loop_, &f.outer) {
+                    gone.push(other);
+                    gone.push(id);
+                } else if moved.contains(&other) && !moved.contains(&id) {
+                    gone.push(other);
+                    seen.insert(key, (id, f.outer.clone()));
+                } else {
+                    gone.push(id);
                 }
-                gone.push(id);
             } else {
                 seen.insert(key, (id, f.outer.clone()));
             }
@@ -634,11 +683,16 @@ pub(crate) fn apply_weld(model: &mut Model, into: &BTreeMap<VertexId, VertexId>)
             // The same face again, or the same place facing the other way;
             // a sphere's halves share their edges but face the same way
             // and are not the same place.
-            Some(other)
-                if same_sides(model, *other, id)
-                    || crate::settle::back_to_back(model, *other, id) =>
+            Some(&other)
+                if same_sides(model, other, id)
+                    || crate::settle::back_to_back(model, other, id) =>
             {
-                gone.push(id);
+                if moved.contains(&other) && !moved.contains(&id) {
+                    gone.push(other);
+                    by_edges.insert(key, id);
+                } else {
+                    gone.push(id);
+                }
             }
             Some(_) => {}
             None => {

@@ -1,3 +1,5 @@
+**Fixed: moving a face exactly onto another kept the wrong one.** Of two faces that end up in the same place, the one you moved now goes and the one that stayed put is kept, with its paint, whichever was drawn first. Moves also weld points faster on large models (a grid instead of comparing every point with every other).
+
 **Changed: "parallel" and "the same plane" now follow the document's precision.** Two faces count as one plane when their far edges are within the precision (0.01 mm by default), not when they are within a fixed angle. Large faces that are very slightly tilted no longer merge with their far edges well apart, and small faces at a hair's angle that are within the precision now merge as they should. Imported meshes join corners at the document's precision too; a mesh too large to hold its numbers that finely joins them at the file's own precision, and the import says so.
 
 **Fixed: offsetting a curved face as far as it goes** (an arch offset past where its sides meet) could leave a chain of tiny holes touching at points. It now stops just short, with one clean face, at every precision.
