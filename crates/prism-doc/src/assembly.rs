@@ -394,6 +394,22 @@ impl Assembly {
 
     /// Give the document's tolerance to any model that does not have it
     /// (one an edit built afresh): cheap when all already do.
+    /// After a command: in every model it changed (`before` is the
+    /// assembly before it), a curve another passes through partway parts
+    /// there ([`prism_ops::sticky::part_crossed_curves`]), so Select and
+    /// Erase see the same pieces whatever edit made the crossing.
+    pub fn part_crossed_curves(&mut self, before: &Assembly) {
+        for (id, d) in self.defs.iter_mut() {
+            if before.defs.get(id).is_some_and(|b| Arc::ptr_eq(b, d)) {
+                continue;
+            }
+            let mut m = d.model.clone();
+            if prism_ops::sticky::part_crossed_curves(&mut m) {
+                Arc::make_mut(d).model = m;
+            }
+        }
+    }
+
     pub fn keep_tol(&mut self) {
         let tol = self.tol;
         for d in self.defs.values_mut() {

@@ -2005,6 +2005,7 @@ impl Document {
     pub fn run(&mut self, command: Command) -> bool {
         let before = self.asm.clone();
         command.apply_in(&mut self.asm, ROOT);
+        self.asm.part_crossed_curves(&before);
         self.asm.follow_dimensions();
         // A model the command built afresh takes the document's tolerance.
         self.asm.keep_tol();

@@ -386,3 +386,82 @@ fn a_line_drawn_down_a_cylinder_wall_shows() {
             || (m.vertex(e.b) - p).length() + (m.vertex(e.a) - q).length() < 1e-6
     }));
 }
+
+/// Whatever edit makes two shapes cross, each curve parts where another
+/// passes through it, so a click picks (and Erase takes) the piece
+/// between crossings, and the faces either side of an erased piece become
+/// one (owner's sessions 27 and 28, 2026-11-26: overlapping polygons and
+/// curves divided each other's faces, but one Erase took a whole polygon,
+/// or everything).
+#[test]
+fn crossing_shapes_part_each_other_whatever_made_them_cross() {
+    let square = |x: f64, y: f64| -> Vec<DVec3> {
+        vec![
+            DVec3::new(x, y, 0.0),
+            DVec3::new(x + 2.0, y, 0.0),
+            DVec3::new(x + 2.0, y + 2.0, 0.0),
+            DVec3::new(x, y + 2.0, 0.0),
+        ]
+    };
+    // Drawn over each other; and drawn apart, then one moved over.
+    for moved in [false, true] {
+        let mut doc = Document::new();
+        doc.run(Command::Polygon {
+            points: square(0.0, 0.0),
+        });
+        doc.run(Command::Polygon {
+            points: square(if moved { 5.0 } else { 1.0 }, 1.0),
+        });
+        if moved {
+            let m = doc.model();
+            let vs: BTreeSet<_> = m
+                .vertices()
+                .filter(|(_, p)| p.x > 4.0)
+                .map(|(id, _)| id)
+                .collect();
+            doc.run(Command::Translate {
+                vertices: vs,
+                by: DVec3::new(-4.0, 0.0, 0.0),
+            });
+        }
+        let m = doc.model().clone();
+        clean(&m);
+        assert_eq!(m.faces().count(), 3, "moved {moved}");
+        // The piece of the first square's right side inside the second.
+        let inner = m
+            .edges()
+            .find(|(_, e)| {
+                let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+                (a.x - 2.0).abs() < 1e-9 && (b.x - 2.0).abs() < 1e-9 && a.y.min(b.y) > 0.5
+            })
+            .map(|(id, _)| id)
+            .expect("the inside piece");
+        // From one crossing, round the first square's corner, to the next.
+        assert_eq!(
+            m.curve_edges(inner).len(),
+            2,
+            "moved {moved}: a piece of its own"
+        );
+        doc.run(Command::Erase {
+            selection: Selection {
+                edges: m.curve_edges(inner).into_iter().collect(),
+                ..Default::default()
+            },
+        });
+        let after = doc.model();
+        clean(after);
+        assert_eq!(
+            after.faces().count(),
+            2,
+            "moved {moved}: two faces became one"
+        );
+        let h = prism_ops::health::check(after);
+        assert!(
+            h.stray.edges.is_empty(),
+            "moved {moved}: {:?}",
+            h.stray.edges
+        );
+        let area: f64 = after.faces().map(|(id, _)| after.face_area(id)).sum();
+        assert!((area - 7.0).abs() < 1e-9, "moved {moved}: {area}");
+    }
+}

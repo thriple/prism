@@ -292,10 +292,21 @@ fn run(
 
     for (plane, points) in work {
         let before: BTreeSet<EdgeId> = model.edges().map(|(id, _)| id).collect();
+        let fresh = model.counters().vertex;
         for p in points {
             split_at(model, p, &tol);
         }
         merge_duplicate_edges(model, &tol);
+        // A curve another edge now crosses partway parts there, as when a
+        // line is drawn across it (owner's session 27: erasing the inside
+        // piece of an arc crossed by another, after an Explode, took the
+        // whole arc with it, outline and all).
+        let made: Vec<VertexId> = model
+            .vertices()
+            .map(|(id, _)| id)
+            .filter(|v| v.0 >= fresh)
+            .collect();
+        crate::sticky::break_curves(model, &made, fresh, &[]);
         let new: BTreeSet<EdgeId> = model
             .edges()
             .map(|(id, _)| id)

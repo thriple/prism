@@ -265,3 +265,51 @@ fn a_disc_copied_and_turned_on_itself_makes_slices() {
         );
     }
 }
+
+/// The owner's session 27 (2026-11-26): a shape of arcs grouped, copied,
+/// the copy turned and moved over it, and both exploded. The arcs cross
+/// and are split where they do, but each kept being one curve, so
+/// erasing the piece of an arc inside the shape erased all of it, the
+/// outline's pieces too. Now an arc crossed partway by another parts
+/// there, as when a line is drawn across it: the click erases that
+/// piece, and the two faces beside it become one.
+#[test]
+fn an_arc_crossed_by_another_after_an_explode_erases_piece_by_piece() {
+    let mut r: prism_tools::Recording =
+        serde_json::from_str(include_str!("data/owner-session-27-explode.json"))
+            .expect("recording");
+    let upto = |r: &prism_tools::Recording, n: usize| {
+        let mut r = r.clone();
+        r.events.truncate(n);
+        prism_tools::Session::replay(&r)
+    };
+    let before = upto(&r, 2036);
+    let m0 = before.work_model().clone();
+    // The owner's first click with Erase, inside the shape.
+    r.events.truncate(2072);
+    let after = prism_tools::Session::replay(&r);
+    let m1 = after.work_model();
+    let gone: Vec<_> = m0
+        .edges()
+        .filter(|(id, _)| m1.edge(*id).is_none())
+        .collect();
+    assert_eq!(gone.len(), 1, "only the piece clicked: {gone:?}");
+    let ef = m0.edge_faces();
+    assert_eq!(
+        ef.get(&gone[0].0).map_or(0, |f| f.len()),
+        2,
+        "an inside piece"
+    );
+    assert_eq!(
+        m1.faces().count(),
+        m0.faces().count() - 1,
+        "two faces became one"
+    );
+    let area = |m: &prism_topo::Model| m.faces().map(|(id, _)| m.face_area(id)).sum::<f64>();
+    assert!(
+        (area(m1) - area(&m0)).abs() < 1e-9,
+        "{} {}",
+        area(m1),
+        area(&m0)
+    );
+}

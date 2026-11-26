@@ -996,6 +996,61 @@ pub fn break_curves(model: &mut Model, at: &[VertexId], fresh: u32, new: &[EdgeI
             }
         }
     }
+    part_runs(model, breaks);
+}
+
+/// Where another hard line or curve passes through a curve partway (two
+/// or more other hard edges at a point the curve runs through), the curve
+/// parts there, whatever made the crossing: drawing, Move, Copy, Paste,
+/// Explode (owner's sessions 27 and 28: overlapping shapes divided each
+/// other's faces, but a curve kept running across the other, so Erase
+/// took it whole). A line only touching a curve's point (a pulled
+/// circle's sides at its seams) leaves it whole. True if any parted.
+pub fn part_crossed_curves(model: &mut Model) -> bool {
+    if !model.edges().any(|(_, e)| e.curve_id.is_some()) {
+        return false;
+    }
+    // Seams on a curved face (a torus's two circles meet at one point)
+    // are the shape's own, not a crossing.
+    let on_curved: BTreeSet<EdgeId> = model
+        .faces()
+        .filter(|(_, f)| f.is_curved())
+        .flat_map(|(_, f)| f.edge_ids().collect::<Vec<_>>())
+        .collect();
+    let mut by_vertex: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+    for (id, e) in model.edges() {
+        if on_curved.contains(&id) {
+            continue;
+        }
+        for v in [e.a, e.b] {
+            by_vertex.entry(v).or_default().push(id);
+        }
+    }
+    let mut breaks: BTreeMap<prism_topo::CurveId, BTreeSet<VertexId>> = BTreeMap::new();
+    for (v, ids) in &by_vertex {
+        if ids.len() < 4 {
+            continue;
+        }
+        let edges: Vec<_> = ids.iter().filter_map(|e| model.edge(*e)).collect();
+        for c in edges.iter().filter_map(|e| e.curve_id) {
+            let through = edges.iter().filter(|e| e.curve_id == Some(c)).count() >= 2;
+            let others = edges
+                .iter()
+                .filter(|e| e.curve_id != Some(c) && !e.soft)
+                .count();
+            if through && others >= 2 {
+                breaks.entry(c).or_default().insert(*v);
+            }
+        }
+    }
+    let parted = !breaks.is_empty();
+    part_runs(model, breaks);
+    parted
+}
+
+/// Each curve of `breaks` parted at its points: every run between them
+/// but the first becomes a curve of its own.
+fn part_runs(model: &mut Model, breaks: BTreeMap<prism_topo::CurveId, BTreeSet<VertexId>>) {
     for (c, stops) in breaks {
         let mut left: BTreeSet<EdgeId> = model
             .edges()
