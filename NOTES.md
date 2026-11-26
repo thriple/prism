@@ -5487,3 +5487,9 @@ Release build, one drag frame:
 - **Apexes** (`round_with_caps`): the corner is cut off by a small flat face square to its average direction, past the rounds' reach, then rounded: a pyramid's four slant edges fillet, with a small flat facet at the tip. Test: `four_rounds_meet_at_an_apex`. **Not yet:** the smooth n-sided patch to replace that facet (the Loft ring fill makes a flat patch there, since every round's end lies in the facet's plane: a tangent-matched patch is needed); a chamfer at an apex; an apex's rounds with its base's. A face test helper: `health::orient` after `add_polygon` (it picks the facing itself).
 - Not checked in the app.
 
+## Refusals, step 1 (proposal 54, 2026-11-26)
+
+- **Inventory:** `docs/refusal-inventory.md`, 145 messages with a proposed kind each (generated from the code; 83 marked "?" are mostly "not supported yet" limits and need a decision). For the owner to check.
+- **Offset:** nothing to change. It already goes the whole way past where its sides meet (owner, session 15, test `too_far_goes_the_whole_way_and_stays_valid`); its one refusal is a corner that doubles straight back, which no distance fixes (kind 1). A "largest that works" was tried and reverted: it would have contradicted that decision.
+- **Push/Pull:** its one refusal (the pull would bend a curved face beside it) now says what to do: tap Alt to pull it as a new piece, which leaves the faces beside it alone.
+

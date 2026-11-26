@@ -95,10 +95,10 @@ Proposed kinds: 1: 34, 2: 10, 3 / red: 13, 4: 5, ?: 83
 | `prism-ops/src/loft.rs` | `NO_AXIS` | Select the outline or curves to turn (any shape, open or closed) and one straight line to turn them about (a line that touches none of the others). | 1 |
 | `prism-ops/src/loft.rs` | `TOUCHES_AXIS` | Refused: a curve touches or crosses the axis. For shapes that close on the axis, use Follow Me with lines and arcs. | ? |
 | `prism-ops/src/offset.rs` | `CURVED_OFFSET` | Curved faces cannot be offset yet. | ? |
-| `prism-ops/src/offset.rs` | `NO_OFFSET` | That face cannot be offset: an edge would vanish or cross. | ? |
+| `prism-ops/src/offset.rs` | `NO_OFFSET` | That face cannot be offset: an edge would vanish or cross. | 1 (checked 2026-11-26: Offset already goes the whole way past where sides meet, owner's session 15; this is only a corner that doubles straight back, which no distance fixes) |
 | `prism-ops/src/primitives.rs` | `TOO_SMALL` | That size is too small (at least 0.01 mm) | 1 |
 | `prism-ops/src/primitives.rs` | `TORUS_TUBE` | A torus's tube must be thinner than its ring is wide | ? |
-| `prism-ops/src/pushpull.rs` | `CURVED_PULL` | This pull would bend a curved face, or a face beside a cylinder. | ? |
+| `prism-ops/src/pushpull.rs` | `CURVED_PULL` | This pull would bend a curved face, or a face beside a cylinder. | 1 for now (checked 2026-11-26: Alt's new loop already pulls it without bending; the message should say so) |
 | `prism-ops/src/radius.rs` | `FREEFORM` | Refused: a freeform face is not pushed or pulled. Move its control points instead. | ? |
 | `prism-ops/src/radius.rs` | `RADIUS_GONE` | The radius would reach zero. | 1 |
 | `prism-ops/src/radius.rs` | `TUBE_AXIS` | The torus's tube would reach its axis. | 2 |

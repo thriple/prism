@@ -37,7 +37,7 @@ fn key(a: VertexId, b: VertexId) -> (VertexId, VertexId) {
 
 /// Said when a pull would bend a curved face beside the pulled face, or a
 /// face or arc beside a pulled cylinder.
-pub const CURVED_PULL: &str = "This pull would bend a curved face, or a face beside a cylinder.";
+pub const CURVED_PULL: &str = "This pull would bend a curved face, or a face beside a cylinder. Tap Alt to pull it out as a new piece instead: the faces beside it stay as they are.";
 
 /// Why pulling `face` by `distance` is refused, if it is. A curved face
 /// takes a new radius ([`crate::radius`]). A face beside a curved face can
