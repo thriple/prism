@@ -5428,3 +5428,17 @@ None of these were built. The owner did not want to pursue any of them further t
 - **Done (tool):** a size that cannot be made while dragging keeps the last preview that could, with the reason at the cursor in the warning orange (`round_refusal_label`), for the edge drag and the selected round's handle (which used to stick silently).
 - **Tests:** `rounds.rs` `a_round_runs_past_lines_drawn_on_the_faces_at_its_ends` (cube, line on the end face, split upright edge, convex round cutting the line: it ends on the round), `fillet_session.rs` (the owner's drags all previewed, the 0.2 m round on the recorded model, a drag too far keeps the round and labels it).
 - **Not checked in the app.** Not done: a full "warn, don't refuse" for rounds (owner thinking about it; needs a brief with what to build when no round fits).
+
+## Drag-preview timing audit, first numbers (2026-11-26)
+
+Release build, one drag frame:
+- **Shell thickness / rim handle on the owner's session-17 body: about 260 ms a frame.** `shell_at_thickness` runs `stack.evaluate()` (every feature from the base) and the full exact shell (joins included) on every pointer move, with no coarse mode and no skipping of in-between moves. The half hull, by contrast: 5 ms (exact and preview alike).
+- **Fillet drag on the session-22 model: 10-20 ms a frame** (the kernel, more when the retry past drawn lines runs). Building the scene from the result: 0.3 ms.
+- Proposed plan (not built): (1) while dragging, run only the dragged feature on the cached model before it (as `push_on` does for adding), not the whole stack; (2) drop pointer moves that arrive while a frame is still being built (always show the latest); (3) a coarse mode for the slow kernels (shell without joins, as `slab_preview` already is; booleans skipped), exact on release; (4) a background thread on native later.
+
+## Session 24 and Curviloft's fillet (owner, 2026-11-26)
+
+- **Files:** `crates/prism-tools/tests/data/owner-session-24.json` (recording). The owner's `curve_fillet.dae` (SketchUp 2016 export, inches, one group: 274 triangles, 254 edges, a faceted result) is in the session upload only; not committed (Prism does not import DAE yet, PLAN "later").
+- **What the owner did:** collected 7 edges of the top section (6 straight at 90 and 61 degrees, 1 arc between a flat face and a cylinder) and filleted. Refused at every size.
+- **Why:** five of the seven (the 90-degree edges and the arc) cannot be rounded by the kernel (arris) even alone at any size: at small sizes `Blend(VertexBlend)` (it cannot close the round at the corner where the edge ends: other edges meet there), at large ones `TooLarge`. The two 61-degree edges round alone up to 0.5 m. Curviloft makes a faceted mesh and never has to close such a corner exactly.
+- **Not fixed.** This is the kernel's corner blending, the core of the fillet redo (task, brief to come with proposal 54): options are corner patches Prism builds itself (n-sided fill, which Loft already has), rounding edge by edge and patching, or a tolerance-fit NURBS corner (as DECISIONS #40 allows for deforms).
