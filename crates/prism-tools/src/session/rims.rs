@@ -325,11 +325,13 @@ impl Session {
             return Err("Refused: that is not a rim of this shell.");
         }
         let m = next.evaluate();
+        // The shell is built anyway (a rim it cannot reach is cut square,
+        // DECISIONS #41), but the handle offers only a style it builds as
+        // asked, and says why not: the tilt stays where it last worked.
+        let strict = self.rim_refusal(def, index, edge, style);
         match next.features.get(index) {
-            Some(f) if !f.is_broken() => Ok(m),
-            _ => Err(self
-                .rim_refusal(def, index, edge, style)
-                .unwrap_or("Refused: the shell cannot end that way.")),
+            Some(f) if !f.is_broken() && strict.is_none() => Ok(m),
+            _ => Err(strict.unwrap_or("Refused: the shell cannot end that way.")),
         }
     }
 

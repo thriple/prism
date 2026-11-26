@@ -6439,16 +6439,27 @@ fn shell_hollows_a_box_into_a_tray_with_a_ghost_first() {
 }
 
 #[test]
-fn shell_says_why_and_esc_steps_back() {
+fn shell_too_thick_is_built_with_a_warning_and_esc_steps_back() {
     let mut d = Driver::empty();
     box_2m(&mut d);
     d.tool(SHELL);
     d.click(DVec3::new(1.0, 1.0, 2.0));
     d.hover(DVec3::new(1.0, 1.0, 1.0));
+    // Walls thicker than half the box cross: once refused, now built face
+    // by face, with a warning that says why (DECISIONS #41).
     d.typed("1.5");
-    assert_eq!(d.s.hint(), prism_ops::shelling::TOO_THICK);
+    // The six 1.5 m slabs inside a 2 m box fill it: a solid cube again.
+    assert_eq!(d.s.document().undo_name(), Some("Shell / Thicken"), "built");
+    assert!((model_volume(d.s.model()) - 8.0).abs() < 1e-6);
+    valid(&d);
+    assert!(d.s.hint_is_notice());
+    assert_eq!(d.s.hint(), prism_ops::shelling::APART_THICK);
+    act(&mut d, "edit.undo");
     assert_eq!(d.faces(), 6);
-    assert!(d.s.shell_sizing().is_some(), "still sizing");
+    // Esc while sizing steps back and makes nothing.
+    d.click(DVec3::new(1.0, 1.0, 2.0));
+    d.hover(DVec3::new(1.0, 1.0, 1.0));
+    assert!(d.s.shell_sizing().is_some(), "sizing");
     key(&mut d, Key::Escape);
     assert_eq!(d.s.shell_sizing(), None);
     assert_eq!(d.faces(), 6);

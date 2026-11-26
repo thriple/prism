@@ -1533,8 +1533,8 @@ fn built(
     for (id, a, b, _) in &plan.rims {
         for v in [a, b] {
             let top = end(*v, *id);
-            if !rise.contains_key(&(*v, top)) {
-                rise.insert((*v, top), edge(&mut s, base[v], top, Curve::Line, None)?);
+            if let std::collections::btree_map::Entry::Vacant(at) = rise.entry((*v, top)) {
+                at.insert(edge(&mut s, base[v], top, Curve::Line, None)?);
             }
         }
     }
