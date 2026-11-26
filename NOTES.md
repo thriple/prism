@@ -5466,4 +5466,6 @@ Release build, one drag frame:
 - **Bug found on the way:** drawing back every line removed from Xby4's end faces made a second face inside the solid. Now only lines within the round's reach are removed, and a round that would leave Model Health worse is refused.
 - **Still to do for the fillet redo (task 100):** the handles and highlight widget, and corner patches (DECISIONS #46). No corner in the owner's files fails any more after the clean-up, so the corner patch has no failing case to test against yet.
 - Not checked in the app.
+- **Handles (brief 55 part 2):** collected edges are highlighted and have a square size handle across the face beside the longest, with "Fillet 0.2 m" by it (orange with the reason when that size cannot be made). Drag sizes the preview, Enter makes it. A press on the edge itself still drags from the edge (the handle can sit very close to it). Test: `collected_edges_have_a_size_handle_to_drag`. Not checked in the app.
+- **Owner, 2026-11-26: "work on removing the refusals on tools, case by case":** DECISIONS #45 decided with proposal 54's proposed answers. Next: Fillet / Chamfer kind 2 (largest that works, limiter in orange), then the inventory and Push/Pull, Offset.
 

@@ -32,7 +32,7 @@ const HOW: &str = "Click edges to collect them (a line in pieces as a whole) · 
 /// Said when no size fits the edges on its own (curved edges only).
 const NEED_SIZE: &str = "Type a size for these edges (curved edges have no size of their own)";
 const HOW_FEATURE: &str = "Drag the square handle or type a size + Enter to change the selected fillet or chamfer · click an edge to round more · Esc deselects";
-const HOW_SET: &str = "Enter rounds the collected edges · click adds or takes away edges · drag from an edge or type a size + Enter · Esc clears · Ctrl swaps fillet and chamfer";
+const HOW_SET: &str = "Drag the square handle to size the round · Enter rounds the collected edges · click adds or takes away edges · or type a size + Enter · Esc clears · Ctrl swaps fillet and chamfer";
 
 /// A change from the Fillet window (recorded as `Input::Round`).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -65,6 +65,9 @@ pub(super) struct Down {
     at: DVec2,
     edges: BTreeSet<EdgeId>,
     dragging: bool,
+    /// Pressed on the collected edges' size handle: the guide it is
+    /// measured on and which face of it.
+    handle: Option<(prism_doc::SizeGuide, usize)>,
 }
 
 /// What a click would round.
@@ -285,7 +288,7 @@ impl Session {
     pub(super) fn round_press(&mut self, s: DVec2, n_clicks: u32, _shift: bool, ctrl: bool) {
         self.round_notice = None;
         self.round_down = None;
-        if self.handle_press(s) {
+        if self.handle_press(s) || self.set_handle_press(s) {
             return;
         }
         // A double-click on a face: all its edges join the set.
@@ -310,6 +313,7 @@ impl Session {
                     at: s,
                     edges: BTreeSet::from([e]),
                     dragging: false,
+                    handle: None,
                 });
             }
             Some(Target::Edges(edges)) => {
@@ -317,6 +321,7 @@ impl Session {
                     at: s,
                     edges,
                     dragging: false,
+                    handle: None,
                 });
             }
             None => {}
@@ -380,11 +385,14 @@ impl Session {
             });
             self.round_collect(&d.edges, Some(true));
         }
-        if let Some(size) = d
-            .edges
-            .first()
-            .and_then(|e| self.round_size_at(*e, s, view))
-        {
+        let size = match &d.handle {
+            Some((guide, side)) => guide_size(guide, *side, s, view),
+            None => d
+                .edges
+                .first()
+                .and_then(|e| self.round_size_at(*e, s, view)),
+        };
+        if let Some(size) = size.filter(|x| *x > self.scene.tol.dist) {
             self.round_size = Some(size);
             self.round_shown = None;
             self.round_preview();
@@ -392,6 +400,157 @@ impl Session {
         self.overlay_dirty = true;
         self.dirty = true;
         true
+    }
+
+    /// The collected edges' size handle (brief 55): the longest straight
+    /// one with a flat face beside it, its guide, the face it is measured
+    /// across (the one facing the view most) and the size it shows.
+    fn set_handle(&self) -> Option<(prism_doc::SizeGuide, usize, f64)> {
+        if self.tool != FILLET || self.selected_feature().is_some() {
+            return None;
+        }
+        let set = self.round_selected();
+        let m = self.work_model();
+        let guide = set
+            .iter()
+            .filter_map(|e| prism_doc::edge_guide(m, *e))
+            .max_by(|x, y| x.a.distance(x.b).total_cmp(&y.a.distance(y.b)))?;
+        let size = self
+            .round_size
+            .or_else(|| prism_ops::rounds::fit(m, &set))?;
+        let view = self.view();
+        let to_eye = view.eye - (guide.a + guide.b) * 0.5;
+        let side = (0..guide.sides.len()).max_by(|x, y| {
+            let f = |k: usize| guide.sides[k].normal.dot(to_eye).abs();
+            f(*x).total_cmp(&f(*y))
+        })?;
+        Some((guide, side, size))
+    }
+
+    /// Where the collected edges' size handle is drawn.
+    fn set_handle_at(&self) -> Option<(prism_doc::SizeGuide, usize, DVec3)> {
+        let (guide, side, size) = match self.round_down.as_ref().and_then(|d| d.handle.clone()) {
+            Some((g, side)) => (g, side, self.round_size?),
+            None => self.set_handle()?,
+        };
+        let at = (guide.a + guide.b) * 0.5 + guide.sides[side].across * size;
+        Some((guide, side, at))
+    }
+
+    /// A press on the collected edges' size handle starts dragging it.
+    fn set_handle_press(&mut self, s: DVec2) -> bool {
+        let Some((guide, side, at)) = self.set_handle_at() else {
+            return false;
+        };
+        let view = self.view();
+        let near = view
+            .to_screen(at)
+            .is_some_and(|(q, _)| q.distance(s) < super::features::GRAB * self.settings.aperture);
+        // A handle close to its edge (a small size) leaves a press on the
+        // edge itself to drag from the edge, as before.
+        let on_edge = match (
+            view.to_screen(guide.a),
+            view.to_screen(guide.b),
+            view.to_screen(at),
+        ) {
+            (Some((a, _)), Some((b, _)), Some((q, _))) => {
+                let ab = b - a;
+                let t =
+                    ((s - a).dot(ab) / ab.length_squared().max(f64::MIN_POSITIVE)).clamp(0.0, 1.0);
+                s.distance(a + ab * t) < s.distance(q)
+            }
+            _ => false,
+        };
+        let grab = near && !on_edge;
+        if grab {
+            self.round_down = Some(Down {
+                at: s,
+                edges: self.round_selected(),
+                dragging: true,
+                handle: Some((guide, side)),
+            });
+            self.overlay_dirty = true;
+        }
+        grab
+    }
+
+    /// The collected edges drawn as the ones being rounded, and their size
+    /// handle: across the face beside the longest from its middle, with
+    /// the size written by it (orange, with why, when that size cannot be
+    /// made).
+    fn set_overlay(&self, o: &mut Overlay) {
+        if self.tool != FILLET || self.selected_feature().is_some() {
+            return;
+        }
+        let set = self.round_selected();
+        if set.is_empty() {
+            return;
+        }
+        let m = self.work_model();
+        let fb = &self.style.feedback;
+        for e in &set {
+            for w in m.edge_points(*e).windows(2) {
+                o.lines.push(Line {
+                    a: w[0],
+                    b: w[1],
+                    color: self.style.selected,
+                    width: fb.target_width * 1.5,
+                    dash: [0.0, 0.0],
+                });
+            }
+        }
+        let Some((guide, _, at)) = self.set_handle_at() else {
+            return;
+        };
+        let view = self.view();
+        let held = self.round_down.as_ref().is_some_and(|d| d.handle.is_some());
+        let over = held
+            || self.round_at.is_some_and(|s| {
+                view.to_screen(at).is_some_and(|(q, _)| {
+                    q.distance(s) < super::features::GRAB * self.settings.aperture
+                })
+            });
+        let color = if over { self.style.hover } else { fb.guide };
+        let mid = (guide.a + guide.b) * 0.5;
+        o.lines.push(Line {
+            a: mid,
+            b: at,
+            color,
+            width: fb.target_width,
+            dash: [6.0, 4.0],
+        });
+        o.marks.push(prism_view::overlay::Mark {
+            at,
+            shape: prism_view::overlay::Shape::Square,
+            color,
+            size: fb.glyph_size * 1.25,
+        });
+        if let Some(size) = self.round_size.or_else(|| prism_ops::rounds::fit(m, &set)) {
+            let kind = if self.round_fillet(self.ctrl_held) {
+                "Fillet"
+            } else {
+                "Chamfer"
+            };
+            // While dragging, the reason is said at the cursor already.
+            let text = match self.round_refused {
+                Some(why) if !held => format!(
+                    "{kind} {}: {}",
+                    self.number.show(size),
+                    why.strip_prefix("Refused: ").unwrap_or(why)
+                ),
+                _ => format!("{kind} {}", self.number.show(size)),
+            };
+            o.labels.push(prism_view::overlay::Label {
+                at,
+                offset: [14.0, 10.0],
+                text,
+                color: if self.round_refused.is_some() {
+                    self.style.health_many
+                } else {
+                    self.style.hover
+                },
+            });
+        }
     }
 
     /// How far from edge `e` the cursor points, across the face beside it
@@ -466,6 +625,7 @@ impl Session {
     /// (the selection shows as selected already).
     pub(super) fn round_overlay(&self, o: &mut Overlay) {
         self.handle_overlay(o);
+        self.set_overlay(o);
         self.round_refusal_label(o);
         if self.tool != FILLET || !self.selection.is_empty() || self.round_refused.is_some() {
             return;
@@ -668,6 +828,19 @@ impl Session {
                 .map_or(String::new(), |r| self.number.show(r)),
         )
     }
+}
+
+/// How far across side `side` of `guide` from its edge the pointer at
+/// `s` is.
+fn guide_size(guide: &prism_doc::SizeGuide, side: usize, s: DVec2, view: &View) -> Option<f64> {
+    let face = guide.sides.get(side)?;
+    let (o, d) = view.ray(s);
+    let den = face.normal.dot(d);
+    if den.abs() < prism_math::tol::UNIT_GUARD {
+        return None;
+    }
+    let p = o + d * (face.normal.dot(face.origin - o) / den);
+    Some((p - guide.a).dot(face.across))
 }
 
 /// A refusal said at the cursor while dragging: without "Refused:", and

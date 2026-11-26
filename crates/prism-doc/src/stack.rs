@@ -685,10 +685,19 @@ impl Stack {
             f.clone().run(&mut m, i == 0);
         }
         let e = edge_at(&m, feature.refs().first()?)?;
+        edge_guide(&m, e)
+    }
+}
+
+/// What a drag handle for the size of a round on edge `e` needs: the edge
+/// and the flat faces beside it. None for a curved edge, or one with no
+/// flat face beside it.
+pub fn edge_guide(m: &Model, e: EdgeId) -> Option<SizeGuide> {
+    {
         if m.edge(e)?.curve.is_curved() {
             return None;
         }
-        let (a, b) = ends(&m, e)?;
+        let (a, b) = ends(m, e)?;
         let dir = (b - a).try_normalize()?;
         let mid = (a + b) * 0.5;
         let by_edge = m.edge_faces();
@@ -711,7 +720,9 @@ impl Stack {
             .collect();
         (!sides.is_empty()).then_some(SizeGuide { a, b, sides })
     }
+}
 
+impl Stack {
     /// The faces each feature made (ids in the model as drawn): what each
     /// one adds when it runs. A broken feature made none.
     pub fn made_faces(&self) -> Vec<BTreeSet<FaceId>> {

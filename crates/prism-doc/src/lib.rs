@@ -27,7 +27,7 @@ use prism_topo::{FaceId, Guide, Model, VertexId};
 use serde::{Deserialize, Serialize};
 pub use stack::{
     BoolKind, EdgeRef, FaceRef, Feature, GuideSide, RimBoundary, RimChoice, RimReport, SizeGuide,
-    Stack, edge_at, resolve_faces,
+    Stack, edge_at, edge_guide, resolve_faces,
 };
 
 /// One edit.

@@ -10851,3 +10851,66 @@ fn geometry_beyond_the_precision_is_flagged_by_model_health() {
     let r = scale(&d);
     assert!(!r.detail.contains("precision"), "{}", r.detail);
 }
+
+/// The collected edges have a size handle (brief 55, owner: "actual
+/// handles on the chamfer/fillet"): a square across the face beside the
+/// longest from its middle, at the round's size, with the size written
+/// by it. Dragging it sizes the round shown; letting go makes nothing;
+/// Enter makes it at the size dragged to.
+#[test]
+fn collected_edges_have_a_size_handle_to_drag() {
+    let mut d = box_for_rounding();
+    let none = squares(&d).len();
+    d.click(DVec3::new(1.0, 0.0, 2.0));
+    assert_eq!(d.s.selection().edges.len(), 1, "collected");
+    let marks = squares(&d);
+    assert_eq!(marks.len(), none + 1, "a handle appears");
+    let mid = DVec3::new(1.0, 0.0, 2.0);
+    let handle = *marks
+        .iter()
+        .find(|p| (p.distance(mid) - 0.2).abs() < 1e-9)
+        .expect("0.2 from the edge's middle");
+    let across = (handle - mid) / 0.2;
+    assert!(
+        d.s.overlay()
+            .labels
+            .iter()
+            .any(|l| l.text.contains("Fillet") && l.text.contains("0.2")),
+        "the size by it"
+    );
+    let log = d.s.document().log().count();
+    let from = d.screen(handle);
+    d.send(Input::Move {
+        x: from.x,
+        y: from.y,
+    });
+    d.send(Input::Press {
+        button: Button::Left,
+        x: from.x,
+        y: from.y,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    });
+    let to = d.screen(mid + across * 0.5);
+    d.send(Input::Move { x: to.x, y: to.y });
+    assert!(
+        !std::ptr::eq(d.s.display_scene(), d.s.scene()),
+        "the round shows at the new size"
+    );
+    d.send(Input::Release {
+        button: Button::Left,
+    });
+    assert_eq!(d.s.document().log().count(), log, "nothing made yet");
+    assert_eq!(d.s.selection().edges.len(), 1, "still collected");
+    let at = squares(&d)
+        .into_iter()
+        .find(|p| (p.distance(mid) - 0.5).abs() < 1e-6);
+    assert!(at.is_some(), "the handle stays where it was let go");
+    d.send(Input::Key { key: Key::Enter });
+    assert_eq!(d.s.document().log().count(), log + 1, "Enter makes it");
+    let r: f64 = 0.5;
+    let want = 8.0 - r * r * (1.0 - std::f64::consts::FRAC_PI_4) * 2.0;
+    let got = model_volume(d.s.model());
+    assert!((got - want).abs() < 1e-3, "{got} {want}");
+}
