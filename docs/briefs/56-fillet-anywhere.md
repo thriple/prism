@@ -103,10 +103,25 @@ What it shows Prism should do:
 - **An end cap where the round cuts into a step:** SketchUp needed the owner to patch the front face by hand (the small triangle at the step under the top block). That patch is step 2's end cap, which Prism makes itself.
 - **The round ends in a rounded corner at the base** (three rounds meeting): the corner rules.
 
+**What Curviloft does, and where Prism must do better** (owner, 2026-11-26):
+
+- **Good: it reconciles connected edges.** Where the selected edges meet, Curviloft extends the setback lines (the green ones) so the round along one edge does not come up short of the next. Prism does the same: where two edges of a chain meet, each round's setback lines run on to meet the next round's, so the rounds join with no gap and no step.
+- **Bad: it overshoots, and leaves a face out.** At the top curve the round ran past where it should stop. The curve where it met the front face was not in that face's plane, so Curviloft dropped the front face altogether, and the owner rebuilt it by hand. Prism must:
+  - trim each round exactly where it meets a face, so the line it leaves on a flat face lies in that face;
+  - never leave a face out: a face the round cuts into is cut back, or closed with an end cap (step 2);
+  - check this with Model Health after every round: no hole, no face missing, no line off its face.
+- **Chains go anywhere:**
+  - through inside walls (concave edges, a round that fills in rather than cuts away);
+  - across bends and kinks;
+  - along curves, arcs and freeform edges;
+  - mixing all of these in one chain.
+
+  Where something is beyond the precision it can be made to (Curviloft has such limits too), the round is built as far as it goes and the rest is marked orange (DECISIONS #45), never left as a hole.
+
 **Test:** this body, built in code, rounded along the whole chain in one go, as fillet and chamfer:
 - the chain is collected with one click;
 - Model Health is clean;
-- no face has to be patched by hand;
+- no face has to be patched by hand (the front face is there, flat, cut back to the round);
 - the setback lines in the preview lie on the faces.
 
 ### 5. The smooth corner patch (DECISIONS #46)
