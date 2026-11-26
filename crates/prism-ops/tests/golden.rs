@@ -80,6 +80,9 @@ pub fn run(case: &Value, k: f64) -> Model {
     } else {
         Model::new()
     };
+    // At k times the size, the document's precision is k times too
+    // (DECISIONS #42), so every case means the same at every scale.
+    m.set_tol(prism_math::Tol::new(prism_math::tol::STANDARD * k));
     for op in case["ops"].as_array().expect("ops") {
         match op["op"].as_str().expect("op name") {
             "segment" => {

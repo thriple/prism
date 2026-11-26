@@ -10,7 +10,12 @@ use prism_topo::Model;
 /// A face under an arch: a spline from (0,0) over (1,0.6) to (2,0) and the
 /// line back along the ground.
 fn arch() -> (Model, prism_topo::FaceId, Nurbs) {
-    let mut m = Model::new();
+    // The tolerance these cases were written at (a millionth of the arch's
+    // 2 m). Offsetting past where the sides meet is fragile: it is valid at
+    // 0.002 mm but leaves holes touching at a point at 0.001 mm and at
+    // 0.01 mm (two crossings weld into one). A bug in how Offset tidies
+    // crossing holes, to fix in tolerance stage 2 (NOTES, 2026-11-26).
+    let mut m = Model::with_tol(prism_math::Tol::for_extent(2.0));
     let curve = Nurbs::through(
         &[
             DVec3::new(0.0, 0.0, 0.0),

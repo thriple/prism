@@ -1574,7 +1574,10 @@ fn hairpin() -> (Model, FaceId, FaceId) {
             patch
         }
     };
-    let mut m = Model::new();
+    // Fine precision (0.001 mm), the precision the fold cases were written
+    // at: at Standard, thickening 0.02 into the fold is not recognised as
+    // one and is bridged instead (tolerance stage 2, NOTES 2026-11-26).
+    let mut m = Model::with_tol(prism_math::Tol::new(prism_math::tol::FINE));
     let (p0, p1) = (
         m.add_vertex(p(0.0, 0.0, 0.0)),
         m.add_vertex(p(0.0, 1.0, 0.0)),

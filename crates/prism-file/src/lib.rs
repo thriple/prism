@@ -205,9 +205,11 @@ pub struct Settings {
     pub units: DisplayUnits,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camera: Option<CameraData>,
-    /// The document's tolerance in metres (DECISIONS #42). Written from the
-    /// document on save; a file without it (older ones) has one chosen
-    /// from its geometry when read ([`precision_for`]).
+    /// The document's tolerance in metres (DECISIONS #42), only as the
+    /// file carries it: the document holds it (`Assembly::tol`). On save it
+    /// is written from the document, and left out when it is the one
+    /// [`precision_for`] would choose on reading; on reading it goes to the
+    /// document and is cleared here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub precision: Option<f64>,
     /// Fields written by a newer version of Prism, kept as they were.
@@ -369,9 +371,12 @@ pub fn write(c: &Contents, app: &str) -> Vec<u8> {
         ],
     };
     let mut manifest = manifest;
-    // The document's tolerance goes with its settings.
+    // The document's tolerance goes with its settings, unless it is the
+    // one reading the file would choose anyway (so a file at the default
+    // saves as it always did).
+    let tol = c.assembly.tol();
     let settings = Settings {
-        precision: Some(c.assembly.tol().dist),
+        precision: (tol != precision_for(&c.assembly)).then_some(tol.dist),
         ..c.settings.clone()
     };
     let mut files: Vec<(String, Vec<u8>)> = vec![
@@ -751,38 +756,44 @@ pub fn read(bytes: &[u8]) -> Result<Contents, FileError> {
             m.next,
         );
     }
-    // The document's tolerance: the file's own, or for an older file one
-    // its smallest details survive (DECISIONS #42).
+    // The document's tolerance: the file's own, or (none saved: the
+    // default, or an older file) one its smallest details survive
+    // (DECISIONS #42).
     let mut settings = settings;
-    let tol = match settings.precision {
-        Some(d) => prism_math::Tol::new(d),
-        None => precision_for(&assembly),
-    };
-    settings.precision = Some(tol.dist);
+    let tol = settings
+        .precision
+        .take()
+        .map_or_else(|| precision_for(&assembly), prism_math::Tol::new);
     assembly.set_tol(tol);
     Ok(Contents { assembly, settings })
 }
 
-/// The tolerance for a document saved before it had one (DECISIONS #42):
-/// Standard (0.01 mm), unless its shortest edge is under ten of that, in
-/// which case the largest of Fine (0.001 mm) and finer powers of ten that
-/// leaves every edge at least ten tolerances long, so nothing in it merges.
+/// The tolerance for a document saved without one (DECISIONS #42): the
+/// one it was made with, a millionth of its size (what every edit used
+/// before the tolerance was fixed, so an older file behaves as it did),
+/// made finer by tens while its shortest edge is under ten tolerances, so
+/// nothing in it merges. Standard for a document with no geometry.
 pub fn precision_for(assembly: &Assembly) -> prism_math::Tol {
-    use prism_math::tol::{FINE, MIN, STANDARD};
-    let shortest = assembly
-        .defs()
-        .flat_map(|(_, d)| {
-            d.model
-                .edges()
-                .map(|(_, e)| d.model.vertex(e.a).distance(d.model.vertex(e.b)))
-                .collect::<Vec<_>>()
-        })
-        .filter(|l| *l > 0.0)
-        .fold(f64::INFINITY, f64::min);
-    if shortest >= 10.0 * STANDARD {
-        return prism_math::Tol::new(STANDARD);
+    use prism_math::tol::{MIN, STANDARD};
+    let mut extent: f64 = 0.0;
+    let mut shortest = f64::INFINITY;
+    for (_, d) in assembly.defs() {
+        let m = &d.model;
+        if let Some((lo, hi)) = m.bbox() {
+            extent = extent.max((hi - lo).max_element());
+        }
+        for (_, e) in m.edges() {
+            let l = m.vertex(e.a).distance(m.vertex(e.b));
+            if l > 0.0 {
+                shortest = shortest.min(l);
+            }
+        }
     }
-    let mut t = FINE;
+    let mut t = if extent > 0.0 {
+        prism_math::Tol::for_extent(extent).dist
+    } else {
+        STANDARD
+    };
     while t > MIN && shortest < 10.0 * t {
         t /= 10.0;
     }

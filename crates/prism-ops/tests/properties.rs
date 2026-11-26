@@ -72,7 +72,10 @@ fn apply(m: &mut Model, op: &Op, k: f64) {
 }
 
 fn build(ops: &[Op], k: f64) -> Model {
-    let mut m = Model::new();
+    // A model drawn k times the size sets its document's precision k times
+    // too (DECISIONS #42: one fixed tolerance per document, chosen for its
+    // scale), so the same edits give the same result.
+    let mut m = Model::with_tol(prism_math::Tol::new(prism_math::tol::STANDARD * k));
     for op in ops {
         apply(&mut m, op, k);
         // After every operation, loops name the right edges.

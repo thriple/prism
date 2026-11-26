@@ -97,7 +97,8 @@ fn contents(s: &Session, extra: &Map<String, Value>) -> Contents {
                 parallel: s.lens().parallel,
                 fov: Some(s.lens().fov),
             }),
-            precision: Some(s.document().assembly().tol().dist),
+            // Written from the document by `prism_file::write`.
+            precision: None,
             extra,
         },
     }
