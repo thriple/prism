@@ -284,6 +284,20 @@ impl Session {
     }
 
     /// Run a command in the open group, in its own coordinates.
+    /// `c` as it is run in the open group: in its own coordinates, with
+    /// the model it runs on (the top level's own, with no group open).
+    pub(super) fn local_command(&self, c: &Command) -> Option<(Model, Command)> {
+        if self.ctx.is_empty() {
+            return Some((self.doc.model().clone(), c.clone()));
+        }
+        let asm = self.doc.assembly();
+        let def = asm.context_def(&self.ctx).and_then(|d| asm.def(d))?;
+        Some((
+            def.model.clone(),
+            c.clone().to_local(&self.to_world.inverse(), &def.model),
+        ))
+    }
+
     pub(super) fn run_here(&mut self, c: Command) -> bool {
         if self.ctx.is_empty() {
             return self.doc.run(c);

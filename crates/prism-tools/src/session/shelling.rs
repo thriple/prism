@@ -443,13 +443,19 @@ impl Session {
         self.shell_open.clear();
         // Face by face from many faces: made a piece at a time, a step
         // each frame, shown as it goes (owner, 2026-11-26).
-        if let Command::Shell {
-            faces,
-            open,
-            thickness,
-        } = &c
+        // In the group's own coordinates, as the command is made: what it
+        // makes is kept, so the command does not make it again.
+        let local = self.local_command(&c);
+        if let Some((
+            model,
+            Command::Shell {
+                faces,
+                open,
+                thickness,
+            },
+        )) = &local
             && let Some(job) = prism_ops::shelling::shell_job(
-                self.work_model(),
+                model,
                 faces,
                 open,
                 *thickness,
@@ -523,7 +529,8 @@ impl Session {
             return;
         };
         if run.job.step() {
-            let shown = run.job.shown();
+            let mut shown = run.job.shown();
+            prism_ops::transform::affine(&mut shown, &self.to_world);
             self.set_preview(Some(shown));
             self.dirty = true;
             self.overlay_dirty = true;

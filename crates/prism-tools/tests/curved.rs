@@ -111,26 +111,21 @@ fn patch_closes_the_lofts_end_in_the_recorded_session() {
     }
 }
 
-/// The owner's session 17 (2026-11-23): every click of Shell / Thicken on
-/// a body with a curved wall of six lofted panels was refused as "too
-/// thick", at every thickness, both ways. One panel's trim ran a few ULPs
-/// past its knots, so its edge read the next panel's normal and its offset
-/// could not be fitted. Then each click got the body's true reason: a
-/// corner where four faces meet (`CORNER`). That refusal is gone (NOTES.md,
-/// "Shell/Thicken research, and a correction: refusal is the wrong answer
-/// to a crossing"): the corner's gap is closed by a flat face instead, so
-/// the first click (0.25 m by the pointer) now makes the shell. The
-/// owner's next click (the window's 1 m outside) lands on the shelled wall
-/// itself, shelling a shell: it used to be refused as "too thick"; since
-/// 2026-11-26 (DECISIONS #41) it is built anyway, face by face, with a
-/// warning. The third (1 m inside) shells that again. Each click used to
-/// run every shell before it again, and every search for the closest
-/// point on a freeform face worked out its grid afresh: the three clicks
-/// took about two minutes in a release build, now about fifteen seconds.
+/// The owner's session 17 Shell clicks (2026-11-26). The first click
+/// (0.25 m by the pointer) makes the shell, cleanly. The next (the
+/// window's 1 m outside) lands on the shelled wall itself: too thick to
+/// shell as one piece, it is built face by face, every one of its 62
+/// faces joined (owner: no limit on the pieces), and so it is made a
+/// face at a time, a step each frame, with how far it is in the box and
+/// Esc to stop it (DECISIONS #41, #48). Made to the end it takes about
+/// 30 s in a release build: `the_three_recorded_shell_clicks_made_to_the_end`
+/// runs it, by hand.
 #[test]
 fn shell_is_made_at_the_first_click_of_the_recorded_session() {
-    let r: prism_tools::Recording =
+    let mut r: prism_tools::Recording =
         serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+    // Step it as the app does (the recording predates jobs).
+    r.jobs = true;
     let upto = |n: usize| {
         let mut r = r.clone();
         r.events.truncate(n);
@@ -139,29 +134,63 @@ fn shell_is_made_at_the_first_click_of_the_recorded_session() {
     // Just before the first press, the ghost of the shell builds.
     let before = upto(367);
     assert_eq!(before.shell_panel().expect("the Shell tool").refused, None);
-    // The first press makes the shell, cleanly.
+    // The first press makes the shell, cleanly, at once.
     let first = upto(368);
     assert_eq!(first.version(), before.version() + 1);
     assert_eq!(
         prism_ops::check::problems(first.work_model()),
         Vec::<String>::new()
     );
-    // The next shells the shell: built anyway, with a warning to check it.
+    // The next starts making the shell of the shell, a face at a time.
+    let mut second = upto(591);
+    assert_eq!(second.hint(), prism_tools::session::JOB_RUNNING);
+    let (label, value, _) = second.measurement();
+    assert_eq!(label, "Shelling");
+    assert!(value.starts_with("0 of 62"), "{value}");
+    let t = r.events[590].t;
+    for k in 1..=3 {
+        second.handle(&prism_tools::Event {
+            t: t + 0.02 * f64::from(k),
+            input: prism_tools::Input::Time,
+        });
+    }
+    assert!(second.measurement().1.starts_with("3 of 62"));
+    // Esc stops it: nothing is made.
+    second.handle(&prism_tools::Event {
+        t: t + 0.1,
+        input: prism_tools::Input::Key {
+            key: prism_tools::Key::Escape,
+        },
+    });
+    assert_eq!(
+        second.document().log().count(),
+        first.document().log().count()
+    );
+    assert_eq!(second.hint(), prism_tools::session::JOB_STOPPED);
+}
+
+/// [`shell_is_made_at_the_first_click_of_the_recorded_session`] made to
+/// the end: all three clicks, every piece joined (by hand, in a release
+/// build: `cargo test --release -p prism-tools --test curved -- --ignored
+/// the_three_recorded`).
+#[test]
+#[ignore = "minutes: every piece of two face-by-face shells joined"]
+fn the_three_recorded_shell_clicks_made_to_the_end() {
+    let r: prism_tools::Recording =
+        serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+    let upto = |n: usize| {
+        let mut r = r.clone();
+        r.events.truncate(n);
+        prism_tools::Session::replay(&r)
+    };
+    let before = upto(367);
     let second = upto(591);
     assert_eq!(second.version(), before.version() + 2, "built, not refused");
     let panel = second.shell_panel().expect("the Shell tool");
     assert_eq!(panel.refused, None);
     assert!(panel.warning.is_some(), "and says what to check");
-    // And the third shells that again, inside: built, warned.
     let third = upto(670);
     assert_eq!(third.version(), before.version() + 3, "built, not refused");
-    assert!(
-        third
-            .shell_panel()
-            .expect("the Shell tool")
-            .warning
-            .is_some()
-    );
 }
 
 /// A drag of a live shell's thickness keeps the rim styles picked where it
@@ -204,5 +233,35 @@ fn a_thickness_drag_keeps_the_rim_pick_and_shows_what_is_made() {
         let points =
             |m: &prism_topo::Model| -> Vec<DVec3> { m.vertices().map(|(_, p)| p).collect() };
         assert_eq!(points(&shown), points(&made), "at {t}");
+    }
+}
+
+/// The owner's session 25 (2026-11-26): a disc (two half discs) selected
+/// and copied turned 10 degrees about its centre, for a 10-degree slice.
+/// The copy's arcs lie on the original circle; split at each other's
+/// ends, the pieces were left twice over, no face could be rebuilt, and
+/// every line was left loose (Remove Stray then took them all). Now the
+/// twins become one and the disc is four slices: two of 10 degrees.
+#[test]
+fn a_disc_copied_and_turned_on_itself_makes_slices() {
+    let mut r: prism_tools::Recording =
+        serde_json::from_str(include_str!("data/owner-session-25-arc.json")).expect("recording");
+    r.events.truncate(562);
+    let s = prism_tools::Session::replay(&r);
+    let m = s.work_model();
+    let h = prism_ops::health::check(m);
+    assert!(h.stray.edges.is_empty(), "{:?}", h.stray.edges);
+    assert_eq!(prism_ops::check::problems(m), Vec::<String>::new());
+    let mut areas: Vec<f64> = m.faces().map(|(id, _)| m.face_area(id)).collect();
+    areas.sort_by(f64::total_cmp);
+    assert_eq!(areas.len(), 4, "{areas:?}");
+    let r2 = areas.iter().sum::<f64>() / std::f64::consts::PI;
+    let slice = |deg: f64| std::f64::consts::PI * r2 * deg / 360.0;
+    for (got, deg) in areas.iter().zip([10.0, 10.0, 170.0, 170.0]) {
+        assert!(
+            (got - slice(deg)).abs() < 1e-9 * r2.max(1.0),
+            "{got} {}",
+            slice(deg)
+        );
     }
 }

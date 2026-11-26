@@ -295,6 +295,7 @@ fn run(
         for p in points {
             split_at(model, p, &tol);
         }
+        merge_duplicate_edges(model, &tol);
         let new: BTreeSet<EdgeId> = model
             .edges()
             .map(|(id, _)| id)
@@ -490,6 +491,59 @@ fn split_at(model: &mut Model, p: DVec3, tol: &Tol) {
         .collect();
     for e in through {
         model.split_edge(e, v);
+    }
+}
+
+/// Edges that are the same line or arc (the same two points, and the same
+/// point halfway: two arcs between two points can go either way round)
+/// become one, the lowest id kept, its faces following it. Arcs of one
+/// circle laid over each other (a disc copied and turned about its centre,
+/// owner's session 25) are split at each other's ends, which leaves such
+/// twins; left, they stopped every face on the plane being rebuilt.
+pub fn merge_duplicate_edges(model: &mut Model, tol: &Tol) {
+    let mut by_ends: BTreeMap<(VertexId, VertexId), Vec<EdgeId>> = BTreeMap::new();
+    for (id, e) in model.edges() {
+        let key = if e.a < e.b { (e.a, e.b) } else { (e.b, e.a) };
+        by_ends.entry(key).or_default().push(id);
+    }
+    let mut map: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
+    for ids in by_ends.values().filter(|ids| ids.len() > 1) {
+        let mid = |id: EdgeId| {
+            let e = model.edge(id).expect("an edge");
+            e.curve.point(model.vertex(e.a), model.vertex(e.b), 0.5)
+        };
+        for (i, a) in ids.iter().enumerate() {
+            if map.contains_key(a) {
+                continue;
+            }
+            for b in &ids[i + 1..] {
+                if !map.contains_key(b) && tol.same_point(mid(*a), mid(*b)) {
+                    map.insert(*b, *a);
+                }
+            }
+        }
+    }
+    if map.is_empty() {
+        return;
+    }
+    let faces: Vec<FaceId> = model
+        .faces()
+        .filter(|(_, f)| {
+            (0..f.loops().count()).any(|k| f.loop_edge_ids(k).iter().any(|e| map.contains_key(e)))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    for (dup, keep) in &map {
+        // A hard line wins over a soft one (the user drew it).
+        if let (Some(d), Some(k)) = (model.edge(*dup).cloned(), model.edge(*keep).cloned())
+            && (k.soft && !d.soft)
+        {
+            model.set_soft(*keep, d.soft, d.smooth);
+        }
+        model.remove_edge(*dup);
+    }
+    for f in faces {
+        model.edit_face_remapped(f, &map, |_| ());
     }
 }
 

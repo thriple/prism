@@ -1,3 +1,7 @@
+**Fixed: a circle copied and turned on top of itself fell apart into loose lines.** Rotating a copy of a disc about its centre (to cut a slice) left every arc twice over where the copies overlap, so no face could be made and Remove Stray erased it all. The overlapping arcs now become one and the disc is cut into slices.
+
+**Changed: Shell / Thicken joins every piece, a face at a time.** A shell built face by face no longer stops joining after 12 faces (the rest used to be left overlapping). On a body of many faces it is made a face at a time: you see it build, the box says how far it is ("12 of 59 faces"), you can still orbit, and Esc stops it without making anything. A body of many curved faces can take a while.
+
 **Changed: Fillet / Chamfer too large makes the largest that fits.** Ask for a size more than the edges can take, by typing it or dragging, and you see the largest round that works, with an orange note saying so. Enter makes that size. It used to show nothing.
 
 **New: a size handle for Fillet / Chamfer.** Collected edges are now highlighted, and a square handle sits on the round's edge with its size written beside it ("Fillet 0.2 m"). Drag the handle to size the round, then press Enter to make it. If a size can't be made, the label turns orange and says why, and the last size that worked stays on screen.

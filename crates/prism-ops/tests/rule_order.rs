@@ -173,3 +173,37 @@ fn no_step_deletes_a_face_another_just_made() {
     assert_eq!(m.face_count(), before + 4, "four new sides");
     assert!(prism_ops::check::problems(&m).is_empty());
 }
+
+/// Arcs of one circle laid over each other by a copy are split at each
+/// other's ends and the twin pieces become one edge each, so the faces
+/// rebuild: a disc copied turned 10 degrees about its centre is four
+/// slices (owner's session 25).
+#[test]
+fn arcs_laid_over_each_other_become_one() {
+    use prism_math::DVec3;
+    let mut m = prism_topo::Model::new();
+    prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
+    prism_ops::sticky::add_drawn_segment(
+        &mut m,
+        DVec3::new(-1.0, 0.0, 0.0),
+        DVec3::new(1.0, 0.0, 0.0),
+    );
+    let sel = prism_ops::Selection {
+        faces: m.faces().map(|(id, _)| id).collect(),
+        ..Default::default()
+    };
+    let copy = prism_ops::duplicate(&mut m, &sel);
+    let vs = copy.all_vertices(&m);
+    prism_ops::transform::rotate_only(&mut m, &vs, DVec3::ZERO, DVec3::Z, 10f64.to_radians());
+    let vs: std::collections::BTreeSet<_> = vs.into_iter().filter(|v| m.has_vertex(*v)).collect();
+    prism_ops::settle::settle_rigid(&mut m, &[vs]);
+    assert_eq!(prism_ops::check::problems(&m), Vec::<String>::new());
+    assert_eq!(m.edges().count(), 12, "8 arcs and 4 radii, none twice");
+    let mut areas: Vec<f64> = m.faces().map(|(id, _)| m.face_area(id)).collect();
+    areas.sort_by(f64::total_cmp);
+    let want = [10.0, 10.0, 170.0, 170.0].map(|d: f64| std::f64::consts::PI * d / 360.0);
+    assert_eq!(areas.len(), 4, "{areas:?}");
+    for (a, w) in areas.iter().zip(want) {
+        assert!((a - w).abs() < 1e-9, "{a} {w}");
+    }
+}
