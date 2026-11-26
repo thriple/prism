@@ -5336,3 +5336,13 @@ None of these were built. The owner did not want to pursue any of them further t
 
 - Owner asked whether the rules for "close enough" and which clean-up step overrides which are behind many bugs. Decided (DECISIONS #42, #43): one fixed tolerance per document, not tied to size, the same in every group, with a document setting and graceful fallbacks for extreme scales; first an audit (report only), then a written order of geometry rules, then the code. Every new or reworked tool that edits geometry updates those rules (also in CLAUDE.md, "Finish a chunk properly").
 - Found so far: `Model::tol()` is 1e-6 of the model's own extent, recomputed on every call (so each group, and each growth of the model, has its own); the scene and the mesh importer work out their own from their own extent too; about 400 literal epsilons sit in the geometry, ops, view and tool crates.
+
+## Booleans were slow for reasons of their own (owner: "12 minutes sounds extremely inefficient", 2026-11-26)
+
+- Timed each stage of a boolean on the owner's session-17 body (face-by-face shell, ~40 pieces). Joining and seam merging took 1–12 s each per union, independent of size (two 6-face pieces took 2 s). Causes and fixes:
+  - `health::remove_stray` ran the whole Model Health `check` (near misses, overlaps, crossings...) to find edges no face uses, three times per boolean. Now it finds them directly. Seconds to under a millisecond.
+  - `boolean::join_mapped` scanned every point and edge of the model for each one of the other (evaluating every edge's midpoint). Now points are found by grid cell and edges by their ends; the match is the same (lowest id within tolerance).
+  - The crossings of `a` and `b` were found twice (`intersect_with` each way). `intersect::intersect_each` finds them once and adds them to both.
+  - Flat crossings had no box test; curved ones re-sampled each face's box for every pair. Boxes are now made once and far pairs skipped.
+  - `Command::Shell`'s refusal check built the whole shell (joins included) just to see that it builds; it uses `slab_preview` now.
+- Result: 167 unions / 101 s of boolean time down to 83 / 47 s (debug build) for the replay to the second click, most of what is left the real crossing search between neighbouring curved faces. `JOIN_MAX` stays 12. The owner asked whether previews need to be exact every frame: proposed a coarse-then-exact preview chunk (rebuild on pause, a cheap mode per tool, background thread later on native).

@@ -1,3 +1,5 @@
+**Faster: Shell / Thicken, booleans and Push/Pull into solids.** Joining two solids no longer runs the whole Model Health check three times or searches every line of the model for each new one, and finds crossings once instead of twice. A shell built face by face that took minutes now takes seconds.
+
 **Shell / Thicken no longer refuses: it builds and warns.** Where a shape cannot be shelled as one piece, it is built anyway (face by face, the pieces joined) and a warning says why and what to check; the parts to check are drawn orange on the preview, so you can see which way will not work before clicking. The warning also shows in the Shell window and the status bar. A wall under 0.1 cm is made with a "Very thin" warning instead of being refused. Faces the tool used to turn round or cut square without saying now say so too. On a body with many faces that cannot be joined into one piece, the pieces are kept side by side and may overlap (Model Health shows where).
 
 **Fixed: an open box with a leaning face would not shell** (a truck cab with a sloped windscreen and no roof: "that thickness turns a face inside out" at any thickness). It shells both ways now.
