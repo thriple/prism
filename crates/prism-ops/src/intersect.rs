@@ -250,10 +250,21 @@ fn crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) -> Vec<(DVe
             .map(|f| (id, f))
         })
         .collect();
+    // Each face's box once: a pair whose boxes do not meet cannot cross
+    // (most pairs, in a boolean of two solids side by side).
+    let boxes: Vec<Option<(DVec3, DVec3)>> = faces
+        .iter()
+        .map(|(id, _)| crate::meet::face_bounds(m, *id))
+        .collect();
+    let pad = DVec3::splat(tol.dist * 10.0);
+    let apart = |i: usize, j: usize| match (boxes[i], boxes[j]) {
+        (Some(a), Some(b)) => (a.1 + pad).cmplt(b.0).any() || (b.1 + pad).cmplt(a.0).any(),
+        _ => false,
+    };
     let mut out = Vec::new();
     for i in 0..faces.len() {
         for j in i + 1..faces.len() {
-            if !keep(faces[i].0, faces[j].0) {
+            if !keep(faces[i].0, faces[j].0) || apart(i, j) {
                 continue;
             }
             let segs = crossings(&faces[i].1, &faces[j].1, &tol);
@@ -350,20 +361,48 @@ pub fn intersect_faces(m: &mut Model, only: Option<&BTreeSet<FaceId>>) -> usize 
 /// added to `m` and its faces split; `others` is not changed. Returns how
 /// many crossings were added.
 pub fn intersect_with(m: &mut Model, others: &Model) -> usize {
+    let (segs, pieces) = crossings_between(m, others);
+    add_crossings(m, &segs, &pieces)
+}
+
+/// Each of `a` and `b` cut where the other crosses it: the same as
+/// [`intersect_with`] both ways, with the crossings found once (they are
+/// the same curves either way; finding them is the slow part of a
+/// boolean).
+pub(crate) fn intersect_each(a: &mut Model, b: &mut Model) {
+    let (segs, pieces) = crossings_between(a, b);
+    add_crossings(a, &segs, &pieces);
+    add_crossings(b, &segs, &pieces);
+}
+
+/// Where `m`'s faces cross `others'`: straight crossings and curved ones.
+fn crossings_between(
+    m: &Model,
+    others: &Model,
+) -> (Vec<(DVec3, DVec3)>, Vec<crate::crossing::Piece>) {
     let mut both = m.clone();
     let theirs: BTreeSet<FaceId> = both.append(others).into_iter().collect();
     let keep = |a: FaceId, b: FaceId| theirs.contains(&a) != theirs.contains(&b);
     let segs = crossings_where(&both, keep);
     let pieces = crate::crossing::curved_crossings_where(&both, keep);
+    (segs, pieces)
+}
+
+/// The crossings added to `m` as edges, its faces split by them.
+fn add_crossings(
+    m: &mut Model,
+    segs: &[(DVec3, DVec3)],
+    pieces: &[crate::crossing::Piece],
+) -> usize {
     let curved: BTreeSet<FaceId> = m
         .faces()
         .filter(|(_, f)| f.is_curved())
         .map(|(id, _)| id)
         .collect();
-    for (a, b) in &segs {
+    for (a, b) in segs {
         crate::add_segment(m, *a, *b);
     }
-    for p in &pieces {
+    for p in pieces {
         crate::crossing::add_piece(m, p);
     }
     if !pieces.is_empty() {

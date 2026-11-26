@@ -9,6 +9,7 @@
 //! keeps are joined. Edges left between two faces on one plane are
 //! erased, so the result has no seams.
 
+use prism_math::DVec3;
 use std::collections::{BTreeMap, BTreeSet};
 
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
@@ -64,9 +65,8 @@ pub fn boolean(a: &Model, b: &Model, op: Op) -> Result<Model, &'static str> {
     both.append(b);
     let tol = both.tol();
     let mut ma = a.clone();
-    crate::intersect::intersect_with(&mut ma, b);
     let mut mb = b.clone();
-    crate::intersect::intersect_with(&mut mb, a);
+    crate::intersect::intersect_each(&mut ma, &mut mb);
     let mut pa = places(&ma, b, &tol).ok_or(UNSURE)?;
     let mut pb = places(&mb, a, &tol).ok_or(UNSURE)?;
     drop_membranes(&mut ma, &mut pa, a, &tol).ok_or(UNSURE)?;
@@ -170,25 +170,62 @@ pub(crate) type Joined = (
 pub(crate) fn join_mapped(out: &mut Model, b: &Model, tol: &prism_math::Tol) -> Joined {
     let mut fmap: BTreeMap<FaceId, FaceId> = BTreeMap::new();
     let mut vmap: BTreeMap<VertexId, VertexId> = BTreeMap::new();
+    // `out`'s points by grid cell (a cell wider than the tolerance, so a
+    // point's match is in its cell or a neighbour), and its edges by their
+    // ends: each lookup is then local, not a scan of the whole model (the
+    // scans made joining a 50-face shell take seconds). The match found is
+    // the same one as before: the first, by id, within the tolerance.
+    let size = (tol.dist * 4.0).max(f64::MIN_POSITIVE);
+    let cell = |p: DVec3| {
+        let q = (p / size).floor();
+        (q.x as i64, q.y as i64, q.z as i64)
+    };
+    let mut grid: BTreeMap<(i64, i64, i64), Vec<VertexId>> = BTreeMap::new();
+    for (id, p) in out.vertices() {
+        grid.entry(cell(p)).or_default().push(id);
+    }
     for (id, p) in b.vertices() {
-        let at = out
-            .vertices()
-            .find(|(_, q)| tol.same_point(p, *q))
-            .map(|(v, _)| v);
-        vmap.insert(id, at.unwrap_or_else(|| out.add_vertex(p)));
+        let (cx, cy, cz) = cell(p);
+        let mut at: Option<VertexId> = None;
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    for v in grid.get(&(cx + dx, cy + dy, cz + dz)).into_iter().flatten() {
+                        if tol.same_point(p, out.vertex(*v)) && at.is_none_or(|a| *v < a) {
+                            at = Some(*v);
+                        }
+                    }
+                }
+            }
+        }
+        let v = at.unwrap_or_else(|| {
+            let v = out.add_vertex(p);
+            grid.entry(cell(p)).or_default().push(v);
+            v
+        });
+        vmap.insert(id, v);
+    }
+    let ends = |a: VertexId, b: VertexId| if a < b { (a, b) } else { (b, a) };
+    let mut by_ends: BTreeMap<(VertexId, VertexId), Vec<EdgeId>> = BTreeMap::new();
+    for (id, x) in out.edges() {
+        by_ends.entry(ends(x.a, x.b)).or_default().push(id);
     }
     let mut emap: BTreeMap<EdgeId, EdgeId> = BTreeMap::new();
     let mut cmap: BTreeMap<prism_topo::CurveId, prism_topo::CurveId> = BTreeMap::new();
     for (id, e) in b.edges() {
         let (va, vb) = (vmap[&e.a], vmap[&e.b]);
         let mid = e.curve.point(b.vertex(e.a), b.vertex(e.b), 0.5);
-        let found = out
-            .edges()
-            .find(|(_, x)| {
-                ((x.a, x.b) == (va, vb) || (x.a, x.b) == (vb, va))
-                    && tol.same_point(x.curve.point(out.vertex(x.a), out.vertex(x.b), 0.5), mid)
+        let found = by_ends
+            .get(&ends(va, vb))
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|x| {
+                out.edge(*x).is_some_and(|x| {
+                    tol.same_point(x.curve.point(out.vertex(x.a), out.vertex(x.b), 0.5), mid)
+                })
             })
-            .map(|(x, _)| x);
+            .min();
         let made = found.or_else(|| {
             if e.curve.is_curved() {
                 let cid = e
@@ -202,6 +239,7 @@ pub(crate) fn join_mapped(out: &mut Model, b: &Model, tol: &prism_math::Tol) -> 
         if let Some(x) = made {
             if found.is_none() {
                 out.set_soft(x, e.soft, e.smooth);
+                by_ends.entry(ends(va, vb)).or_default().push(x);
             }
             emap.insert(id, x);
         }

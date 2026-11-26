@@ -1591,8 +1591,11 @@ impl Command {
                 thickness,
             } => {
                 // Built anyway where it can be, with a warning: refused
-                // only when there is nothing to build.
-                prism_ops::shelling::slab(m, faces, open, *thickness).err()
+                // only when there is nothing to build. The preview's build
+                // says so without joining a face-by-face shell's pieces
+                // (the slow part, done once when it is made).
+                prism_ops::shelling::slab_preview(m, faces, open, *thickness, &Default::default())
+                    .err()
             }
             Command::LoftSides { sides, preset } => {
                 prism_ops::sides::made_from(m, sides, *preset).err()

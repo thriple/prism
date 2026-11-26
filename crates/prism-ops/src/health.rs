@@ -877,12 +877,21 @@ pub fn clean_envelope(model: &mut Model, only: Option<&BTreeSet<FaceId>>) -> usi
 
 /// Remove Stray Edges: edges in no face, and points left on nothing.
 pub fn remove_stray(model: &mut Model) -> usize {
-    let r = check(model);
-    for e in &r.stray.edges {
+    // The stray edges of [`check`] (no face uses them), found without the
+    // rest of the check: it ran every Model Health test (near misses,
+    // overlaps, crossings...) only to find these, three times per boolean,
+    // which made a face-by-face shell take minutes.
+    let edge_faces = model.edge_faces();
+    let stray: Vec<EdgeId> = model
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| edge_faces.get(id).is_none_or(|fs| fs.is_empty()))
+        .collect();
+    for e in &stray {
         model.remove_edge(*e);
     }
     remove_lonely_points(model);
-    r.stray.edges.len()
+    stray.len()
 }
 
 fn remove_lonely_points(model: &mut Model) {

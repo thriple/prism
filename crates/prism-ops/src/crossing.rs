@@ -1096,6 +1096,17 @@ pub fn curved_crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) 
         .map(|(id, _)| id)
         .collect();
     let all: Vec<FaceId> = m.faces().map(|(id, _)| id).collect();
+    // Each face's box once (a curved face's is sampled, which is slow to
+    // repeat for every pair); pairs whose boxes do not meet are skipped.
+    let boxes: BTreeMap<FaceId, (DVec3, DVec3)> = all
+        .iter()
+        .filter_map(|f| Some((*f, face_box(m, *f)?)))
+        .collect();
+    let pad = DVec3::splat(m.tol().dist * 10.0);
+    let apart = |a: FaceId, b: FaceId| match (boxes.get(&a), boxes.get(&b)) {
+        (Some(x), Some(y)) => (x.1 + pad).cmplt(y.0).any() || (y.1 + pad).cmplt(x.0).any(),
+        _ => false,
+    };
     let mut out = Vec::new();
     let mut cache = Layouts::new();
     for &a in &curved {
@@ -1105,7 +1116,7 @@ pub fn curved_crossings_where(m: &Model, keep: impl Fn(FaceId, FaceId) -> bool) 
             if b == a || (b_curved && b < a) {
                 continue;
             }
-            if !keep(a, b) {
+            if !keep(a, b) || apart(a, b) {
                 continue;
             }
             out.extend(crossings_in(m, a, b, &mut cache));
