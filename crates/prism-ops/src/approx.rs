@@ -483,9 +483,35 @@ pub fn facet(model: &mut Model, id: FaceId, ids: &mut Ids) -> bool {
     true
 }
 
+/// Arc `e` written as the same circle in rational form (a NURBS curve),
+/// so that a transform any affine map, an uneven scale included, keeps it
+/// exact. False if it is not an arc or the curve cannot be made.
+fn arc_as_spline(model: &mut Model, e: EdgeId) -> bool {
+    let Some(x) = model.edge(e) else { return false };
+    let prism_geom::Curve::Arc { centre, axis, .. } = x.curve else {
+        return false;
+    };
+    let (a, b) = (model.vertex(x.a), model.vertex(x.b));
+    let (xa, xb) = (a - centre, b - centre);
+    let mut sweep = axis.dot(xa.cross(xb)).atan2(xa.dot(xb));
+    if sweep <= 0.0 {
+        sweep += std::f64::consts::TAU;
+    }
+    let Some(curve) = prism_geom::Nurbs::arc(centre, axis, a, sweep) else {
+        return false;
+    };
+    let s = prism_geom::Spline::whole(curve);
+    let tol = model.tol();
+    if !tol.same_point(s.point(s.t0), a) || !tol.same_point(s.point(s.t1), b) {
+        return false;
+    }
+    model.set_curve(e, prism_geom::Curve::Spline(s));
+    true
+}
+
 /// Before `m` (an uneven scale) moves `vs`: facet every curved face it
-/// moves whole and segment every arc it moves whole, since neither would
-/// stay a cylinder, cone, sphere, torus or circle. Returns `vs` with the
+/// moves whole, since it would not stay a cylinder, cone, sphere or torus;
+/// an arc it moves whole becomes an exact ellipse (a rational curve). Returns `vs` with the
 /// new points.
 pub fn flatten_for(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> BTreeSet<VertexId> {
     let before: BTreeSet<VertexId> = model.vertices().map(|(id, _)| id).collect();
@@ -513,7 +539,12 @@ pub fn flatten_for(model: &mut Model, vs: &BTreeSet<VertexId>, m: &DAffine3) -> 
         .map(|(id, _)| id)
         .collect();
     for e in arcs {
-        segment_arc(model, e, &mut ids);
+        // The circle as a rational curve, which the scale carries over
+        // exactly (an ellipse, DECISIONS #38); segments only if it cannot
+        // be made.
+        if !arc_as_spline(model, e) {
+            segment_arc(model, e, &mut ids);
+        }
     }
     let mut out = vs.clone();
     out.extend(

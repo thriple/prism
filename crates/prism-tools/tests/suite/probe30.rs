@@ -277,7 +277,8 @@ fn probe30_arc() {
     }
     let old_c: std::collections::BTreeSet<_> = ma.edges().filter_map(|(_, e)| e.curve_id).collect();
     let fresh: Vec<_> = mb.edges().filter(|(_, e)| e.curve.is_curved() || e.curve_id.is_some_and(|c| !old_c.contains(&c))).filter(|(id, _)| ma.edge(*id).is_none()).collect();
-    println!("fresh curve edges {}", fresh.len());
+    println!("fresh curve edges {} (splines {}, arcs {}, approx {})", fresh.len(), fresh.iter().filter(|(_, e)| e.curve.is_spline()).count(), fresh.iter().filter(|(_, e)| e.curve.is_arc()).count(), fresh.iter().filter(|(_, e)| e.approx).count());
+    println!("faces {} -> {}", ma.faces().count(), mb.faces().count());
     for (id, e) in fresh.iter().take(10) { println!("  F {id:?} {:.4?}-{:.4?} {:?} approx {} cid {:?}", mb.vertex(e.a), mb.vertex(e.b), e.curve, e.approx, e.curve_id); }
     let ef = mb.edge_faces();
     if let Some((id, _)) = new.first() { println!("faces of first {:?}", ef.get(id)); }
