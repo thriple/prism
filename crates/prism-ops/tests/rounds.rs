@@ -466,3 +466,42 @@ fn edges_that_meet_round_off_a_closed_solid() {
         assert!(h.reversed.is_empty(), "{fillet}: {h:?}");
     }
 }
+
+/// A line drawn into a face from its edge, ending inside it, stays on the
+/// face when the edges round (it is drawn back if it had to be taken off).
+#[test]
+fn a_box_with_a_line_into_a_face_rounds_edges_that_meet() {
+    let l = 2.0;
+    let mut m = cube(l);
+    prism_ops::add_segment(&mut m, v(1.0, 0.0, 0.0), v(1.0, 0.0, 0.6));
+    // How much of the line is there.
+    let slit = |m: &Model| -> f64 {
+        m.edges()
+            .map(|(_, e)| (m.vertex(e.a), m.vertex(e.b)))
+            .filter(|(a, b)| {
+                [a, b]
+                    .iter()
+                    .all(|p| (p.x - 1.0).abs() < 1e-9 && p.y.abs() < 1e-9)
+            })
+            .map(|(a, b)| a.distance(b))
+            .sum()
+    };
+    assert!((slit(&m) - 0.6).abs() < 1e-9);
+    let top: BTreeSet<EdgeId> = [
+        edge(&m, v(0.0, 0.0, l), v(l, 0.0, l)),
+        edge(&m, v(l, 0.0, l), v(l, l, l)),
+        edge(&m, v(l, l, l), v(0.0, l, l)),
+        edge(&m, v(0.0, l, l), v(0.0, 0.0, l)),
+    ]
+    .into();
+    for fillet in [true, false] {
+        let mut w = m.clone();
+        round_edges(&mut w, &top, 0.3, fillet).unwrap_or_else(|why| panic!("{fillet}: {why}"));
+        assert_eq!(check::problems(&w), Vec::<String>::new());
+        assert!(
+            (slit(&w) - 0.6).abs() < 1e-9,
+            "{fillet}: the line is drawn back"
+        );
+        assert_eq!(w.faces().count(), m.faces().count() + 4, "{fillet}");
+    }
+}

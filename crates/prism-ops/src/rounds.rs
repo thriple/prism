@@ -50,6 +50,9 @@ pub fn round_edges(
     if edges.iter().any(|e| drawn_on_flat(model, *e)) {
         return Err(FLAT_LINE);
     }
+    if let Some(done) = round_past_slits(model, edges, size, fillet) {
+        return Ok(done);
+    }
     match round_once(model, edges, size, fillet) {
         Err(why) if why == prism_kernel::solid::NOT_ROUNDED || why == OPEN => {
             round_in_turn(model, edges, size, fillet)
@@ -614,27 +617,7 @@ fn round_through_lines(
     round_any(&mut work, &edges, size, fillet).ok()?;
     // The lines go back as far as they still lie on the solid: a round
     // that cut into the face one was on leaves its end in the air.
-    let had: BTreeSet<EdgeId> = work.edges().map(|(id, _)| id).collect();
-    for (a, b) in lines {
-        crate::add_segment(&mut work, a, b);
-    }
-    let used = work.edge_faces();
-    let loose: Vec<EdgeId> = work
-        .edges()
-        .map(|(id, _)| id)
-        .filter(|id| !had.contains(id) && used.get(id).is_none_or(|f| f.is_empty()))
-        .collect();
-    for id in loose {
-        let Some(e) = work.edge(id).cloned() else {
-            continue;
-        };
-        work.remove_edge(id);
-        for v in [e.a, e.b] {
-            if !work.edges().any(|(_, x)| x.a == v || x.b == v) {
-                work.remove_vertex(v);
-            }
-        }
-    }
+    draw_back(&mut work, &lines);
     if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
         return None;
     }
@@ -653,6 +636,139 @@ fn round_through_lines(
             piece_of(&work, new).into_iter().collect()
         }
     };
+    *model = work;
+    Some(out)
+}
+
+/// Draw `lines` back on `work` after a round, as far as they still lie on
+/// its faces: a piece left in the air (where the round cut into the face
+/// it was on) is not kept; a piece on a face is, whether it divides the
+/// face or ends inside it.
+fn draw_back(work: &mut Model, lines: &[(DVec3, DVec3)]) {
+    let had: BTreeSet<EdgeId> = work.edges().map(|(id, _)| id).collect();
+    for (a, b) in lines {
+        crate::add_segment(work, *a, *b);
+    }
+    let used = work.edge_faces();
+    let loose: Vec<EdgeId> = work
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| !had.contains(id) && used.get(id).is_none_or(|f| f.is_empty()))
+        .filter(|id| {
+            // A line drawn on a face, ending inside it, is loose there:
+            // kept while its middle is still on a flat face.
+            work.edge(*id).is_none_or(|e| {
+                let mid = work.vertex(e.a).lerp(work.vertex(e.b), 0.5);
+                e.curve.is_curved() || crate::face_at(work, mid).is_none()
+            })
+        })
+        .collect();
+    for id in loose {
+        let Some(e) = work.edge(id).cloned() else {
+            continue;
+        };
+        work.remove_edge(id);
+        for v in [e.a, e.b] {
+            if !work.edges().any(|(_, x)| x.a == v || x.b == v) {
+                work.remove_vertex(v);
+            }
+        }
+    }
+}
+
+/// The slits of the piece `edges` are on: lines drawn into a face from
+/// its edge without dividing it, so the face walks them out and back and
+/// has them on both sides.
+fn slits(model: &Model, edges: &BTreeSet<EdgeId>) -> BTreeSet<EdgeId> {
+    let edge_faces = model.edge_faces();
+    let Some(seed) = edges
+        .first()
+        .and_then(|e| edge_faces.get(e))
+        .and_then(|f| f.first())
+    else {
+        return BTreeSet::new();
+    };
+    let piece = piece_of(model, *seed);
+    edge_faces
+        .iter()
+        .filter(|(_, fs)| matches!(fs[..], [f, g] if f == g && piece.contains(&f)))
+        .map(|(e, _)| *e)
+        .collect()
+}
+
+/// Notches: two edges with a face on one side only, between the same two
+/// points no further apart than a hundred times the precision (owner's
+/// session 29: a line and an arc 0.24 mm long, nothing between them).
+fn notches(model: &Model) -> Vec<(VertexId, VertexId)> {
+    let tol = model.tol();
+    let edge_faces = model.edge_faces();
+    let mut seen: BTreeMap<(VertexId, VertexId), usize> = BTreeMap::new();
+    for (id, e) in model.edges() {
+        if edge_faces.get(&id).is_some_and(|f| f.len() == 1)
+            && model.vertex(e.a).distance(model.vertex(e.b)) <= tol.dist * 100.0
+        {
+            *seen.entry((e.a.min(e.b), e.a.max(e.b))).or_default() += 1;
+        }
+    }
+    seen.into_iter()
+        .filter(|(_, n)| *n == 2)
+        .map(|(k, _)| k)
+        .collect()
+}
+
+/// Each notch closed for good: its two points become one. The shape moves
+/// no further than the notch is long (owner, 2026-11-26: kept in the
+/// model).
+fn weld_notches(model: &mut Model) {
+    for (p, q) in notches(model) {
+        crate::transform::apply_weld(model, &BTreeMap::from([(q, p)]));
+    }
+}
+
+/// Brief 56 step 1: where the solid has slits or notches (owner's session
+/// 29: a line 0.37 m long drawn into an end face, and a notch 0.24 mm
+/// long), the kernel cannot take it. The slits are taken off a copy and
+/// the notches welded, the edges rounded, and the slits drawn back as far
+/// as they still lie on a face.
+fn round_past_slits(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    let cut = slits(model, edges);
+    if edges.iter().any(|e| cut.contains(e)) || (cut.is_empty() && notches(model).is_empty()) {
+        return None;
+    }
+    let lines: Vec<(DVec3, DVec3)> = cut
+        .iter()
+        .filter_map(|e| model.edge(*e))
+        .map(|e| (model.vertex(e.a), model.vertex(e.b)))
+        .collect();
+    let mut work = model.clone();
+    crate::remove(
+        &mut work,
+        &crate::Selection {
+            edges: cut,
+            ..Default::default()
+        },
+    );
+    if !slits(&work, edges).is_empty() {
+        return None;
+    }
+    weld_notches(&mut work);
+    let mut edges = edges.clone();
+    edges.retain(|e| work.edge(*e).is_some());
+    if edges.is_empty() {
+        return None;
+    }
+    let faces = round_edges(&mut work, &edges, size, fillet).ok()?;
+    draw_back(&mut work, &lines);
+    if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
+        return None;
+    }
+    let seed = faces.iter().find(|f| work.face(**f).is_some())?;
+    let out = piece_of(&work, *seed).into_iter().collect();
     *model = work;
     Some(out)
 }

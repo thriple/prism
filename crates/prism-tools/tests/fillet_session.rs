@@ -167,3 +167,82 @@ fn the_xby4_top_edge_fillets() {
         assert!(lines(&w) >= lines(m), "{r}: the end face keeps its lines");
     }
 }
+
+/// The owner's session 29 (2026-11-26, brief 56 step 1): the body has a
+/// slit (a line drawn into face 329 from its edge) and a notch 0.24 mm
+/// long, so the kernel would not take it and only edges Prism's own round
+/// could do rounded (16 of 192 tries, not counting lines on flat faces). With the slit taken off a copy and
+/// the notch welded, the kernel takes the body: 81 round at
+/// 0.093 m, and the slit is drawn back. Of the rest, some fit smaller (the
+/// tool makes the largest that fits); the others are corners steps 2 and
+/// 3 are for (a round running into a wall beside it).
+#[test]
+fn session_29_rounds_past_its_slit_and_notch() {
+    let mut r: Recording =
+        serde_json::from_str(include_str!("data/owner-session-29-open-fillet.json"))
+            .expect("recording");
+    r.events.truncate(118);
+    let s = Session::replay(&r);
+    let m = s.work_model().clone();
+    let ef = m.edge_faces();
+    let slit = |m: &prism_topo::Model| {
+        m.edge_faces()
+            .values()
+            .filter(|f| matches!(f[..], [a, b] if a == b))
+            .count()
+    };
+    assert_eq!(slit(&m), 3, "the slit is three edges");
+    let edges: Vec<prism_topo::EdgeId> = m
+        .edges()
+        .filter(|(id, x)| ef.get(id).is_some_and(|f| f.len() == 2 && f[0] != f[1]) && !x.soft)
+        .map(|(id, _)| id)
+        .collect();
+    let (mut done, mut flat) = (0, 0);
+    for fillet in [true, false] {
+        for e in &edges {
+            let mut w = m.clone();
+            let got = prism_ops::rounds::round_edges(&mut w, &[*e].into(), 0.093, fillet);
+            if got == Err(prism_ops::rounds::FLAT_LINE) {
+                flat += 1;
+            }
+            if got.is_ok() {
+                assert_eq!(
+                    prism_ops::check::problems(&w),
+                    Vec::<String>::new(),
+                    "{e:?}"
+                );
+                let h = prism_ops::health::check(&w);
+                assert!(h.reversed.is_empty(), "{e:?}: {h:?}");
+                assert!(slit(&w) >= 1, "{e:?} {fillet}: the slit is drawn back");
+                done += 1;
+            }
+        }
+    }
+    eprintln!(
+        "{done} rounded, {flat} lines on flat faces, of {}",
+        edges.len() * 2
+    );
+    assert!(done >= 81, "{done} of {} rounded", edges.len() * 2);
+}
+
+#[test]
+#[ignore]
+fn zz_corner_look() {
+    let c = prism_file::read(include_bytes!("data/owner-corner-test.prism")).expect("the file");
+    for (i, g) in c.assembly.defs().enumerate() {
+        let _ = (i, g);
+    }
+    let m = &c.assembly.root().model;
+    let ef = m.edge_faces();
+    eprintln!("faces {} edges {}", m.faces().count(), m.edges().count());
+    for (id, f) in m.faces() {
+        let s = format!("{:?}", f.surface);
+        eprintln!("face {id:?} {} {:?}", &s[..s.len().min(90)], f.plane().map(|p| p.normal));
+    }
+    for (id, e) in m.edges() {
+        eprintln!(
+            "edge {id:?} {:.3?} -> {:.3?} curved {} soft {} faces {:?} concave? ",
+            m.vertex(e.a), m.vertex(e.b), e.curve.is_curved(), e.soft, ef.get(&id)
+        );
+    }
+}
