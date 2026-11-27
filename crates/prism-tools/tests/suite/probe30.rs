@@ -270,21 +270,69 @@ fn probe30_arc() {
     let a = at(&r, 1737);
     let b = at(&r, 1741);
     let (ma, mb) = (a.work_model(), b.work_model());
-    let new: Vec<_> = mb.edges().filter(|(id, _)| ma.edge(*id).is_none()).collect();
-    println!("new edges {} gone {}", new.len(), ma.edges().filter(|(id, _)| mb.edge(*id).is_none()).count());
+    let new: Vec<_> = mb
+        .edges()
+        .filter(|(id, _)| ma.edge(*id).is_none())
+        .collect();
+    println!(
+        "new edges {} gone {}",
+        new.len(),
+        ma.edges().filter(|(id, _)| mb.edge(*id).is_none()).count()
+    );
     for (id, e) in new.iter().take(40) {
-        println!("  {id:?} {:.4?}-{:.4?} {} approx {} cid {:?} soft {}", mb.vertex(e.a), mb.vertex(e.b), if e.curve.is_curved() { "arc" } else { "line" }, e.approx, e.curve_id, e.soft);
+        println!(
+            "  {id:?} {:.4?}-{:.4?} {} approx {} cid {:?} soft {}",
+            mb.vertex(e.a),
+            mb.vertex(e.b),
+            if e.curve.is_curved() { "arc" } else { "line" },
+            e.approx,
+            e.curve_id,
+            e.soft
+        );
     }
     let old_c: std::collections::BTreeSet<_> = ma.edges().filter_map(|(_, e)| e.curve_id).collect();
-    let fresh: Vec<_> = mb.edges().filter(|(_, e)| e.curve.is_curved() || e.curve_id.is_some_and(|c| !old_c.contains(&c))).filter(|(id, _)| ma.edge(*id).is_none()).collect();
-    println!("fresh curve edges {} (splines {}, arcs {}, approx {})", fresh.len(), fresh.iter().filter(|(_, e)| e.curve.is_spline()).count(), fresh.iter().filter(|(_, e)| e.curve.is_arc()).count(), fresh.iter().filter(|(_, e)| e.approx).count());
+    let fresh: Vec<_> = mb
+        .edges()
+        .filter(|(_, e)| e.curve.is_curved() || e.curve_id.is_some_and(|c| !old_c.contains(&c)))
+        .filter(|(id, _)| ma.edge(*id).is_none())
+        .collect();
+    println!(
+        "fresh curve edges {} (splines {}, arcs {}, approx {})",
+        fresh.len(),
+        fresh.iter().filter(|(_, e)| e.curve.is_spline()).count(),
+        fresh.iter().filter(|(_, e)| e.curve.is_arc()).count(),
+        fresh.iter().filter(|(_, e)| e.approx).count()
+    );
     println!("faces {} -> {}", ma.faces().count(), mb.faces().count());
-    for (id, e) in fresh.iter().take(10) { println!("  F {id:?} {:.4?}-{:.4?} {:?} approx {} cid {:?}", mb.vertex(e.a), mb.vertex(e.b), e.curve, e.approx, e.curve_id); }
+    for (id, e) in fresh.iter().take(10) {
+        println!(
+            "  F {id:?} {:.4?}-{:.4?} {:?} approx {} cid {:?}",
+            mb.vertex(e.a),
+            mb.vertex(e.b),
+            e.curve,
+            e.approx,
+            e.curve_id
+        );
+    }
     let ef = mb.edge_faces();
-    if let Some((id, _)) = new.first() { println!("faces of first {:?}", ef.get(id)); }
+    if let Some((id, _)) = new.first() {
+        println!("faces of first {:?}", ef.get(id));
+    }
     println!("hint after {:?} notice {}", b.hint(), b.hint_is_notice());
     let cmd = b.document().log().last().cloned();
-    println!("CMD {}", format!("{cmd:?}").chars().take(600).collect::<String>());
+    println!(
+        "CMD {}",
+        format!("{cmd:?}").chars().take(600).collect::<String>()
+    );
     let t = a.open_transform();
-    println!("open {:?} transform cols {:.4?} {:.4?} {:.4?} lens {:.4} {:.4} {:.4}", a.open_path(), t.matrix3.x_axis, t.matrix3.y_axis, t.matrix3.z_axis, t.matrix3.x_axis.length(), t.matrix3.y_axis.length(), t.matrix3.z_axis.length());
+    println!(
+        "open {:?} transform cols {:.4?} {:.4?} {:.4?} lens {:.4} {:.4} {:.4}",
+        a.open_path(),
+        t.matrix3.x_axis,
+        t.matrix3.y_axis,
+        t.matrix3.z_axis,
+        t.matrix3.x_axis.length(),
+        t.matrix3.y_axis.length(),
+        t.matrix3.z_axis.length()
+    );
 }

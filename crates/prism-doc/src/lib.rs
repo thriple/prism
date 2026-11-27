@@ -976,6 +976,17 @@ impl Command {
             } => {
                 let n = dir(*normal);
                 let side = Plane::new(*centre, *normal).frame().u * *radius;
+                // In a group scaled unevenly across the circle's plane it
+                // is an ellipse there: an exact rational curve.
+                if let Some(curve) = ellipse_in(
+                    to_local,
+                    *centre,
+                    *normal,
+                    *centre + side,
+                    std::f64::consts::TAU,
+                ) {
+                    return Command::Spline { curve };
+                }
                 Command::Circle {
                     centre: p(*centre),
                     normal: n.normalize_or_zero(),
@@ -1018,6 +1029,14 @@ impl Command {
                 sweep,
                 pie,
             } => {
+                // In a group scaled unevenly across the arc's plane it is
+                // part of an ellipse there: an exact rational curve (owner's
+                // session 30: an arc drawn in a component scaled by a half
+                // along one axis came up short).
+                if !*pie && let Some(curve) = ellipse_in(to_local, *centre, *normal, *start, *sweep)
+                {
+                    return Command::Spline { curve };
+                }
                 // A mirror turns the arc the other way about its normal.
                 let flip = to_local.matrix3.determinant().signum();
                 Command::Arc {
@@ -2237,4 +2256,27 @@ mod tests {
         let back: Document = serde_json::from_str(&text).expect("loads");
         assert_eq!(back, d);
     }
+}
+
+/// The arc about `centre` and `normal` from `start`, `sweep` round, sent
+/// through `m`, as an exact rational curve, if `m` does not scale evenly
+/// across the arc's plane (where it would stay a circle). None when it
+/// stays a circle or the curve cannot be made.
+fn ellipse_in(
+    m: &DAffine3,
+    centre: DVec3,
+    normal: DVec3,
+    start: DVec3,
+    sweep: f64,
+) -> Option<prism_geom::Nurbs> {
+    let fr = Plane::new(centre, normal).frame();
+    let (mu, mv) = (m.transform_vector3(fr.u), m.transform_vector3(fr.v));
+    let (lu, lv) = (mu.length(), mv.length());
+    let k = lu.max(lv);
+    let even = k > 0.0 && (lu - lv).abs() <= 1e-12 * k && mu.dot(mv).abs() <= 1e-12 * k * k;
+    if even {
+        return None;
+    }
+    let arc = prism_geom::Nurbs::arc(centre, normal, start, sweep)?;
+    Some(arc.transformed(m))
 }
