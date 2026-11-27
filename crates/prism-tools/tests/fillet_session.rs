@@ -264,3 +264,28 @@ fn the_corner_test_edges_round() {
         }
     }
 }
+
+/// The owner's second corner test (2026-11-27, "I'm not expecting it to
+/// pass entirely"): a channel whose floor's edge runs along a wall, round
+/// a quarter arc and along another wall. The straight edges at the walls
+/// round alone (54, and 73 at the step). The arc and the edge it runs
+/// smoothly into (57) do not yet, nor the chain: the arc's centre is 1.6 cm
+/// off, so it meets the first wall at a crease of 0.85 degrees, and the
+/// kernel can neither end a round where faces meet smoothly nor round
+/// across so slight a crease (brief 56 step 4, chains through smooth and
+/// near-smooth joins).
+#[test]
+fn the_second_corner_test_straight_edges_round() {
+    use prism_topo::EdgeId;
+    let c = prism_file::read(include_bytes!("data/owner-corner-test-2.prism")).expect("the file");
+    let m = &c.assembly.root().model;
+    for e in [54, 73] {
+        for fillet in [true, false] {
+            let mut w = m.clone();
+            prism_ops::rounds::round_edges(&mut w, &[EdgeId(e)].into(), 0.2, fillet)
+                .unwrap_or_else(|why| panic!("{e} {fillet}: {why}"));
+            assert_eq!(prism_ops::check::problems(&w), Vec::<String>::new(), "{e}");
+            assert_eq!(w.faces().count(), m.faces().count() + 1, "{e}");
+        }
+    }
+}
