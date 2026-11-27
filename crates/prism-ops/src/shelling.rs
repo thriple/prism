@@ -57,18 +57,17 @@ use prism_math::tol::ANGLE;
 use prism_math::{DVec2, DVec3, Plane, Tol, newell};
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
-pub const NOTHING: &str = "Refused: click a face to shell or thicken.";
-pub const ZERO: &str = "Refused: a thickness of zero makes nothing.";
-pub const ALL_OPEN: &str = "Refused: every face is left open, so there is nothing to thicken.";
-pub const FREEFORM: &str = "Refused: an arc's moved copy here is not round the same axis, so Shell / Thicken cannot wall the gap between them yet.";
-pub const MIXED: &str =
-    "Refused: these faces face different ways. Solid > Heal turns them the same way.";
-pub const BRANCHES: &str = "Refused: more than two faces meet at an edge here, and they cannot be parted into sheets that each thicken on their own (or their shells could not be joined).";
-pub const CORNER: &str = "Refused: more than three faces meet at a corner on the rim here, or round a curved face, and their moved copies do not meet at one point. Not yet.";
-pub const TOO_THICK: &str = "Refused: that thickness turns a face inside out. Try a smaller one.";
-pub const RIM_STYLE: &str = "Refused: a rim style other than Square works on joined faces with a freeform one, not on this shape yet.";
-pub const FLUSH_OFF: &str = "Refused: a flush rim's plane must pass through the edge it ends.";
-pub const FLUSH_PARALLEL: &str = "Refused: that plane lies along the face at its rim, so a wall cannot end in it. Pick another plane or Square.";
+pub const NOTHING: &str = "Click a face to shell or thicken.";
+pub const ZERO: &str = "A thickness of zero makes nothing.";
+pub const ALL_OPEN: &str = "Every face is left open, so there is nothing to thicken.";
+pub const FREEFORM: &str = "An arc's moved copy here is not round the same axis, so Shell / Thicken cannot wall the gap between them yet.";
+pub const MIXED: &str = "These faces face different ways. Solid > Heal turns them the same way.";
+pub const BRANCHES: &str = "More than two faces meet at an edge here, and they cannot be parted into sheets that each thicken on their own (or their shells could not be joined).";
+pub const CORNER: &str = "Here more than three faces meet at a corner of the rim (or around a curved face), and the walls would not meet at one point. This cannot be built yet.";
+pub const TOO_THICK: &str = "That thickness turns a face inside out. Try a smaller one.";
+pub const RIM_STYLE: &str = "A rim style other than Square works on joined faces with a freeform one, not on this shape yet.";
+pub const FLUSH_OFF: &str = "A flush rim's plane must pass through the edge it ends.";
+pub const FLUSH_PARALLEL: &str = "That plane lies along the face at its rim, so a wall cannot end in it. Pick another plane or Square.";
 /// The thinnest wall the Shell / Thicken tool and the Inspector will make
 /// from what a person types or drags, in metres: 0.1 cm. The kernel itself
 /// builds much thinner walls (down to 0.01 cm on a 15 m hull, NOTES "thin
@@ -88,8 +87,8 @@ pub fn thin_warning(thickness: f64) -> Option<&'static str> {
     (thickness.abs() > 1e-9 && thickness.abs() < MIN_THICKNESS * (1.0 - 1e-9)).then_some(THIN)
 }
 
-pub const FLUSH_REACH: &str = "Refused: to end flush in that plane the surface would have to be carried on a long way past its own edge. Use a plane closer to square, or Square.";
-pub const SHARP: &str = "Refused: these faces fold right back onto each other here, and thickening into the fold (or a fold that ends at a corner of other faces) is not built yet. Try the other way.";
+pub const FLUSH_REACH: &str = "To end flush in that plane the surface would have to be carried on a long way past its own edge. Use a plane closer to square, or Square.";
+pub const SHARP: &str = "These faces fold right back onto each other here, and thickening into the fold (or a fold that ends at a corner of other faces) is not built yet. Try the other way.";
 
 // What Shell / Thicken built in place of refusing (see [`Flags`]): each
 // names a fallback taken, for the tool to mark where it was taken and say

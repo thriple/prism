@@ -23,17 +23,15 @@ pub enum Cage {
 pub const NO_CAGE: &str =
     "Select a freeform curve or face first: lines, arcs and flat faces have no control points.";
 pub const SIDE_OF_FACE: &str =
-    "Refused: this curve is the side of a freeform face. Move the face's control points instead.";
-pub const FLAT_BESIDE: &str = "Refused: a flat face beside it would bend. Move these points within its plane, or erase that face first.";
-pub const NEIGHBOUR: &str =
-    "Refused: another curved face or curve is joined here and would come apart.";
-pub const CLOSED_ADD: &str =
-    "Refused: control points cannot be added round a closed curve or surface yet.";
-pub const COLLAPSED: &str = "Refused: the curve or face would shrink to nothing.";
+    "This curve is the side of a freeform face. Move the face's control points instead.";
+pub const FLAT_BESIDE: &str = "A flat face beside it would bend. Move these points within its plane, or erase that face first.";
+pub const NEIGHBOUR: &str = "Another curved face or curve is joined here and would come apart.";
+pub const CLOSED_ADD: &str = "Control points cannot be added round a closed curve or surface yet.";
+pub const COLLAPSED: &str = "The curve or face would shrink to nothing.";
 /// Said for a surface with a face cut from it (Solids & CAD part 3): its
 /// cuts would be left off the moved surface.
 pub const TRIMMED: &str =
-    "Refused: a face on this surface has been cut; editing its control points comes later.";
+    "A face on this surface has been cut, so its control points cannot be edited yet.";
 
 fn curve_of(model: &Model, e: EdgeId) -> Option<Arc<Nurbs>> {
     Some(model.edge(e)?.curve.spline()?.curve.clone())

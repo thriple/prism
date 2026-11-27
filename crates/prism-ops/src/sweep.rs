@@ -23,8 +23,7 @@ use crate::sides;
 
 pub const TWO_FOR_SWEEP: &str =
     "Select two curves to sweep: a profile and a path (lines and arcs count as curves).";
-pub const BOTH_CLOSED: &str =
-    "Refused: two closed curves cannot be swept. One must be open (the path).";
+pub const BOTH_CLOSED: &str = "Two closed curves cannot be swept. One must be open (the path).";
 pub const FOUR_FOR_PATCH: &str = "Select curves joined end to end in one ring to patch.";
 
 /// The values of a curve's parameter where the edges on it have vertices,

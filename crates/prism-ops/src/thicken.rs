@@ -23,10 +23,10 @@ use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
 /// Said when the offset cannot be made within the tolerance.
 pub const NO_OFFSET: &str =
-    "Refused: Prism could not move this freeform face out that far within the tolerance.";
+    "This freeform face cannot be moved out that far accurately enough. Try a smaller distance.";
 /// Said for a face that goes all the way round its surface.
 pub const ROUND: &str =
-    "Refused: a freeform face that goes all the way round cannot be pushed or pulled yet.";
+    "A freeform face that goes all the way round cannot be pushed or pulled yet.";
 
 /// How many times the pieces may be split.
 pub(crate) const ROUNDS: usize = 8;

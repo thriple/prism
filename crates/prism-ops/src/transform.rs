@@ -48,27 +48,25 @@ pub fn scaling(centre: DVec3, k: DVec3) -> DAffine3 {
 }
 
 /// Said when a move would bend an arc.
-pub const ARC_WOULD_BEND: &str =
-    "Refused: an arc would bend. Move its whole curve, or scale it evenly.";
+pub const ARC_WOULD_BEND: &str = "An arc would bend. Move its whole curve, or scale it evenly.";
 /// Said when one end of a NURBS curve would move without the other.
 pub const SPLINE_WOULD_BEND: &str =
-    "Refused: one end of a curve cannot move alone. Move the whole curve, or its control points.";
+    "One end of a curve cannot move alone. Move the whole curve, or its control points.";
 /// Said when a move would fold a face with arcs.
 pub const ARC_FACE_WOULD_FOLD: &str =
-    "Refused: a face with arcs would fold. Keep it flat, or move all of it.";
+    "A face with arcs would fold. Keep it flat, or move all of it.";
 
 /// Said when a move would fold a face with holes.
 pub const HOLE_FACE_WOULD_FOLD: &str =
-    "Refused: a face with a hole would fold. Keep it flat, or move all of it.";
+    "A face with a hole would fold. Keep it flat, or move all of it.";
 
 /// Said when a move would bend a curved face.
-pub const CURVED_WOULD_BEND: &str = "Refused: a curved face would bend. Move all of it.";
+pub const CURVED_WOULD_BEND: &str = "A curved face would bend. Move all of it.";
 
 /// Said when an uneven scale meets a curved face that cannot be made into
 /// facets (one that winds round its axis with no seam; Prism never makes
 /// one, but a file could hold it).
-pub const CUT_CURVED_SCALE: &str =
-    "Refused: this curved face cannot be made into facets. Scale it evenly.";
+pub const CUT_CURVED_SCALE: &str = "This curved face cannot be made into facets. Scale it evenly.";
 
 /// Whether moving `vs` by `m` keeps every arc an arc and its faces flat:
 /// each arc with an end in `vs` has both there, `m` scales evenly if any

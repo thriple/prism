@@ -19,9 +19,9 @@ use crate::solid::{self, FAULTY, NOT_CLOSED, Region, read_region};
 /// Said when there is nothing the writer can write.
 pub const NOTHING: &str = "Nothing to export: no solid or sheet could go to STEP.";
 /// Said when the kernel's writer refuses the whole file.
-pub const NOT_WRITTEN: &str = "Refused: the STEP writer could not write these shapes.";
+pub const NOT_WRITTEN: &str = "These shapes could not be written to a STEP file.";
 /// Said for a sheet whose faces do not join into an open surface.
-pub const NOT_A_SHEET: &str = "Refused: these faces do not join into one surface.";
+pub const NOT_A_SHEET: &str = "These faces do not join up into one surface.";
 
 /// One solid, or one open sheet, and its faces' own colours (by index into
 /// the region's faces, red, green and blue from 0 to 1).

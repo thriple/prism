@@ -21,14 +21,13 @@ use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
 pub const NOTHING: &str = "Select a chain of lines and arcs, or one NURBS curve, then Convert.";
 pub const NOT_A_CHAIN: &str =
-    "Refused: Convert takes edges joined end to end in one chain, without branches.";
-pub const MIXED: &str =
-    "Refused: Convert takes a chain of lines and arcs, or one NURBS curve, not both.";
+    "Convert takes edges joined end to end in one chain, without branches.";
+pub const MIXED: &str = "Convert takes a chain of lines and arcs, or one NURBS curve, not both.";
 pub const MEETS: &str =
-    "Refused: other edges meet this chain partway; its points between would have to stay.";
+    "Other edges meet this chain partway; its points between would have to stay.";
 pub const CURVED: &str =
-    "Refused: a curved face runs along this chain; Convert takes chains with flat faces or none.";
-pub const FAILED: &str = "Refused: Prism could not make this curve.";
+    "A curved face runs along this chain; Convert takes chains with flat faces or none.";
+pub const FAILED: &str = "Prism could not make this curve.";
 
 /// One edge of a chain, walked from `from` to `to`.
 #[derive(Clone, Copy, Debug)]
@@ -532,10 +531,10 @@ fn relink(
 // ---------- Faces ↔ Smooth Patch (part 4c) ----------
 
 pub const NO_FACES: &str = "Select a grid of four-sided faces, or one freeform face, then Convert.";
-pub const NOT_A_GRID: &str = "Refused: Convert takes four-sided flat faces joined edge to edge in rows and columns, or one freeform face.";
-pub const BORDERS: &str = "Refused: other faces or edges meet this grid's sides; Convert takes a grid standing on its own.";
-pub const TRIMMED: &str =
-    "Refused: this freeform face is cut from its patch; Convert takes a whole one.";
+pub const NOT_A_GRID: &str = "Convert takes four-sided flat faces joined edge to edge in rows and columns, or one freeform face.";
+pub const BORDERS: &str =
+    "Other faces or edges meet this grid's sides; Convert takes a grid standing on its own.";
+pub const TRIMMED: &str = "This freeform face is cut from its patch; Convert takes a whole one.";
 
 /// Why `convert_faces` would refuse, if it would.
 pub fn faces_refusal(model: &Model, faces: &BTreeSet<FaceId>) -> Option<&'static str> {

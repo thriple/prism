@@ -18,11 +18,10 @@ use crate::sticky::{insert_point, tol_with};
 
 pub const TWO_CURVES: &str = "Select two or more curves (or lines or arcs) to loft through.";
 pub const MIXED: &str =
-    "Refused: open and closed curves cannot be lofted together. Select all open or all closed.";
-pub const NOT_ALIKE: &str = "Refused: closed curves need the same number of control points to be lofted (or use circles for all of them).";
+    "Open and closed curves cannot be lofted together. Select all open or all closed.";
+pub const NOT_ALIKE: &str = "Closed curves need the same number of control points to be lofted (or use circles for all of them).";
 pub const RING: &str = "These curves join end to end in a ring: that is a boundary to fill, not sections to loft through. Use Draw > Surface > Patch (four sides for now).";
-pub const DEGENERATE: &str =
-    "Refused: the curves touch or cross, so the surface would pinch to a point.";
+pub const DEGENERATE: &str = "The curves touch or cross, so the surface would pinch to a point.";
 
 /// One curve to loft through: its shape, and the edges on it.
 pub(crate) struct Section {
@@ -577,7 +576,7 @@ pub fn loft(model: &mut Model, edges: &BTreeSet<EdgeId>) -> Result<Vec<FaceId>, 
 }
 
 pub const NO_AXIS: &str = "Select the outline or curves to turn (any shape, open or closed) and one straight line to turn them about (a line that touches none of the others).";
-pub const TOUCHES_AXIS: &str = "Refused: a curve touches or crosses the axis. For shapes that close on the axis, use Follow Me with lines and arcs.";
+pub const TOUCHES_AXIS: &str = "A curve touches or crosses the axis. For shapes that close on the axis, use Follow Me with lines and arcs.";
 
 /// The model with the selected curves turned a full turn about the
 /// selected axis line, and the faces made; or why not. The axis is the one

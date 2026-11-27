@@ -17,9 +17,10 @@ pub mod solid;
 pub mod step;
 
 /// Said when the kernel cannot make the surface.
-pub const NO_SURFACE: &str = "Refused: no surface could be made from these curves.";
+pub const NO_SURFACE: &str = "No surface could be made from these curves.";
 /// Said when a curve to turn lies on the axis.
-pub const ON_AXIS: &str = "Refused: the curve lies on the axis it would turn about.";
+pub const ON_AXIS: &str =
+    "The curve lies on the axis it would turn around, so it would sweep out nothing.";
 
 /// The hard NURBS operations.
 pub trait Kernel {

@@ -179,8 +179,7 @@ pub const NO_GROUP: &str = "Select a group to taper";
 /// Said when a boolean has fewer than two groups.
 pub const TWO_SOLIDS: &str = "Pick two different solid groups or components.";
 /// Said for a group with groups inside.
-pub const NESTED: &str =
-    "Refused: a group with groups inside cannot be used yet. Explode them first.";
+pub const NESTED: &str = "A group with groups inside cannot be used yet. Explode them first.";
 
 /// The root definition: the model outside every group.
 pub const ROOT: DefId = DefId(0);

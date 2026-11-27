@@ -319,7 +319,7 @@ impl Session {
             .assembly()
             .def(def)
             .and_then(|d| d.stack.clone())
-            .ok_or("Refused: this is no live shell.")?;
+            .ok_or("This is not a shell that can still be changed.")?;
         // The shell is built anyway (a rim it cannot reach is cut square,
         // DECISIONS #41), but the handle offers only a style it builds as
         // asked, and says why not: the tilt stays where it last worked.
@@ -330,12 +330,12 @@ impl Session {
         }
         let mut next = stack;
         if !next.set_rim(index, edge, Some(style)) {
-            return Err("Refused: that is not a rim of this shell.");
+            return Err("That is not a rim of this shell.");
         }
         let m = self.evaluate_from(def, index, &mut next);
         match next.features.get(index) {
             Some(f) if !f.is_broken() => Ok(m),
-            _ => Err("Refused: the shell cannot end that way."),
+            _ => Err("The shell cannot end that way."),
         }
     }
 
@@ -453,7 +453,7 @@ impl Session {
                 Err(r) => why = Some(r),
             }
         }
-        Err(why.unwrap_or("Refused: no plane to end flush in: tilt the handle to pick one."))
+        Err(why.unwrap_or("No plane to end flush in: tilt the handle to pick one."))
     }
 
     /// Whether a rim handle is held (so Esc lets it go first).

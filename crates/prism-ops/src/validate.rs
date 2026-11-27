@@ -18,12 +18,12 @@ use crate::regions::{Fill, rebuild_plane};
 /// Said for a solid the bridge cannot send yet: a face with a sphere's
 /// pole or a cone's tip inside it (not at a corner), or a curved face
 /// that goes all the way round (other than a cylinder's).
-pub const KERNEL_NOT_YET: &str = "A face round a pole or a tip, or one that goes all the way round, cannot go to the kernel yet: checked by Prism's rules only.";
+pub const KERNEL_NOT_YET: &str = "Checked with Prism's own rules only: a face around a pole or a tip, or one that goes all the way round, cannot have the full check yet.";
 
 /// Said for a solid whose freeform faces meet each other along many curve
 /// pieces: the kernel's check of faces against faces takes too long there
 /// yet (Solids & CAD part 3c).
-pub const KERNEL_TOO_LONG: &str = "Freeform faces that meet along many curve pieces take the kernel too long to check yet: checked by Prism's rules only.";
+pub const KERNEL_TOO_LONG: &str = "Checked with Prism's own rules only: freeform faces that meet along many curve pieces take too long for the full check yet.";
 
 /// The most [`kernel_work`] Validate sends to the kernel: a few seconds.
 const KERNEL_BUDGET: f64 = 24.0;

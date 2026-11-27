@@ -30,9 +30,10 @@ pub enum Op {
 
 /// Said when an input is not a closed solid.
 pub const NOT_SOLID: &str =
-    "Refused: one of these is not a solid. Solid > Validate and Heal says why.";
+    "One of these is not a closed shape. Solid > Validate and Heal says why.";
 /// Said when a piece could not be placed (every test ray grazed an edge).
-pub const UNSURE: &str = "Refused: Prism could not tell inside from outside here.";
+pub const UNSURE: &str =
+    "Prism could not work out which side is inside here. Try moving one of the shapes a little.";
 
 /// Where a piece of one solid lies against the other.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

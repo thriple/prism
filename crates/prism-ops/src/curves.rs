@@ -9,7 +9,7 @@ use prism_topo::{EdgeId, Model, VertexId};
 
 pub const NOTHING: &str = "Select edges joined end to end, then Weld.";
 pub const NOT_A_CHAIN: &str =
-    "Refused: Weld joins edges end to end in one chain, without branches; these are not.";
+    "Weld joins edges end to end in one chain without branches, and these branch or do not join.";
 pub const ALREADY: &str = "These edges are one curve already.";
 
 /// Why `weld` would refuse, if it would.

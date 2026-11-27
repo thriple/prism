@@ -26,10 +26,10 @@ pub const NO_PATH: &str =
 pub const NOT_A_PATH: &str = "The path must be lines and arcs joined end to end in one chain.";
 /// Said when the profile is not a flat face.
 /// Said when the path has a freeform curve (Sweep does those).
-pub const FREEFORM_PATH: &str = "Refused: Follow Me does not follow a freeform curve. Select the profile and the path, then use Draw > Surface > Sweep.";
+pub const FREEFORM_PATH: &str = "Follow Me does not follow a freeform curve. Select the profile and the path, then use Draw > Surface > Sweep.";
 /// Said when the profile has a freeform curve (Sweep, Loft and Revolve do
 /// those).
-pub const FREEFORM_PROFILE: &str = "Refused: Follow Me does not take a profile with a freeform curve. Use Draw > Surface (Sweep, Loft or Revolve) with its curves.";
+pub const FREEFORM_PROFILE: &str = "Follow Me does not take a profile with a freeform curve. Use Draw > Surface (Sweep, Loft or Revolve) with its curves.";
 pub const NOT_A_PROFILE: &str = "The profile must be a flat face.";
 /// Said when the profile lies along the path's first line.
 pub const ALONG_PATH: &str = "The profile lies along the path's first line: it must cross it.";
