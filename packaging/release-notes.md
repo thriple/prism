@@ -1,4 +1,4 @@
-**Changed: Fillet / Chamfer messages in plain English.** The messages no longer start with "Refused:" or talk about the kernel, solids or approximations; they say what is in the way and, where it helps, what to try (a smaller size, fewer edges at once). The other tools' messages follow.
+**Changed: Fillet / Chamfer messages in plain English.** The messages no longer start with "Refused:" or talk about the kernel, solids or approximations; they say what is in the way and, where it helps, what to try (a smaller size, fewer edges at once). No message starts with "Refused:" any more, in any tool; the ones that spoke of kernels, solids or tolerances are reworded.
 
 **Fixed: arcs and circles drawn inside a stretched group or component.** In a component scaled more along one direction than another (one mirrored at half width, say), an arc drawn on a face came up short of the point you clicked and was stored as many short straight pieces, with a message about an approximation. It is now an exact curve that ends where you clicked and divides the face (the owner's windshield bezel). Scaling an arc or circle unevenly also keeps it an exact curve now.
 
