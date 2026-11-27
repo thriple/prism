@@ -190,7 +190,7 @@ Parasolid names more cases: a smooth extension; a "cliff", where the round touch
 
 ### What this changes in the plan
 
-1. **Step 2 (end caps):** offer keep edge (the end cap, the neighbour's edge untouched) and keep surface (the neighbour's edge moved to meet the round). Keep edge is the default, as it is what the owner asked for.
+1. **Step 2 (end caps):** keep surface (the round's end lies in the face it meets, the neighbour's edge moved to meet it) is the default: the owner chose it from screenshots on 2026-11-27. Keep edge (a flat end cap, the neighbour's edge untouched) is used only where the round's end cannot lie in that face.
 2. **Step 4 (3D chains):** joints between rounds are closed by a mitre by default. A setback patch is offered where a mitre would leave a kink. Rounds beside freeform faces are built by marching the spine and fitting the round within the precision.
 3. **Step 5 (corners):** three corner types: rolling ball (exact sphere for three equal outside rounds, the kernel's), setback (n-sided patch, Várady–Rockwood style, filled with a Gregory-type patch), and mitre. Mixed corners in turn, inside rounds first, larger first. A corner type in the Fillet window, defaulting to rolling ball where it works and setback where it does not.
 4. **Ordering:** when rounding many edges in turn, take the inside rounds first and the larger first (the vendors' rule), before trying other orders.
@@ -212,7 +212,10 @@ Parasolid names more cases: a smooth extension; a "cliff", where the round touch
 ## Order of work
 
 1. Step 1 (slits, notches, non-flat openings), with session 29 as the test. **This is what makes the owner's body work.**
-2. Step 2 (end caps).
+2. Step 2 (end caps, and the fallback round brought in line with the kernel's, owner 2026-11-27):
+   - the round's end lies in the face it runs into (keep surface), as the kernel's round already does on the owner's stepped block;
+   - a flat end cap only where that cannot be done;
+   - a line drawn up to the rounded edge carries on across the round as a seam, as the kernel's round already does.
 3. Step 3 (local round).
 4. Step 4 (3D chains, freeform faces), with the owner's SketchUp example (4a) as its test.
 5. Step 5 (corner patch).
