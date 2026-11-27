@@ -617,7 +617,7 @@ fn round_through_lines(
     round_any(&mut work, &edges, size, fillet).ok()?;
     // The lines go back as far as they still lie on the solid: a round
     // that cut into the face one was on leaves its end in the air.
-    draw_back(&mut work, &lines);
+    draw_back(&mut work, &lines, false);
     if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
         return None;
     }
@@ -642,9 +642,9 @@ fn round_through_lines(
 
 /// Draw `lines` back on `work` after a round, as far as they still lie on
 /// its faces: a piece left in the air (where the round cut into the face
-/// it was on) is not kept; a piece on a face is, whether it divides the
-/// face or ends inside it.
-fn draw_back(work: &mut Model, lines: &[(DVec3, DVec3)]) {
+/// it was on) is not kept, nor a piece left loose (unless `keep_loose`:
+/// a slit, which ended inside its face to begin with).
+fn draw_back(work: &mut Model, lines: &[(DVec3, DVec3)], keep_loose: bool) {
     let had: BTreeSet<EdgeId> = work.edges().map(|(id, _)| id).collect();
     for (a, b) in lines {
         crate::add_segment(work, *a, *b);
@@ -655,12 +655,13 @@ fn draw_back(work: &mut Model, lines: &[(DVec3, DVec3)]) {
         .map(|(id, _)| id)
         .filter(|id| !had.contains(id) && used.get(id).is_none_or(|f| f.is_empty()))
         .filter(|id| {
-            // A line drawn on a face, ending inside it, is loose there:
+            // A slit drawn back is loose on its face (it ends inside it):
             // kept while its middle is still on a flat face.
-            work.edge(*id).is_none_or(|e| {
-                let mid = work.vertex(e.a).lerp(work.vertex(e.b), 0.5);
-                e.curve.is_curved() || crate::face_at(work, mid).is_none()
-            })
+            !keep_loose
+                || work.edge(*id).is_none_or(|e| {
+                    let mid = work.vertex(e.a).lerp(work.vertex(e.b), 0.5);
+                    e.curve.is_curved() || crate::face_at(work, mid).is_none()
+                })
         })
         .collect();
     for id in loose {
@@ -763,7 +764,7 @@ fn round_past_slits(
         return None;
     }
     let faces = round_edges(&mut work, &edges, size, fillet).ok()?;
-    draw_back(&mut work, &lines);
+    draw_back(&mut work, &lines, true);
     if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
         return None;
     }

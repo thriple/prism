@@ -228,21 +228,35 @@ fn session_29_rounds_past_its_slit_and_notch() {
 #[test]
 #[ignore]
 fn zz_corner_look() {
+    use prism_topo::EdgeId;
     let c = prism_file::read(include_bytes!("data/owner-corner-test.prism")).expect("the file");
-    for (i, g) in c.assembly.defs().enumerate() {
-        let _ = (i, g);
-    }
     let m = &c.assembly.root().model;
-    let ef = m.edge_faces();
-    eprintln!("faces {} edges {}", m.faces().count(), m.edges().count());
-    for (id, f) in m.faces() {
-        let s = format!("{:?}", f.surface);
-        eprintln!("face {id:?} {} {:?}", &s[..s.len().min(90)], f.plane().map(|p| p.normal));
-    }
-    for (id, e) in m.edges() {
-        eprintln!(
-            "edge {id:?} {:.3?} -> {:.3?} curved {} soft {} faces {:?} concave? ",
-            m.vertex(e.a), m.vertex(e.b), e.curve.is_curved(), e.soft, ef.get(&id)
-        );
+    let curve: Vec<EdgeId> = (171..=186).map(EdgeId).collect();
+    let sets: Vec<(&str, std::collections::BTreeSet<EdgeId>)> = vec![
+        (
+            "all three",
+            [53, 54]
+                .map(EdgeId)
+                .into_iter()
+                .chain(curve.clone())
+                .collect(),
+        ),
+        ("floor two", [53, 54].map(EdgeId).into()),
+        ("curve", curve.iter().copied().collect()),
+        ("edge 53", [EdgeId(53)].into()),
+        ("edge 54", [EdgeId(54)].into()),
+    ];
+    for (name, set) in &sets {
+        for fillet in [true, false] {
+            for r in [0.2, 0.1, 0.05] {
+                let mut w = m.clone();
+                let got = prism_ops::rounds::round_edges(&mut w, set, r, fillet);
+                eprintln!(
+                    "{name} fillet {fillet} {r}: {:?} problems {:?}",
+                    got.map(|f| f.len()),
+                    prism_ops::check::problems(&w)
+                );
+            }
+        }
     }
 }
