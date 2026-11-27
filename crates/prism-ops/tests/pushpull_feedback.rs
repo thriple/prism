@@ -462,3 +462,38 @@ fn a_flap_glued_to_a_box_edge_pulls_without_corrupting_its_wall() {
         "no face should be turned the wrong way either"
     );
 }
+
+/// A new loop (Alt) pushed into a solid keeps its outside and leaves a new
+/// face inside where it stopped (owner's corner test, 2026-11-27: the
+/// walls faced into the solid and took the faces they lay on with them).
+#[test]
+fn a_new_loop_pushed_in_leaves_a_face_inside() {
+    let mut m = cube();
+    let top = prism_ops::face_at(&m, v(2.0, 2.0, 4.0)).expect("the top");
+    prism_ops::push_pull(&mut m, top, -1.5, true);
+    assert_eq!(check::problems(&m), Vec::<String>::new());
+    let area = |m: &Model, n: DVec3| -> f64 {
+        m.faces()
+            .filter(|(_, f)| f.plane().is_some_and(|p| p.normal.dot(n) > 0.999))
+            .map(|(id, _)| m.face_area(id))
+            .sum()
+    };
+    // The sides keep all their area (now in two pieces each), the top is
+    // still there, and a face 4 by 4 lies inside at z = 2.5.
+    for n in [
+        v(1.0, 0.0, 0.0),
+        v(-1.0, 0.0, 0.0),
+        v(0.0, 1.0, 0.0),
+        v(0.0, -1.0, 0.0),
+    ] {
+        assert!((area(&m, n) - 16.0).abs() < 1e-9, "{n:?}: {}", area(&m, n));
+    }
+    assert!(
+        prism_ops::face_at(&m, v(2.0, 2.0, 4.0)).is_some(),
+        "the top"
+    );
+    let inner = prism_ops::face_at(&m, v(2.0, 2.0, 2.5)).expect("a face inside");
+    assert!((m.face_area(inner) - 16.0).abs() < 1e-9);
+    let h = prism_ops::health::check(&m);
+    assert_eq!((h.watertight, h.leaky), (1, 0), "{h:?}");
+}

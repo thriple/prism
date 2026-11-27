@@ -529,6 +529,17 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     if new_loop && !standalone {
         // Alt: the original boundary stays as a face.
         model.add_face(original(false));
+        // The walls were wound for a pull out. Pushed in, they would face
+        // into the solid, back to back with the faces they lie on, and
+        // both would go (owner's corner test, 2026-11-27: a new loop
+        // pushed into the front ate the bottom, sides and top back to
+        // where it stopped). Turned round, they face out as those faces
+        // do and merge with them: the same outside, a new face inside.
+        if distance < 0.0 {
+            for w in &walls {
+                model.edit_face(*w, |g| g.reverse());
+            }
+        }
     } else if standalone || (any_open && !any_slide && (against || !ring)) {
         // A face that extrudes whole keeps its base, so the solid is
         // closed: a lone face, one with free sides drawn against a solid (a
