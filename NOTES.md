@@ -5501,7 +5501,7 @@ Release build, one drag frame:
 
 ## HANDOFF (2026-11-26, before a compact)
 
-- **Brief 56** (`docs/briefs/56-fillet-anywhere.md`) is the plan for Fillet / Chamfer anywhere, with research and the owner's answers. Decided: the notch weld stays in the model. **Waiting:** screenshots of the two end-cap options and of a drawn line across a round (stopping at it, or running on across it), made by hand in a render test; then the owner chooses. Then step 1 (the kernel-ready copy: slits, notches, non-flat openings) with the session-29 body as the test.
+- **Brief 56** (`docs/briefs/56-fillet-anywhere.md`) is the plan for Fillet / Chamfer anywhere, with research and the owner's answers. Decided: the notch weld stays in the model. **Decided 2026-11-27 from screenshots** (`crates/prism-render/tests/fillet_options.rs`): end caps keep the surface (the round's end lies in the face it meets), and a line across a round carries on across it as a seam; the fallback round must match both. Next: step 1 (the kernel-ready copy: slits, notches, non-flat openings) with the session-29 body as the test.
 - Session 29: why it fails is in brief 56 (a slit and a 0.24 mm notch in face 329).
 - Releases up to `fafe12f` are green (build 398). Later commits are docs only.
 

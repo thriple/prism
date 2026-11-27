@@ -236,6 +236,8 @@ Screenshots sent 2026-11-27, made by `crates/prism-render/tests/fillet_options.r
 
 Owner, 2026-11-27: **end caps: B is correct** (the round runs on into the face it meets, its end lying in that face). Tried on the owner's stepped block (a top edge and the slope's edge rounded together, the slope ending on a lower step): Prism's round already does it at 0.5 m and 0.3 m; the round's end is a curve in the step's top face, with no extra face, and the model checks clean (`a_stepped_block_rounded_down_its_slope`). So step 2's end cap becomes "keep surface" by default, and the flat cap is kept only for where the round's end cannot lie in the face it meets.
 
+Owner, 2026-11-27: **a line across a round: B too** (the line carries on across the round as a seam, as the kernel's round does today). So the fallback round (`round_through_lines`) must match it: a line it takes off and draws back is also drawn across the round's own face, as a curve on it. The stepped-block result was approved as shown.
+
 ## Questions for the owner (as asked)
 
 1. **The notch weld.** Keep it in the model (proposed: it is a defect, and moves the shape no more than 0.24 mm)? Or weld only on the copy, and leave the notch for Heal?
