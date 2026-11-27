@@ -1,3 +1,7 @@
+**Fixed: arcs and circles drawn inside a stretched group or component.** In a component scaled more along one direction than another (one mirrored at half width, say), an arc drawn on a face came up short of the point you clicked and was stored as many short straight pieces, with a message about an approximation. It is now an exact curve that ends where you clicked and divides the face (the owner's windshield bezel). Scaling an arc or circle unevenly also keeps it an exact curve now.
+
+**Fixed: Fillet / Chamfer on the inside corners of a windshield bezel.** A body that earlier edits had broken into many flat facets, with a few faults of its own, refused every fillet with "an edge of this solid is an approximation". Straight edges between flat faces on such a body now fillet and chamfer.
+
 **Fixed: cutting a rounded shape with a plane at a slight angle.** A cut (by a push, a boolean or a round) almost square to a curved face, a degree or so off, could leave the shape open, with faces missing beside the cut. It now closes.
 
 **Fixed: Fillet / Chamfer along the inside of a curved wall.** Where a floor meets a curved wall (a channel that turns a rounded corner), the floor's edge along the curve, and the straight edge it runs smoothly into, now round, alone or together (the owner's second corner test). Where the curve meets a straight wall at a slight angle instead of smoothly, the chain still does not round; that is next.
