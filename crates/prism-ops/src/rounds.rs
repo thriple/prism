@@ -1152,8 +1152,14 @@ fn round_any(
         Err(why) if why == TWO_SOLIDS => round_capped(model, edges, size, fillet)
             .or_else(|| round_apart(model, edges, size, fillet))
             .ok_or(why),
+        // The kernel would not take the solid (an edge somewhere stored as
+        // an approximation, or faces that do not close it): Prism's own
+        // round needs only the two faces at each edge.
         Err(why)
-            if why == prism_kernel::solid::TOO_LARGE || why == prism_kernel::solid::NOT_ROUNDED =>
+            if why == prism_kernel::solid::TOO_LARGE
+                || why == prism_kernel::solid::NOT_ROUNDED
+                || why == crate::bridge::APPROXIMATE
+                || why == prism_kernel::solid::NOT_CLOSED =>
         {
             round_apart(model, edges, size, fillet).ok_or(why)
         }
@@ -1325,6 +1331,9 @@ fn round_apart(
     }
     soften_tangent(&mut work, &before);
     if !crate::check::problems(&work).is_empty() {
+        return None;
+    }
+    if worse_health_round(model, &work) {
         return None;
     }
     let new = work
@@ -1835,6 +1844,22 @@ fn round_past_slits(
     let out = piece_of(&work, *seed).into_iter().collect();
     *model = work;
     Some(Ok(out))
+}
+
+/// [`worse_health`] for Prism's own round. On a body Model Health finds
+/// faults in already (edges of three faces, a face inside it), its tests of
+/// which way faces point and which lie inside can change their minds about
+/// faces an edit did not make wrong (owner's session 30: a faceted bezel
+/// with a face left inside it); there, only new edges of three faces and
+/// new leaks count.
+fn worse_health_round(before: &Model, after: &Model) -> bool {
+    let (a, b) = (crate::health::check(before), crate::health::check(after));
+    let faulty = !a.non_manifold.edges.is_empty() || !a.interior.faces.is_empty();
+    b.non_manifold.edges.len() > a.non_manifold.edges.len()
+        || b.leaky > a.leaky
+        || (!faulty
+            && (b.interior.faces.len() > a.interior.faces.len()
+                || b.reversed.faces.len() > a.reversed.faces.len()))
 }
 
 /// Whether `after` has faults Model Health finds that `before` did not:

@@ -348,3 +348,45 @@ fn the_second_corner_test_rounds_its_smooth_run() {
         }
     }
 }
+
+/// The owner's session 30: the inside corners of a windshield bezel (two
+/// straight edges between flat faces) were refused, "an edge of this solid
+/// is an approximation". The bezel had been faceted by earlier edits (its
+/// curved faces made fine flat faces, their edges marked approximate), has
+/// edges of three faces and a face left inside it, so the kernel will not
+/// take it. Prism's own round now takes the edges, and Model Health is
+/// asked only what it can still tell on such a body. Each inside fillet
+/// adds the corner less a quarter circle along its edge.
+#[test]
+fn session_30_bezel_corners_fillet() {
+    let mut r: Recording =
+        serde_json::from_str(include_str!("../data/owner-session-30.json")).expect("recording");
+    r.events.truncate(322);
+    let s = Session::replay(&r);
+    let m = s.work_model().clone();
+    let edges = s.selection().edges.clone();
+    assert_eq!(edges.len(), 2);
+    let length: f64 = edges
+        .iter()
+        .map(|e| {
+            let x = m.edge(*e).unwrap();
+            m.vertex(x.a).distance(m.vertex(x.b))
+        })
+        .sum();
+    let volume = |m: &prism_topo::Model| -> f64 {
+        m.faces()
+            .map(|(id, _)| prism_ops::health::face_volume(m, id))
+            .sum()
+    };
+    for r in [0.05, 0.02] {
+        let mut w = m.clone();
+        prism_ops::rounds::round_edges(&mut w, &edges, r, true)
+            .unwrap_or_else(|why| panic!("{r}: {why}"));
+        assert_eq!(prism_ops::check::problems(&w), Vec::<String>::new());
+        let (a, b) = (prism_ops::health::check(&m), prism_ops::health::check(&w));
+        assert_eq!(a.non_manifold.edges.len(), b.non_manifold.edges.len());
+        let want = (1.0 - std::f64::consts::PI / 4.0) * r * r * length;
+        let got = volume(&w) - volume(&m);
+        assert!((got - want).abs() < 0.02 * want, "{r}: {got} {want}");
+    }
+}
