@@ -150,3 +150,60 @@ fn end_caps_and_lines_across_a_round() {
     shoot(&mut g, &stops, "line-stops", &lcams);
     shoot(&mut g, &across, "line-across", &lcams);
 }
+
+/// The owner's stepped block (2026-11-27): the top front edge and the
+/// slope's front edge rounded together. The chain ends where the slope
+/// meets the lower step, which is where an end cap shows.
+#[test]
+#[ignore]
+fn a_stepped_block_rounded_down_its_slope() {
+    let Some(mut g) = Gpu::new() else {
+        eprintln!("no GPU");
+        return;
+    };
+    let pts = [
+        DVec3::new(0.0, 0.0, 0.0),
+        DVec3::new(7.0, 0.0, 0.0),
+        DVec3::new(7.0, 0.0, 1.2),
+        DVec3::new(4.5, 0.0, 1.2),
+        DVec3::new(3.0, 0.0, 3.0),
+        DVec3::new(0.0, 0.0, 3.0),
+    ];
+    let mut m = Model::new();
+    prism_ops::add_polygon(&mut m, &pts);
+    let f = prism_ops::face_at(&m, DVec3::new(1.0, 0.0, 1.0)).expect("side");
+    let n = m.face(f).unwrap().plane().unwrap().normal.y;
+    prism_ops::push_pull(&mut m, f, if n > 0.0 { 2.5 } else { -2.5 }, false);
+    let on = |p: DVec3, a: DVec3, b: DVec3| {
+        let t = (p - a).dot(b - a) / (b - a).length_squared();
+        (-1e-9..=1.0 + 1e-9).contains(&t) && (a + (b - a) * t).distance(p) < 1e-9
+    };
+    let chosen: BTreeSet<EdgeId> = m
+        .edges()
+        .filter(|(_, e)| {
+            [(pts[5], pts[4]), (pts[4], pts[3])]
+                .iter()
+                .any(|&(a, b)| on(m.vertex(e.a), a, b) && on(m.vertex(e.b), a, b))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(chosen.len(), 2);
+    for size in [0.5, 0.3] {
+        let mut r = m.clone();
+        match prism_ops::rounds::round_edges(&mut r, &chosen, size, true) {
+            Ok(_) => eprintln!("rounded at {size}"),
+            Err(why) => eprintln!("refused at {size}: {why}"),
+        }
+        let foot = DVec3::new(4.5, 0.3, 1.2);
+        shoot(
+            &mut g,
+            &r,
+            &format!("step-{size}"),
+            &[
+                ("front", look(DVec3::new(3.5, 1.2, 1.5), 10.0, -70.0, 22.0)),
+                ("foot", look(foot, 3.0, -55.0, 35.0)),
+                ("above", look(foot, 3.0, -100.0, 60.0)),
+            ],
+        );
+    }
+}
