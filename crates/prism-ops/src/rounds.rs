@@ -817,10 +817,24 @@ fn round_through_lines(
     if lines.is_empty() && joined == 0 {
         return None;
     }
+    let along: Vec<(DVec3, DVec3)> = edges
+        .iter()
+        .filter_map(|e| work.edge(*e))
+        .filter(|e| !e.curve.is_curved())
+        .map(|e| (work.vertex(e.a), work.vertex(e.b)))
+        .collect();
+    let old_faces: BTreeSet<FaceId> = work.faces().map(|(id, _)| id).collect();
     round_any(&mut work, &edges, size, fillet).ok()?;
     // The lines go back as far as they still lie on the solid: a round
     // that cut into the face one was on leaves its end in the air.
     draw_back(&mut work, &lines, false);
+    // One that met a rounded edge carries on across the round as a seam,
+    // as on the kernel's round (owner, 2026-11-27: "B for both").
+    let before_seams = work.clone();
+    carry_across(&mut work, &lines, &along, &old_faces);
+    if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
+        work = before_seams;
+    }
     if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
         return None;
     }
@@ -841,6 +855,77 @@ fn round_through_lines(
     };
     *model = work;
     Some(out)
+}
+
+/// For each of `lines` with an end on one of the straight edges `along`
+/// (not at its ends), the cross-section of the round made there, from one
+/// of its long edges to the other: an arc on a fillet's cylinder, a line
+/// on a chamfer. Only faces not in `old` (the round's own) are looked at.
+fn carry_across(
+    work: &mut Model,
+    lines: &[(DVec3, DVec3)],
+    along: &[(DVec3, DVec3)],
+    old: &BTreeSet<FaceId>,
+) {
+    let tol = work.tol();
+    let mut cuts: Vec<(DVec3, DVec3, Option<(DVec3, DVec3, f64)>)> = Vec::new();
+    for p in lines.iter().flat_map(|(a, b)| [*a, *b]) {
+        for (ea, eb) in along {
+            let d = *eb - *ea;
+            let len = d.length();
+            if len <= tol.dist {
+                continue;
+            }
+            let dir = d / len;
+            let t = (p - *ea).dot(dir);
+            if t <= tol.dist || t >= len - tol.dist || (*ea + dir * t).distance(p) > tol.dist {
+                continue;
+            }
+            for (id, f) in work.faces() {
+                if old.contains(&id) {
+                    continue;
+                }
+                let round = match &f.surface {
+                    prism_geom::Surface::Cylinder(c) if c.axis.dot(dir).abs() > 1.0 - 1e-9 => {
+                        Some(*c)
+                    }
+                    prism_geom::Surface::Plane(pl) if pl.normal.dot(dir).abs() < 1e-9 => None,
+                    _ => continue,
+                };
+                // Where the face's long edges (along the round) cross the
+                // plane square to it at p.
+                let ends: Vec<DVec3> = f
+                    .edge_ids()
+                    .filter_map(|e| work.edge(e))
+                    .filter(|e| !e.curve.is_curved())
+                    .filter_map(|e| {
+                        let (a, b) = (work.vertex(e.a), work.vertex(e.b));
+                        let s = b - a;
+                        if s.length() <= tol.dist || s.normalize().dot(dir).abs() < 1.0 - 1e-9 {
+                            return None;
+                        }
+                        let k = (p - a).dot(dir) / s.dot(dir);
+                        (k > 0.0 && k < 1.0).then(|| a + s * k)
+                    })
+                    .collect();
+                let [q1, q2] = ends[..] else { continue };
+                cuts.push((q1, q2, round.map(|c| (c.axis_point(q1), dir, c.radius))));
+            }
+        }
+    }
+    for (q1, q2, round) in cuts {
+        match round {
+            None => {
+                crate::add_segment(work, q1, q2);
+            }
+            Some((centre, dir, r)) => {
+                let (u, w) = (q1 - centre, q2 - centre);
+                let turn = dir.dot(u.cross(w)).atan2(u.dot(w));
+                let axis = if turn > 0.0 { dir } else { -dir };
+                crate::add_arc(work, centre, axis, r, q1, turn.abs());
+            }
+        }
+    }
 }
 
 /// Draw `lines` back on `work` after a round, as far as they still lie on

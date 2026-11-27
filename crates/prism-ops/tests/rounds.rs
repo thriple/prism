@@ -650,3 +650,42 @@ fn the_cove_and_bullnose_chain_rounds_where_it_meets_smoothly() {
         }
     }
 }
+
+/// Brief 56 step 2 (owner, 2026-11-27: "B for both"): a line drawn up to a
+/// rounded edge carries on across the round as a seam, on Prism's own
+/// round too (here a shallow edge, which the kernel will not round) as on
+/// the kernel's.
+#[test]
+fn a_line_to_the_edge_carries_on_across_prisms_own_round() {
+    for fillet in [true, false] {
+        let (mut m, e) = bevelled(12.0);
+        prism_ops::add_segment(&mut m, v(1.0, 2.0, 1.0), v(1.0, 1.0, 1.0));
+        let e = m
+            .edges()
+            .find(|(_, x)| {
+                let (a, b) = (m.vertex(x.a), m.vertex(x.b));
+                (a.y - 1.0).abs() < 1e-9
+                    && (b.y - 1.0).abs() < 1e-9
+                    && (a.z - 1.0).abs() < 1e-9
+                    && (b.z - 1.0).abs() < 1e-9
+                    && a.x.max(b.x) > 1.5
+            })
+            .map(|(id, _)| id)
+            .unwrap_or(e);
+        let mut run = prism_ops::rounds::straight_run(&m, e);
+        run.insert(e);
+        round_edges(&mut m, &run, 0.05, fillet).unwrap_or_else(|w| panic!("{fillet}: {w}"));
+        clean(&m);
+        // Across the round at x = 1: an edge lying in that plane, on the
+        // round's own face (not on the top or the bevel).
+        let across = m.edges().any(|(_, x)| {
+            let (a, b) = (m.vertex(x.a), m.vertex(x.b));
+            (a.x - 1.0).abs() < 1e-9
+                && (b.x - 1.0).abs() < 1e-9
+                && a.distance(b) > 0.001
+                && a.y.min(b.y) < 1.0
+                && a.z.min(b.z) < 1.0
+        });
+        assert!(across, "{fillet}: the line carries on across the round");
+    }
+}

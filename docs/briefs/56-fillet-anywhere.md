@@ -211,12 +211,12 @@ Parasolid names more cases: a smooth extension; a "cliff", where the round touch
 
 ## Order of work
 
-**Where it stands (2026-11-27): 6 steps; step 1 done, step 2 half done, steps 3 to 6 to go.**
+**Where it stands (2026-11-27): 6 steps; steps 1 and 2 done, steps 3 to 6 to go.**
 
 | Step | State | Tests waiting on it |
 |---|---|---|
 | 1. Kernel-ready copy | Done, released (openings not in one plane left) | — |
-| 2. End caps; fallback round like the kernel's | Caps done; fallback round left | — |
+| 2. End caps; fallback round like the kernel's | Done (2026-11-27): end caps; a line carried across Prism's own round as a seam; slanted ends already lie in the face they meet | — |
 | 3. Local round | To do | session 29's remaining refusals |
 | 4. Chains through bends and smooth joins, 3D chains | To do | corner test 2, SketchUp example (4a) |
 | 5. Corner patch | To do | corner test 1 (three inside rounds), the owner's cove-and-bullnose block (the top dropping into the cove at a point: two rounds meeting at a sharp corner; its smooth joins already round), apex with base edges |
