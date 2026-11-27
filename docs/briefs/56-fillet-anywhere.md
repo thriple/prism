@@ -211,6 +211,18 @@ Parasolid names more cases: a smooth extension; a "cliff", where the round touch
 
 ## Order of work
 
+**Where it stands (2026-11-27): 6 steps; step 1 done, step 2 half done, steps 3 to 6 to go.**
+
+| Step | State | Tests waiting on it |
+|---|---|---|
+| 1. Kernel-ready copy | Done, released (openings not in one plane left) | — |
+| 2. End caps; fallback round like the kernel's | Caps done; fallback round left | — |
+| 3. Local round | To do | session 29's remaining refusals |
+| 4. Chains through bends and smooth joins, 3D chains | To do | owner's cove-and-bullnose block, corner test 2, SketchUp example (4a) |
+| 5. Corner patch | To do | corner test 1 (three inside rounds), apex with base edges |
+| 6. Tool messages | As each lands | — |
+
+
 1. Step 1 (slits, notches, non-flat openings), with session 29 as the test. **This is what makes the owner's body work.**
    **Done 2026-11-27 for slits and notches** (`round_past_slits` in `rounds.rs`): the kernel now takes the session 29 body. Of its 192 edge rounds (fillet and chamfer at 0.093 m, lines on flat faces not counted), 81 work where 16 did (`session_29_rounds_past_its_slit_and_notch`). Of the other 111, about 36 work at a smaller size (the tool's "largest that fits" takes those); about 75 are rounds running into a wall or overhang beside them at a busier corner (edge 2: a top edge meeting a wall that rises past it), which is step 2. Non-flat openings are not done yet: session 29 has none, and no test case is at hand. **Also (2026-11-27, owner's corner test):** approximate cuts of a plane across a cylinder are made exact on the copy (`exact_cuts`); the corner test's curve and floor edges round alone, the floor edges together as a chamfer; all three together (three inside rounds at one corner) is step 5. **Owner's corner test 2 (2026-11-27):** a channel floor's edge along a wall, round a quarter arc, along another wall. The straight edges at the walls round alone; the arc, the edge it runs smoothly into, and the whole chain do not: the arc's centre is 1.6 cm off, so it meets the first wall at a 0.85 degree crease, and the kernel can neither end a round at a smooth join nor round across so slight a crease. A test case for step 4 (chains through smooth and near-smooth joins: on the copy, a crease under a degree or so could be made smooth, as the slit is taken off).
 2. Step 2 (end caps, and the fallback round brought in line with the kernel's, owner 2026-11-27):
