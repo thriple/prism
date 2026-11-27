@@ -8,7 +8,7 @@ use prism_ops::{check, health};
 use prism_topo::{FaceId, Model};
 
 fn lofted() -> (Model, FaceId) {
-    let m = Model::from_json(include_str!("data/lofted-back.json")).expect("the model");
+    let m = Model::from_json(include_str!("../data/lofted-back.json")).expect("the model");
     // The flat face facing -y (the back).
     let back = m
         .faces()

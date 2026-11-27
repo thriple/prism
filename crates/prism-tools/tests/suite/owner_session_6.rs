@@ -14,7 +14,7 @@
 #[test]
 fn the_recorded_pull_never_leaves_a_face_using_an_edge_off_its_surface() {
     let mut r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/owner-session-6-arc-extrude.json"))
+        serde_json::from_str(include_str!("../data/owner-session-6-arc-extrude.json"))
             .expect("recording");
     // Right after the push/pull's second click commits it (event 789), and
     // well before the owner's later undos take it back out.

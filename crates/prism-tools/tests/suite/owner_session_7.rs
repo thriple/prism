@@ -9,7 +9,7 @@
 
 fn replay_to(n: usize) -> prism_tools::Session {
     let mut r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/owner-session-7-wheel-wells.json"))
+        serde_json::from_str(include_str!("../data/owner-session-7-wheel-wells.json"))
             .expect("recording");
     r.events.truncate(n);
     prism_tools::Session::replay(&r)

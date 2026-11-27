@@ -6,7 +6,7 @@
 use prism_tools::{Recording, Session};
 
 fn recording() -> Recording {
-    serde_json::from_str(include_str!("data/owner-session-22-chamfer.json")).expect("recording")
+    serde_json::from_str(include_str!("../data/owner-session-22-chamfer.json")).expect("recording")
 }
 
 fn upto(n: usize) -> Session {
@@ -116,7 +116,7 @@ fn a_drag_too_far_shows_the_largest_round_and_says_why_at_the_cursor() {
 #[test]
 fn the_seven_edges_of_session_24_fillet_together() {
     let mut r: Recording =
-        serde_json::from_str(include_str!("data/owner-session-24.json")).expect("recording");
+        serde_json::from_str(include_str!("../data/owner-session-24.json")).expect("recording");
     r.events.truncate(1100);
     let s = Session::replay(&r);
     let edges = s.selection().edges.clone();
@@ -134,7 +134,7 @@ fn the_seven_edges_of_session_24_fillet_together() {
 /// ends). It does now, and the lines on the end faces stay.
 #[test]
 fn the_xby4_top_edge_fillets() {
-    let c = prism_file::read(include_bytes!("data/owner-xby4.prism")).expect("the file");
+    let c = prism_file::read(include_bytes!("../data/owner-xby4.prism")).expect("the file");
     let m = &c.assembly.root().model;
     let a = prism_ops::vertex_at(m, prism_math::DVec3::new(-0.5450, 1.2791, 2.5338));
     let e = m
@@ -179,8 +179,11 @@ fn the_xby4_top_edge_fillets() {
 /// 3 are for (a round running into a wall beside it).
 #[test]
 fn session_29_rounds_past_its_slit_and_notch() {
+    // Fillets that round at 0.093 m (2026-11-27: 46 of the 96 edges that
+    // are not lines on flat faces); it must not go down.
+    const DONE: usize = 46;
     let mut r: Recording =
-        serde_json::from_str(include_str!("data/owner-session-29-open-fillet.json"))
+        serde_json::from_str(include_str!("../data/owner-session-29-open-fillet.json"))
             .expect("recording");
     r.events.truncate(118);
     let s = Session::replay(&r);
@@ -216,7 +219,9 @@ fn session_29_rounds_past_its_slit_and_notch() {
         .map(|(id, _)| id)
         .collect();
     let (mut done, mut flat) = (0, 0);
-    for fillet in [true, false] {
+    // Fillets only: chamfers take the same paths and have their own tests
+    // (owner, 2026-11-27: the tests take too long).
+    for fillet in [true] {
         for e in &edges {
             let mut w = m.clone();
             let got = prism_ops::rounds::round_edges(&mut w, &[*e].into(), 0.093, fillet);
@@ -242,9 +247,9 @@ fn session_29_rounds_past_its_slit_and_notch() {
     }
     eprintln!(
         "{done} rounded, {flat} lines on flat faces, of {}",
-        edges.len() * 2
+        edges.len()
     );
-    assert!(done >= 93, "{done} of {} rounded", edges.len() * 2);
+    assert!(done >= DONE, "{done} of {} rounded", edges.len());
 }
 
 /// The owner's corner test (2026-11-27): a recess whose sloping back
@@ -257,7 +262,7 @@ fn session_29_rounds_past_its_slit_and_notch() {
 #[test]
 fn the_corner_test_edges_round() {
     use prism_topo::EdgeId;
-    let c = prism_file::read(include_bytes!("data/owner-corner-test.prism")).expect("the file");
+    let c = prism_file::read(include_bytes!("../data/owner-corner-test.prism")).expect("the file");
     let m = &c.assembly.root().model;
     let curve: std::collections::BTreeSet<EdgeId> = (171..=186).map(EdgeId).collect();
     // The edges, the kinds that round, and the faces each round adds.
@@ -299,7 +304,8 @@ fn the_corner_test_edges_round() {
 #[test]
 fn the_second_corner_test_straight_edges_round() {
     use prism_topo::EdgeId;
-    let c = prism_file::read(include_bytes!("data/owner-corner-test-2.prism")).expect("the file");
+    let c =
+        prism_file::read(include_bytes!("../data/owner-corner-test-2.prism")).expect("the file");
     let m = &c.assembly.root().model;
     for e in [54, 73] {
         for fillet in [true, false] {

@@ -5505,3 +5505,11 @@ Release build, one drag frame:
 - Session 29: why it fails is in brief 56 (a slit and a 0.24 mm notch in face 329).
 - Releases up to `fafe12f` are green (build 398). Later commits are docs only.
 
+
+## Test layout (2026-11-27, owner: "these tests are too long or too many")
+
+- Each crate's integration tests are one program: `crates/<crate>/tests/suite/main.rs` lists the files as modules (prism-ops, prism-doc, prism-tools, prism-file, prism-view, prism-infer). Before, each file was its own program: 110 programs, each linked against everything, so a change to `prism-ops` meant 25–40 minutes of building before any test ran. Now about 8.
+- Run one file's tests with a filter, e.g. `cargo test -p prism-tools --test suite fillet_session`. Data stays in `tests/data` (included as `../data/...`); proptest regressions sit beside each file in `suite/`.
+- prism-render keeps one program per file: its GPU tests must not share a process (Mesa crashed with several devices at once). prism-ui has one file.
+- The session-29 sweep tries fillets only (chamfers take the same paths and have their own tests): 46 of its 96 edges round, and must not go down.
+- Locally: run the tests of the crates touched and clippy; CI runs everything on every push.

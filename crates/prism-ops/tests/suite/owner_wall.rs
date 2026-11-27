@@ -15,7 +15,7 @@ use prism_ops::{boolean::is_solid, check, thicken};
 use prism_topo::{EdgeId, FaceId, Model, VertexId};
 
 fn wall() -> Model {
-    Model::from_json(include_str!("data/owner-17-wall.json")).expect("the model")
+    Model::from_json(include_str!("../data/owner-17-wall.json")).expect("the model")
 }
 
 #[test]

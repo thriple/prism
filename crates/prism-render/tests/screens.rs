@@ -2,7 +2,7 @@
 //! colours, not exact pixels, so they do not depend on the GPU.
 
 mod common;
-#[path = "../../prism-ops/tests/golden.rs"]
+#[path = "../../prism-ops/tests/suite/golden.rs"]
 #[allow(dead_code)]
 mod golden;
 

@@ -4,8 +4,7 @@
 
 use std::sync::Arc;
 
-#[path = "common/step.rs"]
-mod common;
+use crate::common;
 
 use prism_geom::{Curve, NurbsSurface, Patch, Spline, Surface};
 use prism_math::DVec3;

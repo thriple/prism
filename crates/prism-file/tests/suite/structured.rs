@@ -325,7 +325,7 @@ fn merged_export_is_the_same_as_before() {
     let now = prism_file::mesh::export_with(&m, None, &o, Some(&c.assembly));
     assert_eq!(
         now,
-        include_bytes!("data/merged-textured.glb"),
+        include_bytes!("../data/merged-textured.glb"),
         "byte for byte"
     );
 }

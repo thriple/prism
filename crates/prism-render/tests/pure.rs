@@ -1,7 +1,7 @@
 //! The viewport's pure parts: camera, picking, display triangulation and the
 //! Select tool's clicks (brief 04, "Tests").
 
-#[path = "../../prism-ops/tests/golden.rs"]
+#[path = "../../prism-ops/tests/suite/golden.rs"]
 #[allow(dead_code)]
 mod golden;
 

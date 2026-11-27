@@ -3,8 +3,7 @@
 //! volumes, in any unit, and assemblies keep their names, placements and
 //! colours.
 
-#[path = "common/step.rs"]
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::f64::consts::PI;

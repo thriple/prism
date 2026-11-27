@@ -9,7 +9,7 @@
 use prism_doc::DefId;
 
 fn model() -> prism_topo::Model {
-    let c = prism_file::read(include_bytes!("data/owner-cylinder-1.prism")).expect("the file");
+    let c = prism_file::read(include_bytes!("../data/owner-cylinder-1.prism")).expect("the file");
     c.assembly
         .def(DefId(1))
         .expect("the component")

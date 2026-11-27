@@ -6,7 +6,7 @@ use prism_math::DVec3;
 use prism_topo::Model;
 
 fn corner() -> Model {
-    let c = prism_file::read(include_bytes!("data/owner-corner-test.prism")).expect("the file");
+    let c = prism_file::read(include_bytes!("../data/owner-corner-test.prism")).expect("the file");
     c.assembly.root().model.clone()
 }
 

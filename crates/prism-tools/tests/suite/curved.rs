@@ -61,7 +61,7 @@ fn edits_of_a_cylinder_say_why_they_are_refused() {
 #[test]
 fn the_back_of_a_lofted_face_pulls_out_in_the_recorded_session() {
     let r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/pull-beside-loft.json")).expect("recording");
+        serde_json::from_str(include_str!("../data/pull-beside-loft.json")).expect("recording");
     let s = prism_tools::Session::replay(&r);
     let m = s.model();
     assert_eq!(m.face_count(), 21, "three pulls, each adding faces");
@@ -82,7 +82,7 @@ fn the_back_of_a_lofted_face_pulls_out_in_the_recorded_session() {
 #[test]
 fn patch_closes_the_lofts_end_in_the_recorded_session() {
     let r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/patch-closing-loft.json")).expect("recording");
+        serde_json::from_str(include_str!("../data/patch-closing-loft.json")).expect("recording");
     let before: std::collections::BTreeSet<_> = r.model.faces().map(|(id, _)| id).collect();
     let s = prism_tools::Session::replay(&r);
     let m = s.model();
@@ -123,7 +123,8 @@ fn patch_closes_the_lofts_end_in_the_recorded_session() {
 #[test]
 fn shell_is_made_at_the_first_click_of_the_recorded_session() {
     let mut r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+        serde_json::from_str(include_str!("../data/owner-session-17-shell.json"))
+            .expect("recording");
     // Step it as the app does (the recording predates jobs).
     r.jobs = true;
     let upto = |n: usize| {
@@ -177,7 +178,8 @@ fn shell_is_made_at_the_first_click_of_the_recorded_session() {
 #[ignore = "minutes: every piece of two face-by-face shells joined"]
 fn the_three_recorded_shell_clicks_made_to_the_end() {
     let r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+        serde_json::from_str(include_str!("../data/owner-session-17-shell.json"))
+            .expect("recording");
     let upto = |n: usize| {
         let mut r = r.clone();
         r.events.truncate(n);
@@ -201,7 +203,8 @@ fn the_three_recorded_shell_clicks_made_to_the_end() {
 #[test]
 fn a_thickness_drag_keeps_the_rim_pick_and_shows_what_is_made() {
     let r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/owner-session-17-shell.json")).expect("recording");
+        serde_json::from_str(include_str!("../data/owner-session-17-shell.json"))
+            .expect("recording");
     let mut r = r.clone();
     r.events.truncate(368);
     let s = prism_tools::Session::replay(&r);
@@ -245,7 +248,7 @@ fn a_thickness_drag_keeps_the_rim_pick_and_shows_what_is_made() {
 #[test]
 fn a_disc_copied_and_turned_on_itself_makes_slices() {
     let mut r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/owner-session-25-arc.json")).expect("recording");
+        serde_json::from_str(include_str!("../data/owner-session-25-arc.json")).expect("recording");
     r.events.truncate(562);
     let s = prism_tools::Session::replay(&r);
     let m = s.work_model();
@@ -276,7 +279,7 @@ fn a_disc_copied_and_turned_on_itself_makes_slices() {
 #[test]
 fn an_arc_crossed_by_another_after_an_explode_erases_piece_by_piece() {
     let mut r: prism_tools::Recording =
-        serde_json::from_str(include_str!("data/owner-session-27-explode.json"))
+        serde_json::from_str(include_str!("../data/owner-session-27-explode.json"))
             .expect("recording");
     let upto = |r: &prism_tools::Recording, n: usize| {
         let mut r = r.clone();
