@@ -416,7 +416,11 @@ fn session_30_arc_in_a_scaled_component_is_exact() {
         new.iter().any(|e| e.curve.is_spline() && !e.approx),
         "the arc is an exact curve"
     );
-    assert_eq!(mb.faces().count(), ma.faces().count() + 1, "it divides the face");
+    assert_eq!(
+        mb.faces().count(),
+        ma.faces().count() + 1,
+        "it divides the face"
+    );
     let approx = |m: &prism_topo::Model| m.edges().filter(|(_, e)| e.approx).count();
     assert!(approx(mb) <= approx(ma), "no new approximate edges");
 }

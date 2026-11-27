@@ -1,6 +1,6 @@
-//! The segment fallback (Exact Curves 6a, DECISIONS #32): an uneven scale
-//! of circles and curved solids gives fine approximate segments and flat
-//! facets, every point on the true ellipse or ellipsoid, the model check
+//! The fallback for an uneven scale (Exact Curves 6a, DECISIONS #32):
+//! circles and arcs become exact ellipses (rational curves); curved solids
+//! become flat facets, every point on the true ellipse or ellipsoid, the model check
 //! clean, and the volume within the chords' error.
 
 use std::collections::BTreeSet;
@@ -36,25 +36,28 @@ fn exact_left(m: &Model) -> (usize, usize) {
     (arcs, curved)
 }
 
+/// An arc or circle scaled unevenly is an exact ellipse, a rational curve
+/// (DECISIONS #38; owner's session 30), not segments: every point of it on
+/// the true ellipse.
 #[test]
-fn a_disc_scaled_unevenly_becomes_an_approximate_ellipse() {
+fn a_disc_scaled_unevenly_becomes_an_exact_ellipse() {
     let mut m = Model::new();
     prism_ops::add_circle(&mut m, DVec3::ZERO, DVec3::Z, 1.0);
     stretch(&mut m, DVec3::new(2.0, 1.0, 1.0));
     clean(&m);
-    assert_eq!(exact_left(&m), (0, 0));
-    assert!(m.edges().all(|(_, e)| e.approx));
-    // One curve: every segment shares a curve id.
-    let ids: BTreeSet<_> = m.edges().map(|(_, e)| e.curve_id).collect();
-    assert_eq!(ids.len(), 1);
-    for (_, p) in m.vertices() {
-        assert!(((p.x / 2.0).powi(2) + p.y * p.y - 1.0).abs() < 1e-12, "{p}");
+    assert!(m.edges().all(|(_, e)| !e.approx && e.curve.is_spline()));
+    for (_, e) in m.edges() {
+        let prism_geom::Curve::Spline(sp) = &e.curve else {
+            unreachable!()
+        };
+        for k in 0..=20 {
+            let t = sp.t0 + (sp.t1 - sp.t0) * k as f64 / 20.0;
+            let p = sp.point(t);
+            assert!(((p.x / 2.0).powi(2) + p.y * p.y - 1.0).abs() < 1e-9, "{p}");
+        }
     }
-    let area: f64 = m
-        .faces()
-        .map(|(_, f)| prism_math::newell(&m.loop_points(f, 0)).length() / 2.0)
-        .sum();
-    assert!((area - 2.0 * PI).abs() < 2e-3 * 2.0 * PI, "{area}");
+    let area: f64 = m.faces().map(|(id, _)| m.face_area(id)).sum();
+    assert!((area - 2.0 * PI).abs() < 1e-3 * 2.0 * PI, "{area}");
 }
 
 #[test]

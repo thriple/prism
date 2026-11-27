@@ -2157,6 +2157,29 @@ fn context_of(c: &Command) -> Vec<InstanceId> {
     }
 }
 
+/// The arc about `centre` and `normal` from `start`, `sweep` round, sent
+/// through `m`, as an exact rational curve, if `m` does not scale evenly
+/// across the arc's plane (where it would stay a circle). None when it
+/// stays a circle or the curve cannot be made.
+fn ellipse_in(
+    m: &DAffine3,
+    centre: DVec3,
+    normal: DVec3,
+    start: DVec3,
+    sweep: f64,
+) -> Option<prism_geom::Nurbs> {
+    let fr = Plane::new(centre, normal).frame();
+    let (mu, mv) = (m.transform_vector3(fr.u), m.transform_vector3(fr.v));
+    let (lu, lv) = (mu.length(), mv.length());
+    let k = lu.max(lv);
+    let even = k > 0.0 && (lu - lv).abs() <= 1e-12 * k && mu.dot(mv).abs() <= 1e-12 * k * k;
+    if even {
+        return None;
+    }
+    let arc = prism_geom::Nurbs::arc(centre, normal, start, sweep)?;
+    Some(arc.transformed(m))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2256,27 +2279,4 @@ mod tests {
         let back: Document = serde_json::from_str(&text).expect("loads");
         assert_eq!(back, d);
     }
-}
-
-/// The arc about `centre` and `normal` from `start`, `sweep` round, sent
-/// through `m`, as an exact rational curve, if `m` does not scale evenly
-/// across the arc's plane (where it would stay a circle). None when it
-/// stays a circle or the curve cannot be made.
-fn ellipse_in(
-    m: &DAffine3,
-    centre: DVec3,
-    normal: DVec3,
-    start: DVec3,
-    sweep: f64,
-) -> Option<prism_geom::Nurbs> {
-    let fr = Plane::new(centre, normal).frame();
-    let (mu, mv) = (m.transform_vector3(fr.u), m.transform_vector3(fr.v));
-    let (lu, lv) = (mu.length(), mv.length());
-    let k = lu.max(lv);
-    let even = k > 0.0 && (lu - lv).abs() <= 1e-12 * k && mu.dot(mv).abs() <= 1e-12 * k * k;
-    if even {
-        return None;
-    }
-    let arc = prism_geom::Nurbs::arc(centre, normal, start, sweep)?;
-    Some(arc.transformed(m))
 }
