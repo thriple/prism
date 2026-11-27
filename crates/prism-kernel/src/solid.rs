@@ -31,30 +31,30 @@ use prism_math::{DAffine3, DVec3, Plane};
 use crate::{back, point};
 
 /// Said when the faces given do not close a solid.
-pub const NOT_CLOSED: &str = "Refused: these faces do not close a solid.";
+pub const NOT_CLOSED: &str = "These faces do not close up into a solid shape.";
 /// Said when the kernel's checker finds a fault in the solid.
 pub const FAULTY: &str =
-    "Refused: the kernel found a fault in this solid (faces crossing, or pointing inward).";
+    "This shape has a fault: faces cross each other, or face inward. Model Health shows where.";
 /// Said for a face the bridge cannot send yet.
-pub const SURFACE_NOT_YET: &str = "Refused: a face's surface cannot go to the kernel.";
+pub const SURFACE_NOT_YET: &str = "One of this shape's curved faces cannot be rounded yet.";
 /// Said for an edge the bridge cannot send.
-pub const CURVE_NOT_YET: &str = "Refused: an edge of this solid cannot go to the kernel.";
+pub const CURVE_NOT_YET: &str = "One of this shape's curved edges cannot be rounded yet.";
 /// Said for an edge that does not lie on a face it bounds.
-pub const OFF_FACE: &str = "Refused: an edge does not lie on the face it bounds.";
+pub const OFF_FACE: &str = "An edge does not lie on the face beside it. Model Health can find it.";
 /// Said when the kernel gives back something Prism cannot store yet.
-pub const CANNOT_STORE: &str = "Refused: the kernel made a shape Prism cannot store yet.";
+pub const CANNOT_STORE: &str = "The round came out as a shape Prism cannot keep yet.";
 
 /// Said when a round is too large for a face beside an edge or for a
 /// neighbouring round.
-pub const TOO_LARGE: &str =
-    "Refused: the size is too large for a face beside an edge, or for a round next to it.";
+pub const TOO_LARGE: &str = "That size is too big: a face beside the edge is too narrow, or the round runs into a round next to it.";
 /// Said when the kernel has no rounding for the faces at an edge.
 pub const NO_BLEND: &str =
-    "Refused: edges can be rounded only between flat, cylindrical and conical faces so far.";
+    "Edges can be rounded only between flat, cylindrical and cone-shaped faces so far.";
 /// Said when the kernel cannot round the edges for another reason.
-pub const NOT_ROUNDED: &str = "Refused: the kernel could not round these edges.";
+pub const NOT_ROUNDED: &str =
+    "These edges cannot be rounded here. A smaller size, or fewer edges at once, may work.";
 /// Said when an edge to round is not an edge of the solid.
-pub const NOT_IN_SOLID: &str = "Refused: an edge to round is not an edge of this solid.";
+pub const NOT_IN_SOLID: &str = "One of these edges is not part of this shape.";
 
 /// A corner of a region, with Prism's id when it has one.
 #[derive(Clone, Debug, PartialEq)]

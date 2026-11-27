@@ -578,6 +578,9 @@ pub struct Session {
     round_at: Option<DVec2>,
     round_shown: Option<(round::Target, bool, Option<f64>)>,
     round_refused: Option<&'static str>,
+    /// The round message is a warning (built as far as it goes), not a
+    /// refusal.
+    round_warning: bool,
     /// A size past what the edges take (DECISIONS #45, kind 2): the size
     /// asked and the largest that works, which the preview shows and Enter
     /// makes, and why the size asked could not be.
@@ -899,6 +902,7 @@ impl Session {
             round_at: None,
             round_shown: None,
             round_refused: None,
+            round_warning: false,
             round_clamped: None,
             round_limit: std::cell::RefCell::new(None),
             round_pending: Selection::default(),

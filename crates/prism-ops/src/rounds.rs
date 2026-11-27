@@ -16,20 +16,19 @@ use crate::bridge::{put_back, region, solid_of};
 pub use prism_kernel::solid::{NOT_ROUNDED, TOO_LARGE};
 
 /// Said when there is nothing to round.
-pub const NOTHING: &str = "Refused: pick the edges of a solid to round.";
+pub const NOTHING: &str = "Pick the edges you want to round.";
 /// Said for a size that is not more than zero.
-pub const NO_SIZE: &str = "Refused: the size must be more than zero.";
+pub const NO_SIZE: &str = "The size must be more than zero.";
 /// Said when the edges are not all on one closed solid.
-pub const TWO_SOLIDS: &str = "Refused: the edges are not all on one closed solid.";
+pub const TWO_SOLIDS: &str = "These edges are not all on the same closed shape.";
 /// Said for an edge without a face on each side.
-pub const ONE_FACE: &str = "Refused: an edge needs one face on each side to round.";
+pub const ONE_FACE: &str = "This edge has a face on one side only, so there is no corner to round.";
 /// Said when edges that are not on a closed solid cannot be rounded by
 /// Prism's own round either.
-pub const OPEN: &str = "Refused: off a closed solid, only straight edges between flat faces round so far, and not two that meet.";
+pub const OPEN: &str = "This shape is not closed. On an open shape, only straight edges between flat faces can be rounded so far, and not two that meet.";
 /// Said for a line between two faces of one plane: drawn on a flat face,
 /// with no corner to round.
-pub const FLAT_LINE: &str =
-    "Refused: this line is drawn on a flat face, so there is no corner to round.";
+pub const FLAT_LINE: &str = "This line is drawn on a flat face, so there is no corner to round.";
 
 /// Round `edges` (all of one closed solid) by `size`: fillets, or chamfers
 /// when `fillet` is false. Returns the solid's faces afterwards. A refusal

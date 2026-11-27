@@ -17,7 +17,7 @@ pub const NOT_AN_EDGE: &str = "Only a straight edge between two flat faces at an
 pub const TOO_WIDE: &str = "The faces beside this edge are too narrow for that size.";
 /// Said when a fillet's end would be an ellipse.
 pub const SLANTED_END: &str =
-    "A fillet needs the faces at the edge's ends square to it (a slanted end would be an ellipse).";
+    "A fillet here needs the faces at each end of the edge to be square to it.";
 
 /// One end of the edge: its corner, the cut points on each face's other
 /// edge there, and the face across the end (if any).

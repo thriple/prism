@@ -32,7 +32,7 @@ pub type BeforeCache = RefCell<Option<(u64, DefId, usize, prism_topo::Model)>>;
 
 /// Said at the cursor while the handle is dragged to a size the round
 /// cannot be made at.
-const CANNOT_SIZE: &str = "Refused: the round cannot be made this size here (too large for a face beside it, or for a round next to it).";
+const CANNOT_SIZE: &str = "The round cannot be this size here: a face beside it is too narrow, or it runs into a round next to it.";
 
 /// A drag of the size handle in progress.
 #[derive(Clone, Debug)]
@@ -235,7 +235,10 @@ impl Session {
                     }
                     // The handle stays at the last size that worked, and
                     // says why at the cursor.
-                    None => self.round_refused = Some(CANNOT_SIZE),
+                    None => {
+                        self.round_refused = Some(CANNOT_SIZE);
+                        self.round_warning = false;
+                    }
                 }
             }
         }

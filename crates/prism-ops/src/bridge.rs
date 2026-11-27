@@ -18,8 +18,7 @@ use prism_math::DVec3;
 use prism_topo::{EdgeId, Face, FaceId, Model, VertexId};
 
 /// Said for an edge Prism only approximates (DECISIONS #32).
-pub const APPROXIMATE: &str =
-    "Refused: an edge of this solid is an approximation, which the kernel cannot take.";
+pub const APPROXIMATE: &str = "Part of this shape is made of short straight pieces standing in for a curve, so these edges cannot be rounded together.";
 
 /// The faces of the closed solid `seed` is a face of: the faces reached
 /// from it across its edges. Where more than two faces meet at an edge (a

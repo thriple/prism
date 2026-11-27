@@ -58,8 +58,11 @@ pub struct RoundPanel {
     pub fits: Option<String>,
     /// Whether a new size or kind changes the last round.
     pub changes_last: bool,
-    /// Why the hovered edge cannot be rounded, if it cannot.
+    /// Why the hovered edge cannot be rounded, if it cannot (or, with
+    /// `warning`, what was made instead).
     pub refused: Option<&'static str>,
+    /// `refused` is a warning: the round was built as far as it goes.
+    pub warning: bool,
     pub how: &'static str,
 }
 
@@ -251,6 +254,7 @@ impl Session {
             Some(Ok((why, m))) => ((!why.is_empty()).then_some(why), Some(m)),
             Some(Err(why)) if dragging && self.preview.is_some() => {
                 self.round_refused = Some(why);
+                self.round_warning = false;
                 self.overlay_dirty = true;
                 return;
             }
@@ -280,6 +284,7 @@ impl Session {
             }
             _ => prism_ops::Selection::default(),
         };
+        self.round_warning = why.is_some() && preview.is_some();
         self.round_refused = why;
         self.set_preview(preview);
         self.overlay_dirty = true;
@@ -852,6 +857,7 @@ impl Session {
                 .map(|r| self.number.show(r)),
             changes_last: self.round_last.is_some(),
             refused: self.round_refused,
+            warning: self.round_warning,
             how: self.round_how(),
         })
     }

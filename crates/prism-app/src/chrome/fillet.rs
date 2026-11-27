@@ -67,11 +67,7 @@ pub(super) fn card(ui: &mut Ui, p: &mut Panels, data: &PanelData, ops: &mut Vec<
             ui.add_space(size::MENU_PAD);
             if let Some(why) = r.refused {
                 // Built as far as it goes (DECISIONS #45): a warning.
-                let c = if why.starts_with("Refused") {
-                    color::INK
-                } else {
-                    color::WARN
-                };
+                let c = if r.warning { color::WARN } else { color::INK };
                 ui.label(RichText::new(why).color(c));
             }
             if r.changes_last {
