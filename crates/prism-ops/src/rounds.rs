@@ -50,9 +50,28 @@ pub fn round_edges(
     if edges.iter().any(|e| drawn_on_flat(model, *e)) {
         return Err(FLAT_LINE);
     }
-    if let Some(done) = round_past_slits(model, edges, size, fillet) {
-        return Ok(done);
+    // On a copy the kernel can take, first; if that cannot be rounded, as
+    // the solid is, and the copy's reason if the solid's is only that the
+    // kernel could not take it.
+    let prepared = match round_past_slits(model, edges, size, fillet) {
+        Some(Ok(done)) => return Ok(done),
+        Some(Err(why)) => Some(why),
+        None => None,
+    };
+    let as_is = round_as_is(model, edges, size, fillet);
+    match (as_is, prepared) {
+        (Err(why), Some(better)) if why == crate::bridge::APPROXIMATE || why == OPEN => Err(better),
+        (r, _) => r,
     }
+}
+
+/// [`round_edges`] on the solid as it is.
+fn round_as_is(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Result<Vec<FaceId>, &'static str> {
     match round_once(model, edges, size, fillet) {
         Err(why) if why == prism_kernel::solid::NOT_ROUNDED || why == OPEN => {
             round_in_turn(model, edges, size, fillet)
@@ -105,7 +124,16 @@ fn round_in_turn(
         orders.push(vec![inside.clone(), outside.clone()]);
         orders.push(vec![outside, inside]);
     }
-    orders.push(edges.iter().map(|e| BTreeSet::from([*e])).collect());
+    // One at a time: in every order when there are few (an inside corner
+    // where three rounds meet can close in one order and not another).
+    let one: Vec<EdgeId> = edges.iter().copied().collect();
+    if one.len() <= 4 {
+        for p in orderings(&one) {
+            orders.push(p.into_iter().map(|e| BTreeSet::from([e])).collect());
+        }
+    } else {
+        orders.push(one.iter().map(|e| BTreeSet::from([*e])).collect());
+    }
     for groups in orders {
         let mut work = model.clone();
         let mut last = None;
@@ -130,6 +158,23 @@ fn round_in_turn(
         }
     }
     None
+}
+
+/// Every order of `items`.
+fn orderings<T: Copy>(items: &[T]) -> Vec<Vec<T>> {
+    if items.len() <= 1 {
+        return vec![items.to_vec()];
+    }
+    let mut out = Vec::new();
+    for i in 0..items.len() {
+        let mut rest = items.to_vec();
+        let first = rest.remove(i);
+        for mut tail in orderings(&rest) {
+            tail.insert(0, first);
+            out.push(tail);
+        }
+    }
+    out
 }
 
 /// Where rounded edges meet at a corner of four or more edges that the
@@ -726,19 +771,172 @@ fn weld_notches(model: &mut Model) {
     }
 }
 
+/// Runs of approximate straight pieces where a plane cuts a cylinder (the
+/// owner's corner test: a sloping wall across a curved one, 16 pieces),
+/// each made one exact edge: the cut is an ellipse, stored exactly as a
+/// rational curve (DECISIONS #38), so the kernel can take the solid. Each
+/// piece's points must lie on that ellipse. Returns how many runs.
+pub fn exact_cuts(model: &mut Model) -> usize {
+    let tol = model.tol();
+    let edge_faces = model.edge_faces();
+    let pair = |e: EdgeId| -> Option<[FaceId; 2]> {
+        let fs = edge_faces.get(&e)?;
+        let mut fs: [FaceId; 2] = fs[..].try_into().ok()?;
+        fs.sort();
+        Some(fs)
+    };
+    let approx: BTreeSet<EdgeId> = model
+        .edges()
+        .filter(|(id, e)| e.approx && !e.curve.is_curved() && pair(*id).is_some())
+        .map(|(id, _)| id)
+        .collect();
+    let degree = |v: VertexId| model.edges().filter(|(_, e)| e.has(v)).count();
+    let mut seen: BTreeSet<EdgeId> = BTreeSet::new();
+    let mut runs: Vec<(Vec<VertexId>, Vec<EdgeId>, [FaceId; 2])> = Vec::new();
+    for &e in &approx {
+        if seen.contains(&e) {
+            continue;
+        }
+        let fs = pair(e).expect("checked");
+        // Walk both ways along pieces between the same two faces, through
+        // points no other edge meets.
+        let x = model.edge(e).expect("an edge");
+        let mut verts = std::collections::VecDeque::from([x.a, x.b]);
+        let mut run = std::collections::VecDeque::from([e]);
+        seen.insert(e);
+        for forward in [true, false] {
+            loop {
+                let end = if forward {
+                    *verts.back().expect("")
+                } else {
+                    verts[0]
+                };
+                if degree(end) != 2 {
+                    break;
+                }
+                let Some((next, y)) = model.edges().find(|(id, y)| {
+                    y.has(end) && approx.contains(id) && !seen.contains(id) && pair(*id) == Some(fs)
+                }) else {
+                    break;
+                };
+                seen.insert(next);
+                let other = y.other(end);
+                if forward {
+                    verts.push_back(other);
+                    run.push_back(next);
+                } else {
+                    verts.push_front(other);
+                    run.push_front(next);
+                }
+            }
+        }
+        runs.push((verts.into(), run.into(), fs));
+    }
+    let mut done = 0;
+    for (verts, run, fs) in runs {
+        let (Some(f), Some(g)) = (model.face(fs[0]), model.face(fs[1])) else {
+            continue;
+        };
+        let (cyl, plane) = match (&f.surface, &g.surface) {
+            (prism_geom::Surface::Cylinder(c), prism_geom::Surface::Plane(p))
+            | (prism_geom::Surface::Plane(p), prism_geom::Surface::Cylinder(c)) => (c.clone(), *p),
+            _ => continue,
+        };
+        let (u, n) = (cyl.axis, plane.normal);
+        let un = u.dot(n);
+        if un.abs() < 1e-6 {
+            continue;
+        }
+        // The axis meets the plane at the ellipse's centre; the circle of
+        // the cylinder there, slid along the axis onto the plane, is it.
+        let c = cyl.origin + u * ((plane.origin - cyl.origin).dot(n) / un);
+        let on_circle = |p: DVec3| p - u * (p - c).dot(u);
+        let pts: Vec<DVec3> = verts.iter().map(|v| model.vertex(*v)).collect();
+        let (qa, qb) = (on_circle(pts[0]), on_circle(pts[pts.len() - 1]));
+        let angle = |q: DVec3, axis: DVec3| {
+            let (a, b) = (qa - c, q - c);
+            let t = axis.dot(a.cross(b)).atan2(a.dot(b));
+            if t < 0.0 {
+                t + std::f64::consts::TAU
+            } else {
+                t
+            }
+        };
+        let mid = on_circle(pts[pts.len() / 2]);
+        // Turn the way that passes the run's middle.
+        let axis = if angle(mid, u) < angle(qb, u) { u } else { -u };
+        let sweep = angle(qb, axis);
+        let Some(arc) = prism_geom::Nurbs::arc(c, axis, qa, sweep) else {
+            continue;
+        };
+        // Slide along the axis onto the plane: an affine map, which a
+        // rational curve follows exactly.
+        let lin = prism_math::DMat3::from_cols(
+            prism_math::DVec3::X - u * (n.x / un),
+            prism_math::DVec3::Y - u * (n.y / un),
+            prism_math::DVec3::Z - u * (n.z / un),
+        );
+        let slide =
+            prism_math::DAffine3::from_mat3_translation(lin, u * (plane.origin.dot(n) / un));
+        let ellipse = arc.transformed(&slide);
+        let (t0, t1) = ellipse.domain();
+        let near = |p: DVec3| {
+            let t = ellipse.closest(p, t0, t1);
+            ellipse.eval(t).distance(p) <= tol.dist
+        };
+        if !tol.same_point(ellipse.eval(t0), pts[0])
+            || !tol.same_point(ellipse.eval(t1), pts[pts.len() - 1])
+            || !pts.iter().all(|p| near(*p))
+        {
+            continue;
+        }
+        let (a, b) = (verts[0], verts[verts.len() - 1]);
+        let soft = model.edge(run[0]).map(|x| (x.soft, x.smooth));
+        for e in &run {
+            model.remove_edge(*e);
+        }
+        let curve = prism_geom::Curve::Spline(prism_geom::Spline::whole(ellipse));
+        let Some(new) = model.add_curve_edge(a, b, curve, None) else {
+            continue;
+        };
+        if let Some((s, m)) = soft {
+            model.set_soft(new, s, m);
+        }
+        let inner: BTreeSet<VertexId> = verts[1..verts.len() - 1].iter().copied().collect();
+        for face in fs {
+            model.edit_face(face, |x| {
+                x.outer.retain(|v| !inner.contains(v));
+                for h in &mut x.holes {
+                    h.retain(|v| !inner.contains(v));
+                }
+            });
+        }
+        for v in inner {
+            model.remove_vertex(v);
+        }
+        done += 1;
+    }
+    done
+}
+
 /// Brief 56 step 1: where the solid has slits or notches (owner's session
 /// 29: a line 0.37 m long drawn into an end face, and a notch 0.24 mm
-/// long), the kernel cannot take it. The slits are taken off a copy and
-/// the notches welded, the edges rounded, and the slits drawn back as far
-/// as they still lie on a face.
+/// long), or approximate edges (owner's corner test: a plane's cut across
+/// a cylinder in 16 pieces), the kernel cannot take it. The slits are taken
+/// off a copy, the notches welded and the approximate cuts made exact
+/// ([`exact_cuts`]), the edges rounded, and the slits drawn back as far as
+/// they still lie on a face.
 fn round_past_slits(
     model: &mut Model,
     edges: &BTreeSet<EdgeId>,
     size: f64,
     fillet: bool,
-) -> Option<Vec<FaceId>> {
+) -> Option<Result<Vec<FaceId>, &'static str>> {
     let cut = slits(model, edges);
-    if edges.iter().any(|e| cut.contains(e)) || (cut.is_empty() && notches(model).is_empty()) {
+    let approx = model.edges().any(|(_, e)| e.approx);
+    if edges.iter().any(|e| cut.contains(e))
+        || (cut.is_empty() && notches(model).is_empty() && !approx)
+    {
         return None;
     }
     let lines: Vec<(DVec3, DVec3)> = cut
@@ -747,6 +945,7 @@ fn round_past_slits(
         .map(|e| (model.vertex(e.a), model.vertex(e.b)))
         .collect();
     let mut work = model.clone();
+    let mut changed = !cut.is_empty() || !notches(model).is_empty();
     crate::remove(
         &mut work,
         &crate::Selection {
@@ -758,12 +957,32 @@ fn round_past_slits(
         return None;
     }
     weld_notches(&mut work);
+    // Approximate cuts made exact; rounded pieces of one follow it.
+    let before: BTreeSet<EdgeId> = work.edges().map(|(id, _)| id).collect();
     let mut edges = edges.clone();
+    if approx && exact_cuts(&mut work) > 0 {
+        changed = true;
+        let gone = edges.iter().any(|e| work.edge(*e).is_none());
+        edges.retain(|e| work.edge(*e).is_some());
+        if gone {
+            let ef = work.edge_faces();
+            edges.extend(
+                work.edges()
+                    .map(|(id, _)| id)
+                    .filter(|id| !before.contains(id))
+                    .filter(|id| ef.get(id).is_some_and(|f| f.len() == 2)),
+            );
+        }
+    }
     edges.retain(|e| work.edge(*e).is_some());
-    if edges.is_empty() {
+    if !changed || edges.is_empty() {
         return None;
     }
-    let faces = round_edges(&mut work, &edges, size, fillet).ok()?;
+    let got = round_edges(&mut work, &edges, size, fillet);
+    let faces = match got {
+        Ok(f) => f,
+        Err(why) => return Some(Err(why)),
+    };
     draw_back(&mut work, &lines, true);
     if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
         return None;
@@ -771,7 +990,7 @@ fn round_past_slits(
     let seed = faces.iter().find(|f| work.face(**f).is_some())?;
     let out = piece_of(&work, *seed).into_iter().collect();
     *model = work;
-    Some(out)
+    Some(Ok(out))
 }
 
 /// Whether `after` has faults Model Health finds that `before` did not:

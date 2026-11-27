@@ -225,38 +225,42 @@ fn session_29_rounds_past_its_slit_and_notch() {
     assert!(done >= 81, "{done} of {} rounded", edges.len() * 2);
 }
 
+/// The owner's corner test (2026-11-27): a recess whose sloping back
+/// wall cuts its curved wall along a curve Prism had stored as 16
+/// approximate pieces, so the kernel took no edge of the solid. The cut is
+/// now made exact on the copy the round works on: each blue edge rounds
+/// alone (the curve, and either floor edge), and the two floor edges
+/// together as a chamfer. All three together, where three inside rounds
+/// meet, is the corner step (brief 56 step 5).
 #[test]
-#[ignore]
-fn zz_corner_look() {
+fn the_corner_test_edges_round() {
     use prism_topo::EdgeId;
     let c = prism_file::read(include_bytes!("data/owner-corner-test.prism")).expect("the file");
     let m = &c.assembly.root().model;
-    let curve: Vec<EdgeId> = (171..=186).map(EdgeId).collect();
-    let sets: Vec<(&str, std::collections::BTreeSet<EdgeId>)> = vec![
-        (
-            "all three",
-            [53, 54]
-                .map(EdgeId)
-                .into_iter()
-                .chain(curve.clone())
-                .collect(),
-        ),
-        ("floor two", [53, 54].map(EdgeId).into()),
-        ("curve", curve.iter().copied().collect()),
-        ("edge 53", [EdgeId(53)].into()),
-        ("edge 54", [EdgeId(54)].into()),
+    let curve: std::collections::BTreeSet<EdgeId> = (171..=186).map(EdgeId).collect();
+    // The edges, the kinds that round, and the faces each round adds.
+    let cases: [(&str, std::collections::BTreeSet<EdgeId>, &[bool], usize); 4] = [
+        ("curve", curve, &[true, false], 1),
+        ("edge 53", [EdgeId(53)].into(), &[true, false], 1),
+        ("edge 54", [EdgeId(54)].into(), &[true, false], 1),
+        ("floor two", [EdgeId(53), EdgeId(54)].into(), &[false], 2),
     ];
-    for (name, set) in &sets {
-        for fillet in [true, false] {
-            for r in [0.2, 0.1, 0.05] {
-                let mut w = m.clone();
-                let got = prism_ops::rounds::round_edges(&mut w, set, r, fillet);
-                eprintln!(
-                    "{name} fillet {fillet} {r}: {:?} problems {:?}",
-                    got.map(|f| f.len()),
-                    prism_ops::check::problems(&w)
-                );
-            }
+    for (name, set, kinds, added) in &cases {
+        for &fillet in *kinds {
+            let mut w = m.clone();
+            prism_ops::rounds::round_edges(&mut w, set, 0.15, fillet)
+                .unwrap_or_else(|why| panic!("{name} {fillet}: {why}"));
+            assert_eq!(
+                prism_ops::check::problems(&w),
+                Vec::<String>::new(),
+                "{name}"
+            );
+            let h = prism_ops::health::check(&w);
+            assert!(
+                h.reversed.is_empty() && h.leaky == 0,
+                "{name} {fillet}: {h:?}"
+            );
+            assert_eq!(w.faces().count(), m.faces().count() + added, "{name}");
         }
     }
 }

@@ -207,3 +207,32 @@ fn a_stepped_block_rounded_down_its_slope() {
         );
     }
 }
+
+/// The owner's corner test (2026-11-27): the curve where a sloping wall
+/// cuts a curved one, and the floor's edges, rounded.
+#[test]
+#[ignore]
+fn the_owners_corner_test() {
+    let Some(mut g) = Gpu::new() else {
+        eprintln!("no GPU");
+        return;
+    };
+    let c = prism_file::read(include_bytes!(
+        "../../prism-tools/tests/data/owner-corner-test.prism"
+    ))
+    .expect("the file");
+    let m = c.assembly.root().model.clone();
+    let curve: BTreeSet<EdgeId> = (171..=186).map(EdgeId).collect();
+    let floor: BTreeSet<EdgeId> = [EdgeId(53), EdgeId(54)].into();
+    let cam = look(DVec3::new(6.4, 1.0, 1.0), 6.0, -60.0, 35.0);
+    shoot(&mut g, &m, "corner-before", &[("view", cam)]);
+    for (name, set, fillet) in [
+        ("corner-curve-fillet", &curve, true),
+        ("corner-floor-chamfer", &floor, false),
+    ] {
+        let mut w = m.clone();
+        let got = prism_ops::rounds::round_edges(&mut w, set, 0.15, fillet);
+        eprintln!("{name}: {:?}", got.map(|f| f.len()));
+        shoot(&mut g, &w, name, &[("view", cam)]);
+    }
+}
