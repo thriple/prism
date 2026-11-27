@@ -218,8 +218,8 @@ Parasolid names more cases: a smooth extension; a "cliff", where the round touch
 | 1. Kernel-ready copy | Done, released (openings not in one plane left) | — |
 | 2. End caps; fallback round like the kernel's | Caps done; fallback round left | — |
 | 3. Local round | To do | session 29's remaining refusals |
-| 4. Chains through bends and smooth joins, 3D chains | To do | owner's cove-and-bullnose block, corner test 2, SketchUp example (4a) |
-| 5. Corner patch | To do | corner test 1 (three inside rounds), apex with base edges |
+| 4. Chains through bends and smooth joins, 3D chains | To do | corner test 2, SketchUp example (4a) |
+| 5. Corner patch | To do | corner test 1 (three inside rounds), the owner's cove-and-bullnose block (the top dropping into the cove at a point: two rounds meeting at a sharp corner; its smooth joins already round), apex with base edges |
 | 6. Tool messages | As each lands | — |
 
 

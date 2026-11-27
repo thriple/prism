@@ -535,12 +535,9 @@ fn a_round_runs_into_a_wall_behind_it() {
     ] {
         for fillet in [true, false] {
             let mut w = m.clone();
-            let got = round_edges(&mut w, &set, 0.3, fillet);
-            eprintln!(
-                "{name} {fillet}: {:?} {:?}",
-                got.map(|f| f.len()),
-                check::problems(&w).len()
-            );
+            round_edges(&mut w, &set, 0.3, fillet)
+                .unwrap_or_else(|why| panic!("{name} {fillet}: {why}"));
+            clean(&w);
         }
     }
 }
@@ -556,20 +553,13 @@ fn a_round_runs_into_a_wider_wall_behind_it() {
     pull(&mut m, v(1.0, 1.0, 0.0), 1.0);
     add_rect(&mut m, 0.0, 2.0, 3.0, 3.0, 0.0);
     pull(&mut m, v(1.5, 2.5, 0.0), 2.0);
-    eprintln!(
-        "problems {:?} faces {}",
-        check::problems(&m),
-        m.faces().count()
-    );
+    clean(&m);
     let e = edge(&m, v(2.0, 0.0, 1.0), v(2.0, 2.0, 1.0));
     for fillet in [true, false] {
         let mut w = m.clone();
-        let got = round_edges(&mut w, &BTreeSet::from([e]), 0.3, fillet);
-        eprintln!(
-            "wider {fillet}: {:?} {:?}",
-            got.map(|f| f.len()),
-            check::problems(&w).len()
-        );
+        round_edges(&mut w, &BTreeSet::from([e]), 0.3, fillet)
+            .unwrap_or_else(|why| panic!("{fillet}: {why}"));
+        clean(&w);
     }
 }
 
@@ -594,95 +584,69 @@ fn a_round_ends_in_a_cap_under_an_overhang() {
         let up = m.face(f).unwrap().plane().unwrap().normal.z;
         push_pull(&mut m, f, if up > 0.0 { 1.0 } else { -1.0 }, false);
     }
-    let h = health::check(&m);
-    eprintln!(
-        "problems {:?} faces {} watertight {} leaky {}",
-        check::problems(&m),
-        m.faces().count(),
-        h.watertight,
-        h.leaky
-    );
+    clean(&m);
     let e = edge(&m, v(2.0, 0.0, 1.0), v(2.0, 2.0, 1.0));
     let at = vertex_at(&m, v(2.0, 2.0, 1.0)).unwrap();
-    eprintln!(
-        "edges at the corner {}",
-        m.edges().filter(|(_, x)| x.has(at)).count()
-    );
-    for fillet in [true, false] {
+    assert_eq!(m.edges().filter(|(_, x)| x.has(at)).count(), 5);
+    let r = 0.3;
+    for (fillet, area) in [(true, r * r * (1.0 - PI / 4.0)), (false, r * r / 2.0)] {
         let mut w = m.clone();
-        let got = round_edges(&mut w, &BTreeSet::from([e]), 0.3, fillet);
-        eprintln!(
-            "overhang {fillet}: {:?} {:?}",
-            got.map(|f| f.len()),
-            check::problems(&w).len()
+        round_edges(&mut w, &BTreeSet::from([e]), r, fillet)
+            .unwrap_or_else(|why| panic!("{fillet}: {why}"));
+        clean(&w);
+        let taken = volume(&m) - volume(&w);
+        assert!((taken - area * 2.0).abs() < 1e-6, "{fillet}: {taken}");
+        // The cap: a flat face in the block's front plane (y = 2) where
+        // the round ends.
+        assert!(
+            face_at(&w, v(1.95, 2.0, 0.95)).is_some(),
+            "{fillet}: the cap"
         );
     }
 }
 
+/// The owner's shape (2026-11-27, "refusing to go down an arc from a
+/// point"): a profile pulled along x, its top flat, dropping at a point
+/// into a cove, flat again, then a bullnose to the end. Every edge of the
+/// chain along the top rounds alone, and so do pairs that meet smoothly
+/// (bullnose and flat, flat and cove). The cove with the flat at the point
+/// does not yet: two rounds meeting at a sharp corner, brief 56 step 5.
 #[test]
-#[ignore]
-fn zz_cove_probe() {
-    // The owner's shape (2026-11-27): a profile in the plane x = 0 (y, z),
-    // a flat top that drops at a point into a cove, a flat, then a
-    // bullnose down to the end; pulled 1.5 along x.
+fn the_cove_and_bullnose_chain_rounds_where_it_meets_smoothly() {
     use std::f64::consts::FRAC_PI_2;
     let mut m = Model::new();
     let p = |y: f64, z: f64| v(0.0, y, z);
     prism_ops::add_segment(&mut m, p(0.0, 0.0), p(3.5, 0.0));
     prism_ops::add_segment(&mut m, p(3.5, 0.0), p(3.5, 1.0));
-    // Bullnose: centre (3.0, 1.0), from (3.5, 1.0) up to (3.0, 1.5).
     prism_ops::add_arc(&mut m, p(3.0, 1.0), DVec3::X, 0.5, p(3.5, 1.0), FRAC_PI_2);
     prism_ops::add_segment(&mut m, p(3.0, 1.5), p(2.0, 1.5));
-    // Cove: centre (2.0, 2.0), from (2.0, 1.5) round to (1.5, 2.0).
     prism_ops::add_arc(&mut m, p(2.0, 2.0), DVec3::X, 0.5, p(1.5, 2.0), FRAC_PI_2);
     prism_ops::add_segment(&mut m, p(1.5, 2.0), p(0.0, 2.0));
     prism_ops::add_segment(&mut m, p(0.0, 2.0), p(0.0, 0.0));
-    eprintln!("profile faces {}", m.faces().count());
     let f = face_at(&m, v(0.0, 1.0, 0.5)).expect("profile");
     let nx = m.face(f).unwrap().plane().unwrap().normal.x;
     push_pull(&mut m, f, if nx > 0.0 { 1.5 } else { -1.5 }, false);
-    eprintln!(
-        "problems {:?} faces {}",
-        check::problems(&m),
-        m.faces().count()
-    );
-    // The chain along the top front at x = 1.5 (the side face's top edges).
-    let ef = m.edge_faces();
-    let chain: BTreeSet<EdgeId> = m
-        .edges()
-        .filter(|(id, e)| {
-            let (a, b) = (m.vertex(e.a), m.vertex(e.b));
-            (a.x - 1.5).abs() < 1e-9
-                && (b.x - 1.5).abs() < 1e-9
-                && a.z.min(b.z) > 0.5
-                && !(a.y.abs() < 1e-9 && b.y.abs() < 1e-9)
-                && !((a.y - 3.5).abs() < 1e-9 && (b.y - 3.5).abs() < 1e-9)
-                && ef.get(id).is_some_and(|f| f.len() == 2)
-        })
-        .map(|(id, _)| id)
-        .collect();
-    for e in &chain {
-        let x = m.edge(*e).unwrap();
-        eprintln!(
-            "chain {e:?} {:?} -> {:?} curved {} soft {}",
-            m.vertex(x.a),
-            m.vertex(x.b),
-            x.curve.is_curved(),
-            x.soft
-        );
-    }
-    for fillet in [true, false] {
-        let mut w = m.clone();
-        eprintln!(
-            "all {fillet}: {:?}",
-            round_edges(&mut w, &chain, 0.1, fillet).map(|f| f.len())
-        );
-        for e in &chain {
+    clean(&m);
+    let at = |y0: f64, z0: f64, y1: f64, z1: f64| edge(&m, v(1.5, y0, z0), v(1.5, y1, z1));
+    let bullnose = at(3.5, 1.0, 3.0, 1.5);
+    let flat = at(3.0, 1.5, 2.0, 1.5);
+    let cove = at(2.0, 1.5, 1.5, 2.0);
+    let top = at(1.5, 2.0, 0.0, 2.0);
+    for set in [
+        vec![bullnose],
+        vec![flat],
+        vec![cove],
+        vec![top],
+        vec![bullnose, flat],
+        vec![flat, cove],
+        vec![bullnose, flat, cove],
+    ] {
+        for fillet in [true, false] {
             let mut w = m.clone();
-            eprintln!(
-                "  {e:?} {fillet}: {:?}",
-                round_edges(&mut w, &BTreeSet::from([*e]), 0.1, fillet).map(|f| f.len())
-            );
+            let set: BTreeSet<EdgeId> = set.iter().copied().collect();
+            round_edges(&mut w, &set, 0.1, fillet)
+                .unwrap_or_else(|why| panic!("{set:?} {fillet}: {why}"));
+            clean(&w);
         }
     }
 }
