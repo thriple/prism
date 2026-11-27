@@ -839,7 +839,7 @@ pub fn exact_cuts(model: &mut Model) -> usize {
         };
         let (cyl, plane) = match (&f.surface, &g.surface) {
             (prism_geom::Surface::Cylinder(c), prism_geom::Surface::Plane(p))
-            | (prism_geom::Surface::Plane(p), prism_geom::Surface::Cylinder(c)) => (c.clone(), *p),
+            | (prism_geom::Surface::Plane(p), prism_geom::Surface::Cylinder(c)) => (*c, *p),
             _ => continue,
         };
         let (u, n) = (cyl.axis, plane.normal);
