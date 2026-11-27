@@ -77,7 +77,12 @@ fn round_as_is(
             round_in_turn(model, edges, size, fillet)
                 .or_else(|| round_with_caps(model, edges, size, fillet))
                 .or_else(|| round_split_ends(model, edges, size, fillet))
+                .or_else(|| round_local(model, edges, size, fillet))
                 .ok_or(why)
+        }
+        // An approximate edge somewhere: round where the edges are.
+        Err(why) if why == crate::bridge::APPROXIMATE => {
+            round_local(model, edges, size, fillet).ok_or(why)
         }
         done => done,
     }
@@ -130,24 +135,7 @@ fn round_split_ends(
     }
     // The solid on its own.
     let faces = solid_faces(model, edges).ok()?;
-    let mut solid = model.clone();
-    let others: Vec<FaceId> = solid
-        .faces()
-        .map(|(id, _)| id)
-        .filter(|id| !faces.contains(id))
-        .collect();
-    for f in others {
-        solid.remove_face(f);
-    }
-    let used = solid.edge_faces();
-    let loose: Vec<EdgeId> = solid
-        .edges()
-        .map(|(id, _)| id)
-        .filter(|id| used.get(id).is_none_or(|f| f.is_empty()))
-        .collect();
-    for e in loose {
-        solid.remove_edge(e);
-    }
+    let solid = alone(model, &faces);
     let (lo, hi) = solid.bbox()?;
     let big = (hi - lo).length() * 2.0 + 1.0;
     // A block beyond each busy end: the half of space past the plane
@@ -199,9 +187,333 @@ fn round_split_ends(
     for piece in &outer {
         joined = crate::boolean::boolean(&joined, piece, crate::boolean::Op::Union).ok()?;
     }
-    // In place of the solid's faces.
+    put_in(model, &faces, &joined)
+}
+
+/// Brief 56 step 3: round just the neighbourhood of the edges, where the
+/// kernel will not round them on the whole body (something elsewhere on it
+/// is in the way). The solid is cut by a box around the edges; the piece
+/// inside is rounded, and joined again with the rest.
+fn round_local(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    let tol = model.tol();
+    let faces = solid_faces(model, edges).ok()?;
+    let solid = alone(model, &faces);
+    // Each edge, as its two ends and its middle, to find it again.
+    let marks: Vec<[DVec3; 3]> = edges
+        .iter()
+        .filter_map(|e| model.edge(*e))
+        .map(|e| [model.vertex(e.a), model.vertex(e.b), middle(model, e)])
+        .collect();
+    let points: Vec<DVec3> = marks.iter().flatten().copied().collect();
+    let (first, last) = (*points.first()?, marks.last()?[1]);
+    // The box's frame: along the edges, and halfway between the normals
+    // of the flat faces beside them.
+    let along = (last - first).normalize_or_zero();
+    let along = if along == DVec3::ZERO {
+        (marks[0][2] - marks[0][0]).normalize_or_zero()
+    } else {
+        along
+    };
+    if along == DVec3::ZERO {
+        return None;
+    }
+    let ef = model.edge_faces();
+    let normal: DVec3 = ef
+        .get(edges.first()?)?
+        .iter()
+        .filter_map(|f| model.face(*f)?.plane())
+        .map(|p| p.normal)
+        .sum();
+    let up = (normal - along * normal.dot(along)).normalize_or_zero();
+    let up = if up == DVec3::ZERO {
+        prism_math::Plane::new(first, along).frame().u
+    } else {
+        up
+    };
+    let side = along.cross(up);
+    let span = |d: DVec3| {
+        let t = points.iter().map(|p| p.dot(d));
+        (
+            t.clone().fold(f64::INFINITY, f64::min),
+            t.fold(f64::NEG_INFINITY, f64::max),
+        )
+    };
+    let (sa, ss, su) = (span(along), span(side), span(up));
+    for margin in [2.0 * size, 4.0 * size, 8.0 * size] {
+        let corner = |a: f64, s: f64, u: f64| along * a + side * s + up * u;
+        let (a0, a1) = (sa.0 - margin, sa.1 + margin);
+        let (s0, s1) = (ss.0 - margin, ss.1 + margin);
+        let mut cut = Model::new();
+        cut.set_tol(tol);
+        crate::add_polygon(
+            &mut cut,
+            &[
+                corner(a0, s0, su.0 - margin),
+                corner(a1, s0, su.0 - margin),
+                corner(a1, s1, su.0 - margin),
+                corner(a0, s1, su.0 - margin),
+            ],
+        );
+        let Some(f) = cut.faces().next().map(|(id, _)| id) else {
+            continue;
+        };
+        let Some(n) = cut.face(f).and_then(|x| x.plane()).map(|p| p.normal) else {
+            continue;
+        };
+        let height = su.1 - su.0 + 2.0 * margin;
+        crate::push_pull(
+            &mut cut,
+            f,
+            if n.dot(up) > 0.0 { height } else { -height },
+            false,
+        );
+        if !crate::boolean::is_solid(&cut) {
+            continue;
+        }
+        // The box's six planes; no face of the solid may lie in one.
+        let walls: Vec<prism_math::Plane> = cut
+            .faces()
+            .filter_map(|(_, f)| f.plane().copied())
+            .collect();
+        if solid.faces().any(|(id, _)| on_walls(&solid, id, &walls)) {
+            continue;
+        }
+        let Ok(mut piece) = crate::boolean::boolean(&solid, &cut, crate::boolean::Op::Intersect)
+        else {
+            continue;
+        };
+        let Ok(mut rest) = crate::boolean::boolean(&solid, &cut, crate::boolean::Op::Subtract)
+        else {
+            continue;
+        };
+        for part in [&mut piece, &mut rest] {
+            if part.edges().any(|(_, e)| e.approx) {
+                exact_cuts(part);
+            }
+        }
+        let near = |a: DVec3, b: DVec3| a.distance(b) <= tol.dist;
+        let mine: BTreeSet<EdgeId> = piece
+            .edges()
+            .filter(|(_, e)| {
+                let (a, b, m) = (piece.vertex(e.a), piece.vertex(e.b), middle(&piece, e));
+                marks.iter().any(|k| {
+                    near(m, k[2])
+                        && ((near(a, k[0]) && near(b, k[1])) || (near(a, k[1]) && near(b, k[0])))
+                })
+            })
+            .map(|(id, _)| id)
+            .collect();
+        if mine.len() != marks.len() {
+            continue;
+        }
+        let on_box = |m: &Model| -> Vec<f64> {
+            let mut a: Vec<f64> = m
+                .faces()
+                .filter(|(id, _)| on_walls(m, *id, &walls))
+                .map(|(id, _)| m.face_area(id))
+                .collect();
+            a.sort_by(f64::total_cmp);
+            a
+        };
+        let walled = on_box(&piece);
+        if round_once(&mut piece, &mine, size, fillet).is_err() {
+            continue;
+        }
+        // The round must not reach the box: else a bigger box.
+        let after = on_box(&piece);
+        if after.len() != walled.len()
+            || after
+                .iter()
+                .zip(&walled)
+                .any(|(x, y)| (x - y).abs() > tol.dist * y.sqrt().max(tol.dist))
+        {
+            continue;
+        }
+        let mut joined = glue(&rest, &piece, &walls);
+        keep_looks(&solid, &mut joined);
+        let mut work = model.clone();
+        if let Some(out) = put_in(&mut work, &faces, &joined) {
+            *model = work;
+            return Some(out);
+        }
+    }
+    None
+}
+
+/// Edges of `out` that are edges of `was` (the same ends and middle) get
+/// back its look and kind: soft, smooth and approximate.
+/// The booleans that cut and join a solid make its edges anew.
+fn keep_looks(was: &Model, out: &mut Model) {
+    let tol = was.tol();
+    let near = |a: DVec3, b: DVec3| a.distance(b) <= tol.dist;
+    let old: Vec<([DVec3; 3], prism_topo::Edge)> = was
+        .edges()
+        .map(|(_, e)| {
+            (
+                [was.vertex(e.a), was.vertex(e.b), middle(was, e)],
+                e.clone(),
+            )
+        })
+        .collect();
+    let ids: Vec<EdgeId> = out.edges().map(|(id, _)| id).collect();
+    for id in ids {
+        let Some(e) = out.edge(id) else { continue };
+        let (a, b, m) = (out.vertex(e.a), out.vertex(e.b), middle(out, e));
+        let Some((_, o)) = old.iter().find(|(k, _)| {
+            near(m, k[2]) && ((near(a, k[0]) && near(b, k[1])) || (near(a, k[1]) && near(b, k[0])))
+        }) else {
+            continue;
+        };
+        let o = o.clone();
+        if o.soft || o.smooth {
+            out.set_soft(id, o.soft, o.smooth);
+        }
+        if o.approx {
+            out.set_approx(id, true);
+        }
+    }
+}
+
+/// Whether face `id` of `m` lies in one of `walls`.
+fn on_walls(m: &Model, id: FaceId, walls: &[prism_math::Plane]) -> bool {
+    let tol = m.tol();
+    let Some(f) = m.face(id) else { return false };
+    f.plane().is_some()
+        && walls.iter().any(|w| {
+            f.loops()
+                .flatten()
+                .all(|v| w.distance(m.vertex(*v)).abs() <= tol.dist)
+        })
+}
+
+/// The two parts of a solid cut by a box, `rest` outside it and `piece`
+/// inside, joined again along the box's `walls`: the faces on the walls go
+/// from both, and a face the box had cut in two is one again (flat ones
+/// merge; curved ones keep a soft, smooth seam).
+fn glue(rest: &Model, piece: &Model, walls: &[prism_math::Plane]) -> Model {
+    let tol = rest.tol();
+    let strip = |m: &Model| {
+        let mut m = m.clone();
+        let gone: Vec<FaceId> = m
+            .faces()
+            .map(|(id, _)| id)
+            .filter(|id| on_walls(&m, *id, walls))
+            .collect();
+        for f in gone {
+            m.remove_face(f);
+        }
+        m
+    };
+    let mut out = strip(rest);
+    crate::boolean::join(&mut out, &strip(piece), &tol);
+    // The seams the box left: edges lying in a wall.
+    let in_wall = |m: &Model, e: &prism_topo::Edge| {
+        let pts = [m.vertex(e.a), m.vertex(e.b), middle(m, e)];
+        walls
+            .iter()
+            .any(|w| pts.iter().all(|p| w.distance(*p).abs() <= tol.dist))
+    };
+    // One side may have a point partway along a straight seam where the
+    // other has none: split the seam there, so the two sides meet edge to
+    // edge.
+    loop {
+        let split = out.edges().find_map(|(id, e)| {
+            if e.curve.is_curved() || !in_wall(&out, e) {
+                return None;
+            }
+            let (a, b) = (out.vertex(e.a), out.vertex(e.b));
+            out.vertices()
+                .find(|(v, p)| {
+                    *v != e.a
+                        && *v != e.b
+                        && p.distance(a) > tol.dist
+                        && p.distance(b) > tol.dist
+                        && distance_to_segment(*p, a, b) <= tol.dist
+                })
+                .map(|(v, _)| (id, v))
+        });
+        let Some((e, v)) = split else { break };
+        if out.split_edge(e, v).is_none() {
+            break;
+        }
+    }
+    crate::settle::merge_duplicate_edges(&mut out, &tol);
+    crate::health::remove_stray(&mut out);
+    let ef = out.edge_faces();
+    let (mut flat, mut curved) = (BTreeSet::new(), Vec::new());
+    for (id, e) in out.edges() {
+        if !in_wall(&out, e) {
+            continue;
+        }
+        let Some([f, g]) = ef
+            .get(&id)
+            .and_then(|v| <[FaceId; 2]>::try_from(v.as_slice()).ok())
+        else {
+            continue;
+        };
+        let (Some(ff), Some(gf)) = (out.face(f), out.face(g)) else {
+            continue;
+        };
+        match (ff.plane(), gf.plane()) {
+            (Some(p), Some(q)) => {
+                if p.same_surface(q, &tol, out.face_extent(gf)) && p.normal.dot(q.normal) > 0.0 {
+                    flat.insert(id);
+                }
+            }
+            (None, None) if ff.surface == gf.surface => curved.push(id),
+            _ => {}
+        }
+    }
+    for e in curved {
+        out.set_soft(e, true, true);
+    }
+    if !flat.is_empty() {
+        crate::remove(
+            &mut out,
+            &crate::Selection {
+                edges: flat,
+                ..Default::default()
+            },
+        );
+    }
+    out
+}
+
+/// The solid of `faces` on its own: the other faces of the model, and
+/// edges left with no face, taken away.
+fn alone(model: &Model, faces: &BTreeSet<FaceId>) -> Model {
+    let mut solid = model.clone();
+    let others: Vec<FaceId> = solid
+        .faces()
+        .map(|(id, _)| id)
+        .filter(|id| !faces.contains(id))
+        .collect();
+    for f in others {
+        solid.remove_face(f);
+    }
+    let used = solid.edge_faces();
+    let loose: Vec<EdgeId> = solid
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| used.get(id).is_none_or(|f| f.is_empty()))
+        .collect();
+    for e in loose {
+        solid.remove_edge(e);
+    }
+    solid
+}
+
+/// `joined` put into `model` in place of the solid of `faces`, if the
+/// model then checks clean and its health is no worse. Returns the new
+/// faces.
+fn put_in(model: &mut Model, faces: &BTreeSet<FaceId>, joined: &Model) -> Option<Vec<FaceId>> {
     let mut work = model.clone();
-    for f in &faces {
+    for f in faces {
         work.remove_face(*f);
     }
     let (used, was) = (work.edge_faces(), model.edge_faces());
@@ -227,7 +539,7 @@ fn round_split_ends(
         }
     }
     let had: BTreeSet<FaceId> = work.faces().map(|(id, _)| id).collect();
-    work.append(&joined);
+    work.append(joined);
     if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
         return None;
     }

@@ -689,3 +689,36 @@ fn a_line_to_the_edge_carries_on_across_prisms_own_round() {
         assert!(across, "{fillet}: the line carries on across the round");
     }
 }
+
+/// Brief 56 step 3: a fault far from the edge (an edge at the other end
+/// of the block stored as an approximation, which the kernel will not
+/// take) does not stop a round: it is rounded in a box around it, and the
+/// far edge is left as it was.
+#[test]
+fn a_fault_far_away_does_not_stop_a_round() {
+    let mut m = Model::new();
+    add_rect(&mut m, 0.0, 0.0, 4.0, 1.0, 0.0);
+    pull(&mut m, v(2.0, 0.5, 0.0), 1.0);
+    let far = edge(&m, v(0.0, 0.0, 1.0), v(0.0, 1.0, 1.0));
+    m.set_approx(far, true);
+    let whole = volume_drawn(&m);
+    let e = edge(&m, v(4.0, 0.0, 1.0), v(4.0, 1.0, 1.0));
+    round_edges(&mut m, &[e].into(), 0.2, true).expect("rounded");
+    assert_eq!(check::problems(&m), Vec::<String>::new());
+    let h = health::check(&m);
+    assert_eq!((h.watertight, h.leaky), (1, 0), "{h:?}");
+    // The far edge is still there, still approximate.
+    let a = vertex_at(&m, v(0.0, 0.0, 1.0)).expect("far corner");
+    let b = vertex_at(&m, v(0.0, 1.0, 1.0)).expect("far corner");
+    let far = m.edge_between(a, b).expect("the far edge");
+    assert!(m.edge(far).unwrap().approx);
+    // A fillet takes (1 - pi/4) r^2 along the 1 m edge.
+    let taken = whole - volume_drawn(&m);
+    let want = (1.0 - PI / 4.0) * 0.04;
+    assert!((taken - want).abs() < 1e-3 * want + 1e-6, "{taken} {want}");
+}
+
+/// Model Health's volume (curved faces drawn as fine segments).
+fn volume_drawn(m: &Model) -> f64 {
+    m.faces().map(|(id, _)| health::face_volume(m, id)).sum()
+}

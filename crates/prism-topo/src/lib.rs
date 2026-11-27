@@ -1406,6 +1406,7 @@ impl Model {
                     .map(|c| *cmap.entry(c).or_insert_with(|| self.new_curve_id()));
                 let id = self.push_edge(*a, *b, e.curve.clone(), cid);
                 self.set_soft(id, e.soft, e.smooth);
+                self.set_approx(id, e.approx);
                 emap.insert(old, id);
             }
         }

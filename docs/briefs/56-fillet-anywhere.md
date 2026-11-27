@@ -211,13 +211,13 @@ Parasolid names more cases: a smooth extension; a "cliff", where the round touch
 
 ## Order of work
 
-**Where it stands (2026-11-27): 6 steps; steps 1 and 2 done, steps 3 to 6 to go.**
+**Where it stands (2026-11-27): 6 steps; steps 1 to 3 done, steps 4 to 6 to go.**
 
 | Step | State | Tests waiting on it |
 |---|---|---|
 | 1. Kernel-ready copy | Done, released (openings not in one plane left) | — |
 | 2. End caps; fallback round like the kernel's | Done (2026-11-27): end caps; a line carried across Prism's own round as a seam; slanted ends already lie in the face they meet | — |
-| 3. Local round | To do | session 29's remaining refusals |
+| 3. Local round | Done (2026-11-27): rounded in a box around the edges, joined back | — (session 29's other refusals are steps 4 and 5) |
 | 4. Chains through bends and smooth joins, 3D chains | To do | corner test 2, SketchUp example (4a) |
 | 5. Corner patch | To do | corner test 1 (three inside rounds), the owner's cove-and-bullnose block (the top dropping into the cove at a point: two rounds meeting at a sharp corner; its smooth joins already round), apex with base edges |
 | 6. Tool messages | As each lands | — |
@@ -229,7 +229,7 @@ Parasolid names more cases: a smooth extension; a "cliff", where the round touch
    - the round's end lies in the face it runs into (keep surface), as the kernel's round already does on the owner's stepped block;
    - a flat end cap only where that cannot be done;
    - a line drawn up to the rounded edge carries on across the round as a seam, as the kernel's round already does.
-3. Step 3 (local round).
+3. Step 3 (local round). **Done 2026-11-27** (`round_local` in `rounds.rs`): where the kernel will not round the edges on the whole body, the solid is cut by a box around them (2, 4, then 8 times the size past them), the piece inside is rounded, and the two parts are joined again along the box's walls (faces on the walls go; a flat face the box cut in two is one again; a curved one keeps a soft, smooth seam). A bigger box is tried where the round reaches a wall (a round running on along a smooth chain). The far fault in the test is an edge stored as an approximation at the other end of a block, which the kernel will not take; the brief's example, a third face on an edge far away, never blocked a round. On session 29, single-edge fillets went from 46 to 51 of 96 (by straight run, as the tool collects them, 61 of 90 runs round; 9 more round at a smaller size). The 27 runs still refused are refused by the kernel on the piece too, so the trouble is at the edge itself: arcs and lines in smooth chains along the profile (step 4), and corners where more rounds or edges meet (step 5).
 4. Step 4 (3D chains, freeform faces), with the owner's SketchUp example (4a) as its test.
 5. Step 5 (corner patch).
 6. Step 6 (tool messages) as each lands.

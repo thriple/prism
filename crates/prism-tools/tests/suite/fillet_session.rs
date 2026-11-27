@@ -179,9 +179,10 @@ fn the_xby4_top_edge_fillets() {
 /// 3 are for (a round running into a wall beside it).
 #[test]
 fn session_29_rounds_past_its_slit_and_notch() {
-    // Fillets that round at 0.093 m (2026-11-27: 46 of the 96 edges that
-    // are not lines on flat faces); it must not go down.
-    const DONE: usize = 46;
+    // Fillets that round at 0.093 m (2026-11-27: 51 of the 96 edges that
+    // are not lines on flat faces, 46 before the local round); it must not
+    // go down.
+    const DONE: usize = 51;
     let mut r: Recording =
         serde_json::from_str(include_str!("../data/owner-session-29-open-fillet.json"))
             .expect("recording");
