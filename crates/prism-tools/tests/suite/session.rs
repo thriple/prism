@@ -2891,7 +2891,7 @@ fn the_fillet_tool_rounds_an_edge_and_ctrl_chamfers_one() {
     valid(&d);
     // Too big for the faces: refused, and the hint says why.
     d.typed("5");
-    assert!(d.s.hint().contains("too large"), "{}", d.s.hint());
+    assert!(d.s.hint().contains("too big"), "{}", d.s.hint());
     undo(&mut d);
     undo(&mut d);
     assert_eq!(d.faces(), faces, "one undo each");

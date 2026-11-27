@@ -1,3 +1,5 @@
+**Changed: Fillet / Chamfer messages in plain English.** The messages no longer start with "Refused:" or talk about the kernel, solids or approximations; they say what is in the way and, where it helps, what to try (a smaller size, fewer edges at once). The other tools' messages follow.
+
 **Fixed: arcs and circles drawn inside a stretched group or component.** In a component scaled more along one direction than another (one mirrored at half width, say), an arc drawn on a face came up short of the point you clicked and was stored as many short straight pieces, with a message about an approximation. It is now an exact curve that ends where you clicked and divides the face (the owner's windshield bezel). Scaling an arc or circle unevenly also keeps it an exact curve now.
 
 **Fixed: Fillet / Chamfer on the inside corners of a windshield bezel.** A body that earlier edits had broken into many flat facets, with a few faults of its own, refused every fillet with "an edge of this solid is an approximation". Straight edges between flat faces on such a body now fillet and chamfer.
