@@ -868,7 +868,9 @@ fn carry_across(
     old: &BTreeSet<FaceId>,
 ) {
     let tol = work.tol();
-    let mut cuts: Vec<(DVec3, DVec3, Option<(DVec3, DVec3, f64)>)> = Vec::new();
+    // Each cut's two ends, and for a fillet its centre, axis and radius.
+    type Cut = (DVec3, DVec3, Option<(DVec3, DVec3, f64)>);
+    let mut cuts: Vec<Cut> = Vec::new();
     for p in lines.iter().flat_map(|(a, b)| [*a, *b]) {
         for (ea, eb) in along {
             let d = *eb - *ea;
