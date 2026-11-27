@@ -77,9 +77,12 @@ fn round_as_is(
             round_in_turn(model, edges, size, fillet)
                 .or_else(|| round_with_caps(model, edges, size, fillet))
                 .or_else(|| round_split_ends(model, edges, size, fillet))
+                .or_else(|| round_swept(model, edges, size, fillet))
                 .or_else(|| round_local(model, edges, size, fillet))
                 .ok_or(why)
         }
+        // Too large for the kernel's round: a swept one may still fit.
+        Err(why) if why == TOO_LARGE => round_swept(model, edges, size, fillet).ok_or(why),
         // An approximate edge somewhere: round where the edges are.
         Err(why) if why == crate::bridge::APPROXIMATE => {
             round_local(model, edges, size, fillet).ok_or(why)
@@ -188,6 +191,271 @@ fn round_split_ends(
         joined = crate::boolean::boolean(&joined, piece, crate::boolean::Op::Union).ok()?;
     }
     put_in(model, &faces, &joined)
+}
+
+/// Brief 56 step 4: a chain of lines and arcs along the edge of one flat
+/// face (the floor), each with a wall standing square to it on the other
+/// side (a flat or curved face, as Push/Pull makes), which the kernel will
+/// not round (a round along the inside of a curved wall). The round's
+/// cross-section (the corner less a quarter circle, or a triangle for a
+/// chamfer) is swept along the chain with Follow Me, and added to the
+/// solid at an inside corner or taken away at an outside one. The
+/// cross-section reaches a little past the corner, into the solid or out
+/// of it, so the booleans never meet faces lying on each other. The chain
+/// must run smoothly (its pieces tangent where they meet); corners and
+/// slight creases are left for the corner step.
+fn round_swept(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    let tol = model.tol();
+    let (points, pieces, closed) = crate::follow::chain(model, edges)?;
+    if closed {
+        return None;
+    }
+    let ef = model.edge_faces();
+    // The floor: the flat face on every edge of the chain.
+    let floor = {
+        let first = ef.get(pieces.first()?)?;
+        *first.iter().find(|f| {
+            model.face(**f).is_some_and(|x| x.plane().is_some())
+                && pieces
+                    .iter()
+                    .all(|e| ef.get(e).is_some_and(|fs| fs.contains(f)))
+        })?
+    };
+    let plane = *model.face(floor)?.plane()?;
+    let up = plane.normal;
+    // Each piece in chain order: its ends and its direction of travel at
+    // each end.
+    let mut runs_of: Vec<Piece> = Vec::new();
+    for (k, e) in pieces.iter().enumerate() {
+        let x = model.edge(*e)?;
+        if x.curve.is_spline() {
+            return None;
+        }
+        let (from, to) = (points[k], points[k + 1]);
+        let forward = x.a == from;
+        let (pa, pb) = (model.vertex(x.a), model.vertex(x.b));
+        let dir = |p: DVec3| {
+            let t = x.curve.tangent_at(pa, pb, p).normalize_or_zero();
+            if forward { t } else { -t }
+        };
+        let (p, q, m) = (model.vertex(from), model.vertex(to), middle(model, x));
+        // The chain lies in the floor's plane, and the wall stands square
+        // to it.
+        if [p, q, m]
+            .iter()
+            .any(|r| plane.distance(*r).abs() > tol.dist)
+        {
+            return None;
+        }
+        let wall = *ef.get(e)?.iter().find(|f| **f != floor)?;
+        let n = model.face(wall)?.surface.normal_at(m).normalize_or_zero();
+        if !tol.perpendicular_over(n, up, size.max(tol.dist)) {
+            return None;
+        }
+        runs_of.push(Piece {
+            edge: *e,
+            from,
+            to,
+            start: dir(p),
+            end: dir(q),
+            middle: m,
+            across: up.cross(dir(m)).normalize_or_zero(),
+        });
+    }
+    if runs_of
+        .iter()
+        .any(|p| p.start == DVec3::ZERO || p.end == DVec3::ZERO)
+    {
+        return None;
+    }
+    let faces = solid_faces(model, edges).ok()?;
+    let solid = alone(model, &faces);
+    let shell: Vec<crate::shell::ShellFace> = solid
+        .faces()
+        .filter_map(|(id, _)| crate::shell::ShellFace::of(&solid, id))
+        .collect();
+    // Which side of the chain the floor is on, and whether each corner is
+    // an inside one (the solid behind both faces): the same all along.
+    let probe = (size * 0.5).max(tol.dist * 10.0);
+    let on_floor = |q: DVec3| crate::face_at(model, q) == Some(floor);
+    let first = &runs_of[0];
+    let sign = if on_floor(first.middle + first.across * probe) {
+        1.0
+    } else if on_floor(first.middle - first.across * probe) {
+        -1.0
+    } else {
+        return None;
+    };
+    let mut inside = None;
+    for p in &runs_of {
+        let behind = p.middle - p.across * sign * probe - up * probe;
+        let here = crate::shell::winding(&shell, behind, &tol)? >= 1;
+        if inside.is_some_and(|i| i != here) {
+            return None;
+        }
+        inside = Some(here);
+    }
+    let inside = inside?;
+    let shape = Shape {
+        up,
+        sign,
+        wall: if inside { up } else { -up },
+        size,
+        past: size * 0.1,
+        fillet,
+    };
+    // One smooth run: a chain that turns a corner (or a slight crease) is
+    // left to the corner step.
+    if runs_of
+        .windows(2)
+        .any(|w| !(tol.parallel(w[0].end, w[1].start) && w[0].end.dot(w[1].start) > 0.0))
+    {
+        return None;
+    }
+    let part: Vec<&Piece> = runs_of.iter().collect();
+    let tool = strip_along(model, &part, &shape)?;
+    let op = if inside {
+        crate::boolean::Op::Union
+    } else {
+        crate::boolean::Op::Subtract
+    };
+    let mut joined = crate::boolean::boolean(&solid, &tool, op).ok()?;
+    keep_looks(&solid, &mut joined);
+    let mut work = model.clone();
+    let out = put_in(&mut work, &faces, &joined)?;
+    *model = work;
+    Some(out)
+}
+
+/// One piece of a chain being rounded by [`round_swept`].
+struct Piece {
+    edge: EdgeId,
+    from: VertexId,
+    to: VertexId,
+    /// The direction of travel at `from` and at `to`.
+    start: DVec3,
+    end: DVec3,
+    middle: DVec3,
+    /// Across the piece in the floor, at its middle (up × travel).
+    across: DVec3,
+}
+
+/// The round's cross-section for [`round_swept`].
+struct Shape {
+    /// The floor's normal.
+    up: DVec3,
+    /// Which side of the chain the floor is on: into the floor is up ×
+    /// travel × sign.
+    sign: f64,
+    /// Up the wall from the corner.
+    wall: DVec3,
+    size: f64,
+    /// How far the cross-section reaches past the corner.
+    past: f64,
+    fillet: bool,
+}
+
+/// The round's cross-section swept along `part` (pieces of `model`, in
+/// order): a solid of its own.
+fn strip_along(model: &Model, part: &[&Piece], shape: &Shape) -> Option<Model> {
+    let tol = model.tol();
+    let (head, tail) = (part.first()?, part.last()?);
+    let mut sweep = Model::new();
+    sweep.set_tol(tol);
+    let mut ids: BTreeMap<VertexId, VertexId> = BTreeMap::new();
+    for p in part {
+        for v in [p.from, p.to] {
+            ids.entry(v)
+                .or_insert_with(|| sweep.add_vertex(model.vertex(v)));
+        }
+    }
+    let mut path = BTreeSet::new();
+    for p in part {
+        let x = model.edge(p.edge)?;
+        let (va, vb) = (*ids.get(&x.a)?, *ids.get(&x.b)?);
+        let new = sweep.add_edge(va, vb)?;
+        if let prism_geom::Curve::Arc {
+            centre,
+            axis,
+            radius,
+        } = &x.curve
+        {
+            // An arc runs counter-clockwise from its first point: the other
+            // way round if the new edge has its ends swapped.
+            let flip = sweep.edge(new)?.a != va;
+            sweep.set_curve(
+                new,
+                prism_geom::Curve::Arc {
+                    centre: *centre,
+                    axis: if flip { -*axis } else { *axis },
+                    radius: *radius,
+                },
+            );
+        }
+        path.insert(new);
+    }
+    let (start, end) = (model.vertex(head.from), model.vertex(tail.to));
+    // Follow Me starts at one end of the path: the cross-section goes
+    // there, square to it.
+    let (order, ..) = crate::follow::chain(&sweep, &path)?;
+    let at_start = sweep.vertex(*order.first()?).distance(start) <= tol.dist;
+    let (p, travel) = if at_start {
+        (start, head.start)
+    } else {
+        (end, tail.end)
+    };
+    let u = shape.up.cross(travel).normalize_or_zero() * shape.sign;
+    let (v, s, d) = (shape.wall, shape.size, shape.past);
+    let corner = [
+        p - u * d - v * d,
+        p + u * s - v * d,
+        p + u * s,
+        p + v * s,
+        p + v * s - u * d,
+    ];
+    crate::add_polygon(&mut sweep, &corner);
+    if shape.fillet {
+        let (va, vb) = (
+            crate::vertex_at(&sweep, corner[2])?,
+            crate::vertex_at(&sweep, corner[3])?,
+        );
+        let arc = sweep.edge_between(va, vb)?;
+        let centre = p + (u + v) * s;
+        let x = sweep.edge(arc)?;
+        let (xa, xb) = (sweep.vertex(x.a) - centre, sweep.vertex(x.b) - centre);
+        sweep.set_curve(
+            arc,
+            prism_geom::Curve::Arc {
+                centre,
+                axis: xa.cross(xb).normalize_or_zero(),
+                radius: s,
+            },
+        );
+    }
+    let profile = sweep.faces().map(|(id, _)| id).find(|id| {
+        sweep
+            .face(*id)
+            .and_then(|f| f.plane())
+            .is_some_and(|pl| pl.normal.dot(travel).abs() > 0.5)
+    })?;
+    if !crate::follow::follow(&mut sweep, &path, profile) {
+        return None;
+    }
+    let used = sweep.edge_faces();
+    let loose: Vec<EdgeId> = sweep
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| used.get(id).is_none_or(|f| f.is_empty()))
+        .collect();
+    for x in loose {
+        sweep.remove_edge(x);
+    }
+    crate::boolean::is_solid(&sweep).then_some(sweep)
 }
 
 /// Brief 56 step 3: round just the neighbourhood of the edges, where the

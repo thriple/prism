@@ -296,14 +296,13 @@ fn the_corner_test_edges_round() {
 /// The owner's second corner test (2026-11-27, "I'm not expecting it to
 /// pass entirely"): a channel whose floor's edge runs along a wall, round
 /// a quarter arc and along another wall. The straight edges at the walls
-/// round alone (54, and 73 at the step). The arc and the edge it runs
-/// smoothly into (57) do not yet, nor the chain: the arc's centre is 1.6 cm
-/// off, so it meets the first wall at a crease of 0.85 degrees, and the
-/// kernel can neither end a round where faces meet smoothly nor round
-/// across so slight a crease (brief 56 step 4, chains through smooth and
-/// near-smooth joins).
+/// round alone (54, and 73 at the step). The arc (58) and the edge it runs
+/// smoothly into (57) round alone and together, swept along the floor
+/// (brief 56 step 4). The whole chain does not yet: the arc's centre is
+/// 1.6 cm off, so it meets the first wall at a crease of 0.85 degrees (a
+/// corner, for the corner step).
 #[test]
-fn the_second_corner_test_straight_edges_round() {
+fn the_second_corner_test_rounds_its_smooth_run() {
     use prism_topo::EdgeId;
     let c =
         prism_file::read(include_bytes!("../data/owner-corner-test-2.prism")).expect("the file");
@@ -315,6 +314,37 @@ fn the_second_corner_test_straight_edges_round() {
                 .unwrap_or_else(|why| panic!("{e} {fillet}: {why}"));
             assert_eq!(prism_ops::check::problems(&w), Vec::<String>::new(), "{e}");
             assert_eq!(w.faces().count(), m.faces().count() + 1, "{e}");
+        }
+    }
+    let volume = |m: &prism_topo::Model| -> f64 {
+        m.faces()
+            .map(|(id, _)| prism_ops::health::face_volume(m, id))
+            .sum()
+    };
+    let r = 0.2;
+    for set in [vec![58], vec![57], vec![58, 57]] {
+        let mut w = m.clone();
+        let edges = set.iter().map(|e| EdgeId(*e)).collect();
+        prism_ops::rounds::round_edges(&mut w, &edges, r, true)
+            .unwrap_or_else(|why| panic!("{set:?}: {why}"));
+        assert_eq!(
+            prism_ops::check::problems(&w),
+            Vec::<String>::new(),
+            "{set:?}"
+        );
+        let h = prism_ops::health::check(&w);
+        assert!(h.reversed.is_empty() && h.leaky == 0, "{set:?}: {h:?}");
+        if set.len() == 2 {
+            // An inside fillet adds the corner less a quarter circle: along
+            // the line, its area times the length; round the arc (radius
+            // 1.097 about the channel's inside), times the arc that the
+            // area's centre runs (Pappus), 0.2234 r in from the wall.
+            let area = (1.0 - std::f64::consts::PI / 4.0) * r * r;
+            let line = 1.532;
+            let arc = std::f64::consts::FRAC_PI_2 * (1.097 - 0.2234 * r);
+            let want = area * (line + arc);
+            let got = volume(&w) - volume(m);
+            assert!((got - want).abs() < 0.02 * want, "{got} {want}");
         }
     }
 }
