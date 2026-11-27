@@ -76,10 +76,168 @@ fn round_as_is(
         Err(why) if why == prism_kernel::solid::NOT_ROUNDED || why == OPEN => {
             round_in_turn(model, edges, size, fillet)
                 .or_else(|| round_with_caps(model, edges, size, fillet))
+                .or_else(|| round_split_ends(model, edges, size, fillet))
                 .ok_or(why)
         }
         done => done,
     }
+}
+
+/// Brief 56 step 2: a straight edge whose end is a busier corner than
+/// three edges (owner's session 29: a top edge running into a wall that
+/// sits on the block and overhangs its side), which the kernel will not
+/// round. The solid is cut by a plane square to the edge at each such end;
+/// the piece with the edge then ends in a plain corner, is rounded, and
+/// the pieces are joined again. Where the round took material away, the
+/// other piece's cut face is left: a flat end cap square to the edge.
+fn round_split_ends(
+    model: &mut Model,
+    edges: &BTreeSet<EdgeId>,
+    size: f64,
+    fillet: bool,
+) -> Option<Vec<FaceId>> {
+    let tol = model.tol();
+    // One straight edge (or a straight run of pieces): its two ends.
+    let run: Vec<&prism_topo::Edge> = edges.iter().filter_map(|e| model.edge(*e)).collect();
+    if run.len() != edges.len() || run.iter().any(|e| e.curve.is_curved()) {
+        return None;
+    }
+    let mut count: BTreeMap<VertexId, usize> = BTreeMap::new();
+    for e in &run {
+        *count.entry(e.a).or_default() += 1;
+        *count.entry(e.b).or_default() += 1;
+    }
+    let ends: Vec<VertexId> = count
+        .iter()
+        .filter(|(_, n)| **n == 1)
+        .map(|(v, _)| *v)
+        .collect();
+    let [a, b] = ends[..] else { return None };
+    let (pa, pb) = (model.vertex(a), model.vertex(b));
+    let dir = (pb - pa).normalize_or_zero();
+    if dir == DVec3::ZERO {
+        return None;
+    }
+    let degree = |v: VertexId| model.edges().filter(|(_, x)| x.has(v)).count();
+    // Each busy end, with the way out of the edge there.
+    let busy: Vec<(DVec3, DVec3)> = [(a, pa, -dir), (b, pb, dir)]
+        .into_iter()
+        .filter(|(v, ..)| degree(*v) > 3)
+        .map(|(_, p, out)| (p, out))
+        .collect();
+    if busy.is_empty() {
+        return None;
+    }
+    // The solid on its own.
+    let faces = solid_faces(model, edges).ok()?;
+    let mut solid = model.clone();
+    let others: Vec<FaceId> = solid
+        .faces()
+        .map(|(id, _)| id)
+        .filter(|id| !faces.contains(id))
+        .collect();
+    for f in others {
+        solid.remove_face(f);
+    }
+    let used = solid.edge_faces();
+    let loose: Vec<EdgeId> = solid
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| used.get(id).is_none_or(|f| f.is_empty()))
+        .collect();
+    for e in loose {
+        solid.remove_edge(e);
+    }
+    let (lo, hi) = solid.bbox()?;
+    let big = (hi - lo).length() * 2.0 + 1.0;
+    // A block beyond each busy end: the half of space past the plane
+    // square to the edge there, as far as the solid goes.
+    let block = |p: DVec3, out: DVec3| -> Option<Model> {
+        let plane = prism_math::Plane::new(p, out);
+        let fr = plane.frame();
+        let mut m = Model::new();
+        m.set_tol(tol);
+        let c = |x: f64, y: f64| p + fr.u * x + fr.v * y;
+        crate::add_polygon(
+            &mut m,
+            &[c(-big, -big), c(big, -big), c(big, big), c(-big, big)],
+        );
+        let f = m.faces().next()?.0;
+        let n = m.face(f)?.plane()?.normal;
+        crate::push_pull(&mut m, f, if n.dot(out) > 0.0 { big } else { -big }, false);
+        crate::boolean::is_solid(&m).then_some(m)
+    };
+    let mut inner = solid.clone();
+    let mut outer: Vec<Model> = Vec::new();
+    for (p, out) in &busy {
+        let cut = block(*p, *out)?;
+        let past = crate::boolean::boolean(&solid, &cut, crate::boolean::Op::Intersect).ok()?;
+        inner = crate::boolean::boolean(&inner, &cut, crate::boolean::Op::Subtract).ok()?;
+        if past.faces().next().is_some() {
+            outer.push(past);
+        }
+    }
+    // The edge in the inner piece: what lies along the original line.
+    let on_line = |q: DVec3| {
+        let t = (q - pa).dot(dir);
+        (pa + dir * t).distance(q) <= tol.dist
+            && t >= -tol.dist
+            && t <= (pb - pa).length() + tol.dist
+    };
+    let mine: BTreeSet<EdgeId> = inner
+        .edges()
+        .filter(|(_, e)| {
+            !e.curve.is_curved() && on_line(inner.vertex(e.a)) && on_line(inner.vertex(e.b))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    if mine.is_empty() {
+        return None;
+    }
+    round_once(&mut inner, &mine, size, fillet).ok()?;
+    let mut joined = inner;
+    for piece in &outer {
+        joined = crate::boolean::boolean(&joined, piece, crate::boolean::Op::Union).ok()?;
+    }
+    // In place of the solid's faces.
+    let mut work = model.clone();
+    for f in &faces {
+        work.remove_face(*f);
+    }
+    let (used, was) = (work.edge_faces(), model.edge_faces());
+    // The solid's own edges, now with no face (loose lines stay).
+    let loose: Vec<EdgeId> = work
+        .edges()
+        .map(|(id, _)| id)
+        .filter(|id| {
+            used.get(id).is_none_or(|f| f.is_empty()) && was.get(id).is_some_and(|f| !f.is_empty())
+        })
+        .collect();
+    for e in loose {
+        work.remove_edge(e);
+    }
+    let points: BTreeSet<VertexId> = faces
+        .iter()
+        .filter_map(|f| model.face(*f))
+        .flat_map(|f| f.loops().flatten().copied().collect::<Vec<_>>())
+        .collect();
+    for v in points {
+        if !work.edges().any(|(_, x)| x.has(v)) {
+            work.remove_vertex(v);
+        }
+    }
+    let had: BTreeSet<FaceId> = work.faces().map(|(id, _)| id).collect();
+    work.append(&joined);
+    if !crate::check::problems(&work).is_empty() || worse_health(model, &work) {
+        return None;
+    }
+    let out: Vec<FaceId> = work
+        .faces()
+        .map(|(id, _)| id)
+        .filter(|id| !had.contains(id))
+        .collect();
+    *model = work;
+    Some(out)
 }
 
 /// [`round_any`], then past lines drawn on the faces where it cannot.

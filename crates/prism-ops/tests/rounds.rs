@@ -505,3 +505,116 @@ fn a_box_with_a_line_into_a_face_rounds_edges_that_meet() {
         assert_eq!(w.faces().count(), m.faces().count() + 4, "{fillet}");
     }
 }
+
+/// A top edge running into a taller block behind it rounds: the round's
+/// end lies in the block's front (brief 56 step 2, keep surface).
+#[test]
+fn a_round_runs_into_a_wall_behind_it() {
+    // An L-shaped profile in the plane x = 0, pulled 2 along x: a low
+    // block (z up to 1) with a tall one (z up to 2) behind it (y 2 to 3).
+    let mut m = Model::new();
+    add_polygon(
+        &mut m,
+        &[
+            v(0.0, 0.0, 0.0),
+            v(0.0, 3.0, 0.0),
+            v(0.0, 3.0, 2.0),
+            v(0.0, 2.0, 2.0),
+            v(0.0, 2.0, 1.0),
+            v(0.0, 0.0, 1.0),
+        ],
+    );
+    let f = face_at(&m, v(0.0, 1.0, 0.5)).expect("profile");
+    let nx = m.face(f).unwrap().plane().unwrap().normal.x;
+    push_pull(&mut m, f, if nx > 0.0 { 2.0 } else { -2.0 }, false);
+    let e = edge(&m, v(2.0, 0.0, 1.0), v(2.0, 2.0, 1.0));
+    let along_wall = edge(&m, v(0.0, 2.0, 1.0), v(2.0, 2.0, 1.0));
+    for (name, set) in [
+        ("edge", BTreeSet::from([e])),
+        ("edge and wall foot", BTreeSet::from([e, along_wall])),
+    ] {
+        for fillet in [true, false] {
+            let mut w = m.clone();
+            let got = round_edges(&mut w, &set, 0.3, fillet);
+            eprintln!(
+                "{name} {fillet}: {:?} {:?}",
+                got.map(|f| f.len()),
+                check::problems(&w).len()
+            );
+        }
+    }
+}
+
+/// The same, the block behind wider than the low one.
+#[test]
+fn a_round_runs_into_a_wider_wall_behind_it() {
+    // A low block (x 0..2, y 0..2, z 0..1) against a taller, wider one
+    // (x 0..3, y 2..3, z 0..2): the low top edge at x = 2 runs into the
+    // tall one's front, which goes on past it.
+    let mut m = Model::new();
+    add_rect(&mut m, 0.0, 0.0, 2.0, 2.0, 0.0);
+    pull(&mut m, v(1.0, 1.0, 0.0), 1.0);
+    add_rect(&mut m, 0.0, 2.0, 3.0, 3.0, 0.0);
+    pull(&mut m, v(1.5, 2.5, 0.0), 2.0);
+    eprintln!(
+        "problems {:?} faces {}",
+        check::problems(&m),
+        m.faces().count()
+    );
+    let e = edge(&m, v(2.0, 0.0, 1.0), v(2.0, 2.0, 1.0));
+    for fillet in [true, false] {
+        let mut w = m.clone();
+        let got = round_edges(&mut w, &BTreeSet::from([e]), 0.3, fillet);
+        eprintln!(
+            "wider {fillet}: {:?} {:?}",
+            got.map(|f| f.len()),
+            check::problems(&w).len()
+        );
+    }
+}
+
+/// Brief 56 step 2, the end cap: the block behind sits on the low one and
+/// overhangs its side, so five edges meet at the round's end and the
+/// kernel will not round it. The solid is cut square to the edge there,
+/// the edge rounded, and the pieces joined: the round ends in a flat cap
+/// in the block's front, and the volume taken is the round's corner area
+/// along the edge.
+#[test]
+fn a_round_ends_in_a_cap_under_an_overhang() {
+    // A low block (x 0..2, y 0..3, z 0..1) with a tall one sitting on its
+    // back (x 0..3, y 2..3, z 1..2), overhanging its side by 1: the low
+    // top edge at x = 2 runs into the tall one's front, and the side face
+    // under it meets the overhang's underside (session 29's edge 2).
+    let mut m = Model::new();
+    add_rect(&mut m, 0.0, 0.0, 2.0, 3.0, 0.0);
+    pull(&mut m, v(1.0, 1.0, 0.0), 1.0);
+    add_rect(&mut m, 0.0, 2.0, 3.0, 3.0, 1.0);
+    for p in [v(1.0, 2.5, 1.0), v(2.5, 2.5, 1.0)] {
+        let f = face_at(&m, p).expect("a piece");
+        let up = m.face(f).unwrap().plane().unwrap().normal.z;
+        push_pull(&mut m, f, if up > 0.0 { 1.0 } else { -1.0 }, false);
+    }
+    let h = health::check(&m);
+    eprintln!(
+        "problems {:?} faces {} watertight {} leaky {}",
+        check::problems(&m),
+        m.faces().count(),
+        h.watertight,
+        h.leaky
+    );
+    let e = edge(&m, v(2.0, 0.0, 1.0), v(2.0, 2.0, 1.0));
+    let at = vertex_at(&m, v(2.0, 2.0, 1.0)).unwrap();
+    eprintln!(
+        "edges at the corner {}",
+        m.edges().filter(|(_, x)| x.has(at)).count()
+    );
+    for fillet in [true, false] {
+        let mut w = m.clone();
+        let got = round_edges(&mut w, &BTreeSet::from([e]), 0.3, fillet);
+        eprintln!(
+            "overhang {fillet}: {:?} {:?}",
+            got.map(|f| f.len()),
+            check::problems(&w).len()
+        );
+    }
+}

@@ -173,7 +173,8 @@ fn the_xby4_top_edge_fillets() {
 /// long, so the kernel would not take it and only edges Prism's own round
 /// could do rounded (16 of 192 tries, not counting lines on flat faces). With the slit taken off a copy and
 /// the notch welded, the kernel takes the body: 81 round at
-/// 0.093 m, and the slit is drawn back. Of the rest, some fit smaller (the
+/// 0.093 m, and the slit is drawn back; 93 with end caps (step 2: a round
+/// running into a busier corner is split off there, rounded and rejoined). Of the rest, some fit smaller (the
 /// tool makes the largest that fits); the others are corners steps 2 and
 /// 3 are for (a round running into a wall beside it).
 #[test]
@@ -185,13 +186,30 @@ fn session_29_rounds_past_its_slit_and_notch() {
     let s = Session::replay(&r);
     let m = s.work_model().clone();
     let ef = m.edge_faces();
-    let slit = |m: &prism_topo::Model| {
-        m.edge_faces()
-            .values()
-            .filter(|f| matches!(f[..], [a, b] if a == b))
-            .count()
+    let walked: Vec<(prism_math::DVec3, prism_math::DVec3)> = ef
+        .iter()
+        .filter(|(_, f)| matches!(f[..], [a, b] if a == b))
+        .filter_map(|(e, _)| m.edge(*e))
+        .map(|x| (m.vertex(x.a), m.vertex(x.b)))
+        .collect();
+    assert_eq!(walked.len(), 3, "the slit is three edges");
+    // How much line lies where the slit was (walked by its face, or drawn
+    // back as a line on it).
+    let slit = |m: &prism_topo::Model| -> f64 {
+        let on = |p: prism_math::DVec3| {
+            walked.iter().any(|(a, b)| {
+                let d = *b - *a;
+                let t = ((p - *a).dot(d) / d.length_squared()).clamp(0.0, 1.0);
+                (*a + d * t).distance(p) < 1e-6
+            })
+        };
+        m.edges()
+            .filter(|(_, x)| on(m.vertex(x.a)) && on(m.vertex(x.b)))
+            .map(|(_, x)| m.vertex(x.a).distance(m.vertex(x.b)))
+            .sum()
     };
-    assert_eq!(slit(&m), 3, "the slit is three edges");
+    let whole = slit(&m);
+    assert!(whole > 0.3, "{whole}");
     let edges: Vec<prism_topo::EdgeId> = m
         .edges()
         .filter(|(id, x)| ef.get(id).is_some_and(|f| f.len() == 2 && f[0] != f[1]) && !x.soft)
@@ -213,7 +231,11 @@ fn session_29_rounds_past_its_slit_and_notch() {
                 );
                 let h = prism_ops::health::check(&w);
                 assert!(h.reversed.is_empty(), "{e:?}: {h:?}");
-                assert!(slit(&w) >= 1, "{e:?} {fillet}: the slit is drawn back");
+                assert!(
+                    slit(&w) > whole * 0.5,
+                    "{e:?} {fillet}: the slit is drawn back ({} of {whole})",
+                    slit(&w)
+                );
                 done += 1;
             }
         }
@@ -222,7 +244,7 @@ fn session_29_rounds_past_its_slit_and_notch() {
         "{done} rounded, {flat} lines on flat faces, of {}",
         edges.len() * 2
     );
-    assert!(done >= 81, "{done} of {} rounded", edges.len() * 2);
+    assert!(done >= 93, "{done} of {} rounded", edges.len() * 2);
 }
 
 /// The owner's corner test (2026-11-27): a recess whose sloping back

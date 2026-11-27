@@ -236,3 +236,35 @@ fn the_owners_corner_test() {
         shoot(&mut g, &w, name, &[("view", cam)]);
     }
 }
+
+/// Brief 56 step 2: a round ending in a flat cap under an overhang.
+#[test]
+#[ignore]
+fn a_round_ending_in_a_cap() {
+    let Some(mut g) = Gpu::new() else {
+        eprintln!("no GPU");
+        return;
+    };
+    let mut m = Model::new();
+    prism_ops::add_rect(&mut m, 0.0, 0.0, 2.0, 3.0, 0.0);
+    let pull = |m: &mut Model, p: DVec3, d: f64| {
+        let f = prism_ops::face_at(m, p).expect("a face");
+        let up = m.face(f).unwrap().plane().unwrap().normal.z;
+        prism_ops::push_pull(m, f, if up > 0.0 { d } else { -d }, false);
+    };
+    pull(&mut m, DVec3::new(1.0, 1.0, 0.0), 1.0);
+    prism_ops::add_rect(&mut m, 0.0, 2.0, 3.0, 3.0, 1.0);
+    pull(&mut m, DVec3::new(1.0, 2.5, 1.0), 1.0);
+    pull(&mut m, DVec3::new(2.5, 2.5, 1.0), 1.0);
+    let a = prism_ops::vertex_at(&m, DVec3::new(2.0, 0.0, 1.0)).unwrap();
+    let b = prism_ops::vertex_at(&m, DVec3::new(2.0, 2.0, 1.0)).unwrap();
+    let e = m.edge_between(a, b).expect("the edge");
+    let cams = [
+        ("near", look(DVec3::new(2.0, 1.6, 0.8), 3.5, -30.0, 25.0)),
+        ("whole", look(DVec3::new(1.5, 1.5, 1.0), 7.0, -40.0, 30.0)),
+    ];
+    shoot(&mut g, &m, "cap-before", &cams);
+    let mut w = m.clone();
+    prism_ops::rounds::round_edges(&mut w, &[e].into(), 0.4, true).expect("rounded");
+    shoot(&mut g, &w, "cap-after", &cams);
+}
