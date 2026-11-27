@@ -390,3 +390,33 @@ fn session_30_bezel_corners_fillet() {
         assert!((got - want).abs() < 0.02 * want, "{r}: {got} {want}");
     }
 }
+
+/// The owner's session 30: arcs drawn in the bezel's corners, inside a
+/// component scaled by a half along one axis, came up short of the point
+/// clicked and were stored as approximate segments. The component's scale
+/// makes the circle drawn an ellipse in its own coordinates; the arc is now
+/// that ellipse, exactly (a rational curve), and divides the face.
+#[test]
+fn session_30_arc_in_a_scaled_component_is_exact() {
+    let r: Recording =
+        serde_json::from_str(include_str!("../data/owner-session-30.json")).expect("recording");
+    let at = |n: usize| {
+        let mut q = r.clone();
+        q.events.truncate(n);
+        Session::replay(&q)
+    };
+    let (a, b) = (at(1737), at(1741));
+    let (ma, mb) = (a.work_model(), b.work_model());
+    let new: Vec<_> = mb
+        .edges()
+        .filter(|(id, _)| ma.edge(*id).is_none())
+        .map(|(_, e)| e)
+        .collect();
+    assert!(
+        new.iter().any(|e| e.curve.is_spline() && !e.approx),
+        "the arc is an exact curve"
+    );
+    assert_eq!(mb.faces().count(), ma.faces().count() + 1, "it divides the face");
+    let approx = |m: &prism_topo::Model| m.edges().filter(|(_, e)| e.approx).count();
+    assert!(approx(mb) <= approx(ma), "no new approximate edges");
+}
