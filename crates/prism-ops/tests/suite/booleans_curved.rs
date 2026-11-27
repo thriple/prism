@@ -210,3 +210,84 @@ fn a_circle_on_a_side_pulled_out_joins_and_pushed_through_makes_a_hole() {
         }
     }
 }
+
+/// A bar with one edge rounded (the cross-section of a fillet's sweep),
+/// `len` long along x.
+fn rounded_bar(r: f64, len: f64) -> Model {
+    let mut m = Model::new();
+    let d = r * 0.1;
+    let pts = [
+        DVec3::new(0.0, -d, -d),
+        DVec3::new(0.0, r, -d),
+        DVec3::new(0.0, r, 0.0),
+        DVec3::new(0.0, 0.0, r),
+        DVec3::new(0.0, -d, r),
+    ];
+    prism_ops::add_polygon(&mut m, &pts);
+    let a = prism_ops::vertex_at(&m, pts[2]).unwrap();
+    let b = prism_ops::vertex_at(&m, pts[3]).unwrap();
+    let e = m.edge_between(a, b).unwrap();
+    let centre = DVec3::new(0.0, r, r);
+    let x = m.edge(e).unwrap();
+    let (xa, xb) = (m.vertex(x.a) - centre, m.vertex(x.b) - centre);
+    m.set_curve(
+        e,
+        prism_geom::Curve::Arc {
+            centre,
+            axis: xa.cross(xb).normalize(),
+            radius: r,
+        },
+    );
+    let f = m.faces().next().unwrap().0;
+    let n = m.face(f).unwrap().plane().unwrap().normal;
+    prism_ops::push_pull(&mut m, f, if n.x > 0.0 { len } else { -len }, false);
+    m
+}
+
+/// The half of space past the plane through `p` square to `out`.
+fn half_space(p: DVec3, out: DVec3, big: f64) -> Model {
+    let fr = prism_math::Plane::new(p, out).frame();
+    let mut m = Model::new();
+    let c = |x: f64, y: f64| p + fr.u * x + fr.v * y;
+    prism_ops::add_polygon(
+        &mut m,
+        &[c(-big, -big), c(big, -big), c(big, big), c(-big, big)],
+    );
+    let f = m.faces().next().unwrap().0;
+    let n = m.face(f).unwrap().plane().unwrap().normal;
+    prism_ops::push_pull(&mut m, f, if n.dot(out) > 0.0 { big } else { -big }, false);
+    m
+}
+
+/// A plane a degree or so off square to a cylinder cuts an ellipse whose
+/// points all lie near one circle. That circle was taken as the crossing,
+/// though it is tilted to the axis, and the cut left faces out (brief 56
+/// step 4: a fillet's sweep cut at a slight crease). A circle on a
+/// cylinder is now a crossing only square to the axis.
+#[test]
+fn a_rounded_bar_cut_nearly_square_stays_closed() {
+    let r = 0.2;
+    let whole = (1.0 - std::f64::consts::PI / 4.0) * r * r + 2.0 * r * 0.1 * r + (r * 0.1).powi(2);
+    for deg in [0.05f64, 0.42, 0.85, 1.2, 1.6, 2.0, 3.0, 30.0] {
+        let t = deg.to_radians();
+        let out = DVec3::new(t.cos(), t.sin(), 0.0);
+        let cut = prism_ops::boolean::boolean(
+            &rounded_bar(r, 1.0),
+            &half_space(DVec3::new(0.9, 0.0, 0.0), out, 5.0),
+            prism_ops::boolean::Op::Subtract,
+        )
+        .unwrap_or_else(|why| panic!("{deg}: {why}"));
+        assert!(prism_ops::boolean::is_solid(&cut), "{deg} degrees");
+        // The plane passes through x = 0.9 where y = 0, tilting the cut by
+        // y tan t across the section: the volume left is the section times
+        // 0.9, less the area-weighted y of the section times tan t.
+        let vol: f64 = cut
+            .faces()
+            .map(|(id, _)| prism_ops::health::face_volume(&cut, id))
+            .sum();
+        assert!(
+            (vol - whole * 0.9).abs() < whole * 0.9 * 0.02 + whole * t.tan(),
+            "{deg}: {vol}"
+        );
+    }
+}

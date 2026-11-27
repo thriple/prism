@@ -1,3 +1,5 @@
+**Fixed: cutting a rounded shape with a plane at a slight angle.** A cut (by a push, a boolean or a round) almost square to a curved face, a degree or so off, could leave the shape open, with faces missing beside the cut. It now closes.
+
 **Fixed: Fillet / Chamfer along the inside of a curved wall.** Where a floor meets a curved wall (a channel that turns a rounded corner), the floor's edge along the curve, and the straight edge it runs smoothly into, now round, alone or together (the owner's second corner test). Where the curve meets a straight wall at a slight angle instead of smoothly, the chain still does not round; that is next.
 
 **Fixed: a fault elsewhere on a body no longer stops Fillet / Chamfer.** If something far from the edge makes the whole body unroundable (an edge stored as an approximation, for example), the edge is now rounded in a small box around it and joined back, and the rest of the body is left as it was. On the owner's session-29 body, five more edges round. Edges along smooth curved runs and at busy corners still refuse; those are the next steps.

@@ -927,6 +927,17 @@ impl Tracer<'_> {
         out
     }
 
+    /// Whether a circle about `normal` can lie on the curved face: on a
+    /// cylinder or cone only square to its axis.
+    fn square_on_axis(&self, normal: DVec3, radius: f64) -> bool {
+        let axis = match &self.a.surface {
+            Surface::Cylinder(c) => c.axis,
+            Surface::Cone(c) => c.axis,
+            _ => return true,
+        };
+        self.tol.parallel_over(normal, axis, radius)
+    }
+
     fn fit(&self, pts: Vec<DVec3>) -> Piece {
         let eps = self.tol.dist;
         let (p, q) = (pts[0], pts[pts.len() - 1]);
@@ -945,6 +956,21 @@ impl Tracer<'_> {
             && pts
                 .iter()
                 .all(|x| circle_distance(spec.centre, spec.normal, spec.radius, *x) <= eps)
+            // The arc itself lies on both faces, not only through the
+            // traced points: a plane a degree or so off square to a
+            // cylinder cuts an ellipse whose points all lie near one
+            // circle, but that circle leaves the cylinder between them.
+            // On a cylinder or cone, a circle is a crossing only square to
+            // the axis; tilted, it is an ellipse, however near a circle.
+            && self.square_on_axis(spec.normal, spec.radius)
+            && (1..16).all(|k| {
+                let turn = prism_math::DQuat::from_axis_angle(
+                    spec.normal,
+                    spec.sweep * k as f64 / 16.0,
+                );
+                let x = spec.centre + turn * (p - spec.centre);
+                self.a.surface.distance(x).abs() <= eps && self.b.value(x).abs() <= eps
+            })
         {
             return Piece {
                 shape: Shape::Arc {
