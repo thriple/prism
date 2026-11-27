@@ -301,10 +301,29 @@ fn round_swept(
         inside = Some(here);
     }
     let inside = inside?;
+    let wall_dir = if inside { up } else { -up };
+    // The round must fit: its line on the floor lies on the floor, and its
+    // line on each wall is no higher than the wall reaches.
+    let reach = size - tol.dist;
+    for p in &runs_of {
+        if !on_floor(p.middle + p.across * sign * reach) {
+            return None;
+        }
+        let wall = *ef.get(&p.edge)?.iter().find(|f| **f != floor)?;
+        let top = model
+            .face(wall)?
+            .loops()
+            .flatten()
+            .map(|v| (model.vertex(*v) - p.middle).dot(wall_dir))
+            .fold(f64::NEG_INFINITY, f64::max);
+        if top < reach {
+            return None;
+        }
+    }
     let shape = Shape {
         up,
         sign,
-        wall: if inside { up } else { -up },
+        wall: wall_dir,
         size,
         past: size * 0.1,
         fillet,
