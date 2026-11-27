@@ -1,0 +1,152 @@
+//! Pictures for the owner's two open questions in brief 56 (end caps, and a
+//! line drawn across a round). Not a check: run by hand with
+//! `cargo test --release -p prism-render --test fillet_options -- --ignored`
+//! and look in `target/viewport-screens`.
+
+mod common;
+
+use std::collections::BTreeSet;
+
+use common::Gpu;
+use prism_math::DVec3;
+use prism_ops::boolean::{Op, boolean};
+use prism_render::gpu::Highlight;
+use prism_render::{Camera, Style};
+use prism_topo::{EdgeId, Model};
+
+const R: f64 = 0.5;
+
+/// A block 2 deep and 2 high, seen from the front (-y); its end at +x is
+/// slanted when `top` is less than `bottom`.
+fn block(x0: f64, bottom: f64, top: f64) -> Model {
+    let mut m = Model::new();
+    prism_ops::add_polygon(
+        &mut m,
+        &[
+            DVec3::new(x0, 0.0, 0.0),
+            DVec3::new(bottom, 0.0, 0.0),
+            DVec3::new(top, 0.0, 2.0),
+            DVec3::new(x0, 0.0, 2.0),
+        ],
+    );
+    let f = prism_ops::face_at(&m, DVec3::new((x0 + top) / 2.0, 0.0, 1.0)).expect("side");
+    let n = m.face(f).unwrap().plane().unwrap().normal.y;
+    prism_ops::push_pull(&mut m, f, if n > 0.0 { 2.0 } else { -2.0 }, false);
+    assert!(prism_ops::check::problems(&m).is_empty());
+    m
+}
+
+/// The edges along the top front corner (y = 0, z = 2).
+fn top_front(m: &Model) -> BTreeSet<EdgeId> {
+    m.edges()
+        .filter(|(_, e)| {
+            [e.a, e.b].iter().all(|v| {
+                let p = m.vertex(*v);
+                p.y.abs() < 1e-9 && (p.z - 2.0).abs() < 1e-9
+            })
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+fn rounded(mut m: Model) -> Model {
+    let e = top_front(&m);
+    assert!(!e.is_empty());
+    prism_ops::rounds::round_edges(&mut m, &e, R, true).expect("round");
+    m
+}
+
+fn look(target: DVec3, dist: f64, az: f64, el: f64) -> Camera {
+    let (a, e) = (az.to_radians(), el.to_radians());
+    Camera {
+        eye: target + DVec3::new(e.cos() * a.cos(), e.cos() * a.sin(), e.sin()) * dist,
+        target,
+    }
+}
+
+fn shoot(g: &mut Gpu, m: &Model, name: &str, cams: &[(&str, Camera)]) {
+    eprintln!(
+        "{name}: {} faces, problems {:?}",
+        m.faces().count(),
+        prism_ops::check::problems(m)
+    );
+    for (tag, cam) in cams {
+        let img = g.shot(
+            m,
+            *cam,
+            1200,
+            800,
+            1.0,
+            &Style::default(),
+            &Highlight::default(),
+        );
+        img.save(&format!("{name}-{tag}"));
+    }
+}
+
+#[test]
+#[ignore]
+fn end_caps_and_lines_across_a_round() {
+    let Some(mut g) = Gpu::new() else {
+        eprintln!("no GPU");
+        return;
+    };
+    let end = DVec3::new(2.8, 0.4, 1.6);
+    let cams = [
+        ("near", look(end, 4.5, -40.0, 28.0)),
+        ("back", look(end, 3.5, -130.0, 35.0)),
+        ("whole", look(DVec3::new(2.0, 1.0, 1.0), 9.0, -55.0, 25.0)),
+    ];
+
+    // Keep surface: the round runs on until it meets the slanted end, and
+    // its end lies in that face. Prism's round on the slanted block if it
+    // takes it; else the same shape from a long rounded bar cut by it.
+    let slanted = block(0.0, 4.0, 2.5);
+    let mut keep_surface = slanted.clone();
+    let e = top_front(&keep_surface);
+    match prism_ops::rounds::round_edges(&mut keep_surface, &e, R, true) {
+        Ok(_) => eprintln!("keep surface: Prism's round"),
+        Err(why) => {
+            eprintln!("keep surface: round refused ({why}); built by Intersect");
+            let bar = rounded(block(-1.0, 5.0, 5.0));
+            keep_surface = boolean(&bar, &slanted, Op::Intersect).expect("intersect");
+        }
+    }
+    shoot(&mut g, &keep_surface, "cap-keep-surface", &cams);
+
+    // Keep edge: the round stops square to the edge where its setback
+    // first meets the slanted end (x = 3, on the top face), a flat cap
+    // closes it, and the corner beyond stays as it was.
+    let short = rounded(block(0.0, 2.5, 2.5));
+    let wedge = block(2.5, 4.0, 2.5001);
+    let keep_edge = match boolean(&short, &wedge, Op::Union) {
+        Ok(m) => m,
+        Err(why) => panic!("union: {why}"),
+    };
+    shoot(&mut g, &keep_edge, "cap-keep-edge", &cams);
+
+    // A line drawn across the top face up to the edge. Stops: the edge
+    // rounded whole, the line drawn back to where the round begins (built
+    // by hand: what the fallback round does). Across: Prism's round today,
+    // which parts the round at the line's end, so a seam carries it on.
+    let mut stops = rounded(block(0.0, 4.0, 4.0));
+    prism_ops::add_segment(
+        &mut stops,
+        DVec3::new(2.0, 2.0, 2.0),
+        DVec3::new(2.0, R, 2.0),
+    );
+    let mut lined = block(0.0, 4.0, 4.0);
+    prism_ops::add_segment(
+        &mut lined,
+        DVec3::new(2.0, 2.0, 2.0),
+        DVec3::new(2.0, 0.0, 2.0),
+    );
+    let across = rounded(lined);
+    let mid = DVec3::new(2.0, 0.6, 1.4);
+    let lcams = [
+        ("near", look(mid, 4.5, -60.0, 30.0)),
+        ("whole", look(DVec3::new(2.0, 1.0, 1.0), 9.0, -60.0, 25.0)),
+    ];
+    shoot(&mut g, &stops, "line-stops", &lcams);
+    shoot(&mut g, &across, "line-across", &lcams);
+}

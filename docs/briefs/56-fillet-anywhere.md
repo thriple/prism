@@ -230,6 +230,10 @@ Each step:
 2. **End caps:** to decide after seeing both in Prism: screenshots of a flat cap square to the edge, and of a cap lying in the face the round runs into (keep edge / keep surface), on a block whose end is slanted. Not taken yet: the screenshot run was stopped before a compact. Plan: build both by hand in a render test (`crates/prism-render/tests/common` can draw off screen and `Image::save` writes a PNG), and send them.
 3. **A drawn line across a round's path:** also to decide after screenshots: the line stopping at the round (as now), and the line running on across it as a curve on the round.
 
+Screenshots sent 2026-11-27, made by `crates/prism-render/tests/fillet_options.rs` (run by hand with `--ignored`). What they showed:
+- **End caps:** Prism's own round already takes a block whose end is slanted, and makes B (the round runs on into the slanted end; its end lies in that face). A (a flat cap square to the edge, the corner beyond left sharp) was built by hand for the picture.
+- **Line across a round:** when a line drawn on one face reaches the edge, the kernel's round is parted at the line's end, so a seam already carries the line on across the round (B). The line stopping where the round begins (A) is what the fallback round does; it was built by hand for the picture.
+
 ## Questions for the owner (as asked)
 
 1. **The notch weld.** Keep it in the model (proposed: it is a defect, and moves the shape no more than 0.24 mm)? Or weld only on the copy, and leave the notch for Heal?
