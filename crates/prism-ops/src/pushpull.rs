@@ -142,6 +142,16 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     } else {
         crate::solid::Swept::of(model, face, distance)
     };
+    // A new loop pushed into the solid the face is on: halfway along the
+    // push, from a point inside the face, is inside that solid.
+    let pushed_in = new_loop && {
+        let pts = model.points(&f.outer);
+        let centre = pts.iter().copied().sum::<DVec3>() / pts.len().max(1) as f64;
+        crate::face_at(model, centre) == Some(face)
+            && crate::solid::Swept::of(model, face, distance)
+                .and_then(|s| s.was_inside(centre + shift * 0.5))
+                .unwrap_or(false)
+    };
     let face_edges_before = edges_with_faces(model);
     // The planes around the face, before the edit: a face there may shrink
     // to nothing, and its plane may still need a face (a post left on top).
@@ -529,13 +539,13 @@ pub fn push_pull(model: &mut Model, face: FaceId, distance: f64, new_loop: bool)
     if new_loop && !standalone {
         // Alt: the original boundary stays as a face.
         model.add_face(original(false));
-        // The walls were wound for a pull out. Pushed in, they would face
-        // into the solid, back to back with the faces they lie on, and
-        // both would go (owner's corner test, 2026-11-27: a new loop
-        // pushed into the front ate the bottom, sides and top back to
-        // where it stopped). Turned round, they face out as those faces
-        // do and merge with them: the same outside, a new face inside.
-        if distance < 0.0 {
+        // The walls were wound for a pull out. Pushed into a solid, they
+        // would face into it, back to back with the faces they lie on, and
+        // both would go (owner's corner test, 2026-11-27: a new loop pushed
+        // into the front ate the bottom, sides and top back to where it
+        // stopped). Turned round, they face out as those faces do and
+        // merge with them: the same outside, a new face inside.
+        if pushed_in {
             for w in &walls {
                 model.edit_face(*w, |g| g.reverse());
             }

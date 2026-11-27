@@ -102,6 +102,12 @@ impl Swept {
         })
     }
 
+    /// Whether `x` was inside the solid before the edit. None if the ray
+    /// test was unsure.
+    pub fn was_inside(&self, x: DVec3) -> Option<bool> {
+        Some(shell::winding(&self.before, x, &self.tol)? >= 1)
+    }
+
     /// Whether `x` is inside the result. None if the ray test was unsure.
     pub fn inside(&self, x: DVec3) -> Option<bool> {
         let was = shell::winding(&self.before, x, &self.tol)? >= 1;
