@@ -1809,15 +1809,16 @@ mod tests {
     /// parameters.
     #[test]
     fn approximate_curves_show_in_geometry_and_health() {
+        // An ellipse as fine segments (as a cut of two cylinders is kept;
+        // an uneven scale of a circle now keeps it exact).
         let mut m = prism_topo::Model::new();
-        prism_ops::add_circle(&mut m, prism_math::DVec3::ZERO, prism_math::DVec3::Z, 1.0);
-        let all = m.vertices().map(|(id, _)| id).collect();
-        prism_ops::transform::scale(
-            &mut m,
-            &all,
-            prism_math::DVec3::ZERO,
-            prism_math::DVec3::new(2.0, 1.0, 1.0),
-        );
+        let ring: Vec<_> = (0..48)
+            .map(|k| {
+                let t = std::f64::consts::TAU * k as f64 / 48.0;
+                m.add_vertex(prism_math::DVec3::new(2.0 * t.cos(), t.sin(), 0.0))
+            })
+            .collect();
+        m.add_approx_curve(&ring, true);
         let (mut chrome, mut viewport, mut files) = parts(prism_doc::Document::with_model(m));
         let (mut tabs, mut tool) = (Vec::new(), "tool.select");
         let mut h = AppHost {
