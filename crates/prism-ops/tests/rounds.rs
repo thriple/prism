@@ -618,3 +618,71 @@ fn a_round_ends_in_a_cap_under_an_overhang() {
         );
     }
 }
+
+#[test]
+#[ignore]
+fn zz_cove_probe() {
+    // The owner's shape (2026-11-27): a profile in the plane x = 0 (y, z),
+    // a flat top that drops at a point into a cove, a flat, then a
+    // bullnose down to the end; pulled 1.5 along x.
+    use std::f64::consts::FRAC_PI_2;
+    let mut m = Model::new();
+    let p = |y: f64, z: f64| v(0.0, y, z);
+    prism_ops::add_segment(&mut m, p(0.0, 0.0), p(3.5, 0.0));
+    prism_ops::add_segment(&mut m, p(3.5, 0.0), p(3.5, 1.0));
+    // Bullnose: centre (3.0, 1.0), from (3.5, 1.0) up to (3.0, 1.5).
+    prism_ops::add_arc(&mut m, p(3.0, 1.0), DVec3::X, 0.5, p(3.5, 1.0), FRAC_PI_2);
+    prism_ops::add_segment(&mut m, p(3.0, 1.5), p(2.0, 1.5));
+    // Cove: centre (2.0, 2.0), from (2.0, 1.5) round to (1.5, 2.0).
+    prism_ops::add_arc(&mut m, p(2.0, 2.0), DVec3::X, 0.5, p(1.5, 2.0), FRAC_PI_2);
+    prism_ops::add_segment(&mut m, p(1.5, 2.0), p(0.0, 2.0));
+    prism_ops::add_segment(&mut m, p(0.0, 2.0), p(0.0, 0.0));
+    eprintln!("profile faces {}", m.faces().count());
+    let f = face_at(&m, v(0.0, 1.0, 0.5)).expect("profile");
+    let nx = m.face(f).unwrap().plane().unwrap().normal.x;
+    push_pull(&mut m, f, if nx > 0.0 { 1.5 } else { -1.5 }, false);
+    eprintln!(
+        "problems {:?} faces {}",
+        check::problems(&m),
+        m.faces().count()
+    );
+    // The chain along the top front at x = 1.5 (the side face's top edges).
+    let ef = m.edge_faces();
+    let chain: BTreeSet<EdgeId> = m
+        .edges()
+        .filter(|(id, e)| {
+            let (a, b) = (m.vertex(e.a), m.vertex(e.b));
+            (a.x - 1.5).abs() < 1e-9
+                && (b.x - 1.5).abs() < 1e-9
+                && a.z.min(b.z) > 0.5
+                && !(a.y.abs() < 1e-9 && b.y.abs() < 1e-9)
+                && !((a.y - 3.5).abs() < 1e-9 && (b.y - 3.5).abs() < 1e-9)
+                && ef.get(id).is_some_and(|f| f.len() == 2)
+        })
+        .map(|(id, _)| id)
+        .collect();
+    for e in &chain {
+        let x = m.edge(*e).unwrap();
+        eprintln!(
+            "chain {e:?} {:?} -> {:?} curved {} soft {}",
+            m.vertex(x.a),
+            m.vertex(x.b),
+            x.curve.is_curved(),
+            x.soft
+        );
+    }
+    for fillet in [true, false] {
+        let mut w = m.clone();
+        eprintln!(
+            "all {fillet}: {:?}",
+            round_edges(&mut w, &chain, 0.1, fillet).map(|f| f.len())
+        );
+        for e in &chain {
+            let mut w = m.clone();
+            eprintln!(
+                "  {e:?} {fillet}: {:?}",
+                round_edges(&mut w, &BTreeSet::from([*e]), 0.1, fillet).map(|f| f.len())
+            );
+        }
+    }
+}
